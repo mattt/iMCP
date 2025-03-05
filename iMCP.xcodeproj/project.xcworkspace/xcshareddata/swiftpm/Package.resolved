@@ -1,0 +1,69 @@
+{
+  "originHash" : "f4cbde00cd410ea1de96fdd45cf21ed0dea73e9ce87f3a2936b051128ad23313",
+  "pins" : [
+    {
+      "identity" : "maccontrolcenterui",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/orchetect/MacControlCenterUI",
+      "state" : {
+        "revision" : "ee2003b6508de0997cbe6ebb238801f297a450ab",
+        "version" : "2.4.1"
+      }
+    },
+    {
+      "identity" : "madrid",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/loopwork-ai/madrid",
+      "state" : {
+        "revision" : "9d9fdb20424483fb592e5a026d9d0816cd5c43eb",
+        "version" : "0.1.0"
+      }
+    },
+    {
+      "identity" : "mcp-swift-sdk",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/loopwork-ai/mcp-swift-sdk",
+      "state" : {
+        "revision" : "775425b140b99d3b077ed7efa5715768c82805b1",
+        "version" : "0.3.0"
+      }
+    },
+    {
+      "identity" : "menubarextraaccess",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/orchetect/MenuBarExtraAccess",
+      "state" : {
+        "revision" : "e911e6454f8cbfe34a52136fc48e1ceb989a60e7",
+        "version" : "1.2.1"
+      }
+    },
+    {
+      "identity" : "ontology",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/loopwork-ai/Ontology",
+      "state" : {
+        "revision" : "83f0709457cf2e599a52821d2b0a7e3dd2bd077b",
+        "version" : "0.3.0"
+      }
+    },
+    {
+      "identity" : "swift-log",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-log.git",
+      "state" : {
+        "revision" : "96a2f8a0fa41e9e09af4585e2724c4e825410b91",
+        "version" : "1.6.2"
+      }
+    },
+    {
+      "identity" : "swift-system",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-system.git",
+      "state" : {
+        "revision" : "c8a44d836fe7913603e246acab7c528c2e780168",
+        "version" : "1.4.0"
+      }
+    }
+  ],
+  "version" : 3
+}
