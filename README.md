@@ -5,8 +5,8 @@
 </picture>
 
 iMCP is a macOS app for connecting your digital life with AI.
-It works with [Claude Desktop][claude-app], [Cursor][cursor-app], 
-and a growing list of clients that support the 
+It works with [Claude Desktop][claude-app] 
+and a [growing list of clients][mcp-clients] that support the 
 [Model Context Protocol (MCP)][mcp].
 
 ## Capabilities
@@ -86,6 +86,11 @@ and ready to connect with MCP-compatible clients.
 
 <img align="right" width="372" src="/Assets/imcp-screenshot-grant-permission.png" alt="Screenshot of macOS permission dialog" />
 
+> [!IMPORTANT]
+> iMCP **does not** collect or store any of your data.
+> Clients like Claude Desktop _do_ send 
+> your data off device as part of tool calls. 
+
 ### Activate services
 
 To activate a service, click on its icon. 
@@ -113,8 +118,12 @@ giving you complete control over what information iMCP can access.
 
 ### Connect to Claude Desktop
 
+If you don't have Claude Desktop installed, [you can download it here.](https://claude.ai/download)
+
+Before you can enable MCP servers in Claude Desktop, you'll need to enable Developer Mode under `Settings...`.
+
 To connect iMCP to Claude Desktop,
-click "Configure Claude Desktop".
+click <img style="display: inline" width="20" height="16" src="/Assets/icon.svg" /> > "Configure Claude Desktop" in the iMCP menu.
 
 You'll be prompted to open the Claude Desktop configuration file
 (`~/Library/Application Support/Claude/claude_desktop_config.json`).
@@ -183,5 +192,5 @@ This project is licensed under the Apache License, Version 2.0.
 This project is not affiliated with, endorsed, or sponsored by Apple Inc.
 
 [claude-app]: https://claude.ai/download
-[cursor-app]: https://www.cursor.com
 [mcp]: https://modelcontextprotocol.io/introduction
+[mcp-cients]: https://modelcontextprotocol.io/clients
