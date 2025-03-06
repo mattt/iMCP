@@ -64,7 +64,7 @@ and a [growing list of clients][mcp-clients] that support the
 
 ### Download and open the app
 
-First, [download the iMCP app](https://github.com/loopwork-ai/iMCP/releases/latest)
+First, [download the iMCP app](https://iMCP.app/download)
 (requires macOS 15 or later).
 
 <img align="right" width="344" src="/Assets/imcp-screenshot-first-launch.png" alt="Screenshot of iMCP on first launch" />
