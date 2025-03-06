@@ -235,6 +235,34 @@ It includes a Swift implementation for decoding Apple's `typedstream` format,
 adapted from Christopher Sardegna's [imessage-exporter] project 
 and [blog post about reverse-engineering `typedstream`][typedstream-blog-post].
 
+### JSON-LD for Tool Results
+
+The tools provided by iMCP return results as
+[JSON-LD][json-ld] documents.
+For example,
+the `fetchContacts` tool uses the [Contacts framework][contacts-framework],
+which represents people and organizations with the [`CNContact`][cncontact] type.
+Here's how an object of that type is encoded as JSON-LD:
+
+```json
+{
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  "name": "Loopwork Limited",
+  "url": "https://loop.work"
+}
+```
+
+[Schema.org][schema.org] provides standard vocabularies for
+people, postal addresses, events, and many other objects we want to represent.
+And JSON-LD is a convenient encoding format for 
+humans, AI, and conventional software alike.
+
+For this project, we created [Ontology][ontology]:
+a Swift package for working with structured data.
+It includes convenience initializers for types from Apple frameworks, 
+such as those returned by iMCP tools.
+
 ## Acknowledgments
 
 - [Justin Spahr-Summers](https://jspahrsummers.com/)
@@ -258,14 +286,18 @@ This project is licensed under the Apache License, Version 2.0.
 iMessage® is a registered trademark of Apple Inc.  
 This project is not affiliated with, endorsed, or sponsored by Apple Inc.
 
-
 [app-sandbox]: https://developer.apple.com/documentation/security/app-sandbox
 [bonjour]: https://developer.apple.com/bonjour/
 [claude-app]: https://claude.ai/download
+[contacts-framework]: https://developer.apple.com/documentation/contacts
+[cncontact]: https://developer.apple.com/documentation/contacts/cncontact
 [imessage-exporter]: https://github.com/ReagentX/imessage-exporter
-[madrid]: https://github.com/loopwork-ai/madrid
+[json-ld]: https://json-ld.org
+[madrid]: https://github.com/loopwork-ai/Madrid
 [mcp]: https://modelcontextprotocol.io/introduction
 [mcp-clients]: https://modelcontextprotocol.io/clients
 [mcp-transports]: https://modelcontextprotocol.io/docs/concepts/architecture#transport-layer
 [nsopenpanel]: https://developer.apple.com/documentation/appkit/nsopenpanel
+[ontology]: https://github.com/loopwork-ai/Ontology
+[schema.org]: https://schema.org
 [typedstream-blog-post]: https://chrissardegna.com/blog/reverse-engineering-apples-typedstream-format/
