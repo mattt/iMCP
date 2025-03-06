@@ -118,15 +118,18 @@ giving you complete control over what information iMCP can access.
 
 ### Connect to Claude Desktop
 
-If you don't have Claude Desktop installed, [you can download it here.](https://claude.ai/download)
+If you don't have Claude Desktop installed, 
+you can [download it here](https://claude.ai/download).
 
-Before you can enable MCP servers in Claude Desktop, you'll need to enable Developer Mode under `Settings...`.
+Open Claude Desktop and go to "Settings... (<kbd>⌘</kbd><kbd>,</kbd>)".
+Click on "Developer" in the sidebar of the Settings pane,
+and then click on "Edit Config".
+This will create a configuration file at
+`~/Library/Application Support/Claude/claude_desktop_config.json`.
 
 To connect iMCP to Claude Desktop,
-click <img style="display: inline" width="20" height="16" src="/Assets/icon.svg" /> > "Configure Claude Desktop" in the iMCP menu.
-
-You'll be prompted to open the Claude Desktop configuration file
-(`~/Library/Application Support/Claude/claude_desktop_config.json`).
+click <img style="display: inline" width="20" height="16" src="/Assets/icon.svg" /> 
+\> "Configure Claude Desktop".
 
 This will add or update the MCP server configuration to use the
 `imcp-server` executable bundled in the application. 
