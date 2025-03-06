@@ -190,6 +190,27 @@ without requiring you to manually share this data during your conversation.
   <img width="738" src="/Assets/claude-desktop-screenshot-message.png" alt="Screenshot of Claude response to user message 'How's the weather where I am?'" />
 </p>
 
+## Technical Details
+
+### App & CLI
+
+iMCP is a macOS app that bundles a command-line executable, `imcp-server`.
+* [`iMCP.app`](/App/) provides UI for configuring services and — most importantly —
+  a means of interacting with macOS system permissions,
+  so that it can access Contacts, Calendar, and other information.
+* [`imcp-server`](/CLI/) provides an MCP server that 
+  uses standard input/output for communication 
+  ([stdio transport][mcp-transports]).
+
+The app and CLI communicate with each other on the local network
+using [Bonjour][bonjour] for automatic discovery. 
+Both advertise a service with type "_mcp._tcp" and domain "local".
+Requests from MCP clients are read by the CLI from `stdin`
+and relayed to the app;
+responses from the app are received by the CLI and written to `stdout`.
+See [`StdioProxy`](https://github.com/loopwork-ai/iMCP/blob/8cf9d250286288b06bf5d3dda78f5905ad0d7729/CLI/main.swift#L47) 
+for implementation details.
+
 ## Acknowledgments
 
 - [Justin Spahr-Summers](https://jspahrsummers.com/)
@@ -212,6 +233,8 @@ This project is licensed under the Apache License, Version 2.0.
 
 This project is not affiliated with, endorsed, or sponsored by Apple Inc.
 
+[bonjour]: https://developer.apple.com/bonjour/
 [claude-app]: https://claude.ai/download
 [mcp]: https://modelcontextprotocol.io/introduction
 [mcp-clients]: https://modelcontextprotocol.io/clients
+[mcp-transports]: https://modelcontextprotocol.io/docs/concepts/architecture#transport-layer
