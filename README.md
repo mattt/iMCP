@@ -169,15 +169,6 @@ without requiring you to manually share this data during your conversation.
   <img width="738" src="/Assets/claude-desktop-screenshot-message.png" alt="Screenshot of Claude response to user message 'How's the weather where I am?'" />
 </p>
 
-### Connect to Cursor
-
-Navigate to Cursor's Settings... > Cursor Settings > MCP  and click  <kbd>+ Add New MCP Server</kbd>
-
-You can name the server "iMCP" and leave it as type "Command". To get the Command, click on the iMCP menu icon (<img style="display: inline" width="20" height="16" src="/Assets/icon.svg" />) > "Copy server command to clipboard" and then paste the command from your clipboard into the "Command" field. It will look something like:
-
-> /private/var/folders/...A BUNCH OF UNIQUE STUFF... /MacOS/imcp-server
-
-
 ## Acknowledgments
 
 - [Justin Spahr-Summers](https://jspahrsummers.com/)
