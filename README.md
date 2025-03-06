@@ -214,4 +214,4 @@ This project is not affiliated with, endorsed, or sponsored by Apple Inc.
 
 [claude-app]: https://claude.ai/download
 [mcp]: https://modelcontextprotocol.io/introduction
-[mcp-cients]: https://modelcontextprotocol.io/clients
+[mcp-clients]: https://modelcontextprotocol.io/clients
