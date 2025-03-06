@@ -86,17 +86,17 @@ and ready to connect with MCP-compatible clients.
 
 <img align="right" width="372" src="/Assets/imcp-screenshot-grant-permission.png" alt="Screenshot of macOS permission dialog" />
 
-> [!IMPORTANT]
-> iMCP **does not** collect or store any of your data.
-> Clients like Claude Desktop _do_ send 
-> your data off device as part of tool calls. 
-
 ### Activate services
 
 To activate a service, click on its icon. 
 The system will prompt you with a permission dialog.
 For example, when activating Calendar access, you'll see a dialog asking `"iMCP" Would Like Full Access to Your Calendar`.
 Click <kbd>Allow Full Access</kbd> to continue.
+
+> [!IMPORTANT]
+> iMCP **does not** collect or store any of your data.
+> Clients like Claude Desktop _do_ send 
+> your data off device as part of tool calls. 
 
 <br clear="all">
 
