@@ -211,6 +211,30 @@ responses from the app are received by the CLI and written to `stdout`.
 See [`StdioProxy`](https://github.com/loopwork-ai/iMCP/blob/8cf9d250286288b06bf5d3dda78f5905ad0d7729/CLI/main.swift#L47) 
 for implementation details.
 
+### iMessage Database Access
+
+Apple doesn't provide public APIs for accessing your messages.
+However, the Messages app on macOS stores data in a SQLite database located at
+`~/Library/Messages/chat.db`.
+
+iMCP runs in [App Sandbox][app-sandbox],
+which limits its access to user data and system resources.
+When you go to enable the Messages service,
+you'll be prompted to open the `chat.db` file through the standard file picker.
+When you do, macOS adds that file to the app’s sandbox.
+[`NSOpenPanel`][nsopenpanel] is magic like that.
+
+But opening the iMessage database is just half the battle.
+Over the past few years, 
+Apple has moved away from storing messages in plain text
+and instead toward a proprietary `typedstream` format.
+
+For this project, we created [Madrid][madrid]:
+a Swift package for reading your iMessage database.
+It includes a Swift implementation for decoding Apple's `typedstream` format, 
+adapted from Christopher Sardegna's [imessage-exporter] project 
+and [blog post about reverse-engineering `typedstream`][typedstream-blog-post].
+
 ## Acknowledgments
 
 - [Justin Spahr-Summers](https://jspahrsummers.com/)
@@ -231,10 +255,17 @@ This project is licensed under the Apache License, Version 2.0.
 
 ## Legal
 
+iMessage® is a registered trademark of Apple Inc.  
 This project is not affiliated with, endorsed, or sponsored by Apple Inc.
 
+
+[app-sandbox]: https://developer.apple.com/documentation/security/app-sandbox
 [bonjour]: https://developer.apple.com/bonjour/
 [claude-app]: https://claude.ai/download
+[imessage-exporter]: https://github.com/ReagentX/imessage-exporter
+[madrid]: https://github.com/loopwork-ai/madrid
 [mcp]: https://modelcontextprotocol.io/introduction
 [mcp-clients]: https://modelcontextprotocol.io/clients
 [mcp-transports]: https://modelcontextprotocol.io/docs/concepts/architecture#transport-layer
+[nsopenpanel]: https://developer.apple.com/documentation/appkit/nsopenpanel
+[typedstream-blog-post]: https://chrissardegna.com/blog/reverse-engineering-apples-typedstream-format/
