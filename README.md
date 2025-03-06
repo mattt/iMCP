@@ -5,8 +5,8 @@
 </picture>
 
 iMCP is a macOS app for connecting your digital life with AI.
-It works with [Claude Desktop][claude-app] 
-and a [growing list of clients][mcp-clients] that support the 
+It works with [Claude Desktop][claude-app]
+and a [growing list of clients][mcp-clients] that support the
 [Model Context Protocol (MCP)][mcp].
 
 ## Capabilities
@@ -57,57 +57,57 @@ and a [growing list of clients][mcp-clients] that support the
 </table>
 
 > [!TIP]
-> Have a suggestion for a new capability? 
+> Have a suggestion for a new capability?
 > Reach out to us at <imcp@loopwork.com>
 
 ## Getting Started
 
 ### Download and open the app
 
-First, [download the iMCP app](https://github.com/loopwork-ai/iMCP/releases/latest) 
+First, [download the iMCP app](https://github.com/loopwork-ai/iMCP/releases/latest)
 (requires macOS 15 or later).
 
 <img align="right" width="344" src="/Assets/imcp-screenshot-first-launch.png" alt="Screenshot of iMCP on first launch" />
 
 When you open the app,
-you'll see a 
+you'll see a
 <img style="display: inline" width="20" height="16" src="/Assets/icon.svg" />
 icon in your menu bar.
 
-Clicking on this icon reveals the iMCP menu, 
-which displays all available services. 
-Initially, all services will appear in gray, 
+Clicking on this icon reveals the iMCP menu,
+which displays all available services.
+Initially, all services will appear in gray,
 indicating they're inactive.
 
-The blue toggle switch at the top indicates that the MCP server is running 
+The blue toggle switch at the top indicates that the MCP server is running
 and ready to connect with MCP-compatible clients.
 
 <br clear="all">
 
 <img align="right" width="372" src="/Assets/imcp-screenshot-grant-permission.png" alt="Screenshot of macOS permission dialog" />
 
-> [!IMPORTANT]
-> iMCP **does not** collect or store any of your data.
-> Clients like Claude Desktop _do_ send 
-> your data off device as part of tool calls. 
-
 ### Activate services
 
-To activate a service, click on its icon. 
+To activate a service, click on its icon.
 The system will prompt you with a permission dialog.
 For example, when activating Calendar access, you'll see a dialog asking `"iMCP" Would Like Full Access to Your Calendar`.
 Click <kbd>Allow Full Access</kbd> to continue.
+
+> [!IMPORTANT]
+> iMCP **does not** collect or store any of your data.
+> Clients like Claude Desktop _do_ send
+> your data off device as part of tool calls.
 
 <br clear="all">
 
 <img align="right" width="344" src="/Assets/imcp-screenshot-all-services-active.png" alt="Screenshot of iMCP with all services enabled" />
 
 Once activated,
-each service icons goes from gray to their distinctive colors — 
+each service icons goes from gray to their distinctive colors —
 red for Calendar, green for Messages, blue for Location, and so on.
 
 Repeat this process for all of the capabilities you'd like to enable.
-These permissions follow Apple's standard security model, 
+These permissions follow Apple's standard security model,
 giving you complete control over what information iMCP can access.
 
 <!-- <br clear="all"> -->
@@ -118,39 +118,60 @@ giving you complete control over what information iMCP can access.
 
 ### Connect to Claude Desktop
 
-If you don't have Claude Desktop installed, [you can download it here.](https://claude.ai/download)
+If you don't have Claude Desktop installed,
+you can [download it here](https://claude.ai/download).
 
-Before you can enable MCP servers in Claude Desktop, you'll need to enable Developer Mode under `Settings...`.
+Open Claude Desktop and go to "Settings... (<kbd>⌘</kbd><kbd>,</kbd>)".
+Click on "Developer" in the sidebar of the Settings pane,
+and then click on "Edit Config".
+This will create a configuration file at
+`~/Library/Application Support/Claude/claude_desktop_config.json`.
+
+<br/>
 
 To connect iMCP to Claude Desktop,
-click <img style="display: inline" width="20" height="16" src="/Assets/icon.svg" /> > "Configure Claude Desktop" in the iMCP menu.
-
-You'll be prompted to open the Claude Desktop configuration file
-(`~/Library/Application Support/Claude/claude_desktop_config.json`).
+click <img style="display: inline" width="20" height="16" src="/Assets/icon.svg" />
+\> "Configure Claude Desktop".
 
 This will add or update the MCP server configuration to use the
-`imcp-server` executable bundled in the application. 
+`imcp-server` executable bundled in the application.
 Other MCP server configurations in the file will be preserved.
 
-### Open Claude Desktop
+<details>
+<summary>You can also configure Claude Desktop manually</summary>
 
-Open the Claude Desktop app.
+Click <img style="display: inline" width="20" height="16" src="/Assets/icon.svg" />
+\> "Copy server command to clipboard".
+Then open `claude_desktop_config.json` in your editor
+and enter the following:
+
+```json
+{
+  "mcpServers" : {
+    "iMCP" : {
+      "command" : "{paste iMCP server command}"
+    }
+  }
+}
+```
+</details>
+
+<img align="right" width="372" src="/Assets/imcp-screenshot-approve-connection.png" />
+
+### Call iMCP tools from Claude Desktop
+
+Quit and reopen the Claude Desktop app.
 You'll be prompted to approve the connection.
 
-> [!NOTE]  
-> In the case of Claude Desktop specifically, 
-> you may see this dialog twice;
+> [!NOTE]
+> You may see this dialog twice;
 > click approve both times.
 
 <br clear="all">
 
-<!-- <p align="center">
-  <img width="372" src="/Assets/imcp-screenshot-approve-connection.png" />
-</p> -->
-
-After approving the connection, 
-you should now see 🔨12 in the bottom right corner of your chat box. 
-Click on that to see a list of all the tools made available to Claude 
+After approving the connection,
+you should now see 🔨12 in the bottom right corner of your chat box.
+Click on that to see a list of all the tools made available to Claude
 by iMCP.
 
 <p align="center">
@@ -158,7 +179,7 @@ by iMCP.
 </p>
 
 Now you can ask Claude questions that require access to your personal data,
-such as: 
+such as:
 > "How's the weather where I am?"
 
 Claude will use the appropriate tools to retrieve this information,
@@ -178,9 +199,9 @@ without requiring you to manually share this data during your conversation.
   Ashwin Bhat
   ([@ashwin-ant](https://github.com/ashwin-ant))
   for their work on MCP.
-- [Christopher Sardegna](https://chrissardegna.com) 
+- [Christopher Sardegna](https://chrissardegna.com)
   ([@ReagentX](https://github.com/ReagentX))
-  for reverse-engineering the `typedstream` format 
+  for reverse-engineering the `typedstream` format
   used by the Messages app.
 
 ## License
@@ -193,4 +214,4 @@ This project is not affiliated with, endorsed, or sponsored by Apple Inc.
 
 [claude-app]: https://claude.ai/download
 [mcp]: https://modelcontextprotocol.io/introduction
-[mcp-cients]: https://modelcontextprotocol.io/clients
+[mcp-clients]: https://modelcontextprotocol.io/clients
