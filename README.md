@@ -87,8 +87,8 @@ and ready to connect with MCP-compatible clients.
 <img align="right" width="372" src="/Assets/imcp-screenshot-grant-permission.png" alt="Screenshot of macOS permission dialog" />
 
 > [!IMPORTANT]
-> iMCP _does not_ collect or store any of your data 
-> but MCP clients like Claude Desktop _do_ send 
+> iMCP **does not** collect or store any of your data.
+> Clients like Claude Desktop _do_ send 
 > your data off device as part of tool calls. 
 
 ### Activate services
