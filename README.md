@@ -128,12 +128,31 @@ This will create a configuration file at
 `~/Library/Application Support/Claude/claude_desktop_config.json`.
 
 To connect iMCP to Claude Desktop,
-click <img style="display: inline" width="20" height="16" src="/Assets/icon.svg" /> 
+click <img style="display: inline" width="20" height="16" src="/Assets/icon.svg" />
 \> "Configure Claude Desktop".
 
 This will add or update the MCP server configuration to use the
-`imcp-server` executable bundled in the application. 
+`imcp-server` executable bundled in the application.
 Other MCP server configurations in the file will be preserved.
+
+<details>
+<summary>You can also configure Claude Desktop manually</summary>
+
+Click <img style="display: inline" width="20" height="16" src="/Assets/icon.svg" />
+\> "Copy server command to clipboard".
+Then open `claude_desktop_config.json` in your editor
+and enter the following:
+
+```json
+{
+  "mcpServers" : {
+    "iMCP" : {
+      "command" : "{paste iMCP server command}"
+    }
+  }
+}
+```
+</details>
 
 ### Open Claude Desktop
 
