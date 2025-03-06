@@ -89,7 +89,7 @@ and ready to connect with MCP-compatible clients.
 > [!IMPORTANT]
 > iMCP _does not_ collect or store any of your data 
 > but MCP clients like Claude Desktop _do_ send 
-> your data as part of tool calls. 
+> your data off device as part of tool calls. 
 
 ### Activate services
 
@@ -171,9 +171,9 @@ without requiring you to manually share this data during your conversation.
 
 ### Connect to Cursor
 
-Navigate to Cursor's Settings... > Cursor Settings > MCP  and click  "+ Add New MCP Server."
+Navigate to Cursor's Settings... > Cursor Settings > MCP  and click  <kbd>+ Add New MCP Server</kbd>
 
-You can name the server "iMCP" and leave it as type "Command". To get the Command, click on the iMCP menu icon <img style="display: inline" width="20" height="16" src="/Assets/icon.svg" /> > "Copy server command to clipboard" and then paste the command from your clipboard into the "Command" field. It will look something like:
+You can name the server "iMCP" and leave it as type "Command". To get the Command, click on the iMCP menu icon (<img style="display: inline" width="20" height="16" src="/Assets/icon.svg" />) > "Copy server command to clipboard" and then paste the command from your clipboard into the "Command" field. It will look something like:
 
 > /private/var/folders/...A BUNCH OF UNIQUE STUFF... /MacOS/imcp-server
 
