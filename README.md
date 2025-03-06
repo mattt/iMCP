@@ -5,8 +5,8 @@
 </picture>
 
 iMCP is a macOS app for connecting your digital life with AI.
-It works with [Claude Desktop][claude-app], [Cursor][cursor-app], 
-and a growing list of clients that support the 
+It works with [Claude Desktop][claude-app] 
+and a [growing list of clients][mcp-clients] that support the 
 [Model Context Protocol (MCP)][mcp].
 
 ## Capabilities
@@ -192,5 +192,5 @@ This project is licensed under the Apache License, Version 2.0.
 This project is not affiliated with, endorsed, or sponsored by Apple Inc.
 
 [claude-app]: https://claude.ai/download
-[cursor-app]: https://www.cursor.com
 [mcp]: https://modelcontextprotocol.io/introduction
+[mcp-cients]: https://modelcontextprotocol.io/clients
