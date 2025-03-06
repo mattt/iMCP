@@ -156,6 +156,8 @@ and enter the following:
 ```
 </details>
 
+<img align="right" width="372" src="/Assets/imcp-screenshot-approve-connection.png" />
+
 ### Call iMCP tools from Claude Desktop
 
 Quit and reopen the Claude Desktop app.
@@ -166,10 +168,6 @@ You'll be prompted to approve the connection.
 > click approve both times.
 
 <br clear="all">
-
-<!-- <p align="center">
-  <img width="372" src="/Assets/imcp-screenshot-approve-connection.png" />
-</p> -->
 
 After approving the connection,
 you should now see 🔨12 in the bottom right corner of your chat box.
