@@ -127,6 +127,8 @@ and then click on "Edit Config".
 This will create a configuration file at
 `~/Library/Application Support/Claude/claude_desktop_config.json`.
 
+<br/>
+
 To connect iMCP to Claude Desktop,
 click <img style="display: inline" width="20" height="16" src="/Assets/icon.svg" />
 \> "Configure Claude Desktop".
@@ -154,14 +156,13 @@ and enter the following:
 ```
 </details>
 
-### Open Claude Desktop
+### Call iMCP tools from Claude Desktop
 
-Open the Claude Desktop app.
+Quit and reopen the Claude Desktop app.
 You'll be prompted to approve the connection.
 
 > [!NOTE]
-> In the case of Claude Desktop specifically,
-> you may see this dialog twice;
+> You may see this dialog twice;
 > click approve both times.
 
 <br clear="all">
