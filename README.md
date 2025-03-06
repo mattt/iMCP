@@ -86,6 +86,11 @@ and ready to connect with MCP-compatible clients.
 
 <img align="right" width="372" src="/Assets/imcp-screenshot-grant-permission.png" alt="Screenshot of macOS permission dialog" />
 
+> [!IMPORTANT]
+> iMCP _does not_ collect or store any of your data 
+> but MCP clients like Claude Desktop _do_ send 
+> your data as part of tool calls. 
+
 ### Activate services
 
 To activate a service, click on its icon. 
@@ -113,8 +118,12 @@ giving you complete control over what information iMCP can access.
 
 ### Connect to Claude Desktop
 
+If you don't have Claude Desktop installed, [you can download it here.](https://claude.ai/download)
+
+Before you can enable MCP servers in Claude Desktop, you'll need to enable Developer Mode under `Settings...`.
+
 To connect iMCP to Claude Desktop,
-click "Configure Claude Desktop".
+click <img style="display: inline" width="20" height="16" src="/Assets/icon.svg" /> > "Configure Claude Desktop" in the iMCP menu.
 
 You'll be prompted to open the Claude Desktop configuration file
 (`~/Library/Application Support/Claude/claude_desktop_config.json`).
@@ -159,6 +168,15 @@ without requiring you to manually share this data during your conversation.
 <p align="center">
   <img width="738" src="/Assets/claude-desktop-screenshot-message.png" alt="Screenshot of Claude response to user message 'How's the weather where I am?'" />
 </p>
+
+### Connect to Cursor
+
+Navigate to Cursor's Settings... > Cursor Settings > MCP  and click  "+ Add New MCP Server."
+
+You can name the server "iMCP" and leave it as type "Command". To get the Command, click on the iMCP menu icon <img style="display: inline" width="20" height="16" src="/Assets/icon.svg" /> > "Copy server command to clipboard" and then paste the command from your clipboard into the "Command" field. It will look something like:
+
+> /private/var/folders/...A BUNCH OF UNIQUE STUFF... /MacOS/imcp-server
+
 
 ## Acknowledgments
 
