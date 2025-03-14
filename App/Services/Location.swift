@@ -28,7 +28,8 @@ final class LocationService: NSObject, Service, CLLocationManagerDelegate {
         // Check authorization status first to avoid any permission prompts
         let status = locationManager.authorizationStatus
         if (status == .authorizedAlways) && 
-           CLLocationManager.locationServicesEnabled() {
+           CLLocationManager.locationServicesEnabled() 
+        {
             log.debug("Starting location updates with existing authorization...")
             locationManager.startUpdatingLocation()
         }
