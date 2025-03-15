@@ -42,8 +42,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/loopwork-ai/Ontology",
       "state" : {
-        "revision" : "194ff185b10b8522b6cae3d1fdfe9bfb60c963ca",
-        "version" : "0.3.1"
+        "revision" : "d2dd34cd418afcfb82ee8fd66e923490ce805071",
+        "version" : "0.4.0"
       }
     },
     {

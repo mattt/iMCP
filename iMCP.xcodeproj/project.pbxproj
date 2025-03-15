@@ -529,7 +529,7 @@
 			repositoryURL = "https://github.com/loopwork-ai/Ontology";
 			requirement = {
 				kind = upToNextMajorVersion;
-				minimumVersion = 0.3.1;
+				minimumVersion = 0.4.0;
 			};
 		};
 		F88358302D649DB4000317CD /* XCRemoteSwiftPackageReference "mcp-swift-sdk" */ = {
