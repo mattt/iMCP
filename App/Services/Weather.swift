@@ -1,5 +1,6 @@
 import CoreLocation
 import Foundation
+import Ontology
 import OSLog
 import WeatherKit
 
@@ -25,7 +26,7 @@ final class WeatherService: Service {
                     ],
                 ],
             ]
-        ) { arguments -> Value in
+        ) { arguments in
             guard case let .double(latitude) = arguments["latitude"],
                 case let .double(longitude) = arguments["longitude"]
             else {
@@ -44,30 +45,7 @@ final class WeatherService: Service {
             let currentWeather = try await weatherService.weather(
                 for: location, including: .current)
 
-            // Extract the relevant information
-            let temperature = currentWeather.temperature
-            let tempC = temperature.converted(to: .celsius).value
-
-            let windSpeed = currentWeather.wind.speed
-            let windSpeedKMH = windSpeed.converted(to: .kilometersPerHour).value
-
-            let condition = currentWeather.condition.description
-
-            return [
-                "@context": "https://schema.org",
-                "@type": "WeatherObservation",
-                "temperature": [
-                    "@type": "QuantitativeValue",
-                    "value": .double(tempC),
-                    "unitCode": "CEL",
-                ],
-                "windSpeed": [
-                    "@type": "QuantitativeValue",
-                    "value": .double(windSpeedKMH),
-                    "unitCode": "KMH",
-                ],
-                "condition": .string(condition),
-            ]
+            return WeatherConditions(currentWeather)
         }
     }
 }
