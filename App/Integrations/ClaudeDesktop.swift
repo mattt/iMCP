@@ -9,7 +9,7 @@ private let configBookmarkKey = "com.loopwork.iMCP.claudeConfigBookmark"
 
 private let jsonEncoder: JSONEncoder = {
     let encoder = JSONEncoder()
-    encoder.outputFormatting = [.prettyPrinted, .withoutEscapingSlashes]
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
     return encoder
 }()
 

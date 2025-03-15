@@ -17,9 +17,7 @@ public struct Tool: Sendable {
         self.inputSchema = inputSchema
         self.implementation = { input in
             let result = try await implementation(input)
-            let encoder = JSONEncoder()
-            let data = try encoder.encode(result)
-            
+            let data = try JSONEncoder().encode(result)
             let decoder = JSONDecoder()
             return try decoder.decode(Value.self, from: data)
         }
