@@ -232,8 +232,14 @@ actor ServerNetworkManager {
                             with: params.arguments ?? [:]
                         ) {
                             log.notice("Tool \(params.name) executed successfully")
-                            let data = try JSONEncoder().encode(value)
+                            let encoder = JSONEncoder()
+                            encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+                            
+                            let data = try encoder.encode(value)
+                            
+                            
                             let text = String(data: data, encoding: .utf8)!
+                            
                             return CallTool.Result(content: [.text(text)], isError: false)
                         }
                     } catch {
