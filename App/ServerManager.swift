@@ -21,6 +21,10 @@ final class ServerUIHandler: ObservableObject {
     @Published var serverStatus: String = "Starting..."
     @Published var pendingConnectionID: String?
 
+    // Add tracking for active approval dialogs
+    private var activeApprovalDialogs: Set<String> = []
+    private var pendingApprovals: [(String, () -> Void, () -> Void)] = []
+
     // Network manager reference
     private var networkManager: ServerNetworkManager?
 
@@ -39,6 +43,15 @@ final class ServerUIHandler: ObservableObject {
         log.notice("Connection approval requested for client: \(clientID)")
         self.pendingConnectionID = clientID
 
+        // Check if there's already an active dialog for this client
+        guard !activeApprovalDialogs.contains(clientID) else {
+            log.info("Adding to pending approvals for client: \(clientID)")
+            pendingApprovals.append((clientID, approve, deny))
+            return
+        }
+
+        activeApprovalDialogs.insert(clientID)
+
         let alert = NSAlert()
         alert.messageText = "Client Connection Request"
         alert.informativeText =
@@ -50,7 +63,10 @@ final class ServerUIHandler: ObservableObject {
         NSApp.activate(ignoringOtherApps: true)
 
         let response = alert.runModal()
-        if response == .alertFirstButtonReturn {
+        let approved = response == .alertFirstButtonReturn
+
+        // Handle the current approval
+        if approved {
             log.notice("Connection approved for client: \(clientID)")
             approve()
         } else {
@@ -58,6 +74,19 @@ final class ServerUIHandler: ObservableObject {
             deny()
         }
 
+        // Handle any pending approvals for the same client
+        while let pendingIndex = pendingApprovals.firstIndex(where: { $0.0 == clientID }) {
+            let (_, pendingApprove, pendingDeny) = pendingApprovals.remove(at: pendingIndex)
+            if approved {
+                log.notice("Approving pending connection for client: \(clientID)")
+                pendingApprove()
+            } else {
+                log.notice("Denying pending connection for client: \(clientID)")
+                pendingDeny()
+            }
+        }
+
+        activeApprovalDialogs.remove(clientID)
         log.debug("Clearing pending connection")
         self.pendingConnectionID = nil
     }
