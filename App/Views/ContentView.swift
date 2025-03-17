@@ -4,7 +4,7 @@ import MenuBarExtraAccess
 import SwiftUI
 
 struct ContentView: View {
-    @ObservedObject var serverManager: ServerManager
+    @ObservedObject var serverController: ServerController
     @Binding var isEnabled: Bool
     @Binding var isMenuPresented: Bool
 
@@ -18,9 +18,11 @@ struct ContentView: View {
     @AppStorage("weatherEnabled") private var weatherEnabled = false
 
     init(
-        serverManager: ServerManager, isEnabled: Binding<Bool>, isMenuPresented: Binding<Bool>
+        serverManager: ServerController,
+        isEnabled: Binding<Bool>,
+        isMenuPresented: Binding<Bool>
     ) {
-        self.serverManager = serverManager
+        self.serverController = serverManager
         self._isEnabled = isEnabled
         self._isMenuPresented = isMenuPresented
         self.aboutWindowController = AboutWindowController()
@@ -96,7 +98,7 @@ struct ContentView: View {
             }
             .onChange(of: isEnabled, initial: true) {
                 Task {
-                    await serverManager.setEnabled(isEnabled)
+                    await serverController.setEnabled(isEnabled)
                 }
             }
 
@@ -113,7 +115,7 @@ struct ContentView: View {
                     remindersEnabled, utilitiesEnabled, weatherEnabled
                 ]) {
                     Task {
-                        await serverManager.updateServiceBindings(serviceBindings)
+                        await serverController.updateServiceBindings(serviceBindings)
                     }
                 }
                 .transition(.opacity.combined(with: .move(edge: .top)))
@@ -149,7 +151,7 @@ struct ContentView: View {
         }
         .task {
             // Initial update of service bindings
-            await serverManager.updateServiceBindings(serviceBindings)
+            await serverController.updateServiceBindings(serviceBindings)
         }
     }
 }
