@@ -18,21 +18,17 @@ private let log = Logger.server
 
 @MainActor
 final class ServerController: ObservableObject {
-    // The UI handler is the observable object that SwiftUI will use
-    @Published var uiHandler: ServerUIHandler
+    @Published var serverStatus: String = "Starting..."
+    @Published var pendingConnectionID: String?
 
-    // The network manager handles all the network operations
+    private var activeApprovalDialogs: Set<String> = []
+    private var pendingApprovals: [(String, () -> Void, () -> Void)] = []
+
     private let networkManager: ServerNetworkManager
 
     init() {
-        // Create the UI handler first (on the main actor)
-        self.uiHandler = ServerUIHandler()
-
         // Create the network manager with empty initial bindings
         self.networkManager = try! ServerNetworkManager(serviceBindings: [:])
-
-        // Set the network manager in the UI handler
-        self.uiHandler.setNetworkManager(self.networkManager)
 
         // Set up the connection approval handler
         Task {
@@ -48,7 +44,7 @@ final class ServerController: ObservableObject {
                 // Create a continuation to wait for the user's response
                 return await withCheckedContinuation { continuation in
                     Task { @MainActor in
-                        self.uiHandler.showConnectionApprovalAlert(
+                        self.showConnectionApprovalAlert(
                             clientID: clientInfo.name,
                             approve: {
                                 continuation.resume(returning: true)
@@ -65,7 +61,7 @@ final class ServerController: ObservableObject {
         // Start the server
         Task {
             await self.networkManager.start()
-            self.uiHandler.updateServerStatus("Running")
+            self.updateServerStatus("Running")
         }
     }
 
@@ -73,51 +69,30 @@ final class ServerController: ObservableObject {
         await networkManager.updateServiceBindings(bindings)
     }
 
-    // Expose the UI properties directly for convenience
-    var serverStatus: String { uiHandler.serverStatus }
-    var pendingConnectionID: String? { uiHandler.pendingConnectionID }
-
     // Start and stop the server
     func startServer() async {
         await networkManager.start()
-        uiHandler.updateServerStatus("Running")
+        updateServerStatus("Running")
     }
 
     func stopServer() async {
         await networkManager.stop()
-        uiHandler.updateServerStatus("Stopped")
+        updateServerStatus("Stopped")
     }
 
     // Update the enabled state
     func setEnabled(_ enabled: Bool) async {
         await networkManager.setEnabled(enabled)
-        uiHandler.updateServerStatus(enabled ? "Running" : "Disabled")
-    }
-}
-
-
-@MainActor
-final class ServerUIHandler: ObservableObject {
-    @Published var serverStatus: String = "Starting..."
-    @Published var pendingConnectionID: String?
-
-    // Add tracking for active approval dialogs
-    private var activeApprovalDialogs: Set<String> = []
-    private var pendingApprovals: [(String, () -> Void, () -> Void)] = []
-
-    // Network manager reference
-    private var networkManager: ServerNetworkManager?
-
-    func setNetworkManager(_ manager: ServerNetworkManager) {
-        self.networkManager = manager
+        updateServerStatus(enabled ? "Running" : "Disabled")
     }
 
-    func updateServerStatus(_ status: String) {
+    // UI Handler methods (moved from ServerUIHandler)
+    private func updateServerStatus(_ status: String) {
         log.info("Server status updated: \(status)")
         self.serverStatus = status
     }
 
-    func showConnectionApprovalAlert(
+    private func showConnectionApprovalAlert(
         clientID: String, approve: @escaping () -> Void, deny: @escaping () -> Void
     ) {
         log.notice("Connection approval requested for client: \(clientID)")
@@ -525,4 +500,3 @@ actor ServerNetworkManager {
         }
     }
 }
-
