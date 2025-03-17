@@ -1,20 +1,6 @@
 import MacControlCenterUI
 import SwiftUI
 
-struct ServiceConfig {
-    let name: String
-    let iconName: String
-    let color: Color
-    let service: any Service
-    let binding: Binding<Bool>
-
-    var isActivated: Bool {
-        get async {
-            await service.isActivated
-        }
-    }
-}
-
 struct ServiceToggleView: View {
     let config: ServiceConfig
     @State private var isServiceActivated = false

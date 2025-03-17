@@ -17,6 +17,25 @@ struct ContentView: View {
     @AppStorage("utilitiesEnabled") private var utilitiesEnabled = true
     @AppStorage("weatherEnabled") private var weatherEnabled = false
 
+    private var serviceConfigs: [ServiceConfig] {
+        ServiceRegistry.configureServices(
+            calendarEnabled: $calendarEnabled,
+            contactsEnabled: $contactsEnabled,
+            locationEnabled: $locationEnabled,
+            messagesEnabled: $messagesEnabled,
+            remindersEnabled: $remindersEnabled,
+            utilitiesEnabled: $utilitiesEnabled,
+            weatherEnabled: $weatherEnabled
+        )
+    }
+
+    private var serviceBindings: [String: Binding<Bool>] {
+        Dictionary(
+            uniqueKeysWithValues: serviceConfigs.map {
+                ($0.id, $0.binding)
+            })
+    }
+
     init(
         serverManager: ServerController,
         isEnabled: Binding<Bool>,
@@ -26,65 +45,6 @@ struct ContentView: View {
         self._isEnabled = isEnabled
         self._isMenuPresented = isMenuPresented
         self.aboutWindowController = AboutWindowController()
-    }
-
-    private var serviceConfigs: [ServiceConfig] {
-        [
-            ServiceConfig(
-                name: "Calendar",
-                iconName: "calendar",
-                color: .red,
-                service: CalendarService.shared,
-                binding: $calendarEnabled
-            ),
-            ServiceConfig(
-                name: "Contacts",
-                iconName: "person.crop.square.filled.and.at.rectangle.fill",
-                color: .brown,
-                service: ContactsService.shared,
-                binding: $contactsEnabled
-            ),
-            ServiceConfig(
-                name: "Location",
-                iconName: "location.fill",
-                color: .blue,
-                service: LocationService.shared,
-                binding: $locationEnabled
-            ),
-            ServiceConfig(
-                name: "Messages",
-                iconName: "message.fill",
-                color: .green,
-                service: MessageService.shared,
-                binding: $messagesEnabled
-            ),
-            ServiceConfig(
-                name: "Reminders",
-                iconName: "list.bullet",
-                color: .orange,
-                service: RemindersService.shared,
-                binding: $remindersEnabled
-            ),
-            ServiceConfig(
-                name: "Weather",
-                iconName: "cloud.sun.fill",
-                color: .cyan,
-                service: WeatherService.shared,
-                binding: $weatherEnabled
-            ),
-        ]
-    }
-
-    private var serviceBindings: [String: Binding<Bool>] {
-        [
-            "CalendarService": $calendarEnabled,
-            "ContactsService": $contactsEnabled,
-            "LocationService": $locationEnabled,
-            "MessageService": $messagesEnabled,
-            "RemindersService": $remindersEnabled,
-            "UtilitiesService": $utilitiesEnabled,
-            "WeatherService": $weatherEnabled
-        ]
     }
 
     var body: some View {
@@ -106,14 +66,11 @@ struct ContentView: View {
                 Group {
                     MenuSection("Services")
 
-                    ForEach(serviceConfigs, id: \.name) { config in
+                    ForEach(serviceConfigs) { config in
                         ServiceToggleView(config: config)
                     }
                 }
-                .onChange(of: [
-                    calendarEnabled, contactsEnabled, locationEnabled, messagesEnabled,
-                    remindersEnabled, utilitiesEnabled, weatherEnabled
-                ]) {
+                .onChange(of: serviceConfigs.map { $0.binding.wrappedValue }) { _ in
                     Task {
                         await serverController.updateServiceBindings(serviceBindings)
                     }
@@ -132,7 +89,7 @@ struct ContentView: View {
                 let command = Bundle.main.bundleURL
                     .appendingPathComponent("Contents/MacOS/imcp-server")
                     .path
-                
+
                 let pasteboard = NSPasteboard.general
                 pasteboard.clearContents()
                 pasteboard.setString(command, forType: .string)
@@ -150,7 +107,6 @@ struct ContentView: View {
             }
         }
         .task {
-            // Initial update of service bindings
             await serverController.updateServiceBindings(serviceBindings)
         }
     }

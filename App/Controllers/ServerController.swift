@@ -16,6 +16,103 @@ private let serviceDomain = "local."
 
 private let log = Logger.server
 
+struct ServiceConfig: Identifiable {
+    let id: String
+    let name: String
+    let iconName: String
+    let color: Color
+    let service: any Service
+    let binding: Binding<Bool>
+
+    var isActivated: Bool {
+        get async {
+            await service.isActivated
+        }
+    }
+
+    init(
+        name: String,
+        iconName: String,
+        color: Color,
+        service: any Service,
+        binding: Binding<Bool>
+    ) {
+        self.id = String(describing: type(of: service))
+        self.name = name
+        self.iconName = iconName
+        self.color = color
+        self.service = service
+        self.binding = binding
+    }
+}
+
+enum ServiceRegistry {
+    static let services: [any Service] = [
+        CalendarService.shared,
+        ContactsService.shared,
+        LocationService.shared,
+        MessageService.shared,
+        RemindersService.shared,
+        UtilitiesService.shared,
+        WeatherService.shared,
+    ]
+
+    static func configureServices(
+        calendarEnabled: Binding<Bool>,
+        contactsEnabled: Binding<Bool>,
+        locationEnabled: Binding<Bool>,
+        messagesEnabled: Binding<Bool>,
+        remindersEnabled: Binding<Bool>,
+        utilitiesEnabled: Binding<Bool>,
+        weatherEnabled: Binding<Bool>
+    ) -> [ServiceConfig] {
+        [
+            ServiceConfig(
+                name: "Calendar",
+                iconName: "calendar",
+                color: .red,
+                service: CalendarService.shared,
+                binding: calendarEnabled
+            ),
+            ServiceConfig(
+                name: "Contacts",
+                iconName: "person.crop.square.filled.and.at.rectangle.fill",
+                color: .brown,
+                service: ContactsService.shared,
+                binding: contactsEnabled
+            ),
+            ServiceConfig(
+                name: "Location",
+                iconName: "location.fill",
+                color: .blue,
+                service: LocationService.shared,
+                binding: locationEnabled
+            ),
+            ServiceConfig(
+                name: "Messages",
+                iconName: "message.fill",
+                color: .green,
+                service: MessageService.shared,
+                binding: messagesEnabled
+            ),
+            ServiceConfig(
+                name: "Reminders",
+                iconName: "list.bullet",
+                color: .orange,
+                service: RemindersService.shared,
+                binding: remindersEnabled
+            ),
+            ServiceConfig(
+                name: "Weather",
+                iconName: "cloud.sun.fill",
+                color: .cyan,
+                service: WeatherService.shared,
+                binding: weatherEnabled
+            ),
+        ]
+    }
+}
+
 @MainActor
 final class ServerController: ObservableObject {
     @Published var serverStatus: String = "Starting..."
@@ -24,12 +121,9 @@ final class ServerController: ObservableObject {
     private var activeApprovalDialogs: Set<String> = []
     private var pendingApprovals: [(String, () -> Void, () -> Void)] = []
 
-    private let networkManager: ServerNetworkManager!
+    private let networkManager = ServerNetworkManager()
 
     init() {
-        // Create the network manager with empty initial bindings
-        self.networkManager = try! ServerNetworkManager(serviceBindings: [:])
-
         Task {
             await self.networkManager.start()
             self.updateServerStatus("Running")
@@ -150,25 +244,14 @@ actor ServerNetworkManager {
     private var pendingConnections: [UUID: String] = [:]
     private var mcpServers: [UUID: MCP.Server] = [:]
 
-    // Connection approval handler
     typealias ConnectionApprovalHandler = @Sendable (UUID, MCP.Client.Info) async -> Bool
     private var connectionApprovalHandler: ConnectionApprovalHandler?
 
-    private let services: [any Service] = [
-        CalendarService.shared,
-        ContactsService.shared,
-        LocationService.shared,
-        MessageService.shared,
-        RemindersService.shared,
-        UtilitiesService.shared,
-        WeatherService.shared,
-    ]
+    // Replace individual services array with ServiceRegistry
+    private let services = ServiceRegistry.services
+    private var serviceBindings: [String: Binding<Bool>] = [:]
 
-    // Service toggle bindings
-    private var serviceBindings: [String: Binding<Bool>]
-
-    init(serviceBindings: [String: Binding<Bool>]) throws {
-        self.serviceBindings = serviceBindings
+    init() {
         // Set up Bonjour service
         let parameters = NWParameters.tcp
         parameters.acceptLocalOnly = true
@@ -182,7 +265,7 @@ actor ServerNetworkManager {
         }
 
         // Create the listener with service discovery
-        listener = try NWListener(using: parameters)
+        listener = try! NWListener(using: parameters)
         listener.service = NWListener.Service(type: serviceType, domain: serviceDomain)
 
         // Set up browser for debugging/monitoring
@@ -373,21 +456,28 @@ actor ServerNetworkManager {
             return ListResources.Result(resources: [])
         }
 
-        // Register tools/list handler
+        // Update tools/list handler with proper actor isolation
         await server.withMethodHandler(ListTools.self) { [self] _ in
             log.debug("Handling ListTools request")
 
             var tools: [MCP.Tool] = []
             if await self.isEnabled {
                 for service in await self.services {
-                    for tool in service.tools {
-                        tools.append(
-                            .init(
-                                name: tool.name,
-                                description: tool.description,
-                                inputSchema: tool.inputSchema
+                    let serviceId = String(describing: type(of: service))
+
+                    // Get the binding value in an actor-safe way
+                    let isServiceEnabled = await serviceBindings[serviceId]?.wrappedValue ?? true
+                    if isServiceEnabled {
+                        for tool in service.tools {
+                            log.debug("Adding tool: \(tool.name)")
+                            tools.append(
+                                .init(
+                                    name: tool.name,
+                                    description: tool.description,
+                                    inputSchema: tool.inputSchema
+                                )
                             )
-                        )
+                        }
                     }
                 }
             }
@@ -396,21 +486,27 @@ actor ServerNetworkManager {
             return ListTools.Result(tools: tools)
         }
 
-        // Register tools/call handler
+        // Update tools/call handler with proper actor isolation
         await server.withMethodHandler(CallTool.self) { [self] params in
             log.notice("Tool call received: \(params.name)")
 
             guard await self.isEnabled else {
                 log.notice("Tool call rejected: iMCP is disabled")
                 return CallTool.Result(
-                    content: [
-                        .text("iMCP is currently disabled. Please enable it to use tools.")
-                    ],
+                    content: [.text("iMCP is currently disabled. Please enable it to use tools.")],
                     isError: true
                 )
             }
 
             for service in await self.services {
+                let serviceId = String(describing: type(of: service))
+
+                // Get the binding value in an actor-safe way
+                let isServiceEnabled = await serviceBindings[serviceId]?.wrappedValue ?? true
+                guard isServiceEnabled else {
+                    continue
+                }
+
                 do {
                     if let value = try await service.call(
                         tool: params.name,
@@ -419,17 +515,12 @@ actor ServerNetworkManager {
                         log.notice("Tool \(params.name) executed successfully")
                         let encoder = JSONEncoder()
                         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-
                         let data = try encoder.encode(value)
-
                         let text = String(data: data, encoding: .utf8)!
-
                         return CallTool.Result(content: [.text(text)], isError: false)
                     }
                 } catch {
-                    log.error(
-                        "Error executing tool \(params.name): \(error.localizedDescription)"
-                    )
+                    log.error("Error executing tool \(params.name): \(error.localizedDescription)")
                     return CallTool.Result(content: [.text("Error: \(error)")], isError: true)
                 }
             }
@@ -482,8 +573,9 @@ actor ServerNetworkManager {
 
     // Update service bindings
     func updateServiceBindings(_ newBindings: [String: Binding<Bool>]) {
-        log.info("Notifying clients of tool list update")
+        log.info("Updating service bindings")
         self.serviceBindings = newBindings
+
         // Notify clients that tool availability may have changed
         Task {
             for (_, server) in mcpServers {
