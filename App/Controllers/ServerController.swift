@@ -24,14 +24,16 @@ final class ServerController: ObservableObject {
     private var activeApprovalDialogs: Set<String> = []
     private var pendingApprovals: [(String, () -> Void, () -> Void)] = []
 
-    private let networkManager: ServerNetworkManager
+    private let networkManager: ServerNetworkManager!
 
     init() {
         // Create the network manager with empty initial bindings
         self.networkManager = try! ServerNetworkManager(serviceBindings: [:])
 
-        // Set up the connection approval handler
         Task {
+            await self.networkManager.start()
+            self.updateServerStatus("Running")
+
             await networkManager.setConnectionApprovalHandler {
                 [weak self] connectionID, clientInfo in
                 guard let self = self else {
@@ -57,19 +59,12 @@ final class ServerController: ObservableObject {
                 }
             }
         }
-
-        // Start the server
-        Task {
-            await self.networkManager.start()
-            self.updateServerStatus("Running")
-        }
     }
 
     func updateServiceBindings(_ bindings: [String: Binding<Bool>]) async {
         await networkManager.updateServiceBindings(bindings)
     }
 
-    // Start and stop the server
     func startServer() async {
         await networkManager.start()
         updateServerStatus("Running")
@@ -80,13 +75,11 @@ final class ServerController: ObservableObject {
         updateServerStatus("Stopped")
     }
 
-    // Update the enabled state
     func setEnabled(_ enabled: Bool) async {
         await networkManager.setEnabled(enabled)
         updateServerStatus(enabled ? "Running" : "Disabled")
     }
 
-    // UI Handler methods (moved from ServerUIHandler)
     private func updateServerStatus(_ status: String) {
         log.info("Server status updated: \(status)")
         self.serverStatus = status
@@ -367,7 +360,6 @@ actor ServerNetworkManager {
         }
     }
 
-    // New method to register all handlers after approval
     private func registerHandlers(for server: MCP.Server) async {
         // Register prompts/list handler
         await server.withMethodHandler(ListPrompts.self) { _ in
