@@ -456,29 +456,25 @@ final class ServerManager: ObservableObject {
     private let networkManager: ServerNetworkManager
 
     init() {
-        print("Initializing ServerManager")
-
         // Create the UI handler first (on the main actor)
         self.uiHandler = ServerUIHandler()
 
         // Create the network manager with empty initial bindings
         self.networkManager = try! ServerNetworkManager(serviceBindings: [:])
-        print("Network manager created")
 
         // Set the network manager in the UI handler
         self.uiHandler.setNetworkManager(self.networkManager)
 
         // Set up the connection approval handler
         Task {
-            print("Setting up connection approval handler")
             await networkManager.setConnectionApprovalHandler {
                 [weak self] connectionID, clientInfo in
                 guard let self = self else {
-                    print("Self is nil in approval handler, denying connection")
+                    log.debug("Self is nil in approval handler, denying connection")
                     return false
                 }
 
-                print("ServerManager: Approval handler called for client \(clientInfo.name)")
+                log.debug("ServerManager: Approval handler called for client \(clientInfo.name)")
 
                 // Create a continuation to wait for the user's response
                 return await withCheckedContinuation { continuation in
@@ -495,7 +491,6 @@ final class ServerManager: ObservableObject {
                     }
                 }
             }
-            print("Connection approval handler set")
         }
 
         // Start the server

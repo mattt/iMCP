@@ -150,28 +150,28 @@ actor StdioProxy {
     ) async {
         switch state {
         case .ready:
-            print("Connection established to \(endpoint)")
+            log.debug("Connection established to \(endpoint)")
             continuation?.resume()
         case .failed(let error):
-            print("Connection failed: \(error)")
+            log.debug("Connection failed: \(error)")
             if let continuation = continuation {
                 continuation.resume(throwing: error)
             }
             await stop()
         case .cancelled:
-            print("Connection cancelled")
+            log.debug("Connection cancelled")
             if let continuation = continuation {
                 continuation.resume(throwing: CancellationError())
             }
             await stop()
         case .waiting(let error):
-            print("Connection waiting: \(error)")
+            log.debug("Connection waiting: \(error)")
         case .preparing:
-            print("Connection preparing...")
+            log.debug("Connection preparing...")
         case .setup:
-            print("Connection setup...")
+            log.debug("Connection setup...")
         @unknown default:
-            print("Unknown connection state")
+            log.debug("Unknown connection state")
         }
     }
 
