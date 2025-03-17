@@ -42,7 +42,7 @@ final class ServerUIHandler: ObservableObject {
         let alert = NSAlert()
         alert.messageText = "Client Connection Request"
         alert.informativeText =
-            "A client is requesting to connect to the MCP server. Do you want to allow this connection?"
+            #"Allow "\#(clientID)" to connect to the MCP server?"#
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Allow")
         alert.addButton(withTitle: "Deny")
@@ -91,7 +91,7 @@ actor ServerNetworkManager {
     private var mcpServers: [UUID: MCP.Server] = [:]
 
     // Connection approval handler
-    typealias ConnectionApprovalHandler = @Sendable (UUID, String) async -> Bool
+    typealias ConnectionApprovalHandler = @Sendable (UUID, MCP.Client.Info) async -> Bool
     private var connectionApprovalHandler: ConnectionApprovalHandler?
 
     private let services: [any Service] = [
@@ -184,11 +184,6 @@ actor ServerNetworkManager {
             var tools: [MCP.Tool] = []
             if await self.isEnabled {
                 for service in await self.services {
-                    //                    let serviceKey = String(describing: type(of: service))
-                    //                    if let binding = await self.serviceBindings[serviceKey],
-                    //                        binding.wrappedValue,
-                    //                        await service.isActivated
-                    //                    {
                     for tool in service.tools {
                         tools.append(
                             .init(
@@ -198,7 +193,6 @@ actor ServerNetworkManager {
                             )
                         )
                     }
-                    //                    }
                 }
             }
 
@@ -221,34 +215,27 @@ actor ServerNetworkManager {
             }
 
             for service in await self.services {
-//                let serviceKey = String(describing: type(of: service))
-//                if let binding = await self.serviceBindings[serviceKey],
-//                    binding.wrappedValue,
-//                    await service.isActivated
-//                {
-                    do {
-                        if let value = try await service.call(
-                            tool: params.name,
-                            with: params.arguments ?? [:]
-                        ) {
-                            log.notice("Tool \(params.name) executed successfully")
-                            let encoder = JSONEncoder()
-                            encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-                            
-                            let data = try encoder.encode(value)
-                            
-                            
-                            let text = String(data: data, encoding: .utf8)!
-                            
-                            return CallTool.Result(content: [.text(text)], isError: false)
-                        }
-                    } catch {
-                        log.error(
-                            "Error executing tool \(params.name): \(error.localizedDescription)"
-                        )
-                        return CallTool.Result(content: [.text("Error: \(error)")], isError: true)
+                do {
+                    if let value = try await service.call(
+                        tool: params.name,
+                        with: params.arguments ?? [:]
+                    ) {
+                        log.notice("Tool \(params.name) executed successfully")
+                        let encoder = JSONEncoder()
+                        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+
+                        let data = try encoder.encode(value)
+
+                        let text = String(data: data, encoding: .utf8)!
+
+                        return CallTool.Result(content: [.text(text)], isError: false)
                     }
-//                }
+                } catch {
+                    log.error(
+                        "Error executing tool \(params.name): \(error.localizedDescription)"
+                    )
+                    return CallTool.Result(content: [.text("Error: \(error)")], isError: true)
+                }
             }
 
             log.error("Tool not found or service not enabled: \(params.name)")
@@ -265,14 +252,28 @@ actor ServerNetworkManager {
         Task {
             do {
                 log.notice("Starting MCP server for connection: \(connectionID)")
-                try await server.start(transport: transport)
-                log.notice(
-                    "MCP Server started successfully for connection: \(connectionID)")
+                try await server.start(transport: transport) { clientInfo, capabilities in
+                    log.info("Received initialize request from client: \(clientInfo.name)")
 
-                if !self.isEnabled {
-                    log.info("iMCP is disabled, notifying new client")
-                    try await server.notify(ToolListChangedNotification.message())
+                    // Request user approval
+                    var approved = false
+                    if let approvalHandler = await self.connectionApprovalHandler {
+                        approved = await approvalHandler(connectionID, clientInfo)
+                        log.info(
+                            "Approval result for connection \(connectionID): \(approved ? "Approved" : "Denied")"
+                        )
+                    }
+
+                    if !approved {
+                        await self._removeConnection(connectionID)
+                        throw MCP.Error.connectionClosed
+                    }
                 }
+                self.mcpServers[connectionID] = server
+                log.notice("MCP Server started successfully for connection: \(connectionID)")
+
+                // Register all handlers after successful approval
+                await self.registerHandlers(for: server)
             } catch {
                 log.error(
                     "Failed to start MCP server: \(error.localizedDescription)")
@@ -287,24 +288,6 @@ actor ServerNetworkManager {
 
         // Clean up the connection
         _removeConnection(connectionID)
-    }
-
-    // Debug method to test the connection approval flow
-    func testConnectionApproval(clientID: String) async -> Bool {
-        log.debug("Testing connection approval for client: \(clientID)")
-
-        let connectionID = UUID()
-        pendingConnections[connectionID] = clientID
-
-        guard let handler = connectionApprovalHandler else {
-            log.warning("No approval handler set, test failed")
-            return false
-        }
-
-        log.debug("Calling approval handler")
-        let result = await handler(connectionID, clientID)
-        log.info("Approval test result: \(result ? "Approved" : "Denied")")
-        return result
     }
 
     func start() async {
@@ -388,9 +371,6 @@ actor ServerNetworkManager {
         log.info("Handling new connection: \(connectionID)")
         connections[connectionID] = connection
 
-        let clientID = "client-\(connectionID.uuidString.prefix(8))"
-        pendingConnections[connectionID] = clientID
-
         // Set up connection state handler
         connection.stateUpdateHandler = { [weak self] state in
             switch state {
@@ -398,13 +378,14 @@ actor ServerNetworkManager {
                 log.debug("Connection ready")
                 Task {
                     if let self = self {
-                        await self.processConnection(
-                            connectionID: connectionID, clientID: clientID, connection: connection)
+                        await self.setupConnection(
+                            connectionID: connectionID,
+                            connection: connection
+                        )
                     }
                 }
             case .failed(let error):
                 log.error("Connection failed: \(error)")
-                // Use Task to handle actor-isolated property access
                 Task {
                     await self?._removeConnection(connectionID)
                 }
@@ -421,25 +402,129 @@ actor ServerNetworkManager {
         connection.start(queue: .main)
     }
 
-    // Process a new connection - identify client and request approval
-    private func processConnection(connectionID: UUID, clientID: String, connection: NWConnection)
-        async
-    {
-        log.info("Processing new connection: \(connectionID) for client: \(clientID)")
+    private func setupConnection(connectionID: UUID, connection: NWConnection) async {
+        let logger = Logger(label: "com.loopwork.mcp-server.\(connectionID)")
+        let transport = NetworkTransport(connection: connection, logger: logger)
 
-        var approved = false
-        if let approvalHandler = connectionApprovalHandler {
-            log.debug("Requesting approval for client: \(clientID)")
-            approved = await approvalHandler(connectionID, clientID)
-            log.info(
-                "Approval result for client \(clientID): \(approved ? "Approved" : "Denied")")
-        } else {
-            log.warning("No approval handler set, defaulting to denied")
+        // Create the MCP server
+        let server = MCP.Server(
+            name: Bundle.main.name ?? "iMCP",
+            version: Bundle.main.shortVersionString ?? "unknown",
+            capabilities: MCP.Server.Capabilities(
+                tools: .init(listChanged: true)
+            )
+        )
+
+        // Start the server
+        Task {
+            do {
+                log.notice("Starting MCP server for connection: \(connectionID)")
+                try await server.start(transport: transport) { clientInfo, capabilities in
+                    log.info("Received initialize request from client: \(clientInfo.name)")
+
+                    // Request user approval
+                    var approved = false
+                    if let approvalHandler = await self.connectionApprovalHandler {
+                        approved = await approvalHandler(connectionID, clientInfo)
+                        log.info(
+                            "Approval result for connection \(connectionID): \(approved ? "Approved" : "Denied")"
+                        )
+                    }
+
+                    if !approved {
+                        await self._removeConnection(connectionID)
+                        throw MCP.Error.connectionClosed
+                    }
+                }
+                self.mcpServers[connectionID] = server
+                log.notice("MCP Server started successfully for connection: \(connectionID)")
+            } catch {
+                log.error("Failed to start MCP server: \(error.localizedDescription)")
+                _removeConnection(connectionID)
+            }
+        }
+    }
+
+    // New method to register all handlers after approval
+    private func registerHandlers(for server: MCP.Server) async {
+        // Register prompts/list handler
+        await server.withMethodHandler(ListPrompts.self) { _ in
+            log.debug("Handling ListPrompts request")
+            return ListPrompts.Result(prompts: [])
         }
 
-        if !approved {
-            connection.cancel()
-            _removeConnection(connectionID)
+        // Register the resources/list handler
+        await server.withMethodHandler(ListResources.self) { _ in
+            log.debug("Handling ListResources request")
+            return ListResources.Result(resources: [])
+        }
+
+        // Register tools/list handler
+        await server.withMethodHandler(ListTools.self) { [self] _ in
+            log.debug("Handling ListTools request")
+
+            var tools: [MCP.Tool] = []
+            if await self.isEnabled {
+                for service in await self.services {
+                    for tool in service.tools {
+                        tools.append(
+                            .init(
+                                name: tool.name,
+                                description: tool.description,
+                                inputSchema: tool.inputSchema
+                            )
+                        )
+                    }
+                }
+            }
+
+            log.info("Returning \(tools.count) available tools")
+            return ListTools.Result(tools: tools)
+        }
+
+        // Register tools/call handler
+        await server.withMethodHandler(CallTool.self) { [self] params in
+            log.notice("Tool call received: \(params.name)")
+
+            guard await self.isEnabled else {
+                log.notice("Tool call rejected: iMCP is disabled")
+                return CallTool.Result(
+                    content: [
+                        .text("iMCP is currently disabled. Please enable it to use tools.")
+                    ],
+                    isError: true
+                )
+            }
+
+            for service in await self.services {
+                do {
+                    if let value = try await service.call(
+                        tool: params.name,
+                        with: params.arguments ?? [:]
+                    ) {
+                        log.notice("Tool \(params.name) executed successfully")
+                        let encoder = JSONEncoder()
+                        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+
+                        let data = try encoder.encode(value)
+
+                        let text = String(data: data, encoding: .utf8)!
+
+                        return CallTool.Result(content: [.text(text)], isError: false)
+                    }
+                } catch {
+                    log.error(
+                        "Error executing tool \(params.name): \(error.localizedDescription)"
+                    )
+                    return CallTool.Result(content: [.text("Error: \(error)")], isError: true)
+                }
+            }
+
+            log.error("Tool not found or service not enabled: \(params.name)")
+            return CallTool.Result(
+                content: [.text("Tool not found or service not enabled: \(params.name)")],
+                isError: true
+            )
         }
     }
 
@@ -520,23 +605,23 @@ final class ServerManager: ObservableObject {
         Task {
             print("Setting up connection approval handler")
             await networkManager.setConnectionApprovalHandler {
-                [weak self] connectionID, clientID in
+                [weak self] connectionID, clientInfo in
                 guard let self = self else {
                     print("Self is nil in approval handler, denying connection")
                     return false
                 }
 
-                print("ServerManager: Approval handler called for client \(clientID)")
+                print("ServerManager: Approval handler called for client \(clientInfo.name)")
 
                 // Create a continuation to wait for the user's response
                 return await withCheckedContinuation { continuation in
                     Task { @MainActor in
                         self.uiHandler.showConnectionApprovalAlert(
-                            clientID: clientID,
+                            clientID: clientInfo.name,
                             approve: {
                                 Task { @MainActor in
                                     self.uiHandler.approveConnection(
-                                        connectionID: connectionID, clientID: clientID)
+                                        connectionID: connectionID, clientID: clientInfo.name)
                                     continuation.resume(returning: true)
                                 }
                             },
@@ -577,12 +662,6 @@ final class ServerManager: ObservableObject {
     func stopServer() async {
         await networkManager.stop()
         uiHandler.updateServerStatus("Stopped")
-    }
-
-    // Test the connection approval flow
-    func testConnectionApproval(clientID: String) async -> Bool {
-        print("ServerManager: Testing connection approval for client: \(clientID)")
-        return await networkManager.testConnectionApproval(clientID: clientID)
     }
 
     // Update the enabled state
