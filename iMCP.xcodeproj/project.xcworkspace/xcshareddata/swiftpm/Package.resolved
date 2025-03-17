@@ -24,8 +24,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/loopwork-ai/mcp-swift-sdk",
       "state" : {
-        "revision" : "775425b140b99d3b077ed7efa5715768c82805b1",
-        "version" : "0.3.0"
+        "revision" : "c672358e7bd58e8304e6c53332b8f0cab611685d",
+        "version" : "0.4.2"
       }
     },
     {
