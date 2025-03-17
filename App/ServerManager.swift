@@ -58,11 +58,6 @@ final class ServerUIHandler: ObservableObject {
             deny()
         }
 
-        // Clear the pending connection ID after handling the response
-        self.clearPendingConnection()
-    }
-
-    func clearPendingConnection() {
         log.debug("Clearing pending connection")
         self.pendingConnectionID = nil
     }
