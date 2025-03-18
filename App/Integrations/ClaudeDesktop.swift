@@ -41,18 +41,19 @@ enum ClaudeDesktop {
             log.debug("Loading existing Claude Desktop configuration")
             let config = try loadConfig()
 
+            let fileExists = FileManager.default.fileExists(atPath: configPath)
+
             let alert = NSAlert()
-            alert.messageText = "Configure Claude Desktop"
+            alert.messageText = "Set Up iMCP Server"
             alert.informativeText = """
-                The iMCP server will be configured in Claude Desktop.
-                This will add or update the MCP server configuration to use the iMCP executable from this application.
+                This will \(fileExists ? "update" : "create") the iMCP server settings in Claude Desktop.
 
-                The configuration will be saved to: \(configPath)
+                Location: \(configPath)
 
-                Other MCP server configurations in the file will be preserved.
+                Your existing server configurations won't be affected.
                 """
 
-            alert.addButton(withTitle: "Save")
+            alert.addButton(withTitle: "Set Up")
             alert.addButton(withTitle: "Cancel")
 
             NSApp.activate(ignoringOtherApps: true)
@@ -118,42 +119,44 @@ private func loadConfig() throws -> ClaudeDesktop.Config {
             .path)
 
     var config = ClaudeDesktop.Config(mcpServers: ["iMCP": imcpServer])
-    if let secureURL = try getSecurityScopedConfigURL(),
-        secureURL.startAccessingSecurityScopedResource()
+
+    // Try to load existing config if it exists
+    if let secureURL = try? getSecurityScopedConfigURL(),
+        secureURL.startAccessingSecurityScopedResource(),
+        FileManager.default.fileExists(atPath: secureURL.path)
     {
         defer { secureURL.stopAccessingSecurityScopedResource() }
 
-        if FileManager.default.fileExists(atPath: secureURL.path) {
-            log.debug("Loading existing configuration from: \(secureURL.path)")
-            let data = try Data(contentsOf: secureURL)
-            config = try jsonDecoder.decode(ClaudeDesktop.Config.self, from: data)
-
-            log.debug("Updating iMCP server configuration")
-            config.mcpServers["iMCP"] = imcpServer
-        }
+        log.debug("Loading existing configuration from: \(secureURL.path)")
+        let data = try Data(contentsOf: secureURL)
+        config = try jsonDecoder.decode(ClaudeDesktop.Config.self, from: data)
+        config.mcpServers["iMCP"] = imcpServer
+    } else {
+        log.debug("No existing config found or accessible, will create a new one")
     }
 
     return config
 }
 
 private func saveConfig(_ config: ClaudeDesktop.Config) throws {
-    log.debug("Attempting to save configuration using existing security-scoped access")
-    if let secureURL = try getSecurityScopedConfigURL(),
-        secureURL.startAccessingSecurityScopedResource()
-    {
-        defer { secureURL.stopAccessingSecurityScopedResource() }
-        try writeConfig(config, to: secureURL)
-        return
+    // If we have an existing security-scoped URL, try to use it
+    if let secureURL = try? getSecurityScopedConfigURL() {
+        if secureURL.startAccessingSecurityScopedResource() {
+            defer { secureURL.stopAccessingSecurityScopedResource() }
+            try writeConfig(config, to: secureURL)
+            return
+        }
     }
 
-    log.debug("No existing security-scoped access, showing save panel")
+    // Show save panel for new location
+    log.debug("Showing save panel for new configuration location")
     let savePanel = NSSavePanel()
-    savePanel.message = "Select location to save Claude Desktop configuration"
-    savePanel.prompt = "Save"
+    savePanel.message = "Choose where to save the iMCP server settings."
+    savePanel.prompt = "Set Up"
     savePanel.allowedContentTypes = [.json]
     savePanel.directoryURL = URL(fileURLWithPath: configPath).deletingLastPathComponent()
     savePanel.nameFieldStringValue = "claude_desktop_config.json"
-    savePanel.canCreateDirectories = false
+    savePanel.canCreateDirectories = true
     savePanel.showsHiddenFiles = false
 
     guard savePanel.runModal() == .OK, let selectedURL = savePanel.url else {
@@ -161,23 +164,25 @@ private func saveConfig(_ config: ClaudeDesktop.Config) throws {
         throw ClaudeDesktop.Error.noLocationSelected
     }
 
-    log.debug("Creating security-scoped access for selected URL: \(selectedURL.path)")
+    // Create the file first
+    log.debug("Creating configuration at selected URL: \(selectedURL.path)")
+    try writeConfig(config, to: selectedURL)
+
+    // Then create the security-scoped bookmark
+    log.debug("Creating security-scoped access for selected URL")
     try saveSecurityScopedAccess(for: selectedURL)
-    if selectedURL.startAccessingSecurityScopedResource() {
-        defer { selectedURL.stopAccessingSecurityScopedResource() }
-        try writeConfig(config, to: selectedURL)
-    }
 }
 
 private func writeConfig(_ config: ClaudeDesktop.Config, to url: URL) throws {
     log.debug("Creating directory if needed: \(url.deletingLastPathComponent().path)")
     try FileManager.default.createDirectory(
         at: url.deletingLastPathComponent(),
-        withIntermediateDirectories: true
+        withIntermediateDirectories: true,
+        attributes: nil
     )
 
     log.debug("Encoding and writing configuration")
     let data = try jsonEncoder.encode(config)
-    try data.write(to: url)
+    try data.write(to: url, options: .atomic)
     log.notice("Successfully saved config to \(url.path)")
 }
