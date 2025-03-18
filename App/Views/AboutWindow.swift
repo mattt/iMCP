@@ -22,7 +22,7 @@ private struct AboutView: View {
         VStack {
             HStack(alignment: .top, spacing: 32) {
                 // Left column - Icon
-                Image(.menuIcon)
+                Image(.menuIconOn)
                     .resizable()
                     .frame(width: 160, height: 160)
                     .padding()
