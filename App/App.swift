@@ -7,15 +7,12 @@ struct App: SwiftUI.App {
     @State private var isMenuPresented = false
 
     var body: some Scene {
-        MenuBarExtra {
+        MenuBarExtra("iMCP", image: #"MenuIcon-\#(isEnabled ? "On" : "Off")"#) {
             ContentView(
                 serverManager: serverController,
                 isEnabled: $isEnabled,
                 isMenuPresented: $isMenuPresented
             )
-        } label: {
-            Image(.menuIcon)
-                .renderingMode(.template)
         }
         .menuBarExtraStyle(.window)
         .menuBarExtraAccess(isPresented: $isMenuPresented)
