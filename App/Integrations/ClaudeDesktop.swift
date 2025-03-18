@@ -44,17 +44,16 @@ enum ClaudeDesktop {
             let fileExists = FileManager.default.fileExists(atPath: configPath)
 
             let alert = NSAlert()
-            alert.messageText = "Configure Claude Desktop"
+            alert.messageText = "Set Up iMCP Server"
             alert.informativeText = """
-                The iMCP server will be configured in Claude Desktop.
-                This will \(fileExists ? "update" : "create") the MCP server configuration to use the iMCP executable from this application.
+                This will \(fileExists ? "update" : "create") the iMCP server settings in Claude Desktop.
 
-                The configuration will be saved to: \(configPath)
+                Location: \(configPath)
 
-                Other MCP server configurations in the file will be preserved.
+                Your existing server configurations won't be affected.
                 """
 
-            alert.addButton(withTitle: "Save")
+            alert.addButton(withTitle: "Set Up")
             alert.addButton(withTitle: "Cancel")
 
             NSApp.activate(ignoringOtherApps: true)
@@ -152,8 +151,8 @@ private func saveConfig(_ config: ClaudeDesktop.Config) throws {
     // Show save panel for new location
     log.debug("Showing save panel for new configuration location")
     let savePanel = NSSavePanel()
-    savePanel.message = "Select location to save Claude Desktop configuration"
-    savePanel.prompt = "Save"
+    savePanel.message = "Choose where to save the iMCP server settings."
+    savePanel.prompt = "Set Up"
     savePanel.allowedContentTypes = [.json]
     savePanel.directoryURL = URL(fileURLWithPath: configPath).deletingLastPathComponent()
     savePanel.nameFieldStringValue = "claude_desktop_config.json"
