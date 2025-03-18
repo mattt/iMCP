@@ -537,7 +537,7 @@
 			repositoryURL = "https://github.com/loopwork-ai/mcp-swift-sdk";
 			requirement = {
 				kind = upToNextMajorVersion;
-				minimumVersion = 0.4.2;
+				minimumVersion = 0.5.0;
 			};
 		};
 		F88358352D64A085000317CD /* XCRemoteSwiftPackageReference "swift-log" */ = {

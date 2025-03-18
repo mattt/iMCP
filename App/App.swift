@@ -2,14 +2,14 @@ import SwiftUI
 
 @main
 struct App: SwiftUI.App {
-    @StateObject private var serverManager = ServerManager()
+    @StateObject private var serverController = ServerController()
     @AppStorage("isEnabled") private var isEnabled = true
     @State private var isMenuPresented = false
 
     var body: some Scene {
         MenuBarExtra {
             ContentView(
-                serverManager: serverManager,
+                serverManager: serverController,
                 isEnabled: $isEnabled,
                 isMenuPresented: $isMenuPresented
             )
