@@ -2,6 +2,7 @@ import AppKit
 import Logging
 import MCP
 import Network
+import Ontology
 import OSLog
 import SwiftUI
 import SystemPackage
@@ -514,6 +515,7 @@ actor ServerNetworkManager {
                     ) {
                         log.notice("Tool \(params.name) executed successfully")
                         let encoder = JSONEncoder()
+                        encoder.userInfo[Ontology.DateTime.timeZoneOverrideKey] = TimeZone.current
                         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
                         let data = try encoder.encode(value)
                         let text = String(data: data, encoding: .utf8)!
