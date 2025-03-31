@@ -2,8 +2,8 @@ import AppKit
 import Logging
 import MCP
 import Network
-import Ontology
 import OSLog
+import Ontology
 import SwiftUI
 import SystemPackage
 
@@ -256,8 +256,7 @@ actor ServerNetworkManager {
         // Set up Bonjour service
         let parameters = NWParameters.tcp
         parameters.acceptLocalOnly = true
-        parameters.attribution = .user
-        parameters.includePeerToPeer = true
+        parameters.includePeerToPeer = false
 
         if let tcpOptions = parameters.defaultProtocolStack.internetProtocol
             as? NWProtocolIP.Options
