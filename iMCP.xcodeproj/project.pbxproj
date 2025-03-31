@@ -9,6 +9,8 @@
 /* Begin PBXBuildFile section */
 		F809556E2D7888920055B911 /* TypedStream in Frameworks */ = {isa = PBXBuildFile; productRef = F809556D2D7888920055B911 /* TypedStream */; };
 		F80955702D7888920055B911 /* iMessage in Frameworks */ = {isa = PBXBuildFile; productRef = F809556F2D7888920055B911 /* iMessage */; };
+		F825BDBF2D9AD00E0063ADD7 /* ServiceLifecycle in Frameworks */ = {isa = PBXBuildFile; productRef = F825BDBE2D9AD00E0063ADD7 /* ServiceLifecycle */; };
+		F825BDC12D9AD00E0063ADD7 /* UnixSignals in Frameworks */ = {isa = PBXBuildFile; productRef = F825BDC02D9AD00E0063ADD7 /* UnixSignals */; };
 		F873F48D2D712BCF0035CD0A /* Ontology in Frameworks */ = {isa = PBXBuildFile; productRef = F873F48C2D712BCF0035CD0A /* Ontology */; };
 		F88358322D649DB4000317CD /* MCP in Frameworks */ = {isa = PBXBuildFile; productRef = F88358312D649DB4000317CD /* MCP */; };
 		F88358342D649DBB000317CD /* MCP in Frameworks */ = {isa = PBXBuildFile; productRef = F88358332D649DBB000317CD /* MCP */; };
@@ -92,8 +94,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				F88358372D64A085000317CD /* Logging in Frameworks */,
+				F825BDBF2D9AD00E0063ADD7 /* ServiceLifecycle in Frameworks */,
 				F8CE997B2D591CF200C61CA2 /* MCP in Frameworks */,
 				F88358342D649DBB000317CD /* MCP in Frameworks */,
+				F825BDC12D9AD00E0063ADD7 /* UnixSignals in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -170,6 +174,8 @@
 				F8CE997A2D591CF200C61CA2 /* MCP */,
 				F88358332D649DBB000317CD /* MCP */,
 				F88358362D64A085000317CD /* Logging */,
+				F825BDBE2D9AD00E0063ADD7 /* ServiceLifecycle */,
+				F825BDC02D9AD00E0063ADD7 /* UnixSignals */,
 			);
 			productName = "imcp-server";
 			productReference = F8F44EB62D5908D00075D79C /* imcp-server */;
@@ -208,6 +214,7 @@
 				F8F1D33D2D6FA7EB00F6323D /* XCRemoteSwiftPackageReference "MacControlCenterUI" */,
 				F873F48B2D712BCF0035CD0A /* XCRemoteSwiftPackageReference "Ontology" */,
 				F809556C2D7888920055B911 /* XCRemoteSwiftPackageReference "madrid" */,
+				F825BDBD2D9AD00E0063ADD7 /* XCRemoteSwiftPackageReference "swift-service-lifecycle" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = F8F44E6E2D59038D0075D79C /* Products */;
@@ -524,6 +531,14 @@
 				minimumVersion = 0.1.0;
 			};
 		};
+		F825BDBD2D9AD00E0063ADD7 /* XCRemoteSwiftPackageReference "swift-service-lifecycle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/swift-server/swift-service-lifecycle";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.7.0;
+			};
+		};
 		F873F48B2D712BCF0035CD0A /* XCRemoteSwiftPackageReference "Ontology" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/loopwork-ai/Ontology";
@@ -568,6 +583,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = F809556C2D7888920055B911 /* XCRemoteSwiftPackageReference "madrid" */;
 			productName = iMessage;
+		};
+		F825BDBE2D9AD00E0063ADD7 /* ServiceLifecycle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F825BDBD2D9AD00E0063ADD7 /* XCRemoteSwiftPackageReference "swift-service-lifecycle" */;
+			productName = ServiceLifecycle;
+		};
+		F825BDC02D9AD00E0063ADD7 /* UnixSignals */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F825BDBD2D9AD00E0063ADD7 /* XCRemoteSwiftPackageReference "swift-service-lifecycle" */;
+			productName = UnixSignals;
 		};
 		F873F48C2D712BCF0035CD0A /* Ontology */ = {
 			isa = XCSwiftPackageProductDependency;
