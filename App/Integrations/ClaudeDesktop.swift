@@ -20,6 +20,7 @@ enum ClaudeDesktop {
         struct MCPServer: Codable {
             var command: String
             var args: [String]?
+            var env: [String: String]?
         }
 
         var mcpServers: [String: MCPServer]
