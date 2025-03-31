@@ -18,7 +18,8 @@ log.logLevel = .debug
 // Network setup
 let serviceType = "_mcp._tcp"
 let parameters = NWParameters.tcp
-parameters.includePeerToPeer = true
+parameters.acceptLocalOnly = true
+parameters.includePeerToPeer = false
 
 if let tcpOptions = parameters.defaultProtocolStack.internetProtocol as? NWProtocolIP.Options {
     tcpOptions.version = .v4
