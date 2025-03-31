@@ -1,5 +1,5 @@
 {
-  "originHash" : "f4cbde00cd410ea1de96fdd45cf21ed0dea73e9ce87f3a2936b051128ad23313",
+  "originHash" : "e1b9265a02530ddd50188705f65539f9c971ca2cbe8054a1d23f74811b29c7a0",
   "pins" : [
     {
       "identity" : "maccontrolcenterui",
@@ -47,12 +47,39 @@
       }
     },
     {
+      "identity" : "swift-async-algorithms",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-async-algorithms.git",
+      "state" : {
+        "revision" : "4c3ea81f81f0a25d0470188459c6d4bf20cf2f97",
+        "version" : "1.0.3"
+      }
+    },
+    {
+      "identity" : "swift-collections",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-collections.git",
+      "state" : {
+        "revision" : "671108c96644956dddcd89dd59c203dcdb36cec7",
+        "version" : "1.1.4"
+      }
+    },
+    {
       "identity" : "swift-log",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-log.git",
       "state" : {
         "revision" : "96a2f8a0fa41e9e09af4585e2724c4e825410b91",
         "version" : "1.6.2"
+      }
+    },
+    {
+      "identity" : "swift-service-lifecycle",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/swift-server/swift-service-lifecycle",
+      "state" : {
+        "revision" : "7ee57f99fbe0073c3700997186721e74d925b59b",
+        "version" : "2.7.0"
       }
     },
     {

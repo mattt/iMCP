@@ -1,16 +1,11 @@
 import Logging
 import MCP
 import Network
+import ServiceLifecycle
 import SystemPackage
 
 import struct Foundation.Data
 import class Foundation.RunLoop
-
-// Set up signal handling for Ctrl+C
-signal(SIGINT) { _ in
-    log.critical("Received interrupt signal, shutting down...")
-    exit(0)
-}
 
 var log = Logger(label: "com.loopwork.iMCP.server") { StreamLogHandler.standardError(label: $0) }
 log.logLevel = .debug
@@ -110,7 +105,7 @@ actor StdioProxy {
                 do {
                     try await self.handleStdinToNetwork(bufferSize: stdinBufferSize)
                 } catch {
-                    log.error("Stdin handler failed: \(error)")
+                    await log.error("Stdin handler failed: \(error)")
                     throw error
                 }
             }
@@ -120,14 +115,14 @@ actor StdioProxy {
                 do {
                     try await self.handleNetworkToStdout(bufferSize: networkBufferSize)
                 } catch {
-                    log.error("Network handler failed: \(error)")
+                    await log.error("Network handler failed: \(error)")
                     throw error
                 }
             }
 
             // Wait for any task to complete (or fail)
             try await group.next()
-            log.debug("A task completed, cancelling remaining tasks")
+            await log.debug("A task completed, cancelling remaining tasks")
 
             // If we get here, one of the tasks completed or failed
             // Cancel all remaining tasks
@@ -428,95 +423,120 @@ enum StdioProxyError: Swift.Error {
     case connectionClosed
 }
 
-// Update the main task to handle reconnection
-Task {
-    do {
-        try await withThrowingTaskGroup(of: Void.self) { taskGroup in
-            // Add Bonjour connection task
-            taskGroup.addTask {
-                while true {
-                    do {
-                        log.info("Starting Bonjour service discovery...")
+// Create MCPService class to manage lifecycle
+actor MCPService: Service {
+    let browser: NWBrowser
+    private var currentProxy: StdioProxy?
 
-                        // Find and connect to iMCP app
-                        let endpoint: NWEndpoint = try await withCheckedThrowingContinuation {
-                            continuation in
-                            let connectionState = ConnectionState()
+    init() {
+        self.browser = NWBrowser(
+            for: .bonjour(type: serviceType, domain: nil),
+            using: parameters
+        )
+        log.info("Created Bonjour browser for service type: \(serviceType)")
+    }
 
-                            browser.stateUpdateHandler = { state in
-                                log.debug("Browser state changed: \(state)")
-                                if case .failed(let error) = state {
-                                    log.error("Browser failed: \(error)")
-                                    Task {
-                                        if await connectionState.checkAndSetResumed() {
-                                            continuation.resume(throwing: error)
-                                        }
-                                    }
+    func run() async throws {
+        while true {
+            do {
+                await log.info("Starting Bonjour service discovery...")
+
+                // Find and connect to iMCP app
+                let endpoint: NWEndpoint = try await withCheckedThrowingContinuation {
+                    continuation in
+                    let connectionState = ConnectionState()
+
+                    // Convert async handlers to sync handlers
+                    browser.stateUpdateHandler = { state in
+                        if case .failed(let error) = state {
+                            Task {
+                                await log.error("Browser failed: \(error)")
+                                if await connectionState.checkAndSetResumed() {
+                                    continuation.resume(throwing: error)
                                 }
                             }
-
-                            browser.browseResultsChangedHandler = { results, changes in
-                                log.debug("Found \(results.count) Bonjour services")
-                                if let endpoint = results.first?.endpoint {
-                                    Task {
-                                        if await connectionState.checkAndSetResumed() {
-                                            log.info("Selected endpoint: \(endpoint)")
-                                            continuation.resume(returning: endpoint)
-                                        }
-                                    }
-                                }
-                            }
-
-                            log.debug("Starting Bonjour browser...")
-                            browser.start(queue: .main)
                         }
-
-                        log.info("Creating connection to endpoint...")
-
-                        // Create the proxy
-                        let proxy = StdioProxy(
-                            endpoint: endpoint,
-                            parameters: parameters,
-                            stdinBufferSize: 8192,
-                            networkBufferSize: 8192
-                        )
-
-                        do {
-                            // Start the proxy
-                            try await proxy.start()
-                        } catch StdioProxyError.stdinTimeout {
-                            log.info("Stdin timed out, will reconnect...")
-                            // Short delay before reconnecting
-                            try await Task.sleep(for: .seconds(1))
-                            continue
-                        } catch StdioProxyError.networkTimeout {
-                            log.info("Network timed out, will reconnect...")
-                            try await Task.sleep(for: .seconds(1))
-                            continue
-                        } catch StdioProxyError.connectionClosed {
-                            log.critical("Connection closed, terminating...")
-                            exit(EXIT_FAILURE)
+                        Task {
+                            await log.debug("Browser state changed: \(state)")
                         }
-                    } catch {
-                        log.error("Connection error: \(error)")
-                        log.info("Will retry connection in 5 seconds...")
-                        try await Task.sleep(for: .seconds(5))
                     }
-                }
-            }
 
-            // Wait for any task to complete (or throw)
-            try await taskGroup.next()
+                    browser.browseResultsChangedHandler = { results, changes in
+                        Task {
+                            await log.debug("Found \(results.count) Bonjour services")
+                            if let endpoint = results.first?.endpoint {
+                                if await connectionState.checkAndSetResumed() {
+                                    await log.info("Selected endpoint: \(endpoint)")
+                                    continuation.resume(returning: endpoint)
+                                }
+                            }
+                        }
+                    }
+
+                    Task {
+                        await log.debug("Starting Bonjour browser...")
+                    }
+                    browser.start(queue: .main)
+                }
+
+                await log.info("Creating connection to endpoint...")
+
+                // Create the proxy
+                let proxy = StdioProxy(
+                    endpoint: endpoint,
+                    parameters: parameters,
+                    stdinBufferSize: 8192,
+                    networkBufferSize: 8192
+                )
+                self.currentProxy = proxy
+
+                do {
+                    try await proxy.start()
+                } catch let error as StdioProxyError {
+                    switch error {
+                    case .stdinTimeout:
+                        await log.info("Stdin timed out, will reconnect...")
+                        try await Task.sleep(for: .seconds(1))
+                        continue
+                    case .networkTimeout:
+                        await log.info("Network timed out, will reconnect...")
+                        try await Task.sleep(for: .seconds(1))
+                        continue
+                    case .connectionClosed:
+                        await log.critical("Connection closed, terminating...")
+                        return
+                    }
+                } catch let error as NWError where error.errorCode == 54 || error.errorCode == 57 {
+                    // Handle connection reset by peer (54) or socket not connected (57)
+                    await log.critical("Network connection terminated: \(error), shutting down...")
+                    return
+                } catch {
+                    // Rethrow other errors to be handled by the outer catch block
+                    throw error
+                }
+            } catch {
+                // Handle all other errors with retry
+                await log.error("Connection error: \(error)")
+                await log.info("Will retry connection in 5 seconds...")
+                try await Task.sleep(for: .seconds(5))
+            }
         }
-    } catch {
-        log.critical(
-            "Server error: \(error)",
-            metadata: [
-                "error_description": .string(error.localizedDescription)
-            ])
-        exit(EXIT_FAILURE)
+    }
+
+    func shutdown() async throws {
+        browser.cancel()
+        if let proxy = currentProxy {
+            await proxy.stop()
+        }
     }
 }
 
-// Keep the program running
-RunLoop.main.run()
+// Update the ServiceLifecycle initialization
+let lifecycle = ServiceGroup(
+    configuration: .init(
+        services: [MCPService()],
+        logger: log
+    )
+)
+
+try await lifecycle.run()
