@@ -492,28 +492,30 @@ actor MCPService: Service {
 
                 do {
                     try await proxy.start()
-                } catch StdioProxyError.stdinTimeout {
-                    await log.info("Stdin timed out, will reconnect...")
-                    try await Task.sleep(for: .seconds(1))
-                    continue
-                } catch StdioProxyError.networkTimeout {
-                    await log.info("Network timed out, will reconnect...")
-                    try await Task.sleep(for: .seconds(1))
-                    continue
-                } catch StdioProxyError.connectionClosed {
-                    await log.critical("Connection closed, terminating...")
+                } catch let error as StdioProxyError {
+                    switch error {
+                    case .stdinTimeout:
+                        await log.info("Stdin timed out, will reconnect...")
+                        try await Task.sleep(for: .seconds(1))
+                        continue
+                    case .networkTimeout:
+                        await log.info("Network timed out, will reconnect...")
+                        try await Task.sleep(for: .seconds(1))
+                        continue
+                    case .connectionClosed:
+                        await log.critical("Connection closed, terminating...")
+                        return
+                    }
+                } catch let error as NWError where error.errorCode == 54 || error.errorCode == 57 {
+                    // Handle connection reset by peer (54) or socket not connected (57)
+                    await log.critical("Network connection terminated: \(error), shutting down...")
                     return
+                } catch {
+                    // Rethrow other errors to be handled by the outer catch block
+                    throw error
                 }
             } catch {
-                // For other errors, check if it's a connection reset
-                if let nwError = error as? NWError,
-                    nwError.errorCode == 57  // Socket is not connected
-                        || nwError.errorCode == 54  // Connection reset by peer
-                {
-                    await log.critical("Connection reset by peer, terminating...")
-                    return
-                }
-
+                // Handle all other errors with retry
                 await log.error("Connection error: \(error)")
                 await log.info("Will retry connection in 5 seconds...")
                 try await Task.sleep(for: .seconds(5))
