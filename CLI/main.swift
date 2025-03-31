@@ -502,9 +502,18 @@ actor MCPService: Service {
                     continue
                 } catch StdioProxyError.connectionClosed {
                     await log.critical("Connection closed, terminating...")
-                    throw StdioProxyError.connectionClosed
+                    return
                 }
             } catch {
+                // For other errors, check if it's a connection reset
+                if let nwError = error as? NWError,
+                    nwError.errorCode == 57  // Socket is not connected
+                        || nwError.errorCode == 54  // Connection reset by peer
+                {
+                    await log.critical("Connection reset by peer, terminating...")
+                    return
+                }
+
                 await log.error("Connection error: \(error)")
                 await log.info("Will retry connection in 5 seconds...")
                 try await Task.sleep(for: .seconds(5))
