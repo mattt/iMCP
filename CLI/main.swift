@@ -6,10 +6,25 @@ import SystemPackage
 import struct Foundation.Data
 import class Foundation.RunLoop
 
-// Set up signal handling for Ctrl+C
+// Set up signal handling for various termination signals
 signal(SIGINT) { _ in
-    log.critical("Received interrupt signal, shutting down...")
+    log.critical("Received interrupt signal (SIGINT), shutting down...")
     exit(0)
+}
+
+signal(SIGTERM) { _ in
+    log.critical("Received termination signal (SIGTERM), shutting down...")
+    exit(0)
+}
+
+signal(SIGHUP) { _ in
+    log.warning("Received hangup signal (SIGHUP), restarting...")
+    exit(1)  // Exit with non-zero to allow service manager to restart
+}
+
+signal(SIGQUIT) { _ in
+    log.critical("Received quit signal (SIGQUIT), shutting down...")
+    exit(-1)  // Traditional SIGQUIT behavior is to exit with core dump
 }
 
 var log = Logger(label: "com.loopwork.iMCP.server") { StreamLogHandler.standardError(label: $0) }
