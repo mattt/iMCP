@@ -517,11 +517,27 @@ actor ServerNetworkManager {
                 }
 
                 do {
-                    if let value = try await service.call(
-                        tool: params.name,
-                        with: params.arguments ?? [:]
-                    ) {
-                        log.notice("Tool \(params.name) executed successfully")
+                    guard
+                        let value = try await service.call(
+                            tool: params.name,
+                            with: params.arguments ?? [:]
+                        )
+                    else {
+                        continue
+                    }
+
+                    log.notice("Tool \(params.name) executed successfully")
+                    switch value {
+                    case let .data(mimeType?, data) where mimeType.hasPrefix("image/"):
+                        return CallTool.Result(
+                            content: [
+                                .image(
+                                    data: data.base64EncodedString(),
+                                    mimeType: mimeType,
+                                    metadata: nil
+                                )
+                            ], isError: false)
+                    default:
                         let encoder = JSONEncoder()
                         encoder.userInfo[Ontology.DateTime.timeZoneOverrideKey] = TimeZone.current
                         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
