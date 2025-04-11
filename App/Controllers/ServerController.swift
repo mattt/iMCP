@@ -52,6 +52,7 @@ enum ServiceRegistry {
         CalendarService.shared,
         ContactsService.shared,
         LocationService.shared,
+        MapsService.shared,
         MessageService.shared,
         RemindersService.shared,
         UtilitiesService.shared,
@@ -62,6 +63,7 @@ enum ServiceRegistry {
         calendarEnabled: Binding<Bool>,
         contactsEnabled: Binding<Bool>,
         locationEnabled: Binding<Bool>,
+        mapsEnabled: Binding<Bool>,
         messagesEnabled: Binding<Bool>,
         remindersEnabled: Binding<Bool>,
         utilitiesEnabled: Binding<Bool>,
@@ -88,6 +90,13 @@ enum ServiceRegistry {
                 color: .blue,
                 service: LocationService.shared,
                 binding: locationEnabled
+            ),
+            ServiceConfig(
+                name: "Maps",
+                iconName: "mappin.and.ellipse",
+                color: .purple,
+                service: MapsService.shared,
+                binding: mapsEnabled
             ),
             ServiceConfig(
                 name: "Messages",
