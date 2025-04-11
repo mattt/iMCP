@@ -429,7 +429,7 @@ actor ServerNetworkManager {
 
                     if !approved {
                         await self._removeConnection(connectionID)
-                        throw MCP.Error.connectionClosed
+                        throw MCPError.connectionClosed
                     }
                 }
                 log.notice("MCP Server started successfully for connection: \(connectionID)")
@@ -462,7 +462,7 @@ actor ServerNetworkManager {
 
             var tools: [MCP.Tool] = []
             if await self.isEnabled {
-                for service in await self.services {
+                for service in self.services {
                     let serviceId = String(describing: type(of: service))
 
                     // Get the binding value in an actor-safe way
@@ -498,7 +498,7 @@ actor ServerNetworkManager {
                 )
             }
 
-            for service in await self.services {
+            for service in self.services {
                 let serviceId = String(describing: type(of: service))
 
                 // Get the binding value in an actor-safe way

@@ -146,39 +146,39 @@ actor StdioProxy {
     ) async {
         switch state {
         case .ready:
-            log.debug("Connection established to \(endpoint)")
+            await log.debug("Connection established to \(endpoint)")
             continuation?.resume()
         case .failed(let error):
-            log.debug("Connection failed: \(error)")
+            await log.debug("Connection failed: \(error)")
             if let continuation = continuation {
                 continuation.resume(throwing: error)
             }
             await stop()
         case .cancelled:
-            log.debug("Connection cancelled")
+            await log.debug("Connection cancelled")
             if let continuation = continuation {
                 continuation.resume(throwing: CancellationError())
             }
             await stop()
         case .waiting(let error):
-            log.debug("Connection waiting: \(error)")
+            await log.debug("Connection waiting: \(error)")
         case .preparing:
-            log.debug("Connection preparing...")
+            await log.debug("Connection preparing...")
         case .setup:
-            log.debug("Connection setup...")
+            await log.debug("Connection setup...")
         @unknown default:
-            log.debug("Unknown connection state")
+            await log.debug("Unknown connection state")
         }
     }
 
     private func setNonBlocking(fileDescriptor: FileDescriptor) throws {
         let flags = fcntl(fileDescriptor.rawValue, F_GETFL)
         guard flags >= 0 else {
-            throw Error.transportError(Errno.badFileDescriptor)
+            throw MCPError.transportError(Errno.badFileDescriptor)
         }
         let result = fcntl(fileDescriptor.rawValue, F_SETFL, flags | O_NONBLOCK)
         guard result >= 0 else {
-            throw Error.transportError(Errno.badFileDescriptor)
+            throw MCPError.transportError(Errno.badFileDescriptor)
         }
     }
 
@@ -195,13 +195,13 @@ actor StdioProxy {
         while true {
             // Check connection state at the beginning of each loop iteration
             guard isRunning, let connection = self.connection else {
-                log.debug("Connection no longer active, stopping stdin handler")
+                await log.debug("Connection no longer active, stopping stdin handler")
                 throw StdioProxyError.connectionClosed
             }
 
             // Also check connection state
             if connection.state != .ready && connection.state != .preparing {
-                log.debug(
+                await log.debug(
                     "Connection state changed to \(connection.state), stopping stdin handler")
                 throw StdioProxyError.connectionClosed
             }
@@ -214,7 +214,7 @@ actor StdioProxy {
 
                 if bytesRead == 0 {
                     // EOF reached
-                    log.debug("EOF reached on stdin, stopping stdin handler")
+                    await log.debug("EOF reached on stdin, stopping stdin handler")
                     break
                 }
 
@@ -247,9 +247,10 @@ actor StdioProxy {
                                 })
                         }
 
-                        log.debug("Sent \(pendingData.count) bytes to network")
+                        await log.debug("Sent \(pendingData.count) bytes to network")
                     } else if isOnlyWhitespace && !pendingData.isEmpty {
-                        log.trace("Skipping send of \(pendingData.count) whitespace-only bytes")
+                        await log.trace(
+                            "Skipping send of \(pendingData.count) whitespace-only bytes")
                     }
 
                     // Clear pending data after processing
@@ -262,7 +263,7 @@ actor StdioProxy {
 
                     // Check if we've exceeded the timeout threshold
                     if consecutiveWouldBlockCount > maxConsecutiveWouldBlocks {
-                        log.warning(
+                        await log.warning(
                             "Stdin read timed out after \(maxConsecutiveWouldBlocks) consecutive would-blocks"
                         )
                         // Instead of breaking, throw a special error that indicates we need to reconnect
@@ -273,12 +274,12 @@ actor StdioProxy {
                     continue
                 }
 
-                log.error("Error in stdin handler: \(error)")
+                await log.error("Error in stdin handler: \(error)")
                 throw error
             }
         }
 
-        log.debug("Stdin handler task completed")
+        await log.debug("Stdin handler task completed")
     }
 
     /// Handles forwarding data from the network to stdout
@@ -290,13 +291,13 @@ actor StdioProxy {
         while true {
             // Check connection state at the beginning of each loop iteration
             guard isRunning, let connection = self.connection else {
-                log.debug("Connection no longer active, stopping network handler")
+                await log.debug("Connection no longer active, stopping network handler")
                 throw StdioProxyError.connectionClosed
             }
 
             // Also check connection state
             if connection.state != .ready && connection.state != .preparing {
-                log.debug(
+                await log.debug(
                     "Connection state changed to \(connection.state), stopping network handler")
                 throw StdioProxyError.connectionClosed
             }
@@ -308,7 +309,7 @@ actor StdioProxy {
                 {
                     // If we've had too many empty reads, consider it a timeout
                     if consecutiveEmptyReads > maxConsecutiveEmptyReads * 10 {
-                        log.warning(
+                        await log.warning(
                             "Network read timed out after \(consecutiveEmptyReads) consecutive empty reads"
                         )
                         throw StdioProxyError.networkTimeout
@@ -366,23 +367,25 @@ actor StdioProxy {
                     // Reset counter when we get data
                     consecutiveEmptyReads = 0
 
-                    log.debug("Received \(data.count) bytes from network")
+                    await log.debug("Received \(data.count) bytes from network")
                 }
 
                 // Write data to stdout using SystemPackage approach
                 // Handle partial writes by writing all data in chunks if necessary
                 var remainingData = data
                 while !remainingData.isEmpty {
-                    try remainingData.withUnsafeBytes { buffer in
-                        let bytesWritten = try stdout.write(UnsafeRawBufferPointer(buffer))
-                        if bytesWritten < buffer.count {
-                            log.debug("Partial write: \(bytesWritten) of \(buffer.count) bytes")
-                            // Remove the bytes that were written
-                            remainingData = remainingData.dropFirst(bytesWritten)
-                        } else {
-                            // All bytes were written
-                            remainingData.removeAll()
-                        }
+                    let bytesWritten: Int = try remainingData.withUnsafeBytes { buffer in
+                        try stdout.write(UnsafeRawBufferPointer(buffer))
+                    }
+
+                    if bytesWritten < remainingData.count {
+                        await log.debug(
+                            "Partial write: \(bytesWritten) of \(remainingData.count) bytes")
+                        // Remove the bytes that were written
+                        remainingData = remainingData.dropFirst(bytesWritten)
+                    } else {
+                        // All bytes were written
+                        remainingData.removeAll()
                     }
 
                     // If we still have data to write, give a small delay to allow the system to process
@@ -392,7 +395,7 @@ actor StdioProxy {
                 }
             } catch let error as NWError where error.errorCode == 96 {
                 // Handle "No message available on STREAM" error
-                log.debug("Network read yielded no data, waiting...")
+                await log.debug("Network read yielded no data, waiting...")
                 consecutiveEmptyReads += 1
                 try await Task.sleep(for: .milliseconds(100))
             } catch {
@@ -401,7 +404,7 @@ actor StdioProxy {
                     nwError.errorCode == 57  // Socket is not connected
                         || nwError.errorCode == 54  // Connection reset by peer
                 {
-                    log.debug("Connection closed by peer: \(error)")
+                    await log.debug("Connection closed by peer: \(error)")
                     throw StdioProxyError.connectionClosed
                 }
 
@@ -409,7 +412,7 @@ actor StdioProxy {
                     throw error
                 }
 
-                log.error("Error in network handler: \(error)")
+                await log.error("Error in network handler: \(error)")
                 throw error
             }
         }
@@ -433,7 +436,6 @@ actor MCPService: Service {
             for: .bonjour(type: serviceType, domain: nil),
             using: parameters
         )
-        log.info("Created Bonjour browser for service type: \(serviceType)")
     }
 
     func run() async throws {
