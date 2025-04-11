@@ -82,7 +82,7 @@ final class MapsService: NSObject, Service {
             }
 
             return try await withCheckedThrowingContinuation {
-                (continuation: CheckedContinuation<Value, Error>) in
+                (continuation: CheckedContinuation<[Place], Error>) in
 
                 let search = MKLocalSearch(request: searchRequest)
                 search.start { response, error in
@@ -101,62 +101,12 @@ final class MapsService: NSObject, Service {
                         return
                     }
 
-                    // Convert MKMapItems to Value objects
-                    let results = response.mapItems.map { item -> [String: Value] in
-                        var result: [String: Value] = [
-                            "@type": .string("Place"),
-                            "name": .string(item.name ?? "Unknown Place"),
-                        ]
-
-                        // Add coordinates
-                        let coord = item.placemark.coordinate
-                        result["geo"] = .object([
-                            "@type": .string("GeoCoordinates"),
-                            "latitude": .double(coord.latitude),
-                            "longitude": .double(coord.longitude),
-                        ])
-
-                        // Add address if available
-                        if let postalAddress = item.placemark.postalAddress {
-                            var address: [String: Value] = [
-                                "@type": .string("PostalAddress")
-                            ]
-
-                            if !postalAddress.street.isEmpty {
-                                address["streetAddress"] = .string(postalAddress.street)
-                            }
-                            if !postalAddress.city.isEmpty {
-                                address["addressLocality"] = .string(postalAddress.city)
-                            }
-                            if !postalAddress.state.isEmpty {
-                                address["addressRegion"] = .string(postalAddress.state)
-                            }
-                            if !postalAddress.postalCode.isEmpty {
-                                address["postalCode"] = .string(postalAddress.postalCode)
-                            }
-                            if !postalAddress.country.isEmpty {
-                                address["addressCountry"] = .string(postalAddress.country)
-                            }
-
-                            if address.count > 1 {  // More than just @type
-                                result["address"] = .object(address)
-                            }
-                        }
-
-                        // Add phone number if available
-                        if let phoneNumber = item.phoneNumber, !phoneNumber.isEmpty {
-                            result["telephone"] = .string(phoneNumber)
-                        }
-
-                        // Add URL if available
-                        if let url = item.url?.absoluteString, !url.isEmpty {
-                            result["url"] = .string(url)
-                        }
-
-                        return result
+                    // Convert MKMapItems to Ontology Place objects
+                    let places = response.mapItems.map { item -> Place in
+                        return Place(item)
                     }
 
-                    continuation.resume(returning: .array(results.map { .object($0) }))
+                    continuation.resume(returning: places)
                 }
             }
         }
@@ -260,7 +210,7 @@ final class MapsService: NSObject, Service {
             }
 
             return try await withCheckedThrowingContinuation {
-                (continuation: CheckedContinuation<Value, Error>) in
+                (continuation: CheckedContinuation<Trip, Error>) in
 
                 let directions = MKDirections(request: directionsRequest)
                 directions.calculate { response, error in
@@ -279,44 +229,9 @@ final class MapsService: NSObject, Service {
                         return
                     }
 
-                    // Convert routes to Value objects
-                    let routes = response.routes.map { route -> [String: Value] in
-                        var routeInfo: [String: Value] = [
-                            "@type": .string("Route"),
-                            "distance": .double(route.distance),
-                            "expectedTravelTime": .double(route.expectedTravelTime),
-                            "name": .string(route.name),
-                        ]
+                    let trip = Trip(response)
 
-                        // Add steps if available
-                        if !route.steps.isEmpty {
-                            let steps = route.steps.map { step -> [String: Value] in
-                                var stepInfo: [String: Value] = [
-                                    "instructions": .string(step.instructions),
-                                    "distance": .double(step.distance),
-                                ]
-
-                                if let notice = step.notice {
-                                    stepInfo["notice"] = .string(notice)
-                                }
-
-                                return stepInfo
-                            }
-
-                            routeInfo["steps"] = .array(steps.map { .object($0) })
-                        }
-
-                        // Add warnings if any
-                        if !route.advisoryNotices.isEmpty {
-                            routeInfo["advisoryNotices"] = .array(
-                                route.advisoryNotices.map { .string($0) }
-                            )
-                        }
-
-                        return routeInfo
-                    }
-
-                    continuation.resume(returning: .array(routes.map { .object($0) }))
+                    continuation.resume(returning: trip)
                 }
             }
         }
@@ -330,7 +245,8 @@ final class MapsService: NSObject, Service {
                     "category": [
                         "type": "string",
                         "description": "Category of points of interest",
-                        "enum": Value.array(MKPointOfInterestCategory.allCases.map { Value.string($0.stringValue) }),
+                        "enum": Value.array(
+                            MKPointOfInterestCategory.allCases.map { Value.string($0.stringValue) }),
                     ],
                     "latitude": ["type": "number"],
                     "longitude": ["type": "number"],
@@ -375,7 +291,7 @@ final class MapsService: NSObject, Service {
             request.pointOfInterestFilter = MKPointOfInterestFilter(including: [category])
 
             return try await withCheckedThrowingContinuation {
-                (continuation: CheckedContinuation<Value, Error>) in
+                (continuation: CheckedContinuation<[Place], Error>) in
 
                 let search = MKLocalSearch(request: request)
                 search.start { response, error in
@@ -395,64 +311,11 @@ final class MapsService: NSObject, Service {
                     }
 
                     // Convert MKMapItems to Value objects
-                    let results = response.mapItems.prefix(limit).map { item -> [String: Value] in
-                        var result: [String: Value] = [
-                            "@type": .string("Place"),
-                            "name": .string(item.name ?? "Unknown Place"),
-                        ]
-
-                        // Add coordinates
-                        let coord = item.placemark.coordinate
-                        result["geo"] = .object([
-                            "@type": .string("GeoCoordinates"),
-                            "latitude": .double(coord.latitude),
-                            "longitude": .double(coord.longitude),
-                        ])
-
-                        // Add category
-                        result["category"] = .string(categoryString)
-
-                        // Add address if available
-                        if let postalAddress = item.placemark.postalAddress {
-                            var address: [String: Value] = [
-                                "@type": .string("PostalAddress")
-                            ]
-
-                            if !postalAddress.street.isEmpty {
-                                address["streetAddress"] = .string(postalAddress.street)
-                            }
-                            if !postalAddress.city.isEmpty {
-                                address["addressLocality"] = .string(postalAddress.city)
-                            }
-                            if !postalAddress.state.isEmpty {
-                                address["addressRegion"] = .string(postalAddress.state)
-                            }
-                            if !postalAddress.postalCode.isEmpty {
-                                address["postalCode"] = .string(postalAddress.postalCode)
-                            }
-                            if !postalAddress.country.isEmpty {
-                                address["addressCountry"] = .string(postalAddress.country)
-                            }
-
-                            if address.count > 1 {  // More than just @type
-                                result["address"] = .object(address)
-                            }
-                        }
-
-                        // Add phone number if available
-                        if let phoneNumber = item.phoneNumber, !phoneNumber.isEmpty {
-                            result["telephone"] = .string(phoneNumber)
-                        }
-
-                        // Add URL if available
-                        if let url = item.url?.absoluteString, !url.isEmpty {
-                            result["url"] = .string(url)
-                        }
-
-                        return result
+                    let places = response.mapItems.prefix(limit).map { item -> Place in
+                        return Place(item)
                     }
 
-                    continuation.resume(returning: .array(results.map { .object($0) }))
+                    continuation.resume(returning: places)
                 }
             }
         }
@@ -527,7 +390,7 @@ final class MapsService: NSObject, Service {
             }
 
             return try await withCheckedThrowingContinuation {
-                (continuation: CheckedContinuation<Value, Error>) in
+                (continuation: CheckedContinuation<Trip, Error>) in
 
                 let directions = MKDirections(request: directionsRequest)
                 directions.calculateETA { response, error in
@@ -546,16 +409,9 @@ final class MapsService: NSObject, Service {
                         return
                     }
 
-                    var result: [String: Value] = [
-                        "expectedTravelTime": .double(response.expectedTravelTime),
-                        "distance": .double(response.distance),
-                    ]
+                    let trip = Trip(response)
 
-                    let arrival = response.expectedArrivalDate
-                    let formatter = ISO8601DateFormatter()
-                    result["expectedArrivalTime"] = .string(formatter.string(from: arrival))
-
-                    continuation.resume(returning: .object(result))
+                    continuation.resume(returning: trip)
                 }
             }
         }
@@ -579,12 +435,12 @@ final class MapsService: NSObject, Service {
                     "width": [
                         "type": "integer",
                         "description": "Width of the desired map image in pixels",
-                        "default": 512,
+                        "default": 1024,
                     ],
                     "height": [
                         "type": "integer",
                         "description": "Height of the desired map image in pixels",
-                        "default": 512,
+                        "default": 1024,
                     ],
                     "mapType": [
                         "type": "string",
@@ -595,18 +451,21 @@ final class MapsService: NSObject, Service {
                     "showPointsOfInterest": [
                         "oneOf": [
                             [
-                                "type": "boolean",
-                                "description": "Whether to show points of interest on the map",
-                            ],
-                            [
                                 "type": "array",
                                 "description":
-                                    "Multiple specific types of points of interest to show",
+                                    "Show specific types of points of interest to show; select as many as you're interested in",
                                 "items": [
                                     "type": "string",
-                                    "enum": Value.array(MKPointOfInterestCategory.allCases.map { Value.string($0.stringValue) }),
+                                    "enum": Value.array(
+                                        MKPointOfInterestCategory.allCases.map {
+                                            Value.string($0.stringValue)
+                                        }),
                                 ],
                                 "minItems": 1,
+                            ],
+                            [
+                                "type": "boolean",
+                                "description": "Show all (true) or no (false) points of interest",
                             ],
                         ],
                         "default": false,
@@ -634,8 +493,8 @@ final class MapsService: NSObject, Service {
                 )
             }
 
-            let width = arguments["width"]?.intValue ?? 512
-            let height = arguments["height"]?.intValue ?? 512
+            let width = arguments["width"]?.intValue ?? 1024
+            let height = arguments["height"]?.intValue ?? 1024
             let mapTypeString = arguments["mapType"]?.stringValue ?? "standard"
 
             let options = MKMapSnapshotter.Options()
@@ -660,18 +519,31 @@ final class MapsService: NSObject, Service {
 
             let filter: MKPointOfInterestFilter
             switch arguments["showPointsOfInterest"] {
-            case .bool(true):
+            case .bool(true), .string("true"):
                 filter = .includingAll
-            case .bool(false):
+            case .bool(false), .string("false"):
                 filter = .excludingAll
+            case let .string(string):
+                do {
+                    let jsonData = string.data(using: .utf8)!
+                    let poiStrings = try JSONDecoder().decode([String].self, from: jsonData)
+                    let categories = poiStrings.compactMap {
+                        MKPointOfInterestCategory.from(string: $0)
+                    }
+                    filter = categories.isEmpty ? .excludingAll : .init(including: categories)
+                } catch {
+                    filter = .excludingAll
+                }
             case let .array(poiTypes):
-                let categories = poiTypes.compactMap { $0.stringValue }.compactMap { MKPointOfInterestCategory.from(string: $0) }
+                let categories = poiTypes.compactMap { $0.stringValue }.compactMap {
+                    MKPointOfInterestCategory.from(string: $0)
+                }
                 filter = categories.isEmpty ? .excludingAll : .init(including: categories)
             default:
                 filter = .excludingAll
             }
             options.pointOfInterestFilter = filter
-                
+
             options.showsBuildings = arguments["showBuildings"]?.boolValue == true
 
             return try await withCheckedThrowingContinuation {
@@ -716,19 +588,8 @@ final class MapsService: NSObject, Service {
                         return
                     }
 
-                    let base64String = pngData.base64EncodedString()
-                    let mimeType = "image/png"
-
-                    log.info("Successfully generated map snapshot (\(pngData.count) bytes)")
-
-                    // Return as a Value object containing base64 data and mime type
-                    // Client will need to decode this.
                     continuation.resume(
-                        returning: .object([
-                            "@type": .string("ImageObject"),  // Schema.org type
-                            "contentUrl": .string("data:\(mimeType);base64,\(base64String)"),
-                            "encodingFormat": .string(mimeType),
-                        ])
+                        returning: .data(mimeType: "image/png", pngData)
                     )
                 }
             }
