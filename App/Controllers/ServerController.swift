@@ -52,6 +52,7 @@ enum ServiceRegistry {
         CalendarService.shared,
         ContactsService.shared,
         LocationService.shared,
+        MapsService.shared,
         MessageService.shared,
         RemindersService.shared,
         UtilitiesService.shared,
@@ -62,6 +63,7 @@ enum ServiceRegistry {
         calendarEnabled: Binding<Bool>,
         contactsEnabled: Binding<Bool>,
         locationEnabled: Binding<Bool>,
+        mapsEnabled: Binding<Bool>,
         messagesEnabled: Binding<Bool>,
         remindersEnabled: Binding<Bool>,
         utilitiesEnabled: Binding<Bool>,
@@ -88,6 +90,13 @@ enum ServiceRegistry {
                 color: .blue,
                 service: LocationService.shared,
                 binding: locationEnabled
+            ),
+            ServiceConfig(
+                name: "Maps",
+                iconName: "mappin.and.ellipse",
+                color: .purple,
+                service: MapsService.shared,
+                binding: mapsEnabled
             ),
             ServiceConfig(
                 name: "Messages",
@@ -429,7 +438,7 @@ actor ServerNetworkManager {
 
                     if !approved {
                         await self._removeConnection(connectionID)
-                        throw MCP.Error.connectionClosed
+                        throw MCPError.connectionClosed
                     }
                 }
                 log.notice("MCP Server started successfully for connection: \(connectionID)")
@@ -462,7 +471,7 @@ actor ServerNetworkManager {
 
             var tools: [MCP.Tool] = []
             if await self.isEnabled {
-                for service in await self.services {
+                for service in self.services {
                     let serviceId = String(describing: type(of: service))
 
                     // Get the binding value in an actor-safe way
@@ -498,7 +507,7 @@ actor ServerNetworkManager {
                 )
             }
 
-            for service in await self.services {
+            for service in self.services {
                 let serviceId = String(describing: type(of: service))
 
                 // Get the binding value in an actor-safe way
@@ -508,11 +517,27 @@ actor ServerNetworkManager {
                 }
 
                 do {
-                    if let value = try await service.call(
-                        tool: params.name,
-                        with: params.arguments ?? [:]
-                    ) {
-                        log.notice("Tool \(params.name) executed successfully")
+                    guard
+                        let value = try await service.call(
+                            tool: params.name,
+                            with: params.arguments ?? [:]
+                        )
+                    else {
+                        continue
+                    }
+
+                    log.notice("Tool \(params.name) executed successfully")
+                    switch value {
+                    case let .data(mimeType?, data) where mimeType.hasPrefix("image/"):
+                        return CallTool.Result(
+                            content: [
+                                .image(
+                                    data: data.base64EncodedString(),
+                                    mimeType: mimeType,
+                                    metadata: nil
+                                )
+                            ], isError: false)
+                    default:
                         let encoder = JSONEncoder()
                         encoder.userInfo[Ontology.DateTime.timeZoneOverrideKey] = TimeZone.current
                         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
@@ -574,7 +599,7 @@ actor ServerNetworkManager {
 
     // Update service bindings
     func updateServiceBindings(_ newBindings: [String: Binding<Bool>]) {
-        log.info("Updating service bindings")
+        log.debug("Updating service bindings")
         self.serviceBindings = newBindings
 
         // Notify clients that tool availability may have changed

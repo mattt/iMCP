@@ -16,12 +16,14 @@ struct ContentView: View {
     @AppStorage("remindersEnabled") private var remindersEnabled = false
     @AppStorage("utilitiesEnabled") private var utilitiesEnabled = true
     @AppStorage("weatherEnabled") private var weatherEnabled = false
+    @AppStorage("mapsEnabled") private var mapsEnabled = true
 
     private var serviceConfigs: [ServiceConfig] {
         ServiceRegistry.configureServices(
             calendarEnabled: $calendarEnabled,
             contactsEnabled: $contactsEnabled,
             locationEnabled: $locationEnabled,
+            mapsEnabled: $mapsEnabled,
             messagesEnabled: $messagesEnabled,
             remindersEnabled: $remindersEnabled,
             utilitiesEnabled: $utilitiesEnabled,
@@ -70,7 +72,7 @@ struct ContentView: View {
                         ServiceToggleView(config: config)
                     }
                 }
-                .onChange(of: serviceConfigs.map { $0.binding.wrappedValue }) { _ in
+                .onChange(of: serviceConfigs.map { $0.binding.wrappedValue }, initial: true) {
                     Task {
                         await serverController.updateServiceBindings(serviceBindings)
                     }
