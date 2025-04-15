@@ -599,7 +599,7 @@ actor ServerNetworkManager {
 
     // Update service bindings
     func updateServiceBindings(_ newBindings: [String: Binding<Bool>]) {
-        log.info("Updating service bindings")
+        log.debug("Updating service bindings")
         self.serviceBindings = newBindings
 
         // Notify clients that tool availability may have changed

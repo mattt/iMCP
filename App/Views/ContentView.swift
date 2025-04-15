@@ -72,7 +72,7 @@ struct ContentView: View {
                         ServiceToggleView(config: config)
                     }
                 }
-                .onChange(of: serviceConfigs.map { $0.binding.wrappedValue }) { _ in
+                .onChange(of: serviceConfigs.map { $0.binding.wrappedValue }, initial: true) {
                     Task {
                         await serverController.updateServiceBindings(serviceBindings)
                     }
