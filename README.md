@@ -35,6 +35,13 @@ and a [growing list of clients][mcp-clients] that support the
   </tr>
   <tr>
     <th>
+      <img src="Assets/maps.svg" width="48" height="48" alt="" role="presentation"/>
+    </th>
+    <td><strong>Maps</strong></td>
+    <td>Provides location services including place search, directions, points of interest lookup, travel time estimation, and static map image generation.</td>
+  </tr>
+  <tr>
+    <th>
       <img src="Assets/messages.svg" width="48" height="48" alt="" role="presentation"/>
     </th>
     <td><strong>Messages</strong></td>
