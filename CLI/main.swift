@@ -81,20 +81,28 @@ actor StdioProxy {
         // Start the connection
         connection.start(queue: .main)
 
-        // Set up state monitoring for the entire lifetime of the connection
-        connection.stateUpdateHandler = { state in
-            Task { [weak self] in
-                await self?.handleConnectionState(state, continuation: nil)
-            }
-        }
-
         // Wait for the connection to become ready
         try await withCheckedThrowingContinuation {
             (continuation: CheckedContinuation<Void, Swift.Error>) in
+            let connectionState = ConnectionState()
+
             connection.stateUpdateHandler = { state in
                 Task { [weak self] in
-                    await self?.handleConnectionState(state, continuation: continuation)
+                    // Only resume the continuation once
+                    if await connectionState.checkAndSetResumed() {
+                        await self?.handleConnectionStateWithContinuation(
+                            state, continuation: continuation)
+                    } else {
+                        await self?.handleConnectionState(state, continuation: nil)
+                    }
                 }
+            }
+        }
+
+        // Set up ongoing state monitoring after continuation is resolved
+        connection.stateUpdateHandler = { state in
+            Task { [weak self] in
+                await self?.handleConnectionState(state, continuation: nil)
             }
         }
 
@@ -138,6 +146,33 @@ actor StdioProxy {
         isRunning = false
         connection?.cancel()
         connection = nil
+    }
+
+    /// Handles connection state changes with continuation (used during initial connection)
+    private func handleConnectionStateWithContinuation(
+        _ state: NWConnection.State, continuation: CheckedContinuation<Void, Swift.Error>
+    ) async {
+        switch state {
+        case .ready:
+            log.debug("Connection established to \(endpoint)")
+            continuation.resume()
+        case .failed(let error):
+            log.debug("Connection failed: \(error)")
+            continuation.resume(throwing: error)
+            await stop()
+        case .cancelled:
+            log.debug("Connection cancelled")
+            continuation.resume(throwing: CancellationError())
+            await stop()
+        case .waiting(let error):
+            log.debug("Connection waiting: \(error)")
+        case .preparing:
+            log.debug("Connection preparing...")
+        case .setup:
+            log.debug("Connection setup...")
+        @unknown default:
+            log.debug("Unknown connection state")
+        }
     }
 
     /// Handles connection state changes
