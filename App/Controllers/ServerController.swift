@@ -132,8 +132,42 @@ final class ServerController: ObservableObject {
 
     private let networkManager = ServerNetworkManager()
 
+    // MARK: - AppStorage for Service Enablement States
+    @AppStorage("calendarEnabled") private var calendarEnabled = false
+    @AppStorage("contactsEnabled") private var contactsEnabled = false
+    @AppStorage("locationEnabled") private var locationEnabled = false
+    @AppStorage("mapsEnabled") private var mapsEnabled = true  // Default for maps
+    @AppStorage("messagesEnabled") private var messagesEnabled = false
+    @AppStorage("remindersEnabled") private var remindersEnabled = false
+    @AppStorage("utilitiesEnabled") private var utilitiesEnabled = true  // Default for utilities
+    @AppStorage("weatherEnabled") private var weatherEnabled = false
+
+    // MARK: - Computed Properties for Service Configurations and Bindings
+    var computedServiceConfigs: [ServiceConfig] {
+        ServiceRegistry.configureServices(
+            calendarEnabled: $calendarEnabled,
+            contactsEnabled: $contactsEnabled,
+            locationEnabled: $locationEnabled,
+            mapsEnabled: $mapsEnabled,
+            messagesEnabled: $messagesEnabled,
+            remindersEnabled: $remindersEnabled,
+            utilitiesEnabled: $utilitiesEnabled,
+            weatherEnabled: $weatherEnabled
+        )
+    }
+
+    private var currentServiceBindings: [String: Binding<Bool>] {
+        Dictionary(
+            uniqueKeysWithValues: computedServiceConfigs.map {
+                ($0.id, $0.binding)
+            }
+        )
+    }
+
     init() {
         Task {
+            // Set initial bindings before starting the server, using own @AppStorage values
+            await networkManager.updateServiceBindings(self.currentServiceBindings)
             await self.networkManager.start()
             self.updateServerStatus("Running")
 
@@ -164,6 +198,9 @@ final class ServerController: ObservableObject {
     }
 
     func updateServiceBindings(_ bindings: [String: Binding<Bool>]) async {
+        // This function is still called by ContentView's onChange when user toggles services.
+        // It ensures ServerNetworkManager is updated and clients are notified.
+        log.debug("Updating service bindings to: \(bindings.mapValues { $0.wrappedValue })")
         await networkManager.updateServiceBindings(bindings)
     }
 
@@ -836,7 +873,7 @@ actor ServerNetworkManager {
 
     // Update service bindings
     func updateServiceBindings(_ newBindings: [String: Binding<Bool>]) async {
-        log.debug("Updating service bindings")
+        log.debug("Updating service bindings to: \(newBindings)")
         self.serviceBindings = newBindings
 
         // Notify clients that tool availability may have changed

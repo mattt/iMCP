@@ -9,26 +9,9 @@ struct ContentView: View {
     @Binding var isMenuPresented: Bool
 
     private let aboutWindowController: AboutWindowController
-    @AppStorage("calendarEnabled") private var calendarEnabled = false
-    @AppStorage("contactsEnabled") private var contactsEnabled = false
-    @AppStorage("locationEnabled") private var locationEnabled = false
-    @AppStorage("messagesEnabled") private var messagesEnabled = false
-    @AppStorage("remindersEnabled") private var remindersEnabled = false
-    @AppStorage("utilitiesEnabled") private var utilitiesEnabled = true
-    @AppStorage("weatherEnabled") private var weatherEnabled = false
-    @AppStorage("mapsEnabled") private var mapsEnabled = true
 
     private var serviceConfigs: [ServiceConfig] {
-        ServiceRegistry.configureServices(
-            calendarEnabled: $calendarEnabled,
-            contactsEnabled: $contactsEnabled,
-            locationEnabled: $locationEnabled,
-            mapsEnabled: $mapsEnabled,
-            messagesEnabled: $messagesEnabled,
-            remindersEnabled: $remindersEnabled,
-            utilitiesEnabled: $utilitiesEnabled,
-            weatherEnabled: $weatherEnabled
-        )
+        serverController.computedServiceConfigs
     }
 
     private var serviceBindings: [String: Binding<Bool>] {
@@ -107,9 +90,6 @@ struct ContentView: View {
             MenuCommand("Quit") {
                 NSApplication.shared.terminate(nil)
             }
-        }
-        .task {
-            await serverController.updateServiceBindings(serviceBindings)
         }
     }
 }
