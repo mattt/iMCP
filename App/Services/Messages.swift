@@ -73,6 +73,10 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                         "description":
                             "ISO 8601 formatted date-time string for the end of the date range (exclusive)",
                     ],
+                    "searchTerm": [
+                        "type": "string",
+                        "description": "Search term to filter messages by",
+                    ],
                     "limit": [
                         "type": "integer",
                         "description": "Maximum number of messages to return",
@@ -98,7 +102,8 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                 dateRange = startDate..<endDate
             }
 
-            let limit = arguments["limit"]?.intValue ?? defaultLimit
+            let searchTerm = arguments["searchTerm"]?.stringValue
+            let limit = arguments["limit"]?.intValue
 
             let db = try self.createDatabaseConnection()
             var messages: [[String: Value]] = []
@@ -107,13 +112,14 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
             let handles = try db.fetchParticipant(matching: participants)
 
             log.debug(
-                "Fetching messages with date range: \(String(describing: dateRange)), limit: \(limit)"
+                "Fetching messages with date range: \(String(describing: dateRange)), limit: \(limit ?? -1)"
             )
             for message in try db.fetchMessages(
                 with: Set(handles),
                 in: dateRange,
-                limit: limit
+                limit: max(limit ?? defaultLimit, 1024)
             ) {
+                guard messages.count < (limit ?? defaultLimit) else { break }
                 guard !message.text.isEmpty else { continue }
 
                 let sender: String
@@ -123,6 +129,12 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                     sender = "unknown"
                 } else {
                     sender = message.sender!.rawValue
+                }
+
+                if let searchTerm {
+                    guard message.text.localizedCaseInsensitiveContains(searchTerm) else {
+                        continue
+                    }
                 }
 
                 messages.append([
