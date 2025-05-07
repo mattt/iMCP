@@ -92,6 +92,8 @@ final class CalendarService: Service {
 
             // Parse dates and set defaults
             let dateFormatter = ISO8601DateFormatter()
+            dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
             let now = Date()
             var startDate = now
             var endDate = Calendar.current.date(byAdding: .weekOfYear, value: 1, to: now)!
@@ -263,6 +265,8 @@ final class CalendarService: Service {
 
             // Parse dates
             let dateFormatter = ISO8601DateFormatter()
+            dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
             guard case let .string(startDateStr) = arguments["startDate"],
                 let startDate = dateFormatter.date(from: startDateStr),
                 case let .string(endDateStr) = arguments["endDate"],
@@ -273,8 +277,28 @@ final class CalendarService: Service {
                     userInfo: [NSLocalizedDescriptionKey: "Invalid start or end date format"]
                 )
             }
-            event.startDate = startDate
-            event.endDate = endDate
+
+            // For all-day events, ensure we use local midnight
+            if case .bool(true) = arguments["isAllDay"] {
+                let calendar = Calendar.current
+                var startComponents = calendar.dateComponents(
+                    [.year, .month, .day], from: startDate)
+                startComponents.hour = 0
+                startComponents.minute = 0
+                startComponents.second = 0
+
+                var endComponents = calendar.dateComponents([.year, .month, .day], from: endDate)
+                endComponents.hour = 23
+                endComponents.minute = 59
+                endComponents.second = 59
+
+                event.startDate = calendar.date(from: startComponents)!
+                event.endDate = calendar.date(from: endComponents)!
+                event.isAllDay = true
+            } else {
+                event.startDate = startDate
+                event.endDate = endDate
+            }
 
             // Set calendar
             var calendar = self.eventStore.defaultCalendarForNewEvents
@@ -300,10 +324,6 @@ final class CalendarService: Service {
                 let url = URL(string: urlString)
             {
                 event.url = url
-            }
-
-            if case let .bool(isAllDay) = arguments["isAllDay"] {
-                event.isAllDay = isAllDay
             }
 
             if case let .string(availability) = arguments["availability"] {

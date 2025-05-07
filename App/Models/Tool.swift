@@ -1,4 +1,6 @@
 import Foundation
+import MCP
+import Ontology
 
 public struct Tool: Sendable {
     let name: String
@@ -19,6 +21,8 @@ public struct Tool: Sendable {
             let result = try await implementation(input)
 
             let encoder = JSONEncoder()
+            encoder.userInfo[Ontology.DateTime.timeZoneOverrideKey] =
+                TimeZone.current
             encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
 
             let data = try encoder.encode(result)
