@@ -1,5 +1,4 @@
 import AppKit
-import Logging
 import MCP
 import Network
 import OSLog
@@ -141,7 +140,6 @@ final class ServerController: ObservableObject {
             await networkManager.setConnectionApprovalHandler {
                 [weak self] connectionID, clientInfo in
                 guard let self = self else {
-                    log.debug("Self is nil in approval handler, denying connection")
                     return false
                 }
 
@@ -244,25 +242,135 @@ final class ServerController: ObservableObject {
     }
 }
 
-actor ServerNetworkManager {
-    private var isRunning: Bool = false
-    private var isEnabled: Bool = true
-    private var listener: NWListener
-    private var browser: NWBrowser
-    private var connections: [UUID: NWConnection] = [:]
-    private var connectionTasks: [UUID: Task<Void, Never>] = [:]
-    private var pendingConnections: [UUID: String] = [:]
-    private var mcpServers: [UUID: MCP.Server] = [:]
+// MARK: - Connection Management Components
 
-    typealias ConnectionApprovalHandler = @Sendable (UUID, MCP.Client.Info) async -> Bool
-    private var connectionApprovalHandler: ConnectionApprovalHandler?
+/// Manages a single MCP connection
+actor MCPConnectionManager {
+    private let connectionID: UUID
+    private let connection: NWConnection
+    private let server: MCP.Server
+    private var transport: NetworkTransport
+    private let parentManager: ServerNetworkManager
 
-    // Replace individual services array with ServiceRegistry
-    private let services = ServiceRegistry.services
-    private var serviceBindings: [String: Binding<Bool>] = [:]
+    init(connectionID: UUID, connection: NWConnection, parentManager: ServerNetworkManager) {
+        self.connectionID = connectionID
+        self.connection = connection
+        self.parentManager = parentManager
 
-    init() {
-        // Set up Bonjour service
+        self.transport = NetworkTransport(
+            connection: connection,
+            logger: nil
+        )
+
+        // Create the MCP server
+        self.server = MCP.Server(
+            name: Bundle.main.name ?? "iMCP",
+            version: Bundle.main.shortVersionString ?? "unknown",
+            capabilities: MCP.Server.Capabilities(
+                tools: .init(listChanged: true)
+            )
+        )
+    }
+
+    func start(approvalHandler: @escaping (MCP.Client.Info) async -> Bool) async throws {
+        do {
+            log.notice("Starting MCP server for connection: \(self.connectionID)")
+            try await server.start(transport: transport) { [weak self] clientInfo, capabilities in
+                guard let self = self else { throw MCPError.connectionClosed }
+
+                log.info("Received initialize request from client: \(clientInfo.name)")
+
+                // Request user approval
+                let approved = await approvalHandler(clientInfo)
+                log.info(
+                    "Approval result for connection \(connectionID): \(approved ? "Approved" : "Denied")"
+                )
+
+                if !approved {
+                    await self.parentManager.removeConnection(self.connectionID)
+                    throw MCPError.connectionClosed
+                }
+            }
+
+            log.notice("MCP Server started successfully for connection: \(self.connectionID)")
+
+            // Register handlers after successful approval
+            await registerHandlers()
+
+            // Monitor connection health
+            await startHealthMonitoring()
+        } catch {
+            log.error("Failed to start MCP server: \(error.localizedDescription)")
+            throw error
+        }
+    }
+
+    private func registerHandlers() async {
+        await parentManager.registerHandlers(for: server, connectionID: connectionID)
+    }
+
+    private func startHealthMonitoring() async {
+        // Set up a connection health monitoring task
+        Task {
+            outer: while await parentManager.isRunning() {
+                switch connection.state {
+                case .ready, .setup, .preparing, .waiting:
+                    break
+                case .cancelled:
+                    log.error("Connection \(self.connectionID) was cancelled, removing")
+                    await parentManager.removeConnection(connectionID)
+                    break outer
+                case .failed(let error):
+                    log.error(
+                        "Connection \(self.connectionID) failed with error \(error), removing"
+                    )
+                    await parentManager.removeConnection(connectionID)
+                    break outer
+                @unknown default:
+                    log.debug("Connection \(self.connectionID) in unknown state, skipping")
+                }
+
+                // Check again after 30 seconds
+                try? await Task.sleep(nanoseconds: 30_000_000_000)  // 30 seconds
+            }
+        }
+    }
+
+    func notifyToolListChanged() async {
+        do {
+            log.info("Notifying client that tool list changed")
+            try await server.notify(ToolListChangedNotification.message())
+        } catch {
+            log.error("Failed to notify client of tool list change: \(error)")
+
+            // If the error is related to connection issues, clean up the connection
+            if let nwError = error as? NWError,
+                nwError.errorCode == 57 || nwError.errorCode == 54
+            {
+                log.debug("Connection appears to be closed")
+                await parentManager.removeConnection(connectionID)
+            }
+        }
+    }
+
+    func stop() async {
+        await server.stop()
+        connection.cancel()
+    }
+}
+
+/// Manages Bonjour service discovery and advertisement
+actor NetworkDiscoveryManager {
+    private let serviceType: String
+    private let serviceDomain: String
+    var listener: NWListener
+    private let browser: NWBrowser
+
+    init(serviceType: String, serviceDomain: String) throws {
+        self.serviceType = serviceType
+        self.serviceDomain = serviceDomain
+
+        // Set up network parameters
         let parameters = NWParameters.tcp
         parameters.acceptLocalOnly = true
         parameters.includePeerToPeer = false
@@ -274,17 +382,107 @@ actor ServerNetworkManager {
         }
 
         // Create the listener with service discovery
-        listener = try! NWListener(using: parameters)
-        listener.service = NWListener.Service(type: serviceType, domain: serviceDomain)
+        self.listener = try NWListener(using: parameters)
+        self.listener.service = NWListener.Service(type: serviceType, domain: serviceDomain)
 
         // Set up browser for debugging/monitoring
-        browser = NWBrowser(
+        self.browser = NWBrowser(
             for: .bonjour(type: serviceType, domain: serviceDomain),
             using: parameters
         )
 
-        log.info(
-            "Network manager initialized with Bonjour service type: \(serviceType)")
+        log.info("Network discovery manager initialized with Bonjour service type: \(serviceType)")
+    }
+
+    func start(
+        stateHandler: @escaping @Sendable (NWListener.State) -> Void,
+        connectionHandler: @escaping @Sendable (NWConnection) -> Void
+    ) {
+        // Set up state handler
+        listener.stateUpdateHandler = stateHandler
+
+        // Set up connection handler
+        listener.newConnectionHandler = connectionHandler
+
+        // Start the listener and browser
+        listener.start(queue: .main)
+        browser.start(queue: .main)
+
+        log.info("Started network discovery and advertisement")
+    }
+
+    func stop() {
+        listener.cancel()
+        browser.cancel()
+        log.info("Stopped network discovery and advertisement")
+    }
+
+    func restartWithRandomPort() async throws {
+        // Cancel the current listener
+        listener.cancel()
+
+        // Create new parameters with a random port
+        let parameters: NWParameters = NWParameters.tcp  // Explicit type
+        parameters.acceptLocalOnly = true
+        parameters.includePeerToPeer = false
+
+        if let tcpOptions = parameters.defaultProtocolStack.internetProtocol
+            as? NWProtocolIP.Options
+        {
+            tcpOptions.version = .v4
+        }
+
+        // Create a new listener with the updated parameters
+        let newListener: NWListener = try NWListener(using: parameters)  // Explicit type
+        let service = NWListener.Service(type: self.serviceType, domain: self.serviceDomain)  // Explicitly create service
+        newListener.service = service
+
+        // Update the state handler and connection handler
+        if let currentStateHandler = listener.stateUpdateHandler {
+            newListener.stateUpdateHandler = currentStateHandler
+        }
+
+        if let currentConnectionHandler = listener.newConnectionHandler {
+            newListener.newConnectionHandler = currentConnectionHandler
+        }
+
+        // Start the new listener
+        newListener.start(queue: .main)
+
+        self.listener = newListener  // Update the instance member
+
+        log.notice("Restarted listener with a dynamic port")
+    }
+}
+
+actor ServerNetworkManager {
+    private var isRunningState: Bool = false
+    private var isEnabledState: Bool = true
+    private var discoveryManager: NetworkDiscoveryManager?
+    private var connections: [UUID: MCPConnectionManager] = [:]
+    private var connectionTasks: [UUID: Task<Void, Never>] = [:]
+    private var pendingConnections: [UUID: String] = [:]
+
+    typealias ConnectionApprovalHandler = @Sendable (UUID, MCP.Client.Info) async -> Bool
+    private var connectionApprovalHandler: ConnectionApprovalHandler?
+
+    // Use ServiceRegistry for services
+    private let services = ServiceRegistry.services
+    private var serviceBindings: [String: Binding<Bool>] = [:]
+
+    init() {
+        do {
+            self.discoveryManager = try NetworkDiscoveryManager(
+                serviceType: serviceType,
+                serviceDomain: serviceDomain
+            )
+        } catch {
+            log.error("Failed to initialize network discovery manager: \(error)")
+        }
+    }
+
+    func isRunning() -> Bool {
+        isRunningState
     }
 
     func setConnectionApprovalHandler(_ handler: @escaping ConnectionApprovalHandler) {
@@ -294,76 +492,143 @@ actor ServerNetworkManager {
 
     func start() async {
         log.info("Starting network manager")
-        isRunning = true
-        listener.stateUpdateHandler = { state in
-            switch state {
-            case .ready:
-                log.info("Server ready and advertising via Bonjour")
-            case .failed(let error):
-                log.error("Server failed: \(error)")
-            default:
-                return
-            }
+        isRunningState = true
+
+        guard let discoveryManager = discoveryManager else {
+            log.error("Cannot start network manager: discovery manager not initialized")
+            return
         }
 
-        listener.newConnectionHandler = { [weak self] connection in
-            Task {
-                await self?.handleNewConnection(connection)
+        // Configure listener state handler
+        await discoveryManager.start(
+            stateHandler: { [weak self] (state: NWListener.State) -> Void in
+                guard let strongSelf = self else { return }
+
+                Task {
+                    await strongSelf.handleListenerStateChange(state)
+                }
+            },
+            connectionHandler: { [weak self] (connection: NWConnection) -> Void in
+                guard let strongSelf = self else { return }
+
+                Task {
+                    await strongSelf.handleNewConnection(connection)
+                }
+            }
+        )
+
+        // Start a monitoring task to check service health periodically
+        Task {
+            while self.isRunningState {  // Explicit self.
+                // Check if the listener is in a ready state
+                if let currentDM = self.discoveryManager,  // Explicit self.
+                    self.isRunningState  // Ensure still running before proceeding
+                {
+                    // Fetch the state of the listener explicitly.
+                    let listenerState: NWListener.State = await currentDM.listener.state
+
+                    if listenerState != .ready {
+                        log.warning(
+                            "Listener not in ready state, current state: \\(listenerState)"
+                        )
+
+                        let shouldAttemptRestart: Bool
+                        switch listenerState {
+                        case .failed, .cancelled:
+                            shouldAttemptRestart = true
+                        default:
+                            shouldAttemptRestart = false
+                        }
+
+                        if shouldAttemptRestart {
+                            log.info(
+                                "Attempting to restart listener (state: \\(listenerState)) because it was failed or cancelled."
+                            )
+                            try? await currentDM.restartWithRandomPort()
+                        }
+                    }
+                }
+
+                // Sleep for 10 seconds before checking again
+                try? await Task.sleep(nanoseconds: 10_000_000_000)  // 10s
             }
         }
+    }
 
-        listener.start(queue: .main)
-        browser.start(queue: .main)
+    private func handleListenerStateChange(_ state: NWListener.State) async {
+        switch state {
+        case .ready:
+            log.info("Server ready and advertising via Bonjour as \(serviceType)")
+        case .setup:
+            log.debug("Server setting up...")
+        case .waiting(let error):
+            log.warning("Server waiting: \(error)")
+
+            // If the port is already in use, try to restart with a different port
+            if error.errorCode == 48 {
+                log.error("Port already in use, will try to restart service")
+
+                // Wait a bit and restart
+                try? await Task.sleep(nanoseconds: 2_000_000_000)  // 2 seconds
+
+                // Try to restart with a different port
+                if isRunningState {
+                    try? await discoveryManager?.restartWithRandomPort()
+                }
+            }
+        case .failed(let error):
+            log.error("Server failed: \(error)")
+
+            // Attempt recovery
+            if isRunningState {
+                log.info("Attempting to recover from server failure")
+                try? await Task.sleep(nanoseconds: 1_000_000_000)  // 1 second
+
+                // Try to restart the listener
+                try? await discoveryManager?.restartWithRandomPort()
+            }
+        case .cancelled:
+            log.info("Server cancelled")
+        @unknown default:
+            log.warning("Unknown server state")
+        }
     }
 
     func stop() async {
         log.info("Stopping network manager")
-        isRunning = false
+        isRunningState = false
 
-        // Stop all MCP servers
-        for (_, server) in mcpServers {
-            Task {
-                await server.stop()
-            }
-        }
-
-        // Cancel all connections
-        for (id, connection) in connections {
-            log.debug("Cancelling connection: \(id)")
+        // Stop all connections
+        for (id, connectionManager) in connections {
+            log.debug("Stopping connection: \(id)")
+            await connectionManager.stop()
             connectionTasks[id]?.cancel()
-            connection.cancel()
         }
 
-        listener.cancel()
-        browser.cancel()
+        connections.removeAll()
+        connectionTasks.removeAll()
+        pendingConnections.removeAll()
+
+        // Stop discovery
+        await discoveryManager?.stop()
     }
 
-    nonisolated func removeConnection(_ id: UUID) {
-        Task {
-            await _removeConnection(id)
-        }
-    }
-
-    private func _removeConnection(_ id: UUID) {
+    func removeConnection(_ id: UUID) async {
         log.debug("Removing connection: \(id)")
-        // Stop the MCP server if it exists
-        if let server = mcpServers[id] {
-            Task {
-                await server.stop()
-            }
-            mcpServers.removeValue(forKey: id)
+
+        // Stop the connection manager
+        if let connectionManager = connections[id] {
+            await connectionManager.stop()
         }
 
+        // Cancel any associated tasks
         if let task = connectionTasks[id] {
             task.cancel()
-            connectionTasks.removeValue(forKey: id)
         }
 
-        if let connection = connections[id] {
-            connection.cancel()
-            connections.removeValue(forKey: id)
-        }
-
+        // Remove from all collections
+        connections.removeValue(forKey: id)
+        connectionTasks.removeValue(forKey: id)
         pendingConnections.removeValue(forKey: id)
     }
 
@@ -371,112 +636,98 @@ actor ServerNetworkManager {
     private func handleNewConnection(_ connection: NWConnection) async {
         let connectionID = UUID()
         log.info("Handling new connection: \(connectionID)")
-        connections[connectionID] = connection
 
-        // Set up connection state handler
-        connection.stateUpdateHandler = { [weak self] state in
-            switch state {
-            case .ready:
-                log.debug("Connection ready")
-                Task {
-                    if let self = self {
-                        await self.setupConnection(
-                            connectionID: connectionID,
-                            connection: connection
-                        )
-                    }
-                }
-            case .failed(let error):
-                log.error("Connection failed: \(error)")
-                Task {
-                    await self?._removeConnection(connectionID)
-                }
-            case .cancelled:
-                log.info("Connection cancelled")
-                Task {
-                    await self?._removeConnection(connectionID)
-                }
-            default:
-                return
-            }
-        }
-
-        connection.start(queue: .main)
-    }
-
-    private func setupConnection(connectionID: UUID, connection: NWConnection) async {
-        let logger = Logger(label: "com.loopwork.mcp-server.\(connectionID)")
-        let transport = NetworkTransport(connection: connection, logger: logger)
-
-        // Create the MCP server
-        let server = MCP.Server(
-            name: Bundle.main.name ?? "iMCP",
-            version: Bundle.main.shortVersionString ?? "unknown",
-            capabilities: MCP.Server.Capabilities(
-                tools: .init(listChanged: true)
-            )
+        // Create a connection manager
+        let connectionManager = MCPConnectionManager(
+            connectionID: connectionID,
+            connection: connection,
+            parentManager: self
         )
 
-        // Store the server immediately
-        self.mcpServers[connectionID] = server
+        // Store the connection manager
+        connections[connectionID] = connectionManager
 
-        // Start the server
-        Task {
+        // Start a task to monitor connection state
+        let task = Task {
+            // Ensure this task is removed from the registry upon completion (success or handled failure)
+            // so the timeout logic below doesn't act on an already completed task.
+            defer {
+                // This runs on ServerNetworkManager's actor context
+                self.connectionTasks.removeValue(forKey: connectionID)
+            }
+
             do {
-                log.notice("Starting MCP server for connection: \(connectionID)")
-                try await server.start(transport: transport) { clientInfo, capabilities in
-                    log.info("Received initialize request from client: \(clientInfo.name)")
-
-                    // Request user approval
-                    var approved = false
-                    if let approvalHandler = await self.connectionApprovalHandler {
-                        approved = await approvalHandler(connectionID, clientInfo)
-                        log.info(
-                            "Approval result for connection \(connectionID): \(approved ? "Approved" : "Denied")"
-                        )
-                    }
-
-                    if !approved {
-                        await self._removeConnection(connectionID)
-                        throw MCPError.connectionClosed
-                    }
+                // Set up the connection approval handler
+                guard let approvalHandler = self.connectionApprovalHandler else {
+                    log.error("No connection approval handler set, rejecting connection")
+                    await removeConnection(connectionID)
+                    return
                 }
-                log.notice("MCP Server started successfully for connection: \(connectionID)")
 
-                // Register handlers after successful approval
-                await self.registerHandlers(for: server)
+                // Start the MCP server with our approval handler
+                try await connectionManager.start { clientInfo in
+                    await approvalHandler(connectionID, clientInfo)
+                }
+
+                log.notice("Connection \(connectionID) successfully established")
             } catch {
-                log.error("Failed to start MCP server: \(error.localizedDescription)")
-                _removeConnection(connectionID)
+                log.error("Failed to establish connection \(connectionID): \(error)")
+                await removeConnection(connectionID)
+            }
+        }
+
+        // Store the task
+        connectionTasks[connectionID] = task
+
+        // Set up a timeout to ensure the connection becomes ready in a reasonable time
+        Task {
+            try? await Task.sleep(nanoseconds: 10_000_000_000)  // 10 seconds
+
+            // Check if the setup task is still in the registry. If so, it implies
+            // it hasn't completed its defer block (e.g., it's stuck or genuinely timed out)
+            // and wasn't cleaned up by an error path calling removeConnection.
+            // Also, ensure the connection object itself still exists.
+            if self.connectionTasks[connectionID] != nil,  // Task entry still exists (meaning it hasn't completed defer)
+                self.connections[connectionID] != nil
+            {  // Connection object still exists
+                log.warning(
+                    "Connection \(connectionID) setup timed out (task still in registry), closing it"
+                )
+                await removeConnection(connectionID)
             }
         }
     }
 
-    private func registerHandlers(for server: MCP.Server) async {
+    func registerHandlers(for server: MCP.Server, connectionID: UUID) async {
         // Register prompts/list handler
         await server.withMethodHandler(ListPrompts.self) { _ in
-            log.debug("Handling ListPrompts request")
+            log.debug("Handling ListPrompts request for \(connectionID)")
             return ListPrompts.Result(prompts: [])
         }
 
         // Register the resources/list handler
         await server.withMethodHandler(ListResources.self) { _ in
-            log.debug("Handling ListResources request")
+            log.debug("Handling ListResources request for \(connectionID)")
             return ListResources.Result(resources: [])
         }
 
-        // Update tools/list handler with proper actor isolation
-        await server.withMethodHandler(ListTools.self) { [self] _ in
-            log.debug("Handling ListTools request")
+        // Register tools/list handler
+        await server.withMethodHandler(ListTools.self) { [weak self] _ in
+            guard let self = self else {
+                return ListTools.Result(tools: [])
+            }
+
+            log.debug("Handling ListTools request for \(connectionID)")
 
             var tools: [MCP.Tool] = []
-            if await self.isEnabled {
-                for service in self.services {
+            if await self.isEnabledState {
+                for service in await self.services {
                     let serviceId = String(describing: type(of: service))
 
                     // Get the binding value in an actor-safe way
-                    let isServiceEnabled = await serviceBindings[serviceId]?.wrappedValue ?? true
-                    if isServiceEnabled {
+                    if let isServiceEnabled = await self.serviceBindings[serviceId]?.wrappedValue,
+                        isServiceEnabled
+                    {
                         for tool in service.tools {
                             log.debug("Adding tool: \(tool.name)")
                             tools.append(
@@ -491,15 +742,22 @@ actor ServerNetworkManager {
                 }
             }
 
-            log.info("Returning \(tools.count) available tools")
+            log.info("Returning \(tools.count) available tools for \(connectionID)")
             return ListTools.Result(tools: tools)
         }
 
-        // Update tools/call handler with proper actor isolation
-        await server.withMethodHandler(CallTool.self) { [self] params in
-            log.notice("Tool call received: \(params.name)")
+        // Register tools/call handler
+        await server.withMethodHandler(CallTool.self) { [weak self] params in
+            guard let self = self else {
+                return CallTool.Result(
+                    content: [.text("Server unavailable")],
+                    isError: true
+                )
+            }
 
-            guard await self.isEnabled else {
+            log.notice("Tool call received from \(connectionID): \(params.name)")
+
+            guard await self.isEnabledState else {
                 log.notice("Tool call rejected: iMCP is disabled")
                 return CallTool.Result(
                     content: [.text("iMCP is currently disabled. Please enable it to use tools.")],
@@ -507,47 +765,48 @@ actor ServerNetworkManager {
                 )
             }
 
-            for service in self.services {
+            for service in await self.services {
                 let serviceId = String(describing: type(of: service))
 
                 // Get the binding value in an actor-safe way
-                let isServiceEnabled = await serviceBindings[serviceId]?.wrappedValue ?? true
-                guard isServiceEnabled else {
-                    continue
-                }
+                if let isServiceEnabled = await self.serviceBindings[serviceId]?.wrappedValue,
+                    isServiceEnabled
+                {
+                    do {
+                        guard
+                            let value = try await service.call(
+                                tool: params.name,
+                                with: params.arguments ?? [:]
+                            )
+                        else {
+                            continue
+                        }
 
-                do {
-                    guard
-                        let value = try await service.call(
-                            tool: params.name,
-                            with: params.arguments ?? [:]
-                        )
-                    else {
-                        continue
+                        log.notice("Tool \(params.name) executed successfully for \(connectionID)")
+                        switch value {
+                        case let .data(mimeType?, data) where mimeType.hasPrefix("image/"):
+                            return CallTool.Result(
+                                content: [
+                                    .image(
+                                        data: data.base64EncodedString(),
+                                        mimeType: mimeType,
+                                        metadata: nil
+                                    )
+                                ], isError: false)
+                        default:
+                            let encoder = JSONEncoder()
+                            encoder.userInfo[Ontology.DateTime.timeZoneOverrideKey] =
+                                TimeZone.current
+                            encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+                            let data = try encoder.encode(value)
+                            let text = String(data: data, encoding: .utf8)!
+                            return CallTool.Result(content: [.text(text)], isError: false)
+                        }
+                    } catch {
+                        log.error(
+                            "Error executing tool \(params.name): \(error.localizedDescription)")
+                        return CallTool.Result(content: [.text("Error: \(error)")], isError: true)
                     }
-
-                    log.notice("Tool \(params.name) executed successfully")
-                    switch value {
-                    case let .data(mimeType?, data) where mimeType.hasPrefix("image/"):
-                        return CallTool.Result(
-                            content: [
-                                .image(
-                                    data: data.base64EncodedString(),
-                                    mimeType: mimeType,
-                                    metadata: nil
-                                )
-                            ], isError: false)
-                    default:
-                        let encoder = JSONEncoder()
-                        encoder.userInfo[Ontology.DateTime.timeZoneOverrideKey] = TimeZone.current
-                        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-                        let data = try encoder.encode(value)
-                        let text = String(data: data, encoding: .utf8)!
-                        return CallTool.Result(content: [.text(text)], isError: false)
-                    }
-                } catch {
-                    log.error("Error executing tool \(params.name): \(error.localizedDescription)")
-                    return CallTool.Result(content: [.text("Error: \(error)")], isError: true)
                 }
             }
 
@@ -562,50 +821,28 @@ actor ServerNetworkManager {
     // Update the enabled state and notify clients
     func setEnabled(_ enabled: Bool) async {
         // Only do something if the state actually changes
-        guard isEnabled != enabled else { return }
+        guard isEnabledState != enabled else { return }
 
-        isEnabled = enabled
+        isEnabledState = enabled
         log.info("iMCP enabled state changed to: \(enabled)")
 
         // Notify all connected clients that the tool list has changed
-        for (connectionID, server) in mcpServers {
-            // Check if the connection is still active before sending notification
-            if let connection = connections[connectionID], connection.state == .ready {
-                Task {
-                    do {
-                        log.info(
-                            "Notified client that tool list changed. Tools are now \(enabled ? "enabled" : "disabled")"
-                        )
-                        try await server.notify(ToolListChangedNotification.message())
-                    } catch {
-                        log.error("Failed to notify client of tool list change: \(error)")
-
-                        // If the error is related to connection issues, clean up the connection
-                        if let nwError = error as? NWError,
-                            nwError.errorCode == 57  // Socket is not connected
-                                || nwError.errorCode == 54
-                        {  // Connection reset by peer
-                            log.debug("Connection appears to be closed, removing it")
-                            _removeConnection(connectionID)
-                        }
-                    }
-                }
-            } else {
-                log.debug("Connection \(connectionID) is no longer active, removing it")
-                _removeConnection(connectionID)
+        for (_, connectionManager) in connections {
+            Task {
+                await connectionManager.notifyToolListChanged()
             }
         }
     }
 
     // Update service bindings
-    func updateServiceBindings(_ newBindings: [String: Binding<Bool>]) {
+    func updateServiceBindings(_ newBindings: [String: Binding<Bool>]) async {
         log.debug("Updating service bindings")
         self.serviceBindings = newBindings
 
         // Notify clients that tool availability may have changed
         Task {
-            for (_, server) in mcpServers {
-                try? await server.notify(ToolListChangedNotification.message())
+            for (_, connectionManager) in connections {
+                await connectionManager.notifyToolListChanged()
             }
         }
     }
