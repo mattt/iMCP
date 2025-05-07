@@ -189,8 +189,6 @@ actor StdioProxy {
 
         var buffer = [UInt8](repeating: 0, count: bufferSize)
         var pendingData = Data()
-        var consecutiveWouldBlockCount = 0
-        let maxConsecutiveWouldBlocks = 1000  // After this many consecutive would-blocks, we'll timeout
 
         while true {
             // Check connection state at the beginning of each loop iteration
@@ -219,9 +217,6 @@ actor StdioProxy {
                 }
 
                 if bytesRead > 0 {
-                    // Reset the would-block counter when we successfully read data
-                    consecutiveWouldBlockCount = 0
-
                     // Append the read bytes to pending data
                     pendingData.append(contentsOf: buffer[0..<bytesRead])
 
@@ -258,19 +253,7 @@ actor StdioProxy {
                 }
             } catch {
                 if let posixError = error as? Errno, posixError == .wouldBlock {
-                    // Would block, yield to other tasks
-                    consecutiveWouldBlockCount += 1
-
-                    // Check if we've exceeded the timeout threshold
-                    if consecutiveWouldBlockCount > maxConsecutiveWouldBlocks {
-                        await log.warning(
-                            "Stdin read timed out after \(maxConsecutiveWouldBlocks) consecutive would-blocks"
-                        )
-                        // Instead of breaking, throw a special error that indicates we need to reconnect
-                        throw StdioProxyError.stdinTimeout
-                    }
-
-                    try await Task.sleep(for: .milliseconds(10))
+                    try await Task.sleep(for: .milliseconds(10))  // Keep the sleep to yield CPU
                     continue
                 }
 
@@ -358,38 +341,73 @@ actor StdioProxy {
                     continue
                 }
 
-                if data.isEmpty {
-                    // No data available, yield to other tasks
-                    consecutiveEmptyReads += 1
+                var processedData = data
+
+                // Check for and filter out heartbeat messages using MCP.NetworkTransport.Heartbeat
+                // Assuming MCP module and NetworkTransport.Heartbeat are available
+                if NetworkTransport.Heartbeat.isHeartbeat(processedData) {
+                    await log.debug(
+                        "Heartbeat signature detected in received network data using MCP definition."
+                    )
+
+                    // Try to parse a full heartbeat. MCP.NetworkTransport.Heartbeat.from(data:) checks for minimum length internally.
+                    if let heartbeat = NetworkTransport.Heartbeat.from(data: processedData) {
+                        let heartbeatLength = heartbeat.rawValue.count  // This should typically be 12
+                        await log.debug(
+                            "Full MCP heartbeat message (\(heartbeatLength) bytes) received from network, skipping output."
+                        )
+                        // Remove the full heartbeat from the data
+                        processedData = processedData.dropFirst(heartbeatLength)
+                    } else {
+                        // MCP.NetworkTransport.Heartbeat.isHeartbeat was true, but .from(data:) failed.
+                        // This means we have the magic bytes but not the full message (e.g., data length < 12 but >= 4).
+                        let expectedHeartbeatLength = MCP.NetworkTransport.Heartbeat().rawValue
+                            .count  // Get expected length (12)
+                        await log.debug(
+                            "Partial MCP heartbeat message (<\(expectedHeartbeatLength) bytes) received, discarding this chunk to prevent garbled output."
+                        )
+                        processedData = Data()  // Discard the chunk
+                    }
+                }
+
+                if processedData.isEmpty {
+                    // No data available (or entire chunk was a heartbeat), yield to other tasks
+                    // If original data was not empty, but processedData is, it means it was a heartbeat.
+                    if !data.isEmpty {  // Original data was not empty, so this was a heartbeat
+                        consecutiveEmptyReads = 0  // Reset counter as we did receive something (a heartbeat)
+                    } else {
+                        consecutiveEmptyReads += 1
+                    }
                     try await Task.sleep(for: .milliseconds(10))
                     continue
                 } else {
-                    // Reset counter when we get data
+                    // Reset counter when we get actual data (not just a heartbeat)
                     consecutiveEmptyReads = 0
-
-                    await log.debug("Received \(data.count) bytes from network")
+                    await log.debug(
+                        "Received \(processedData.count) bytes of application data from network: \(String(data: processedData, encoding: .utf8) ?? "<non-UTF8 data>")"
+                    )
                 }
 
                 // Write data to stdout using SystemPackage approach
                 // Handle partial writes by writing all data in chunks if necessary
-                var remainingData = data
-                while !remainingData.isEmpty {
-                    let bytesWritten: Int = try remainingData.withUnsafeBytes { buffer in
+                var remainingDataToWrite = processedData
+                while !remainingDataToWrite.isEmpty {
+                    let bytesWritten: Int = try remainingDataToWrite.withUnsafeBytes { buffer in
                         try stdout.write(UnsafeRawBufferPointer(buffer))
                     }
 
-                    if bytesWritten < remainingData.count {
+                    if bytesWritten < remainingDataToWrite.count {
                         await log.debug(
-                            "Partial write: \(bytesWritten) of \(remainingData.count) bytes")
+                            "Partial write: \(bytesWritten) of \(remainingDataToWrite.count) bytes")
                         // Remove the bytes that were written
-                        remainingData = remainingData.dropFirst(bytesWritten)
+                        remainingDataToWrite = remainingDataToWrite.dropFirst(bytesWritten)
                     } else {
                         // All bytes were written
-                        remainingData.removeAll()
+                        remainingDataToWrite.removeAll()
                     }
 
                     // If we still have data to write, give a small delay to allow the system to process
-                    if !remainingData.isEmpty {
+                    if !remainingDataToWrite.isEmpty {
                         try await Task.sleep(for: .milliseconds(1))
                     }
                 }
@@ -421,7 +439,6 @@ actor StdioProxy {
 
 // Define custom errors for the StdioProxy
 enum StdioProxyError: Swift.Error {
-    case stdinTimeout
     case networkTimeout
     case connectionClosed
 }
@@ -443,40 +460,86 @@ actor MCPService: Service {
             do {
                 await log.info("Starting Bonjour service discovery...")
 
-                // Find and connect to iMCP app
+                // Find and connect to iMCP app with improved reliability
                 let endpoint: NWEndpoint = try await withCheckedThrowingContinuation {
                     continuation in
                     let connectionState = ConnectionState()
 
+                    // Set up a timeout task to ensure we don't wait forever
+                    let timeoutTask = Task {
+                        // Allow 30 seconds to find the service
+                        try await Task.sleep(for: .seconds(30))
+
+                        // If we haven't found a service by now, resume with an error
+                        if await connectionState.checkAndSetResumed() {
+                            await log.error("Bonjour service discovery timed out after 30 seconds")
+                            continuation.resume(
+                                throwing: MCPError.internalError("Service discovery timeout"))
+                        }
+                    }
+
                     // Convert async handlers to sync handlers
                     browser.stateUpdateHandler = { state in
-                        if case .failed(let error) = state {
-                            Task {
+                        Task {
+                            switch state {
+                            case .failed(let error):
                                 await log.error("Browser failed: \(error)")
                                 if await connectionState.checkAndSetResumed() {
+                                    timeoutTask.cancel()
                                     continuation.resume(throwing: error)
                                 }
+                            case .ready:
+                                await log.info("Browser is ready and searching for services")
+                            case .waiting(let error):
+                                await log.warning("Browser is waiting: \(error)")
+                            default:
+                                await log.debug("Browser state changed: \(state)")
                             }
-                        }
-                        Task {
-                            await log.debug("Browser state changed: \(state)")
                         }
                     }
 
                     browser.browseResultsChangedHandler = { results, changes in
                         Task {
                             await log.debug("Found \(results.count) Bonjour services")
-                            if let endpoint = results.first?.endpoint {
+
+                            // Log all discovered services for debugging
+                            for (index, result) in results.enumerated() {
+                                await log.debug("Service \(index + 1): \(result.endpoint)")
+                            }
+
+                            // If we have results, select the most appropriate one
+                            if !results.isEmpty {
+                                // First, try to find a service with "iMCP" in the endpoint description
+                                let imcpServices = results.filter {
+                                    String(describing: $0.endpoint).contains("iMCP")
+                                }
+
+                                let selectedService: NWBrowser.Result
+
+                                if !imcpServices.isEmpty {
+                                    // Prefer services with iMCP in the description
+                                    selectedService = imcpServices.first!
+                                    await log.info(
+                                        "Selected iMCP service: \(selectedService.endpoint)")
+                                } else {
+                                    // Fall back to the first available service
+                                    selectedService = results.first!
+                                    await log.info(
+                                        "No specific iMCP service found, using: \(selectedService.endpoint)"
+                                    )
+                                }
+
                                 if await connectionState.checkAndSetResumed() {
-                                    await log.info("Selected endpoint: \(endpoint)")
-                                    continuation.resume(returning: endpoint)
+                                    timeoutTask.cancel()
+                                    await log.info("Selected endpoint: \(selectedService.endpoint)")
+                                    continuation.resume(returning: selectedService.endpoint)
                                 }
                             }
                         }
                     }
 
                     Task {
-                        await log.debug("Starting Bonjour browser...")
+                        await log.info("Starting Bonjour browser to discover MCP services...")
                     }
                     browser.start(queue: .main)
                 }
@@ -496,10 +559,11 @@ actor MCPService: Service {
                     try await proxy.start()
                 } catch let error as StdioProxyError {
                     switch error {
-                    case .stdinTimeout:
-                        await log.info("Stdin timed out, will reconnect...")
-                        try await Task.sleep(for: .seconds(1))
-                        continue
+                    // Removed stdinTimeout case as it's no longer thrown
+                    // case .stdinTimeout:
+                    //     await log.info("Stdin timed out, will reconnect...")
+                    //     try await Task.sleep(for: .seconds(1))
+                    //     continue
                     case .networkTimeout:
                         await log.info("Network timed out, will reconnect...")
                         try await Task.sleep(for: .seconds(1))
