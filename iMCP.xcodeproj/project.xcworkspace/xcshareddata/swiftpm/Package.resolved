@@ -1,6 +1,15 @@
 {
-  "originHash" : "e1b9265a02530ddd50188705f65539f9c971ca2cbe8054a1d23f74811b29c7a0",
+  "originHash" : "6929412a67fe9dc534eee564f43ddf515060f457f4ed6c0862250bf90af0dff4",
   "pins" : [
+    {
+      "identity" : "eventsource",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/loopwork-ai/eventsource.git",
+      "state" : {
+        "revision" : "07957602bb99a5355c810187e66e6ce378a1057d",
+        "version" : "1.1.1"
+      }
+    },
     {
       "identity" : "maccontrolcenterui",
       "kind" : "remoteSourceControl",
@@ -17,15 +26,6 @@
       "state" : {
         "revision" : "9d9fdb20424483fb592e5a026d9d0816cd5c43eb",
         "version" : "0.1.0"
-      }
-    },
-    {
-      "identity" : "mcp-swift-sdk",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/loopwork-ai/mcp-swift-sdk",
-      "state" : {
-        "revision" : "cfcead8121de466624a1357e02894616b0057805",
-        "version" : "0.7.1"
       }
     },
     {
@@ -74,6 +74,15 @@
       }
     },
     {
+      "identity" : "swift-sdk",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/modelcontextprotocol/swift-sdk",
+      "state" : {
+        "branch" : "main",
+        "revision" : "87f33d022a870cc8635d52a1a77fcca14b2cab7d"
+      }
+    },
+    {
       "identity" : "swift-service-lifecycle",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/swift-server/swift-service-lifecycle",
@@ -87,8 +96,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-system.git",
       "state" : {
-        "revision" : "c8a44d836fe7913603e246acab7c528c2e780168",
-        "version" : "1.4.0"
+        "revision" : "a34201439c74b53f0fd71ef11741af7e7caf01e1",
+        "version" : "1.4.2"
       }
     }
   ],
