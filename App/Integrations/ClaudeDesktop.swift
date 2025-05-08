@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import MCP
 import OSLog
 
 private let log = Logger.integration("claude-desktop")
@@ -40,7 +41,7 @@ enum ClaudeDesktop {
     static func showConfigurationPanel() {
         do {
             log.debug("Loading existing Claude Desktop configuration")
-            let config = try loadConfig()
+            let (config, imcpServer) = try loadConfig()
 
             let fileExists = FileManager.default.fileExists(atPath: configPath)
 
@@ -62,7 +63,7 @@ enum ClaudeDesktop {
             let alertResponse = alert.runModal()
             if alertResponse == .alertFirstButtonReturn {
                 log.debug("User clicked Save, updating configuration")
-                try saveConfig(config)
+                try updateConfig(config, upserting: imcpServer)
                 log.notice("Configuration updated successfully")
             } else {
                 log.debug("User cancelled configuration update")
@@ -112,14 +113,14 @@ private func saveSecurityScopedAccess(for url: URL) throws {
     log.debug("Successfully saved security-scoped bookmark")
 }
 
-private func loadConfig() throws -> ClaudeDesktop.Config {
+private func loadConfig() throws -> ([String: Value], ClaudeDesktop.Config.MCPServer) {
     log.debug("Creating default iMCP server configuration")
     let imcpServer = ClaudeDesktop.Config.MCPServer(
         command: Bundle.main.bundleURL
             .appendingPathComponent("Contents/MacOS/imcp-server")
             .path)
 
-    var config = ClaudeDesktop.Config(mcpServers: ["iMCP": imcpServer])
+    var config: [String: Value] = ["mcpServers": .object([:])]
 
     // Try to load existing config if it exists
     if let secureURL = try? getSecurityScopedConfigURL(),
@@ -130,21 +131,36 @@ private func loadConfig() throws -> ClaudeDesktop.Config {
 
         log.debug("Loading existing configuration from: \(secureURL.path)")
         let data = try Data(contentsOf: secureURL)
-        config = try jsonDecoder.decode(ClaudeDesktop.Config.self, from: data)
-        config.mcpServers["iMCP"] = imcpServer
+        config = try jsonDecoder.decode([String: Value].self, from: data)
     } else {
         log.debug("No existing config found or accessible, will create a new one")
     }
 
-    return config
+    return (config, imcpServer)
 }
 
-private func saveConfig(_ config: ClaudeDesktop.Config) throws {
+private func updateConfig(
+    _ config: [String: Value],
+    upserting imcpServer: ClaudeDesktop.Config.MCPServer
+)
+    throws
+{
+    // Update the iMCP server entry
+    var updatedConfig = config
+    let imcpServerValue = try Value(imcpServer)
+
+    if var mcpServers = config["mcpServers"]?.objectValue {
+        mcpServers["iMCP"] = imcpServerValue
+        updatedConfig["mcpServers"] = .object(mcpServers)
+    } else {
+        updatedConfig["mcpServers"] = .object(["iMCP": imcpServerValue])
+    }
+
     // If we have an existing security-scoped URL, try to use it
     if let secureURL = try? getSecurityScopedConfigURL() {
         if secureURL.startAccessingSecurityScopedResource() {
             defer { secureURL.stopAccessingSecurityScopedResource() }
-            try writeConfig(config, to: secureURL)
+            try writeConfig(updatedConfig, to: secureURL)
             return
         }
     }
@@ -167,14 +183,14 @@ private func saveConfig(_ config: ClaudeDesktop.Config) throws {
 
     // Create the file first
     log.debug("Creating configuration at selected URL: \(selectedURL.path)")
-    try writeConfig(config, to: selectedURL)
+    try writeConfig(updatedConfig, to: selectedURL)
 
     // Then create the security-scoped bookmark
     log.debug("Creating security-scoped access for selected URL")
     try saveSecurityScopedAccess(for: selectedURL)
 }
 
-private func writeConfig(_ config: ClaudeDesktop.Config, to url: URL) throws {
+private func writeConfig(_ config: [String: Value], to url: URL) throws {
     log.debug("Creating directory if needed: \(url.deletingLastPathComponent().path)")
     try FileManager.default.createDirectory(
         at: url.deletingLastPathComponent(),
