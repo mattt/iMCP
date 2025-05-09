@@ -26,6 +26,11 @@ final class WeatherService: Service {
                     ),
                 ],
                 additionalProperties: false
+            ),
+            annotations: .init(
+                title: "Get Current Weather",
+                readOnlyHint: true,
+                openWorldHint: true
             )
         ) { arguments in
             guard case let .double(latitude) = arguments["latitude"],
@@ -46,6 +51,57 @@ final class WeatherService: Service {
         }
 
         Tool(
+            name: "getDailyForecastForLocation",
+            description: "Get daily weather forecast for a location",
+            inputSchema: .object(
+                properties: [
+                    "latitude": .number(
+                        description: "The latitude of the location"
+                    ),
+                    "longitude": .number(
+                        description: "The longitude of the location"
+                    ),
+                    "days": .integer(
+                        description: "Number of days to forecast (default 7, max 10)",
+                        default: 7,
+                        minimum: 1,
+                        maximum: 10
+                    ),
+                ],
+                additionalProperties: false
+            ),
+            annotations: .init(
+                title: "Get Daily Forecast",
+                readOnlyHint: true,
+                openWorldHint: true
+            )
+        ) { arguments in
+            guard case let .double(latitude) = arguments["latitude"],
+                case let .double(longitude) = arguments["longitude"]
+            else {
+                log.error("Invalid coordinates")
+                throw NSError(
+                    domain: "WeatherServiceError", code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "Invalid coordinates"]
+                )
+            }
+
+            var days: Int = 7
+            if case let .int(daysRequested) = arguments["days"] {
+                days = daysRequested
+            } else if case let .double(daysRequested) = arguments["days"] {
+                days = Int(daysRequested)
+            }
+            days = days.clamped(to: 1...10)
+
+            let location = CLLocation(latitude: latitude, longitude: longitude)
+            let dailyForecast = try await self.weatherService.weather(
+                for: location, including: .daily)
+
+            return dailyForecast.prefix(days).map { WeatherForecast($0) }
+        }
+        
+        Tool(
             name: "getHourlyForecastForLocation",
             description: "Get hourly weather forecast for a location",
             inputSchema: .object(
@@ -64,6 +120,11 @@ final class WeatherService: Service {
                     ),
                 ],
                 additionalProperties: false
+            ),
+            annotations: .init(
+                title: "Get Hourly Forecast",
+                readOnlyHint: true,
+                openWorldHint: true
             )
         ) { arguments in
             guard case let .double(latitude) = arguments["latitude"],
@@ -94,52 +155,6 @@ final class WeatherService: Service {
         }
 
         Tool(
-            name: "getDailyForecastForLocation",
-            description: "Get daily weather forecast for a location",
-            inputSchema: .object(
-                properties: [
-                    "latitude": .number(
-                        description: "The latitude of the location"
-                    ),
-                    "longitude": .number(
-                        description: "The longitude of the location"
-                    ),
-                    "days": .integer(
-                        description: "Number of days to forecast (default 7, max 10)",
-                        default: 7,
-                        minimum: 1,
-                        maximum: 10
-                    ),
-                ],
-                additionalProperties: false
-            )
-        ) { arguments in
-            guard case let .double(latitude) = arguments["latitude"],
-                case let .double(longitude) = arguments["longitude"]
-            else {
-                log.error("Invalid coordinates")
-                throw NSError(
-                    domain: "WeatherServiceError", code: 1,
-                    userInfo: [NSLocalizedDescriptionKey: "Invalid coordinates"]
-                )
-            }
-
-            var days: Int = 7
-            if case let .int(daysRequested) = arguments["days"] {
-                days = daysRequested
-            } else if case let .double(daysRequested) = arguments["days"] {
-                days = Int(daysRequested)
-            }
-            days = days.clamped(to: 1...10)
-
-            let location = CLLocation(latitude: latitude, longitude: longitude)
-            let dailyForecast = try await self.weatherService.weather(
-                for: location, including: .daily)
-
-            return dailyForecast.prefix(days).map { WeatherForecast($0) }
-        }
-
-        Tool(
             name: "getMinuteByMinuteForecastForLocation",
             description: "Get minute-by-minute weather forecast for a location",
             inputSchema: .object(
@@ -158,6 +173,11 @@ final class WeatherService: Service {
                     ),
                 ],
                 additionalProperties: false
+            ),
+            annotations: .init(
+                title: "Get Minute-by-Minute Forecast",
+                readOnlyHint: true,
+                openWorldHint: true
             )
         ) { arguments in
             guard case let .double(latitude) = arguments["latitude"],

@@ -93,6 +93,11 @@ final class LocationService: NSObject, Service, CLLocationManagerDelegate {
             inputSchema: .object(
                 properties: [:],
                 additionalProperties: false
+            ),
+            annotations: .init(
+                title: "Get Current Location",
+                readOnlyHint: true,
+                openWorldHint: false
             )
         ) { _ in
             return try await withCheckedThrowingContinuation {
@@ -176,6 +181,11 @@ final class LocationService: NSObject, Service, CLLocationManagerDelegate {
                 ],
                 required: ["address"],
                 additionalProperties: false
+            ),
+            annotations: .init(
+                title: "Geocode Address",
+                readOnlyHint: true,
+                openWorldHint: true
             )
         ) { arguments in
             guard let address = arguments["address"]?.stringValue else {
@@ -264,6 +274,11 @@ final class LocationService: NSObject, Service, CLLocationManagerDelegate {
                     "longitude": .number(),
                 ],
                 required: ["latitude", "longitude"]
+            ),
+            annotations: .init(
+                title: "Reverse Geocode Location",
+                readOnlyHint: true,
+                openWorldHint: true
             )
         ) { arguments in
             guard let latitude = arguments["latitude"]?.doubleValue,

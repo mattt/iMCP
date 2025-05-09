@@ -73,6 +73,11 @@ final class ContactsService: Service {
             inputSchema: .object(
                 properties: [:],
                 additionalProperties: false
+            ),
+            annotations: .init(
+                title: "Who Am I?",
+                readOnlyHint: true,
+                openWorldHint: false
             )
         ) { _ in
             let contact = try self.contactStore.unifiedMeContactWithKeys(toFetch: contactKeys)
@@ -96,6 +101,11 @@ final class ContactsService: Service {
                     ),
                 ],
                 additionalProperties: false
+            ),
+            annotations: .init(
+                title: "Search Contacts",
+                readOnlyHint: true,
+                openWorldHint: false
             )
         ) { arguments in
             var predicates: [NSPredicate] = []

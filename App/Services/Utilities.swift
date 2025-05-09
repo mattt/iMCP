@@ -38,6 +38,11 @@ final class UtilitiesService: Service {
                 ],
                 required: ["sound"],
                 additionalProperties: false
+            ),
+            annotations: .init(
+                title: "Play System Sound",
+                readOnlyHint: true,
+                openWorldHint: false
             )
         ) { input in
             let rawValue = input["sound"]?.stringValue ?? Sound.default.rawValue

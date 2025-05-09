@@ -64,6 +64,11 @@ final class CalendarService: Service {
                     ),
                 ],
                 additionalProperties: false
+            ),
+            annotations: .init(
+                title: "Fetch Events",
+                readOnlyHint: true,
+                openWorldHint: false
             )
         ) { arguments in
             guard EKEventStore.authorizationStatus(for: .event) == .fullAccess else {
@@ -195,6 +200,11 @@ final class CalendarService: Service {
                 ],
                 required: ["title", "startDate", "endDate"],
                 additionalProperties: false
+            ),
+            annotations: .init(
+                title: "Create Event",
+                destructiveHint: true,
+                openWorldHint: false
             )
         ) { arguments in
             try await self.activate()

@@ -50,6 +50,11 @@ final class RemindersService: Service {
                     ),
                 ],
                 additionalProperties: false
+            ),
+            annotations: .init(
+                title: "Fetch Reminders",
+                readOnlyHint: true,
+                openWorldHint: false
             )
         ) { arguments in
             try await self.activate()
@@ -160,6 +165,11 @@ final class RemindersService: Service {
                 ],
                 required: ["title"],
                 additionalProperties: false
+            ),
+            annotations: .init(
+                title: "Create Reminder",
+                destructiveHint: true,
+                openWorldHint: false
             )
         ) { arguments in
             try await self.activate()

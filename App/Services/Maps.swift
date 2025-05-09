@@ -60,6 +60,11 @@ final class MapsService: NSObject, Service {
                 ],
                 required: ["query"],
                 additionalProperties: false
+            ),
+            annotations: .init(
+                title: "Search Places",
+                readOnlyHint: true,
+                openWorldHint: true
             )
         ) { arguments in
             guard let query = arguments["query"]?.stringValue else {
@@ -154,6 +159,11 @@ final class MapsService: NSObject, Service {
                     ),
                 ],
                 additionalProperties: false
+            ),
+            annotations: .init(
+                title: "Get Directions",
+                readOnlyHint: true,
+                openWorldHint: true
             )
         ) { arguments in
             // Need either origin address or coordinates
@@ -262,6 +272,11 @@ final class MapsService: NSObject, Service {
                 ],
                 required: ["category", "latitude", "longitude"],
                 additionalProperties: false
+            ),
+            annotations: .init(
+                title: "Find Nearby Points of Interest",
+                readOnlyHint: true,
+                openWorldHint: true
             )
         ) { arguments in
             guard let categoryString = arguments["category"]?.stringValue,
@@ -341,6 +356,11 @@ final class MapsService: NSObject, Service {
                     "destinationLongitude",
                 ],
                 additionalProperties: false
+            ),
+            annotations: .init(
+                title: "Get Estimated Travel Time",
+                readOnlyHint: true,
+                openWorldHint: true
             )
         ) { arguments in
             guard let originLat = arguments["originLatitude"]?.doubleValue,
@@ -465,6 +485,11 @@ final class MapsService: NSObject, Service {
                 ],
                 required: ["latitude", "longitude", "latitudeDelta", "longitudeDelta"],
                 additionalProperties: false
+            ),
+            annotations: .init(
+                title: "Generate Map Image",
+                readOnlyHint: true,
+                openWorldHint: true
             )
         ) { arguments in
             guard let latitude = arguments["latitude"]?.doubleValue,
