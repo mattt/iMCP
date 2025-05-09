@@ -1,5 +1,5 @@
 {
-  "originHash" : "6929412a67fe9dc534eee564f43ddf515060f457f4ed6c0862250bf90af0dff4",
+  "originHash" : "004283a7666aa08b9e26e1502244d4daebd17a348056bb49cab730594e6e1f85",
   "pins" : [
     {
       "identity" : "eventsource",
@@ -8,6 +8,15 @@
       "state" : {
         "revision" : "07957602bb99a5355c810187e66e6ce378a1057d",
         "version" : "1.1.1"
+      }
+    },
+    {
+      "identity" : "jsonschema",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/loopwork-ai/JSONSchema.git",
+      "state" : {
+        "revision" : "1c3b710fb8e65e6a651abda0b32195ff6750d84b",
+        "version" : "1.1.0"
       }
     },
     {
