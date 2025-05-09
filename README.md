@@ -232,7 +232,7 @@ iMCP runs in [App Sandbox][app-sandbox],
 which limits its access to user data and system resources.
 When you go to enable the Messages service,
 you'll be prompted to open the `chat.db` file through the standard file picker.
-When you do, macOS adds that file to the app’s sandbox.
+When you do, macOS adds that file to the app's sandbox.
 [`NSOpenPanel`][nsopenpanel] is magic like that.
 
 But opening the iMessage database is just half the battle.
@@ -273,6 +273,27 @@ For this project, we created [Ontology][ontology]:
 a Swift package for working with structured data.
 It includes convenience initializers for types from Apple frameworks, 
 such as those returned by iMCP tools.
+
+## Debugging
+
+### Using the MCP Inspector
+
+To debug interactions between iMCP and MCP clients, 
+you can use the [inspector tool](https://github.com/modelcontextprotocol/inspector)
+(requires Node.js 22 or later):
+
+1. Click <img style="display: inline" width="20" height="16" src="/Assets/icon.svg" /> > "Copy server command to clipboard"
+2. Open a terminal and run the following commands:
+   ```
+   # Download and run inspector package on imcp-server
+   npx @modelcontextprotocol/inspector [paste-copied-command]
+
+   # Open inspector web app running locally
+   open http://127.0.0.1:6274
+   ```
+
+This tool lets you see all requests and responses between the client and the iMCP server, 
+which is helpful for understanding how the protocol works.
 
 ## Acknowledgments
 
