@@ -278,9 +278,9 @@ such as those returned by iMCP tools.
 
 ### Using the MCP Inspector
 
-To debug interactions between iMCP and MCP clients, 
+To debug interactions between iMCP and clients,
 you can use the [inspector tool](https://github.com/modelcontextprotocol/inspector)
-(requires Node.js 22 or later):
+(requires Node.js):
 
 1. Click <img style="display: inline" width="20" height="16" src="/Assets/icon.svg" /> > "Copy server command to clipboard"
 2. Open a terminal and run the following commands:
