@@ -90,10 +90,10 @@ final class LocationService: NSObject, Service, CLLocationManagerDelegate {
         Tool(
             name: "getCurrentLocation",
             description: "Get the user's current location",
-            inputSchema: [
-                "type": "object",
-                "properties": [:],
-            ]
+            inputSchema: .object(
+                properties: [:],
+                additionalProperties: false
+            )
         ) { _ in
             return try await withCheckedThrowingContinuation {
                 (continuation: CheckedContinuation<GeoCoordinates, Error>) in
@@ -168,16 +168,15 @@ final class LocationService: NSObject, Service, CLLocationManagerDelegate {
         Tool(
             name: "geocodeAddress",
             description: "Convert an address to geographic coordinates",
-            inputSchema: [
-                "type": "object",
-                "properties": [
-                    "address": [
-                        "type": "string",
-                        "description": "The address to geocode",
-                    ]
+            inputSchema: .object(
+                properties: [
+                    "address": .string(
+                        description: "The address to geocode"
+                    )
                 ],
-                "required": ["address"],
-            ]
+                required: ["address"],
+                additionalProperties: false
+            )
         ) { arguments in
             guard let address = arguments["address"]?.stringValue else {
                 throw NSError(
@@ -259,14 +258,13 @@ final class LocationService: NSObject, Service, CLLocationManagerDelegate {
         Tool(
             name: "reverseGeocode",
             description: "Convert geographic coordinates to an address",
-            inputSchema: [
-                "type": "object",
-                "properties": [
-                    "latitude": ["type": "number"],
-                    "longitude": ["type": "number"],
+            inputSchema: .object(
+                properties: [
+                    "latitude": .number(),
+                    "longitude": .number(),
                 ],
-                "required": ["latitude", "longitude"],
-            ]
+                required: ["latitude", "longitude"]
+            )
         ) { arguments in
             guard let latitude = arguments["latitude"]?.doubleValue,
                 let longitude = arguments["longitude"]?.doubleValue

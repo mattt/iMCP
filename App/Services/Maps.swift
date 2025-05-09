@@ -5,6 +5,10 @@ import Ontology
 
 private let log = Logger.service("maps")
 
+private let defaultSearchRadius: CLLocationDistance = 5000  // Default 5km
+private let defaultSearchLimit: Int = 10
+private let defaultMapImageSize: CGSize = CGSize(width: 1024, height: 1024)
+
 final class MapsService: NSObject, Service {
     private let searchCompleter = MKLocalSearchCompleter()
     private var searchResults: [MKLocalSearchCompletion] = []
@@ -35,25 +39,28 @@ final class MapsService: NSObject, Service {
         Tool(
             name: "searchPlaces",
             description: "Search for places, addresses, points of interest by text query",
-            inputSchema: [
-                "type": "object",
-                "properties": [
-                    "query": [
-                        "type": "string",
-                        "description": "The search text (place name, address, etc.)",
-                    ],
-                    "region": [
-                        "type": "object",
-                        "description": "Optional region to bias search results",
-                        "properties": [
-                            "latitude": ["type": "number"],
-                            "longitude": ["type": "number"],
-                            "radius": ["type": "number", "description": "Search radius in meters"],
+            inputSchema: .object(
+                properties: [
+                    "query": .string(
+                        description: "The search text (place name, address, etc.)"
+                    ),
+                    "region": .object(
+                        description: "Optional region to bias search results",
+                        properties: [
+                            "latitude": .number(),
+                            "longitude": .number(),
+                            "radius": .number(
+                                description: "Search radius in meters",
+                                default: .double(defaultSearchRadius)
+                            ),
                         ],
-                    ],
+                        required: ["latitude", "longitude"],
+                        additionalProperties: false
+                    ),
                 ],
-                "required": ["query"],
-            ]
+                required: ["query"],
+                additionalProperties: false
+            )
         ) { arguments in
             guard let query = arguments["query"]?.stringValue else {
                 throw NSError(
@@ -71,7 +78,7 @@ final class MapsService: NSObject, Service {
                 let lat = regionArg["latitude"]?.doubleValue,
                 let lon = regionArg["longitude"]?.doubleValue
             {
-                let radius = regionArg["radius"]?.doubleValue ?? 5000  // Default 5km
+                let radius = regionArg["radius"]?.doubleValue ?? defaultSearchRadius
                 let center = CLLocationCoordinate2D(latitude: lat, longitude: lon)
                 let region = MKCoordinateRegion(
                     center: center,
@@ -114,43 +121,40 @@ final class MapsService: NSObject, Service {
         Tool(
             name: "getDirections",
             description: "Get directions between two locations with optional transport type",
-            inputSchema: [
-                "type": "object",
-                "properties": [
-                    "originAddress": [
-                        "type": "string",
-                        "description": "Origin address as text",
-                    ],
-                    "originCoordinates": [
-                        "type": "object",
-                        "description": "Origin coordinates",
-                        "properties": [
-                            "latitude": ["type": "number"],
-                            "longitude": ["type": "number"],
+            inputSchema: .object(
+                properties: [
+                    "originAddress": .string(
+                        description: "Origin address as text"
+                    ),
+                    "originCoordinates": .object(
+                        description: "Origin coordinates",
+                        properties: [
+                            "latitude": .number(),
+                            "longitude": .number(),
                         ],
-                        "required": ["latitude", "longitude"],
-                    ],
-                    "destinationAddress": [
-                        "type": "string",
-                        "description": "Destination address as text",
-                    ],
-                    "destinationCoordinates": [
-                        "type": "object",
-                        "description": "Destination coordinates",
-                        "properties": [
-                            "latitude": ["type": "number"],
-                            "longitude": ["type": "number"],
+                        required: ["latitude", "longitude"],
+                        additionalProperties: false
+                    ),
+                    "destinationAddress": .string(
+                        description: "Destination address as text"
+                    ),
+                    "destinationCoordinates": .object(
+                        description: "Destination coordinates",
+                        properties: [
+                            "latitude": .number(),
+                            "longitude": .number(),
                         ],
-                        "required": ["latitude", "longitude"],
-                    ],
-                    "transportType": [
-                        "type": "string",
-                        "description": "Type of transportation (automobile, walking, transit, any)",
-                        "enum": ["automobile", "walking", "transit", "any"],
-                        "default": "automobile",
-                    ],
+                        required: ["latitude", "longitude"],
+                        additionalProperties: false
+                    ),
+                    "transportType": .string(
+                        description: "Type of transportation (automobile, walking, transit, any)",
+                        default: "automobile",
+                        enum: ["automobile", "walking", "transit", "any"]
+                    ),
                 ],
-            ]
+                additionalProperties: false
+            )
         ) { arguments in
             // Need either origin address or coordinates
             guard
@@ -239,29 +243,26 @@ final class MapsService: NSObject, Service {
         Tool(
             name: "findNearbyPointsOfInterest",
             description: "Find points of interest near a location",
-            inputSchema: [
-                "type": "object",
-                "properties": [
-                    "category": [
-                        "type": "string",
-                        "description": "Category of points of interest",
-                        "enum": Value.array(
-                            MKPointOfInterestCategory.allCases.map { Value.string($0.stringValue) }),
-                    ],
-                    "latitude": ["type": "number"],
-                    "longitude": ["type": "number"],
-                    "radius": [
-                        "type": "number",
-                        "description": "Search radius in meters, default 1000m",
-                    ],
-                    "limit": [
-                        "type": "integer",
-                        "description": "Maximum number of results to return",
-                        "default": 10,
-                    ],
+            inputSchema: .object(
+                properties: [
+                    "category": .string(
+                        description: "Category of points of interest",
+                        enum: MKPointOfInterestCategory.allCases.map { .string($0.stringValue) }
+                    ),
+                    "latitude": .number(),
+                    "longitude": .number(),
+                    "radius": .number(
+                        description: "Search radius in meters",
+                        default: .double(defaultSearchRadius)
+                    ),
+                    "limit": .integer(
+                        description: "Maximum number of results to return",
+                        default: .int(defaultSearchLimit)
+                    ),
                 ],
-                "required": ["category", "latitude", "longitude"],
-            ]
+                required: ["category", "latitude", "longitude"],
+                additionalProperties: false
+            )
         ) { arguments in
             guard let categoryString = arguments["category"]?.stringValue,
                 let latitude = arguments["latitude"]?.doubleValue,
@@ -273,8 +274,8 @@ final class MapsService: NSObject, Service {
                 )
             }
 
-            let radius = arguments["radius"]?.doubleValue ?? 1000
-            let limit = arguments["limit"]?.intValue ?? 10
+            let radius = arguments["radius"]?.doubleValue ?? defaultSearchRadius
+            let limit = arguments["limit"]?.intValue ?? defaultSearchLimit
 
             guard let category = MKPointOfInterestCategory.from(string: categoryString) else {
                 throw NSError(
@@ -323,25 +324,24 @@ final class MapsService: NSObject, Service {
         Tool(
             name: "getETABetweenLocations",
             description: "Calculate estimated travel time between two locations",
-            inputSchema: [
-                "type": "object",
-                "properties": [
-                    "originLatitude": ["type": "number"],
-                    "originLongitude": ["type": "number"],
-                    "destinationLatitude": ["type": "number"],
-                    "destinationLongitude": ["type": "number"],
-                    "transportType": [
-                        "type": "string",
-                        "description": "Type of transportation (automobile, walking, transit)",
-                        "enum": ["automobile", "walking", "transit"],
-                        "default": "automobile",
-                    ],
+            inputSchema: .object(
+                properties: [
+                    "originLatitude": .number(),
+                    "originLongitude": .number(),
+                    "destinationLatitude": .number(),
+                    "destinationLongitude": .number(),
+                    "transportType": .string(
+                        description: "Type of transportation (automobile, walking, transit)",
+                        default: "automobile",
+                        enum: ["automobile", "walking", "transit"]
+                    ),
                 ],
-                "required": [
+                required: [
                     "originLatitude", "originLongitude", "destinationLatitude",
                     "destinationLongitude",
                 ],
-            ]
+                additionalProperties: false
+            )
         ) { arguments in
             guard let originLat = arguments["originLatitude"]?.doubleValue,
                 let originLng = arguments["originLongitude"]?.doubleValue,
@@ -419,65 +419,53 @@ final class MapsService: NSObject, Service {
         Tool(
             name: "generateMapImage",
             description: "Generate a static map image for given coordinates and parameters",
-            inputSchema: [
-                "type": "object",
-                "properties": [
-                    "latitude": ["type": "number"],
-                    "longitude": ["type": "number"],
-                    "latitudeDelta": [
-                        "type": "number",
-                        "description": "Amount of latitude degrees to be visible on the map",
-                    ],
-                    "longitudeDelta": [
-                        "type": "number",
-                        "description": "Amount of longitude degrees to be visible on the map",
-                    ],
-                    "width": [
-                        "type": "integer",
-                        "description": "Width of the desired map image in pixels",
-                        "default": 1024,
-                    ],
-                    "height": [
-                        "type": "integer",
-                        "description": "Height of the desired map image in pixels",
-                        "default": 1024,
-                    ],
-                    "mapType": [
-                        "type": "string",
-                        "description": "Type of map (standard, satellite, hybrid, mutedStandard)",
-                        "enum": ["standard", "satellite", "hybrid", "mutedStandard"],
-                        "default": "standard",
-                    ],
-                    "showPointsOfInterest": [
-                        "oneOf": [
-                            [
-                                "type": "array",
-                                "description":
+            inputSchema: .object(
+                properties: [
+                    "latitude": .number(),
+                    "longitude": .number(),
+                    "latitudeDelta": .number(
+                        description: "Amount of latitude degrees to be visible on the map"
+                    ),
+                    "longitudeDelta": .number(
+                        description: "Amount of longitude degrees to be visible on the map"
+                    ),
+                    "width": .integer(
+                        description: "Width of the desired map image in pixels",
+                        default: .int(Int(defaultMapImageSize.width))
+                    ),
+                    "height": .integer(
+                        description: "Height of the desired map image in pixels",
+                        default: .int(Int(defaultMapImageSize.height))
+                    ),
+                    "mapType": .string(
+                        description: "Type of map (standard, satellite, hybrid, mutedStandard)",
+                        default: "standard",
+                        enum: ["standard", "satellite", "hybrid", "mutedStandard"]
+                    ),
+                    "showPointsOfInterest": .oneOf(
+                        [
+                            .boolean(
+                                description: "Show all (true) or no (false) points of interest",
+                                default: false
+                            ),
+                            .array(
+                                description:
                                     "Show specific types of points of interest to show; select as many as you're interested in",
-                                "items": [
-                                    "type": "string",
-                                    "enum": Value.array(
-                                        MKPointOfInterestCategory.allCases.map {
-                                            Value.string($0.stringValue)
-                                        }),
-                                ],
-                                "minItems": 1,
-                            ],
-                            [
-                                "type": "boolean",
-                                "description": "Show all (true) or no (false) points of interest",
-                            ],
-                        ],
-                        "default": false,
-                    ],
-                    "showBuildings": [
-                        "type": "boolean",
-                        "description": "Whether to show buildings on the map",
-                        "default": false,
-                    ],
+                                items: .anyOf(
+                                    MKPointOfInterestCategory.allCases.map { .string(const: .string($0.rawValue)) }
+                                ),
+                                minItems: 1
+                            )
+                        ]
+                    ),
+                    "showBuildings": .boolean(
+                        description: "Whether to show buildings on the map",
+                        default: false
+                    ),
                 ],
-                "required": ["latitude", "longitude", "latitudeDelta", "longitudeDelta"],
-            ]
+                required: ["latitude", "longitude", "latitudeDelta", "longitudeDelta"],
+                additionalProperties: false
+            )
         ) { arguments in
             guard let latitude = arguments["latitude"]?.doubleValue,
                 let longitude = arguments["longitude"]?.doubleValue,
@@ -493,8 +481,8 @@ final class MapsService: NSObject, Service {
                 )
             }
 
-            let width = arguments["width"]?.intValue ?? 1024
-            let height = arguments["height"]?.intValue ?? 1024
+            let width = arguments["width"]?.intValue ?? Int(defaultMapImageSize.width)
+            let height = arguments["height"]?.intValue ?? Int(defaultMapImageSize.height)
             let mapTypeString = arguments["mapType"]?.stringValue ?? "standard"
 
             let options = MKMapSnapshotter.Options()

@@ -52,38 +52,33 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
         Tool(
             name: "fetchMessages",
             description: "Fetch messages from the Messages app",
-            inputSchema: [
-                "type": "object",
-                "properties": [
-                    "participants": [
-                        "type": "array",
-                        "items": ["type": "string"],
-                        "description":
+            inputSchema: .object(
+                properties: [
+                    "participants": .array(
+                        description:
                             "A list of participant handles. May be a phone number or email address. Phone numbers should be in E.164 format (leading + and country code, no spaces or punctuation).",
-                    ],
-                    "startDate": [
-                        "type": "string",
-                        "format": "date-time",
-                        "description":
+                        items: .string()
+                    ),
+                    "startDate": .string(
+                        description:
                             "ISO 8601 formatted date-time string for the start of the date range (inclusive)",
-                    ],
-                    "endDate": [
-                        "type": "string",
-                        "format": "date-time",
-                        "description":
+                        format: .dateTime
+                    ),
+                    "endDate": .string(
+                        description:
                             "ISO 8601 formatted date-time string for the end of the date range (exclusive)",
-                    ],
-                    "searchTerm": [
-                        "type": "string",
-                        "description": "Search term to filter messages by",
-                    ],
-                    "limit": [
-                        "type": "integer",
-                        "description": "Maximum number of messages to return",
-                        "default": .int(defaultLimit),
-                    ],
+                        format: .dateTime
+                    ),
+                    "searchTerm": .string(
+                        description: "Search term to filter messages by"
+                    ),
+                    "limit": .integer(
+                        description: "Maximum number of messages to return",
+                        default: .int(defaultLimit)
+                    ),
                 ],
-            ]
+                additionalProperties: false
+            )
         ) { arguments in
             log.debug("Starting message fetch with arguments: \(arguments)")
             try await self.activate()

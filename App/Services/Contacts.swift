@@ -68,11 +68,12 @@ final class ContactsService: Service {
     var tools: [Tool] {
         Tool(
             name: "whoami",
-            description: "Get contact information about the user, including name, phone number, email, birthday, relations, address, online presence, and occupation. Always run this tool when the user asks a question that requires personal information about themselves.",
-            inputSchema: [
-                "type": "object",
-                "properties": [:],
-            ]
+            description:
+                "Get contact information about the user, including name, phone number, email, birthday, relations, address, online presence, and occupation. Always run this tool when the user asks a question that requires personal information about themselves.",
+            inputSchema: .object(
+                properties: [:],
+                additionalProperties: false
+            )
         ) { _ in
             let contact = try self.contactStore.unifiedMeContactWithKeys(toFetch: contactKeys)
             return Person(contact)
@@ -82,23 +83,20 @@ final class ContactsService: Service {
             name: "searchContacts",
             description:
                 "Search contacts by name, phone number, and/or email. Provide only the parameters you want to search by. Provide at least one parameter.",
-            inputSchema: [
-                "type": "object",
-                "properties": [
-                    "name": [
-                        "type": "string",
-                        "description": "Name to search for (will match given name or family name)",
-                    ],
-                    "phone": [
-                        "type": "string",
-                        "description": "Phone number to search for (any formatting accepted)",
-                    ],
-                    "email": [
-                        "type": "string",
-                        "description": "Email address to search for (case insensitive)",
-                    ],
+            inputSchema: .object(
+                properties: [
+                    "name": .string(
+                        description: "Name to search for (will match given name or family name)"
+                    ),
+                    "phone": .string(
+                        description: "Phone number to search for (any formatting accepted)"
+                    ),
+                    "email": .string(
+                        description: "Email address to search for (case insensitive)"
+                    ),
                 ],
-            ]
+                additionalProperties: false
+            )
         ) { arguments in
             var predicates: [NSPredicate] = []
 
@@ -118,7 +116,8 @@ final class ContactsService: Service {
                 // Normalize email to lowercase
                 let normalizedEmail = email.trimmingCharacters(in: .whitespaces).lowercased()
                 if !normalizedEmail.isEmpty {
-                    predicates.append(CNContact.predicateForContacts(matchingEmailAddress: normalizedEmail))
+                    predicates.append(
+                        CNContact.predicateForContacts(matchingEmailAddress: normalizedEmail))
                 }
             }
 

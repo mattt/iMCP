@@ -771,7 +771,7 @@ actor ServerNetworkManager {
                                 .init(
                                     name: tool.name,
                                     description: tool.description,
-                                    inputSchema: tool.inputSchema
+                                    inputSchema: try Value(tool.inputSchema)
                                 )
                             )
                         }

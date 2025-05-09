@@ -1,5 +1,6 @@
 import AppKit
 import OSLog
+import JSONSchema
 
 private let log = Logger.service("utilities")
 
@@ -29,17 +30,15 @@ final class UtilitiesService: Service {
         Tool(
             name: "playSystemSound",
             description: "Play a system sound. Only call if the user explicitly asks for it.",
-            inputSchema: [
-                "type": "object",
-                "properties": [
-                    "sound": [
-                        "type": "string",
-                        "default": .string(Sound.default.rawValue),
-                        "enum": .array(Sound.allCases.map { .string($0.rawValue) }),
-                    ]
+            inputSchema: .object(
+                properties: [
+                    "sound": .string(
+                        default: .string(Sound.default.rawValue),
+                        enum: Sound.allCases.map { .string($0.rawValue) })
                 ],
-                "required": ["sound"],
-            ]
+                required: ["sound"],
+                additionalProperties: false
+            )
         ) { input in
             let rawValue = input["sound"]?.stringValue ?? Sound.default.rawValue
             guard let sound = Sound(rawValue: rawValue),

@@ -16,19 +16,17 @@ final class WeatherService: Service {
             name: "getCurrentWeatherForLocation",
             description:
                 "Get current weather for a location, including temperature, conditions, humidity, and wind speed",
-            inputSchema: [
-                "type": "object",
-                "properties": [
-                    "latitude": [
-                        "type": "number",
-                        "description": "The latitude of the location",
-                    ],
-                    "longitude": [
-                        "type": "number",
-                        "description": "The longitude of the location",
-                    ],
+            inputSchema: .object(
+                properties: [
+                    "latitude": .number(
+                        description: "The latitude of the location"
+                    ),
+                    "longitude": .number(
+                        description: "The longitude of the location"
+                    ),
                 ],
-            ]
+                additionalProperties: false
+            )
         ) { arguments in
             guard case let .double(latitude) = arguments["latitude"],
                 case let .double(longitude) = arguments["longitude"]
@@ -50,26 +48,23 @@ final class WeatherService: Service {
         Tool(
             name: "getHourlyForecastForLocation",
             description: "Get hourly weather forecast for a location",
-            inputSchema: [
-                "type": "object",
-                "properties": [
-                    "latitude": [
-                        "type": "number",
-                        "description": "The latitude of the location",
-                    ],
-                    "longitude": [
-                        "type": "number",
-                        "description": "The longitude of the location",
-                    ],
-                    "hours": [
-                        "type": "integer",
-                        "description": "Number of hours to forecast",
-                        "default": 24,
-                        "minimum": 1,
-                        "maximum": 240,
-                    ],
+            inputSchema: .object(
+                properties: [
+                    "latitude": .number(
+                        description: "The latitude of the location"
+                    ),
+                    "longitude": .number(
+                        description: "The longitude of the location"
+                    ),
+                    "hours": .integer(
+                        description: "Number of hours to forecast",
+                        default: 24,
+                        minimum: 1,
+                        maximum: 240
+                    ),
                 ],
-            ]
+                additionalProperties: false
+            )
         ) { arguments in
             guard case let .double(latitude) = arguments["latitude"],
                 case let .double(longitude) = arguments["longitude"]
@@ -101,26 +96,23 @@ final class WeatherService: Service {
         Tool(
             name: "getDailyForecastForLocation",
             description: "Get daily weather forecast for a location",
-            inputSchema: [
-                "type": "object",
-                "properties": [
-                    "latitude": [
-                        "type": "number",
-                        "description": "The latitude of the location",
-                    ],
-                    "longitude": [
-                        "type": "number",
-                        "description": "The longitude of the location",
-                    ],
-                    "days": [
-                        "type": "integer",
-                        "description": "Number of days to forecast (default 7, max 10)",
-                        "default": 7,
-                        "minimum": 1,
-                        "maximum": 10,
-                    ],
+            inputSchema: .object(
+                properties: [
+                    "latitude": .number(
+                        description: "The latitude of the location"
+                    ),
+                    "longitude": .number(
+                        description: "The longitude of the location"
+                    ),
+                    "days": .integer(
+                        description: "Number of days to forecast (default 7, max 10)",
+                        default: 7,
+                        minimum: 1,
+                        maximum: 10
+                    ),
                 ],
-            ]
+                additionalProperties: false
+            )
         ) { arguments in
             guard case let .double(latitude) = arguments["latitude"],
                 case let .double(longitude) = arguments["longitude"]
@@ -150,26 +142,23 @@ final class WeatherService: Service {
         Tool(
             name: "getMinuteByMinuteForecastForLocation",
             description: "Get minute-by-minute weather forecast for a location",
-            inputSchema: [
-                "type": "object",
-                "properties": [
-                    "latitude": [
-                        "type": "number",
-                        "description": "The latitude of the location",
-                    ],
-                    "longitude": [
-                        "type": "number",
-                        "description": "The longitude of the location",
-                    ],
-                    "minutes": [
-                        "type": "integer",
-                        "description": "Number of minutes to forecast (default 60)",
-                        "default": 60,
-                        "minimum": 1,
-                        "maximum": 120,
-                    ],
+            inputSchema: .object(
+                properties: [
+                    "latitude": .number(
+                        description: "The latitude of the location"
+                    ),
+                    "longitude": .number(
+                        description: "The longitude of the location"
+                    ),
+                    "minutes": .integer(
+                        description: "Number of minutes to forecast (default 60)",
+                        default: 60,
+                        minimum: 1,
+                        maximum: 120
+                    ),
                 ],
-            ]
+                additionalProperties: false
+            )
         ) { arguments in
             guard case let .double(latitude) = arguments["latitude"],
                 case let .double(longitude) = arguments["longitude"]
