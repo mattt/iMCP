@@ -24,54 +24,47 @@ final class CalendarService: Service {
         Tool(
             name: "fetchEvents",
             description: "Get events from the calendar with flexible filtering options",
-            inputSchema: [
-                "type": "object",
-                "properties": [
-                    "startDate": [
-                        "type": "string",
-                        "description":
-                            "ISO date string for the start of the date range (defaults to now if not specified)",
-                    ],
-                    "endDate": [
-                        "type": "string",
-                        "description":
-                            "ISO date string for the end of the date range (defaults to one week from start if not specified)",
-                    ],
-                    "calendarNames": [
-                        "type": "array",
-                        "items": ["type": "string"],
-                        "description":
+            inputSchema: .object(
+                properties: [
+                    "startDate": .string(
+                        description:
+                            "The start of the date range (defaults to now if not specified)",
+                        format: .dateTime
+                    ),
+                    "endDate": .string(
+                        description:
+                            "The end of the date range (defaults to one week from start if not specified)",
+                        format: .dateTime
+                    ),
+                    "calendarNames": .array(
+                        description:
                             "Names of calendars to fetch from. If empty or not specified, fetches from all calendars.",
-                    ],
-                    "searchText": [
-                        "type": "string",
-                        "description": "Text to search for in event titles and locations",
-                    ],
-                    "includeAllDay": [
-                        "type": "boolean",
-                        "description": "Whether to include all-day events",
-                        "default": true,
-                    ],
-                    "status": [
-                        "type": "string",
-                        "enum": ["none", "tentative", "confirmed", "canceled"],
-                        "description": "Filter by event status",
-                    ],
-                    "availability": [
-                        "type": "string",
-                        "enum": ["busy", "free", "tentative", "unavailable"],
-                        "description": "Filter by availability status",
-                    ],
-                    "hasAlarms": [
-                        "type": "boolean",
-                        "description": "Filter for events that have alarms/reminders set",
-                    ],
-                    "isRecurring": [
-                        "type": "boolean",
-                        "description": "Filter for recurring/non-recurring events",
-                    ],
+                        items: .string(),
+                    ),
+                    "searchText": .string(
+                        description: "Text to search for in event titles and locations"
+                    ),
+                    "includeAllDay": .boolean(
+                        description: "Whether to include all-day events",
+                        default: true
+                    ),
+                    "status": .string(
+                        description: "Filter by event status",
+                        enum: ["none", "tentative", "confirmed", "canceled"]
+                    ),
+                    "availability": .string(
+                        description: "Filter by availability status",
+                        enum: EKEventAvailability.allCases.map { .string($0.stringValue) }
+                    ),
+                    "hasAlarms": .boolean(
+                        description: "Filter for events that have alarms/reminders set"
+                    ),
+                    "isRecurring": .boolean(
+                        description: "Filter for recurring/non-recurring events"
+                    ),
                 ],
-            ]
+                additionalProperties: false
+            )
         ) { arguments in
             guard EKEventStore.authorizationStatus(for: .event) == .fullAccess else {
                 log.error("Calendar access not authorized")
@@ -159,87 +152,50 @@ final class CalendarService: Service {
         Tool(
             name: "createEvent",
             description: "Create a new calendar event with specified properties",
-            inputSchema: [
-                "type": "object",
-                "required": ["title", "startDate", "endDate"],
-                "properties": [
-                    "title": [
-                        "type": "string",
-                        "description": "The title of the event",
-                    ],
-                    "startDate": [
-                        "type": "string",
-                        "description": "ISO date string for the event start time",
-                    ],
-                    "endDate": [
-                        "type": "string",
-                        "description": "ISO date string for the event end time",
-                    ],
-                    "calendarName": [
-                        "type": "string",
-                        "description":
-                            "Name of the calendar to create the event in (uses default calendar if not specified)",
-                    ],
-                    "location": [
-                        "type": "string",
-                        "description": "Location of the event",
-                    ],
-                    "notes": [
-                        "type": "string",
-                        "description": "Notes or description for the event",
-                    ],
-                    "url": [
-                        "type": "string",
-                        "description": "URL associated with the event (e.g., meeting link)",
-                    ],
-                    "isAllDay": [
-                        "type": "boolean",
-                        "description": "Whether this is an all-day event",
-                        "default": false,
-                    ],
-                    "availability": [
-                        "type": "string",
-                        "enum": ["busy", "free", "tentative", "unavailable"],
-                        "description": "Availability status for the event",
-                        "default": "busy",
-                    ],
-                    "alarms": [
-                        "type": "array",
-                        "items": [
-                            "type": "integer"
-                        ],
-                        "description":
-                            "Array of minutes before the event to set alarms (e.g., [0, 15, 60] for notifications at event time, 15 mins before, and 1 hour before)",
-                    ],
-                    "recurrence": [
-                        "type": "object",
-                        "description": "Recurrence rules for the event",
-                        "properties": [
-                            "frequency": [
-                                "type": "string",
-                                "enum": ["daily", "weekly", "monthly", "yearly"],
-                                "description": "How often the event repeats",
-                            ],
-                            "interval": [
-                                "type": "integer",
-                                "description":
-                                    "Interval of the frequency (e.g., 2 for every 2 weeks)",
-                                "default": 1,
-                            ],
-                            "endDate": [
-                                "type": "string",
-                                "description":
-                                    "ISO date string for when the recurrence ends (optional)",
-                            ],
-                            "occurrences": [
-                                "type": "integer",
-                                "description":
-                                    "Number of occurrences (optional, alternative to endDate)",
-                            ],
-                        ],
-                    ],
+            inputSchema: .object(
+                properties: [
+                    "title": .string(
+                        description: "The title of the event"
+                    ),
+                    "startDate": .string(
+                        description: "The start of the event",
+                        format: .dateTime
+                    ),
+                    "endDate": .string(
+                        description: "The end of the event",
+                        format: .dateTime
+                    ),
+                    "calendarName": .string(
+                        description:
+                            "Name of the calendar to create the event in (uses default calendar if not specified)"
+                    ),
+                    "location": .string(
+                        description: "Location of the event"
+                    ),
+                    "notes": .string(
+                        description: "Notes or description for the event"
+                    ),
+                    "url": .string(
+                        description: "URL associated with the event (e.g., meeting link)",
+                        format: .uri
+                    ),
+                    "isAllDay": .boolean(
+                        description: "Whether this is an all-day event",
+                        default: false
+                    ),
+                    "availability": .string(
+                        description: "Event availability status",
+                        default: .string(EKEventAvailability.busy.stringValue),
+                        enum: EKEventAvailability.allCases.map { .string($0.stringValue) }
+                    ),
+                    "alarms": .array(
+                        description: "Array of minutes before the event to set alarms",
+                        items: .integer()
+                    ),
                 ],
-            ]
+                required: ["title", "startDate", "endDate"],
+                additionalProperties: false
+            )
         ) { arguments in
             try await self.activate()
 
@@ -338,75 +294,10 @@ final class CalendarService: Service {
                 }
             }
 
-            // Set recurrence rules
-            if case let .object(recurrence) = arguments["recurrence"],
-                case let .string(frequencyStr) = recurrence["frequency"]
-            {
-                let recurrenceRule = EKRecurrenceRule(
-                    recurrenceWith: EKRecurrenceFrequency(frequencyStr),
-                    interval: {
-                        if case let .int(interval) = recurrence["interval"] {
-                            return interval
-                        }
-                        return 1
-                    }(),
-                    end: {
-                        if case let .string(endDateStr) = recurrence["endDate"],
-                            let endDate = dateFormatter.date(from: endDateStr)
-                        {
-                            return EKRecurrenceEnd(end: endDate)
-                        }
-                        if case let .int(occurrences) = recurrence["occurrences"] {
-                            return EKRecurrenceEnd(occurrenceCount: occurrences)
-                        }
-                        return nil
-                    }()
-                )
-                event.recurrenceRules = [recurrenceRule]
-            }
-
             // Save the event
             try self.eventStore.save(event, span: .thisEvent)
 
             return Event(event)
-        }
-    }
-}
-
-// MARK: -
-
-extension EKEventAvailability {
-    fileprivate init(_ string: String) {
-        switch string.lowercased() {
-        case "busy": self = .busy
-        case "free": self = .free
-        case "tentative": self = .tentative
-        case "unavailable": self = .unavailable
-        default: self = .busy
-        }
-    }
-}
-
-extension EKEventStatus {
-    fileprivate init(_ string: String) {
-        switch string.lowercased() {
-        case "none": self = .none
-        case "tentative": self = .tentative
-        case "confirmed": self = .confirmed
-        case "canceled": self = .canceled
-        default: self = .none
-        }
-    }
-}
-
-extension EKRecurrenceFrequency {
-    fileprivate init(_ string: String) {
-        switch string.lowercased() {
-        case "daily": self = .daily
-        case "weekly": self = .weekly
-        case "monthly": self = .monthly
-        case "yearly": self = .yearly
-        default: self = .daily
         }
     }
 }

@@ -18,6 +18,7 @@
 		F8CE997B2D591CF200C61CA2 /* MCP in Frameworks */ = {isa = PBXBuildFile; productRef = F8CE997A2D591CF200C61CA2 /* MCP */; };
 		F8D7C3172DCBD30500A4775F /* MCP in Frameworks */ = {isa = PBXBuildFile; productRef = F8D7C3162DCBD30500A4775F /* MCP */; };
 		F8D7C31A2DCBD32100A4775F /* MCP in Frameworks */ = {isa = PBXBuildFile; productRef = F8D7C3192DCBD32100A4775F /* MCP */; };
+		F8D8C48E2DCE0E6800369E5C /* JSONSchema in Frameworks */ = {isa = PBXBuildFile; productRef = F8D8C48D2DCE0E6800369E5C /* JSONSchema */; };
 		F8F1D2F82D6F9E0C00F6323D /* MCP in Frameworks */ = {isa = PBXBuildFile; productRef = F8F44E9C2D5903F70075D79C /* MCP */; };
 		F8F1D33F2D6FA7EB00F6323D /* MacControlCenterUI in Frameworks */ = {isa = PBXBuildFile; productRef = F8F1D33E2D6FA7EB00F6323D /* MacControlCenterUI */; };
 /* End PBXBuildFile section */
@@ -89,6 +90,7 @@
 				F8F1D2F82D6F9E0C00F6323D /* MCP in Frameworks */,
 				F8D7C3172DCBD30500A4775F /* MCP in Frameworks */,
 				F80955702D7888920055B911 /* iMessage in Frameworks */,
+				F8D8C48E2DCE0E6800369E5C /* JSONSchema in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -153,6 +155,7 @@
 				F8A7DE3D2DCB76F700530587 /* MCP */,
 				F8D7C3162DCBD30500A4775F /* MCP */,
 				F8D7C3192DCBD32100A4775F /* MCP */,
+				F8D8C48D2DCE0E6800369E5C /* JSONSchema */,
 			);
 			productName = iMCP;
 			productReference = F8F44E6D2D59038D0075D79C /* iMCP.app */;
@@ -218,6 +221,7 @@
 				F809556C2D7888920055B911 /* XCRemoteSwiftPackageReference "madrid" */,
 				F825BDBD2D9AD00E0063ADD7 /* XCRemoteSwiftPackageReference "swift-service-lifecycle" */,
 				F8D7C3182DCBD32100A4775F /* XCRemoteSwiftPackageReference "swift-sdk" */,
+				F8D8C48C2DCE0E6800369E5C /* XCRemoteSwiftPackageReference "JSONSchema" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = F8F44E6E2D59038D0075D79C /* Products */;
@@ -572,6 +576,14 @@
 				kind = branch;
 			};
 		};
+		F8D8C48C2DCE0E6800369E5C /* XCRemoteSwiftPackageReference "JSONSchema" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/loopwork-ai/JSONSchema.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.1.0;
+			};
+		};
 		F8F1D33D2D6FA7EB00F6323D /* XCRemoteSwiftPackageReference "MacControlCenterUI" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/orchetect/MacControlCenterUI";
@@ -629,6 +641,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = F8D7C3182DCBD32100A4775F /* XCRemoteSwiftPackageReference "swift-sdk" */;
 			productName = MCP;
+		};
+		F8D8C48D2DCE0E6800369E5C /* JSONSchema */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F8D8C48C2DCE0E6800369E5C /* XCRemoteSwiftPackageReference "JSONSchema" */;
+			productName = JSONSchema;
 		};
 		F8F1D33E2D6FA7EB00F6323D /* MacControlCenterUI */ = {
 			isa = XCSwiftPackageProductDependency;

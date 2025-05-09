@@ -1,17 +1,18 @@
 import Foundation
 import MCP
 import Ontology
+import JSONSchema
 
 public struct Tool: Sendable {
     let name: String
     let description: String
-    let inputSchema: Value
+    let inputSchema: JSONSchema
     private let implementation: @Sendable ([String: Value]) async throws -> Value
 
     public init<T: Encodable>(
         name: String,
         description: String,
-        inputSchema: Value,
+        inputSchema: JSONSchema,
         implementation: @Sendable @escaping ([String: Value]) async throws -> T
     ) {
         self.name = name

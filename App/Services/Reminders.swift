@@ -24,36 +24,33 @@ final class RemindersService: Service {
         Tool(
             name: "fetchReminders",
             description: "Get reminders from the reminders app with flexible filtering options",
-            inputSchema: [
-                "type": "object",
-                "properties": [
-                    "completed": [
-                        "type": "boolean",
-                        "description":
-                            "If true, fetch completed reminders. If false, fetch incomplete reminders. If not specified, fetch all reminders.",
-                    ],
-                    "startDate": [
-                        "type": "string",
-                        "description":
-                            "ISO date string for the start of the date range to fetch reminders from",
-                    ],
-                    "endDate": [
-                        "type": "string",
-                        "description":
-                            "ISO date string for the end of the date range to fetch reminders from",
-                    ],
-                    "listNames": [
-                        "type": "array",
-                        "items": ["type": "string"],
-                        "description":
+            inputSchema: .object(
+                properties: [
+                    "completed": .boolean(
+                        description:
+                            "If true, fetch completed reminders. If false, fetch incomplete reminders. If not specified, fetch all reminders."
+                    ),
+                    "startDate": .string(
+                        description:
+                            "The start of the date range to fetch reminders from",
+                        format: .dateTime
+                    ),
+                    "endDate": .string(
+                        description:
+                            "The end of the date range to fetch reminders from",
+                        format: .dateTime
+                    ),
+                    "listNames": .array(
+                        description:
                             "Names of reminder lists to fetch from. If empty or not specified, fetches from all lists.",
-                    ],
-                    "searchText": [
-                        "type": "string",
-                        "description": "Text to search for in reminder titles",
-                    ],
+                        items: .string()
+                    ),
+                    "searchText": .string(
+                        description: "Text to search for in reminder titles"
+                    ),
                 ],
-            ]
+                additionalProperties: false
+            )
         ) { arguments in
             try await self.activate()
 
@@ -135,39 +132,35 @@ final class RemindersService: Service {
         Tool(
             name: "createReminder",
             description: "Create a new reminder with specified properties",
-            inputSchema: [
-                "type": "object",
-                "required": ["title"],
-                "properties": [
-                    "title": [
-                        "type": "string",
-                        "description": "The title of the reminder",
-                    ],
-                    "dueDate": [
-                        "type": "string",
-                        "description": "ISO date string for when the reminder is due",
-                    ],
-                    "listName": [
-                        "type": "string",
-                        "description":
-                            "Name of the reminder list to add the reminder to (uses default if not specified)",
-                    ],
-                    "notes": [
-                        "type": "string",
-                        "description": "Additional notes for the reminder",
-                    ],
-                    "priority": [
-                        "type": "integer",
-                        "description": "Priority level (0 = none, 1 = low, 5 = medium, 9 = high)",
-                        "default": 0,
-                    ],
-                    "alarms": [
-                        "type": "array",
-                        "items": ["type": "integer"],
-                        "description": "Array of minutes before the due date to set alarms",
-                    ],
+            inputSchema: .object(
+                properties: [
+                    "title": .string(
+                        description: "The title of the reminder"
+                    ),
+                    "dueDate": .string(
+                        description: "The due date of the reminder",
+                        format: .dateTime
+                    ),
+                    "listName": .string(
+                        description:
+                            "Name of the reminder list to add the reminder to (uses default if not specified)"
+                    ),
+                    "notes": .string(
+                        description: "Additional notes for the reminder"
+                    ),
+                    "priority": .string(
+                        description: "The priority of the reminder",
+                        default: .string(EKReminderPriority.none.stringValue),
+                        enum: EKReminderPriority.allCases.map { .string($0.stringValue) }
+                    ),
+                    "alarms": .array(
+                        description: "The minutes before the due date to set alarms",
+                        items: .integer()
+                    ),
                 ],
-            ]
+                required: ["title"],
+                additionalProperties: false
+            )
         ) { arguments in
             try await self.activate()
 
@@ -213,8 +206,8 @@ final class RemindersService: Service {
                 reminder.notes = notes
             }
 
-            if case let .int(priority) = arguments["priority"] {
-                reminder.priority = Int(priority)
+            if case let .string(priorityStr) = arguments["priority"] {
+                reminder.priority = Int(EKReminderPriority.from(string: priorityStr).rawValue)
             }
 
             // Set alarms
