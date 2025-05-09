@@ -78,6 +78,11 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                     ),
                 ],
                 additionalProperties: false
+            ),
+            annotations: .init(
+                title: "Fetch Messages",
+                readOnlyHint: true,
+                openWorldHint: false
             )
         ) { arguments in
             log.debug("Starting message fetch with arguments: \(arguments)")
