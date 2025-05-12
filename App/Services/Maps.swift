@@ -472,10 +472,12 @@ final class MapsService: NSObject, Service {
                                 description:
                                     "Show specific types of points of interest to show; select as many as you're interested in",
                                 items: .anyOf(
-                                    MKPointOfInterestCategory.allCases.map { .string(const: .string($0.rawValue)) }
+                                    MKPointOfInterestCategory.allCases.map {
+                                        .string(const: .string($0.stringValue))
+                                    }
                                 ),
                                 minItems: 1
-                            )
+                            ),
                         ]
                     ),
                     "showBuildings": .boolean(
