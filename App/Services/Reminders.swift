@@ -80,15 +80,14 @@ final class RemindersService: Service {
             }
 
             // Parse dates if provided
-            let dateFormatter = ISO8601DateFormatter()
             var startDate: Date? = nil
             var endDate: Date? = nil
 
             if case let .string(start) = arguments["startDate"] {
-                startDate = dateFormatter.date(from: start)
+                startDate = ISO8601DateFormatter.parseFlexibleISODate(start)
             }
             if case let .string(end) = arguments["endDate"] {
-                endDate = dateFormatter.date(from: end)
+                endDate = ISO8601DateFormatter.parseFlexibleISODate(end)
             }
 
             // Create predicate based on completion status
@@ -206,7 +205,7 @@ final class RemindersService: Service {
 
             // Set optional properties
             if case let .string(dueDateStr) = arguments["dueDate"],
-                let dueDate = ISO8601DateFormatter().date(from: dueDateStr)
+                let dueDate = ISO8601DateFormatter.parseFlexibleISODate(dueDateStr)
             {
                 reminder.dueDateComponents = Calendar.current.dateComponents(
                     [.year, .month, .day, .hour, .minute, .second], from: dueDate)

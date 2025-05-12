@@ -89,21 +89,18 @@ final class CalendarService: Service {
             }
 
             // Parse dates and set defaults
-            let dateFormatter = ISO8601DateFormatter()
-            dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-
             let now = Date()
             var startDate = now
             var endDate = Calendar.current.date(byAdding: .weekOfYear, value: 1, to: now)!
 
             if case let .string(start) = arguments["startDate"],
-                let parsedStart = dateFormatter.date(from: start)
+                let parsedStart = ISO8601DateFormatter.parseFlexibleISODate(start)
             {
                 startDate = parsedStart
             }
 
             if case let .string(end) = arguments["endDate"],
-                let parsedEnd = dateFormatter.date(from: end)
+                let parsedEnd = ISO8601DateFormatter.parseFlexibleISODate(end)
             {
                 endDate = parsedEnd
             }
@@ -230,17 +227,17 @@ final class CalendarService: Service {
             event.title = title
 
             // Parse dates
-            let dateFormatter = ISO8601DateFormatter()
-            dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-
             guard case let .string(startDateStr) = arguments["startDate"],
-                let startDate = dateFormatter.date(from: startDateStr),
+                let startDate = ISO8601DateFormatter.parseFlexibleISODate(startDateStr),
                 case let .string(endDateStr) = arguments["endDate"],
-                let endDate = dateFormatter.date(from: endDateStr)
+                let endDate = ISO8601DateFormatter.parseFlexibleISODate(endDateStr)
             else {
                 throw NSError(
                     domain: "CalendarError", code: 2,
-                    userInfo: [NSLocalizedDescriptionKey: "Invalid start or end date format"]
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Invalid start or end date format. Expected ISO 8601 format."
+                    ]
                 )
             }
 
