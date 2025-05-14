@@ -140,7 +140,7 @@ final class RemindersService: Service {
                     "dueDate": .string(
                         format: .dateTime
                     ),
-                    "listName": .string(
+                    "list": .string(
                         description: "Reminder list name (uses default if not specified)"
                     ),
                     "notes": .string(),
@@ -185,7 +185,7 @@ final class RemindersService: Service {
 
             // Set calendar (list)
             var calendar = self.eventStore.defaultCalendarForNewReminders()
-            if case let .string(listName) = arguments["listName"] {
+            if case let .string(listName) = arguments["list"] {
                 if let matchingCalendar = self.eventStore.calendars(for: .reminder)
                     .first(where: { $0.title.lowercased() == listName.lowercased() })
                 {
