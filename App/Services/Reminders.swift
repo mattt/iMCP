@@ -22,7 +22,7 @@ final class RemindersService: Service {
 
     var tools: [Tool] {
         Tool(
-            name: "reminders.fetch",
+            name: "reminders_fetch",
             description: "Get reminders from the reminders app with flexible filtering options",
             inputSchema: .object(
                 properties: [
@@ -132,7 +132,7 @@ final class RemindersService: Service {
         }
 
         Tool(
-            name: "reminders.create",
+            name: "reminders_create",
             description: "Create a new reminder with specified properties",
             inputSchema: .object(
                 properties: [

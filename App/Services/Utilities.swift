@@ -28,7 +28,7 @@ final class UtilitiesService: Service {
 
     var tools: [Tool] {
         Tool(
-            name: "utilities.beep",
+            name: "utilities_beep",
             description: "Play a system sound",
             inputSchema: .object(
                 properties: [

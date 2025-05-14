@@ -22,7 +22,7 @@ final class CalendarService: Service {
 
     var tools: [Tool] {
         Tool(
-            name: "events.fetch",
+            name: "events_fetch",
             description: "Get events from the calendar with flexible filtering options",
             inputSchema: .object(
                 properties: [
@@ -145,7 +145,7 @@ final class CalendarService: Service {
             return events.map { Event($0) }
         }
         Tool(
-            name: "events.create",
+            name: "events_create",
             description: "Create a new calendar event with specified properties",
             inputSchema: .object(
                 properties: [

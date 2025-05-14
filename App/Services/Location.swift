@@ -88,7 +88,7 @@ final class LocationService: NSObject, Service, CLLocationManagerDelegate {
 
     var tools: [Tool] {
         Tool(
-            name: "location.current",
+            name: "location_current",
             description: "Get the user's current location",
             inputSchema: .object(
                 properties: [:],
@@ -171,7 +171,7 @@ final class LocationService: NSObject, Service, CLLocationManagerDelegate {
         }
 
         Tool(
-            name: "location.geocode",
+            name: "location_geocode",
             description: "Convert an address to geographic coordinates",
             inputSchema: .object(
                 properties: [
@@ -266,7 +266,7 @@ final class LocationService: NSObject, Service, CLLocationManagerDelegate {
         }
 
         Tool(
-            name: "location.reverse-geocode",
+            name: "location_reverse-geocode",
             description: "Convert geographic coordinates to an address",
             inputSchema: .object(
                 properties: [

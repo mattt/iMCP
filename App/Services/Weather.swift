@@ -13,7 +13,7 @@ final class WeatherService: Service {
 
     var tools: [Tool] {
         Tool(
-            name: "weather.current",
+            name: "weather_current",
             description:
                 "Get current weather for a location",
             inputSchema: .object(
@@ -47,7 +47,7 @@ final class WeatherService: Service {
         }
 
         Tool(
-            name: "weather.daily",
+            name: "weather_daily",
             description: "Get daily weather forecast for a location",
             inputSchema: .object(
                 properties: [
@@ -94,7 +94,7 @@ final class WeatherService: Service {
         }
 
         Tool(
-            name: "weather.hourly",
+            name: "weather_hourly",
             description: "Get hourly weather forecast for a location",
             inputSchema: .object(
                 properties: [
@@ -143,7 +143,7 @@ final class WeatherService: Service {
         }
 
         Tool(
-            name: "weather.minute",
+            name: "weather_minute",
             description: "Get minute-by-minute weather forecast for a location",
             inputSchema: .object(
                 properties: [
