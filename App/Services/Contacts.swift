@@ -67,7 +67,7 @@ final class ContactsService: Service {
 
     var tools: [Tool] {
         Tool(
-            name: "contacts.me",
+            name: "contacts_me",
             description:
                 "Get contact information about the user, including name, phone number, email, birthday, relations, address, online presence, and occupation. Always run this tool when the user asks a question that requires personal information about themselves.",
             inputSchema: .object(
@@ -85,7 +85,7 @@ final class ContactsService: Service {
         }
 
         Tool(
-            name: "contacts.search",
+            name: "contacts_search",
             description:
                 "Search contacts by name, phone number, and/or email",
             inputSchema: .object(
