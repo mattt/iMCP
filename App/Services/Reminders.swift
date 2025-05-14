@@ -30,11 +30,11 @@ final class RemindersService: Service {
                         description:
                             "If true, fetch completed reminders; if false, fetch incomplete; if omitted, fetch all"
                     ),
-                    "startDate": .string(
+                    "start": .string(
                         description: "Start date range for fetching reminders",
                         format: .dateTime
                     ),
-                    "endDate": .string(
+                    "end": .string(
                         description: "End date range for fetching reminders",
                         format: .dateTime
                     ),
@@ -81,10 +81,10 @@ final class RemindersService: Service {
             var startDate: Date? = nil
             var endDate: Date? = nil
 
-            if case let .string(start) = arguments["startDate"] {
+            if case let .string(start) = arguments["start"] {
                 startDate = ISO8601DateFormatter.parseFlexibleISODate(start)
             }
-            if case let .string(end) = arguments["endDate"] {
+            if case let .string(end) = arguments["end"] {
                 endDate = ISO8601DateFormatter.parseFlexibleISODate(end)
             }
 

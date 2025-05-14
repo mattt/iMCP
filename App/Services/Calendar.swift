@@ -26,11 +26,11 @@ final class CalendarService: Service {
             description: "Get events from the calendar with flexible filtering options",
             inputSchema: .object(
                 properties: [
-                    "startDate": .string(
+                    "start": .string(
                         description: "Start date of the range (defaults to now)",
                         format: .dateTime
                     ),
-                    "endDate": .string(
+                    "end": .string(
                         description: "End date of the range (defaults to one week from start)",
                         format: .dateTime
                     ),
@@ -86,13 +86,13 @@ final class CalendarService: Service {
             var startDate = now
             var endDate = Calendar.current.date(byAdding: .weekOfYear, value: 1, to: now)!
 
-            if case let .string(start) = arguments["startDate"],
+            if case let .string(start) = arguments["start"],
                 let parsedStart = ISO8601DateFormatter.parseFlexibleISODate(start)
             {
                 startDate = parsedStart
             }
 
-            if case let .string(end) = arguments["endDate"],
+            if case let .string(end) = arguments["end"],
                 let parsedEnd = ISO8601DateFormatter.parseFlexibleISODate(end)
             {
                 endDate = parsedEnd
@@ -150,10 +150,10 @@ final class CalendarService: Service {
             inputSchema: .object(
                 properties: [
                     "title": .string(),
-                    "startDate": .string(
+                    "start": .string(
                         format: .dateTime
                     ),
-                    "endDate": .string(
+                    "end": .string(
                         format: .dateTime
                     ),
                     "calendar": .string(
@@ -179,7 +179,7 @@ final class CalendarService: Service {
                     "hasAlarms": .boolean(),
                     "isRecurring": .boolean(),
                 ],
-                required: ["title", "startDate", "endDate"],
+                required: ["title", "start", "end"],
                 additionalProperties: false
             ),
             annotations: .init(
@@ -211,9 +211,9 @@ final class CalendarService: Service {
             event.title = title
 
             // Parse dates
-            guard case let .string(startDateStr) = arguments["startDate"],
+            guard case let .string(startDateStr) = arguments["start"],
                 let startDate = ISO8601DateFormatter.parseFlexibleISODate(startDateStr),
-                case let .string(endDateStr) = arguments["endDate"],
+                case let .string(endDateStr) = arguments["end"],
                 let endDate = ISO8601DateFormatter.parseFlexibleISODate(endDateStr)
             else {
                 throw NSError(

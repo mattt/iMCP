@@ -59,11 +59,11 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                             "Participant handles (phone or email). Phone numbers should use E.164 format",
                         items: .string()
                     ),
-                    "startDate": .string(
+                    "start": .string(
                         description: "Start of the date range (inclusive)",
                         format: .dateTime
                     ),
-                    "endDate": .string(
+                    "end": .string(
                         description: "End of the date range (exclusive)",
                         format: .dateTime
                     ),
@@ -90,8 +90,8 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                 }) ?? []
 
             var dateRange: Range<Date>?
-            if let startDateStr = arguments["startDate"]?.stringValue,
-                let endDateStr = arguments["endDate"]?.stringValue,
+            if let startDateStr = arguments["start"]?.stringValue,
+                let endDateStr = arguments["end"]?.stringValue,
                 let startDate = ISO8601DateFormatter.parseFlexibleISODate(startDateStr),
                 let endDate = ISO8601DateFormatter.parseFlexibleISODate(endDateStr)
             {
