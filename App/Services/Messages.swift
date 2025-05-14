@@ -50,7 +50,7 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
 
     var tools: [Tool] {
         Tool(
-            name: "fetchMessages",
+            name: "messages.fetch",
             description: "Fetch messages from the Messages app",
             inputSchema: .object(
                 properties: [

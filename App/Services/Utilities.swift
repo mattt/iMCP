@@ -1,6 +1,6 @@
 import AppKit
-import OSLog
 import JSONSchema
+import OSLog
 
 private let log = Logger.service("utilities")
 
@@ -28,7 +28,7 @@ final class UtilitiesService: Service {
 
     var tools: [Tool] {
         Tool(
-            name: "playSystemSound",
+            name: "utilities.beep",
             description: "Play a system sound. Only call if the user explicitly asks for it.",
             inputSchema: .object(
                 properties: [
