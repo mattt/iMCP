@@ -13,7 +13,7 @@ final class WeatherService: Service {
 
     var tools: [Tool] {
         Tool(
-            name: "getCurrentWeatherForLocation",
+            name: "weather.current",
             description:
                 "Get current weather for a location, including temperature, conditions, humidity, and wind speed",
             inputSchema: .object(
@@ -51,7 +51,7 @@ final class WeatherService: Service {
         }
 
         Tool(
-            name: "getDailyForecastForLocation",
+            name: "weather.daily",
             description: "Get daily weather forecast for a location",
             inputSchema: .object(
                 properties: [
@@ -100,9 +100,9 @@ final class WeatherService: Service {
 
             return dailyForecast.prefix(days).map { WeatherForecast($0) }
         }
-        
+
         Tool(
-            name: "getHourlyForecastForLocation",
+            name: "weather.hourly",
             description: "Get hourly weather forecast for a location",
             inputSchema: .object(
                 properties: [
@@ -155,7 +155,7 @@ final class WeatherService: Service {
         }
 
         Tool(
-            name: "getMinuteByMinuteForecastForLocation",
+            name: "weather.minute",
             description: "Get minute-by-minute weather forecast for a location",
             inputSchema: .object(
                 properties: [

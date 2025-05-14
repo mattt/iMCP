@@ -37,7 +37,7 @@ final class MapsService: NSObject, Service {
 
     var tools: [Tool] {
         Tool(
-            name: "searchPlaces",
+            name: "maps.search",
             description: "Search for places, addresses, points of interest by text query",
             inputSchema: .object(
                 properties: [
@@ -124,7 +124,7 @@ final class MapsService: NSObject, Service {
         }
 
         Tool(
-            name: "getDirections",
+            name: "maps.directions",
             description: "Get directions between two locations with optional transport type",
             inputSchema: .object(
                 properties: [
@@ -251,7 +251,7 @@ final class MapsService: NSObject, Service {
         }
 
         Tool(
-            name: "findNearbyPointsOfInterest",
+            name: "maps.explore",
             description: "Find points of interest near a location",
             inputSchema: .object(
                 properties: [
@@ -337,7 +337,7 @@ final class MapsService: NSObject, Service {
         }
 
         Tool(
-            name: "getETABetweenLocations",
+            name: "maps.eta",
             description: "Calculate estimated travel time between two locations",
             inputSchema: .object(
                 properties: [
@@ -437,7 +437,7 @@ final class MapsService: NSObject, Service {
         }
 
         Tool(
-            name: "generateMapImage",
+            name: "maps.generate",
             description: "Generate a static map image for given coordinates and parameters",
             inputSchema: .object(
                 properties: [
