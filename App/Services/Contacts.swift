@@ -153,5 +153,212 @@ final class ContactsService: Service {
 
             return contacts.compactMap { Person($0) }
         }
+
+        Tool(
+            name: "contacts_update",
+            description:
+                "Update an existing contact's information. Only provide values for properties that need to be changed; omit any properties that should remain unchanged.",
+            inputSchema: .object(
+                properties: [
+                    "identifier": .string(
+                        description: "Unique identifier of the contact to update"
+                    ),
+                    "givenName": .string(),
+                    "familyName": .string(),
+                    "organizationName": .string(),
+                    "jobTitle": .string(),
+                    "phoneNumbers": .array(
+                        items: .object(
+                            properties: [
+                                "label": .string(
+                                    description:
+                                        "Label for the phone number (e.g., 'home', 'work', 'mobile')"
+                                ),
+                                "value": .string(),
+                            ],
+                            required: ["label", "value"]
+                        )
+                    ),
+                    "emailAddresses": .array(
+                        items: .object(
+                            properties: [
+                                "label": .string(
+                                    description: "Label for the email (e.g., 'home', 'work')"),
+                                "value": .string(),
+                            ],
+                            required: ["label", "value"]
+                        )
+                    ),
+                    "postalAddresses": .array(
+                        items: .object(
+                            properties: [
+                                "label": .string(
+                                    description: "Label for the address (e.g., 'home', 'work')"),
+                                "street": .string(),
+                                "city": .string(),
+                                "state": .string(),
+                                "postalCode": .string(),
+                                "country": .string(),
+                            ],
+                            required: ["label"]
+                        )
+                    ),
+                    "birthday": .object(
+                        properties: [
+                            "day": .integer(),
+                            "month": .integer(),
+                            "year": .integer(),
+                        ],
+                        required: ["day", "month"]
+                    ),
+                ],
+                required: ["identifier"]
+            ),
+            annotations: .init(
+                title: "Update Contact",
+                readOnlyHint: false,
+                destructiveHint: true,
+                openWorldHint: false
+            )
+        ) { arguments in
+            guard case let .string(identifier) = arguments["identifier"], !identifier.isEmpty else {
+                throw NSError(
+                    domain: "ContactsService", code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "Valid contact identifier required"]
+                )
+            }
+
+            // Fetch the mutable copy of the contact
+            let predicate = CNContact.predicateForContacts(withIdentifiers: [identifier])
+            let contact =
+                try self.contactStore.unifiedContacts(matching: predicate, keysToFetch: contactKeys)
+                .first?
+                .mutableCopy() as? CNMutableContact
+
+            guard let mutableContact = contact else {
+                throw NSError(
+                    domain: "ContactsService", code: 2,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Contact not found with identifier: \(identifier)"
+                    ]
+                )
+            }
+
+            // Update basic properties
+            if case let .string(givenName) = arguments["givenName"] {
+                mutableContact.givenName = givenName
+            }
+
+            if case let .string(familyName) = arguments["familyName"] {
+                mutableContact.familyName = familyName
+            }
+
+            if case let .string(organizationName) = arguments["organizationName"] {
+                mutableContact.organizationName = organizationName
+            }
+
+            if case let .string(jobTitle) = arguments["jobTitle"] {
+                mutableContact.jobTitle = jobTitle
+            }
+
+            // Update phone numbers
+            if case let .object(phoneNumbers) = arguments["phoneNumbers"] {
+                mutableContact.phoneNumbers = phoneNumbers.compactMap { entry in
+                    guard case let .string(value) = entry.value
+                    else {
+                        return nil
+                    }
+                    let labelValue =
+                        entry.key == "mobile"
+                        ? CNLabelPhoneNumberMobile
+                        : entry.key == "work"
+                            ? CNLabelWork : entry.key == "home" ? CNLabelHome : entry.key
+
+                    return CNLabeledValue(
+                        label: labelValue,
+                        value: CNPhoneNumber(stringValue: value)
+                    )
+                }
+            }
+
+            // Update email addresses
+            if case let .object(emailAddresses) = arguments["emailAddresses"] {
+                mutableContact.emailAddresses = emailAddresses.compactMap { entry in
+                    guard case let .string(value) = entry.value
+                    else {
+                        return nil
+                    }
+                    let labelValue =
+                        entry.key == "work"
+                        ? CNLabelWork : entry.key == "home" ? CNLabelHome : entry.key
+
+                    return CNLabeledValue(
+                        label: labelValue,
+                        value: value as NSString
+                    )
+                }
+            }
+
+            // Update postal addresses
+            if case let .object(postalAddresses) = arguments["postalAddresses"] {
+                mutableContact.postalAddresses = postalAddresses.compactMap { entry in
+                    guard case let .object(addressData) = entry.value
+                    else {
+                        return nil
+                    }
+
+                    let labelValue =
+                        entry.key == "work"
+                        ? CNLabelWork : entry.key == "home" ? CNLabelHome : entry.key
+
+                    let postalAddress = CNMutablePostalAddress()
+
+                    if case let .string(street) = addressData["street"] {
+                        postalAddress.street = street
+                    }
+                    if case let .string(city) = addressData["city"] {
+                        postalAddress.city = city
+                    }
+                    if case let .string(state) = addressData["state"] {
+                        postalAddress.state = state
+                    }
+                    if case let .string(postalCode) = addressData["postalCode"] {
+                        postalAddress.postalCode = postalCode
+                    }
+                    if case let .string(country) = addressData["country"] {
+                        postalAddress.country = country
+                    }
+
+                    return CNLabeledValue(
+                        label: labelValue,
+                        value: postalAddress
+                    )
+                }
+            }
+
+            // Update birthday
+            if case let .object(birthdayData) = arguments["birthday"],
+                case let .int(day) = birthdayData["day"],
+                case let .int(month) = birthdayData["month"]
+            {
+                let dateComponents = NSDateComponents()
+                dateComponents.day = day
+                dateComponents.month = month
+                if case let .int(year) = birthdayData["year"] {
+                    dateComponents.year = year
+                }
+                mutableContact.birthday = dateComponents as DateComponents
+            }
+
+            // Create a save request
+            let saveRequest = CNSaveRequest()
+            saveRequest.update(mutableContact)
+
+            // Save the changes
+            try self.contactStore.execute(saveRequest)
+
+            return true
+        }
     }
 }
