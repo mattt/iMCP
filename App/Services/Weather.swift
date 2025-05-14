@@ -15,15 +15,11 @@ final class WeatherService: Service {
         Tool(
             name: "weather.current",
             description:
-                "Get current weather for a location, including temperature, conditions, humidity, and wind speed",
+                "Get current weather for a location",
             inputSchema: .object(
                 properties: [
-                    "latitude": .number(
-                        description: "The latitude of the location"
-                    ),
-                    "longitude": .number(
-                        description: "The longitude of the location"
-                    ),
+                    "latitude": .number(),
+                    "longitude": .number(),
                 ],
                 additionalProperties: false
             ),
@@ -55,14 +51,10 @@ final class WeatherService: Service {
             description: "Get daily weather forecast for a location",
             inputSchema: .object(
                 properties: [
-                    "latitude": .number(
-                        description: "The latitude of the location"
-                    ),
-                    "longitude": .number(
-                        description: "The longitude of the location"
-                    ),
+                    "latitude": .number(),
+                    "longitude": .number(),
                     "days": .integer(
-                        description: "Number of days to forecast (default 7, max 10)",
+                        description: "Number of forecast days (max 10)",
                         default: 7,
                         minimum: 1,
                         maximum: 10
@@ -106,12 +98,8 @@ final class WeatherService: Service {
             description: "Get hourly weather forecast for a location",
             inputSchema: .object(
                 properties: [
-                    "latitude": .number(
-                        description: "The latitude of the location"
-                    ),
-                    "longitude": .number(
-                        description: "The longitude of the location"
-                    ),
+                    "latitude": .number(),
+                    "longitude": .number(),
                     "hours": .integer(
                         description: "Number of hours to forecast",
                         default: 24,
@@ -159,14 +147,10 @@ final class WeatherService: Service {
             description: "Get minute-by-minute weather forecast for a location",
             inputSchema: .object(
                 properties: [
-                    "latitude": .number(
-                        description: "The latitude of the location"
-                    ),
-                    "longitude": .number(
-                        description: "The longitude of the location"
-                    ),
+                    "latitude": .number(),
+                    "longitude": .number(),
                     "minutes": .integer(
-                        description: "Number of minutes to forecast (default 60)",
+                        description: "Number of minutes to forecast",
                         default: 60,
                         minimum: 1,
                         maximum: 120

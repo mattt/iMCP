@@ -56,24 +56,22 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                 properties: [
                     "participants": .array(
                         description:
-                            "A list of participant handles. May be a phone number or email address. Phone numbers should be in E.164 format (leading + and country code, no spaces or punctuation).",
+                            "Participant handles (phone or email). Phone numbers should use E.164 format",
                         items: .string()
                     ),
-                    "startDate": .string(
-                        description:
-                            "ISO 8601 formatted date-time string for the start of the date range (inclusive)",
+                    "start": .string(
+                        description: "Start of the date range (inclusive)",
                         format: .dateTime
                     ),
-                    "endDate": .string(
-                        description:
-                            "ISO 8601 formatted date-time string for the end of the date range (exclusive)",
+                    "end": .string(
+                        description: "End of the date range (exclusive)",
                         format: .dateTime
                     ),
-                    "searchTerm": .string(
-                        description: "Search term to filter messages by"
+                    "query": .string(
+                        description: "Search term to filter messages by content"
                     ),
                     "limit": .integer(
-                        description: "Maximum number of messages to return",
+                        description: "Maximum messages to return",
                         default: .int(defaultLimit)
                     ),
                 ],
@@ -94,15 +92,15 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                 }) ?? []
 
             var dateRange: Range<Date>?
-            if let startDateStr = arguments["startDate"]?.stringValue,
-                let endDateStr = arguments["endDate"]?.stringValue,
+            if let startDateStr = arguments["start"]?.stringValue,
+                let endDateStr = arguments["end"]?.stringValue,
                 let startDate = ISO8601DateFormatter.parseFlexibleISODate(startDateStr),
                 let endDate = ISO8601DateFormatter.parseFlexibleISODate(endDateStr)
             {
                 dateRange = startDate..<endDate
             }
 
-            let searchTerm = arguments["searchTerm"]?.stringValue
+            let searchTerm = arguments["query"]?.stringValue
             let limit = arguments["limit"]?.intValue
 
             let db = try self.createDatabaseConnection()

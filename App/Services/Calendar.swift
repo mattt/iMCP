@@ -26,26 +26,23 @@ final class CalendarService: Service {
             description: "Get events from the calendar with flexible filtering options",
             inputSchema: .object(
                 properties: [
-                    "startDate": .string(
-                        description:
-                            "The start of the date range (defaults to now if not specified)",
+                    "start": .string(
+                        description: "Start date of the range (defaults to now)",
                         format: .dateTime
                     ),
-                    "endDate": .string(
-                        description:
-                            "The end of the date range (defaults to one week from start if not specified)",
+                    "end": .string(
+                        description: "End date of the range (defaults to one week from start)",
                         format: .dateTime
                     ),
-                    "calendarNames": .array(
+                    "calendars": .array(
                         description:
-                            "Names of calendars to fetch from. If empty or not specified, fetches from all calendars.",
+                            "Names of calendars to fetch from; if empty, fetches from all calendars",
                         items: .string(),
                     ),
-                    "searchText": .string(
+                    "query": .string(
                         description: "Text to search for in event titles and locations"
                     ),
                     "includeAllDay": .boolean(
-                        description: "Whether to include all-day events",
                         default: true
                     ),
                     "status": .string(
@@ -56,12 +53,8 @@ final class CalendarService: Service {
                         description: "Filter by availability status",
                         enum: EKEventAvailability.allCases.map { .string($0.stringValue) }
                     ),
-                    "hasAlarms": .boolean(
-                        description: "Filter for events that have alarms/reminders set"
-                    ),
-                    "isRecurring": .boolean(
-                        description: "Filter for recurring/non-recurring events"
-                    ),
+                    "hasAlarms": .boolean(),
+                    "isRecurring": .boolean(),
                 ],
                 additionalProperties: false
             ),
@@ -81,7 +74,7 @@ final class CalendarService: Service {
 
             // Filter calendars based on provided names
             var calendars = self.eventStore.calendars(for: .event)
-            if case let .array(calendarNames) = arguments["calendarNames"],
+            if case let .array(calendarNames) = arguments["calendars"],
                 !calendarNames.isEmpty
             {
                 let requestedNames = Set(calendarNames.compactMap { $0.stringValue?.lowercased() })
@@ -93,13 +86,13 @@ final class CalendarService: Service {
             var startDate = now
             var endDate = Calendar.current.date(byAdding: .weekOfYear, value: 1, to: now)!
 
-            if case let .string(start) = arguments["startDate"],
+            if case let .string(start) = arguments["start"],
                 let parsedStart = ISO8601DateFormatter.parseFlexibleISODate(start)
             {
                 startDate = parsedStart
             }
 
-            if case let .string(end) = arguments["endDate"],
+            if case let .string(end) = arguments["end"],
                 let parsedEnd = ISO8601DateFormatter.parseFlexibleISODate(end)
             {
                 endDate = parsedEnd
@@ -122,7 +115,7 @@ final class CalendarService: Service {
                 events = events.filter { !$0.isAllDay }
             }
 
-            if case let .string(searchText) = arguments["searchText"],
+            if case let .string(searchText) = arguments["query"],
                 !searchText.isEmpty
             {
                 events = events.filter {
@@ -156,46 +149,37 @@ final class CalendarService: Service {
             description: "Create a new calendar event with specified properties",
             inputSchema: .object(
                 properties: [
-                    "title": .string(
-                        description: "The title of the event"
-                    ),
-                    "startDate": .string(
-                        description: "The start of the event",
+                    "title": .string(),
+                    "start": .string(
                         format: .dateTime
                     ),
-                    "endDate": .string(
-                        description: "The end of the event",
+                    "end": .string(
                         format: .dateTime
                     ),
-                    "calendarName": .string(
-                        description:
-                            "Name of the calendar to create the event in (uses default calendar if not specified)"
+                    "calendar": .string(
+                        description: "Calendar to use (uses default if not specified)"
                     ),
-                    "location": .string(
-                        description: "Location of the event"
-                    ),
-                    "notes": .string(
-                        description: "Notes or description for the event"
-                    ),
+                    "location": .string(),
+                    "notes": .string(),
                     "url": .string(
-                        description: "URL associated with the event (e.g., meeting link)",
                         format: .uri
                     ),
                     "isAllDay": .boolean(
-                        description: "Whether this is an all-day event",
                         default: false
                     ),
                     "availability": .string(
-                        description: "Event availability status",
+                        description: "Availability status",
                         default: .string(EKEventAvailability.busy.stringValue),
                         enum: EKEventAvailability.allCases.map { .string($0.stringValue) }
                     ),
                     "alarms": .array(
-                        description: "Array of minutes before the event to set alarms",
+                        description: "Minutes before event to set alarms",
                         items: .integer()
                     ),
+                    "hasAlarms": .boolean(),
+                    "isRecurring": .boolean(),
                 ],
-                required: ["title", "startDate", "endDate"],
+                required: ["title", "start", "end"],
                 additionalProperties: false
             ),
             annotations: .init(
@@ -227,9 +211,9 @@ final class CalendarService: Service {
             event.title = title
 
             // Parse dates
-            guard case let .string(startDateStr) = arguments["startDate"],
+            guard case let .string(startDateStr) = arguments["start"],
                 let startDate = ISO8601DateFormatter.parseFlexibleISODate(startDateStr),
-                case let .string(endDateStr) = arguments["endDate"],
+                case let .string(endDateStr) = arguments["end"],
                 let endDate = ISO8601DateFormatter.parseFlexibleISODate(endDateStr)
             else {
                 throw NSError(
@@ -265,7 +249,7 @@ final class CalendarService: Service {
 
             // Set calendar
             var calendar = self.eventStore.defaultCalendarForNewEvents
-            if case let .string(calendarName) = arguments["calendarName"] {
+            if case let .string(calendarName) = arguments["calendar"] {
                 if let matchingCalendar = self.eventStore.calendars(for: .event)
                     .first(where: { $0.title.lowercased() == calendarName.lowercased() })
                 {

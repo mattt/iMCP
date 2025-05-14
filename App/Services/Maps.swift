@@ -42,10 +42,10 @@ final class MapsService: NSObject, Service {
             inputSchema: .object(
                 properties: [
                     "query": .string(
-                        description: "The search text (place name, address, etc.)"
+                        description: "Search text (place name, address, etc.)"
                     ),
                     "region": .object(
-                        description: "Optional region to bias search results",
+                        description: "Region to bias search results",
                         properties: [
                             "latitude": .number(),
                             "longitude": .number(),
@@ -129,7 +129,7 @@ final class MapsService: NSObject, Service {
             inputSchema: .object(
                 properties: [
                     "originAddress": .string(
-                        description: "Origin address as text"
+                        description: "Origin address"
                     ),
                     "originCoordinates": .object(
                         description: "Origin coordinates",
@@ -141,7 +141,7 @@ final class MapsService: NSObject, Service {
                         additionalProperties: false
                     ),
                     "destinationAddress": .string(
-                        description: "Destination address as text"
+                        description: "Destination address"
                     ),
                     "destinationCoordinates": .object(
                         description: "Destination coordinates",
@@ -153,7 +153,7 @@ final class MapsService: NSObject, Service {
                         additionalProperties: false
                     ),
                     "transportType": .string(
-                        description: "Type of transportation (automobile, walking, transit, any)",
+                        description: "Transport type",
                         default: "automobile",
                         enum: ["automobile", "walking", "transit", "any"]
                     ),
@@ -256,7 +256,7 @@ final class MapsService: NSObject, Service {
             inputSchema: .object(
                 properties: [
                     "category": .string(
-                        description: "Category of points of interest",
+                        description: "POI category",
                         enum: MKPointOfInterestCategory.allCases.map { .string($0.stringValue) }
                     ),
                     "latitude": .number(),
@@ -266,7 +266,7 @@ final class MapsService: NSObject, Service {
                         default: .double(defaultSearchRadius)
                     ),
                     "limit": .integer(
-                        description: "Maximum number of results to return",
+                        description: "Maximum results to return",
                         default: .int(defaultSearchLimit)
                     ),
                 ],
@@ -346,7 +346,7 @@ final class MapsService: NSObject, Service {
                     "destinationLatitude": .number(),
                     "destinationLongitude": .number(),
                     "transportType": .string(
-                        description: "Type of transportation (automobile, walking, transit)",
+                        description: "Transport type",
                         default: "automobile",
                         enum: ["automobile", "walking", "transit"]
                     ),
@@ -444,33 +444,32 @@ final class MapsService: NSObject, Service {
                     "latitude": .number(),
                     "longitude": .number(),
                     "latitudeDelta": .number(
-                        description: "Amount of latitude degrees to be visible on the map"
+                        description: "Latitude degrees visible on map"
                     ),
                     "longitudeDelta": .number(
-                        description: "Amount of longitude degrees to be visible on the map"
+                        description: "Longitude degrees visible on map"
                     ),
                     "width": .integer(
-                        description: "Width of the desired map image in pixels",
+                        description: "Image width in pixels",
                         default: .int(Int(defaultMapImageSize.width))
                     ),
                     "height": .integer(
-                        description: "Height of the desired map image in pixels",
+                        description: "Image height in pixels",
                         default: .int(Int(defaultMapImageSize.height))
                     ),
                     "mapType": .string(
-                        description: "Type of map (standard, satellite, hybrid, mutedStandard)",
+                        description: "Map type",
                         default: "standard",
                         enum: ["standard", "satellite", "hybrid", "mutedStandard"]
                     ),
                     "showPointsOfInterest": .oneOf(
                         [
                             .boolean(
-                                description: "Show all (true) or no (false) points of interest",
+                                description: "Show all (true) or no (false) POIs",
                                 default: false
                             ),
                             .array(
-                                description:
-                                    "Show specific types of points of interest to show; select as many as you're interested in",
+                                description: "Specific POI types to show",
                                 items: .anyOf(
                                     MKPointOfInterestCategory.allCases.map {
                                         .string(const: .string($0.stringValue))
@@ -481,7 +480,7 @@ final class MapsService: NSObject, Service {
                         ]
                     ),
                     "showBuildings": .boolean(
-                        description: "Whether to show buildings on the map",
+                        description: "Whether to show buildings",
                         default: false
                     ),
                 ],
