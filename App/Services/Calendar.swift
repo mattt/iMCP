@@ -34,7 +34,7 @@ final class CalendarService: Service {
                         description: "End date of the range (defaults to one week from start)",
                         format: .dateTime
                     ),
-                    "calendarNames": .array(
+                    "calendars": .array(
                         description:
                             "Names of calendars to fetch from; if empty, fetches from all calendars",
                         items: .string(),
@@ -74,7 +74,7 @@ final class CalendarService: Service {
 
             // Filter calendars based on provided names
             var calendars = self.eventStore.calendars(for: .event)
-            if case let .array(calendarNames) = arguments["calendarNames"],
+            if case let .array(calendarNames) = arguments["calendars"],
                 !calendarNames.isEmpty
             {
                 let requestedNames = Set(calendarNames.compactMap { $0.stringValue?.lowercased() })
@@ -156,7 +156,7 @@ final class CalendarService: Service {
                     "endDate": .string(
                         format: .dateTime
                     ),
-                    "calendarName": .string(
+                    "calendar": .string(
                         description: "Calendar to use (uses default if not specified)"
                     ),
                     "location": .string(),
@@ -249,7 +249,7 @@ final class CalendarService: Service {
 
             // Set calendar
             var calendar = self.eventStore.defaultCalendarForNewEvents
-            if case let .string(calendarName) = arguments["calendarName"] {
+            if case let .string(calendarName) = arguments["calendar"] {
                 if let matchingCalendar = self.eventStore.calendars(for: .event)
                     .first(where: { $0.title.lowercased() == calendarName.lowercased() })
                 {
