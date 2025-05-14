@@ -39,7 +39,7 @@ final class CalendarService: Service {
                             "Names of calendars to fetch from; if empty, fetches from all calendars",
                         items: .string(),
                     ),
-                    "searchText": .string(
+                    "query": .string(
                         description: "Text to search for in event titles and locations"
                     ),
                     "includeAllDay": .boolean(
@@ -115,7 +115,7 @@ final class CalendarService: Service {
                 events = events.filter { !$0.isAllDay }
             }
 
-            if case let .string(searchText) = arguments["searchText"],
+            if case let .string(searchText) = arguments["query"],
                 !searchText.isEmpty
             {
                 events = events.filter {

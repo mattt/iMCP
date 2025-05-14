@@ -67,7 +67,9 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                         description: "End of the date range (exclusive)",
                         format: .dateTime
                     ),
-                    "searchTerm": .string(),
+                    "query": .string(
+                        description: "Search term to filter messages by content"
+                    ),
                     "limit": .integer(
                         description: "Maximum messages to return",
                         default: .int(defaultLimit)
@@ -98,7 +100,7 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                 dateRange = startDate..<endDate
             }
 
-            let searchTerm = arguments["searchTerm"]?.stringValue
+            let searchTerm = arguments["query"]?.stringValue
             let limit = arguments["limit"]?.intValue
 
             let db = try self.createDatabaseConnection()

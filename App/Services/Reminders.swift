@@ -43,7 +43,7 @@ final class RemindersService: Service {
                             "Names of reminder lists to fetch from; if empty, fetches from all lists",
                         items: .string()
                     ),
-                    "searchText": .string(
+                    "query": .string(
                         description: "Text to search for in reminder titles"
                     ),
                 ],
@@ -120,7 +120,7 @@ final class RemindersService: Service {
             var filteredReminders = reminders
 
             // Filter by search text if provided
-            if case let .string(searchText) = arguments["searchText"],
+            if case let .string(searchText) = arguments["query"],
                 !searchText.isEmpty
             {
                 filteredReminders = filteredReminders.filter {
