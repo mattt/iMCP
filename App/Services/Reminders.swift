@@ -138,7 +138,6 @@ final class RemindersService: Service {
                 properties: [
                     "title": .string(),
                     "dueDate": .string(
-                        description: "Due date of the reminder",
                         format: .dateTime
                     ),
                     "listName": .string(
@@ -146,7 +145,6 @@ final class RemindersService: Service {
                     ),
                     "notes": .string(),
                     "priority": .string(
-                        description: "Priority level",
                         default: .string(EKReminderPriority.none.stringValue),
                         enum: EKReminderPriority.allCases.map { .string($0.stringValue) }
                     ),

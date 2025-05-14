@@ -151,11 +151,9 @@ final class CalendarService: Service {
                 properties: [
                     "title": .string(),
                     "startDate": .string(
-                        description: "Event start time",
                         format: .dateTime
                     ),
                     "endDate": .string(
-                        description: "Event end time",
                         format: .dateTime
                     ),
                     "calendarName": .string(
