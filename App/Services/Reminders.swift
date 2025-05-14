@@ -38,7 +38,7 @@ final class RemindersService: Service {
                         description: "End date range for fetching reminders",
                         format: .dateTime
                     ),
-                    "listNames": .array(
+                    "lists": .array(
                         description:
                             "Names of reminder lists to fetch from; if empty, fetches from all lists",
                         items: .string()
@@ -67,7 +67,7 @@ final class RemindersService: Service {
 
             // Filter reminder lists based on provided names
             var reminderLists = self.eventStore.calendars(for: .reminder)
-            if case let .array(listNames) = arguments["listNames"],
+            if case let .array(listNames) = arguments["lists"],
                 !listNames.isEmpty
             {
                 let requestedNames = Set(
