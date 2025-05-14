@@ -87,17 +87,17 @@ final class ContactsService: Service {
         Tool(
             name: "contacts.search",
             description:
-                "Search contacts by name, phone number, and/or email. Provide only the parameters you want to search by. Provide at least one parameter.",
+                "Search contacts by name, phone number, and/or email",
             inputSchema: .object(
                 properties: [
                     "name": .string(
-                        description: "Name to search for (will match given name or family name)"
+                        description: "Name to search for"
                     ),
                     "phone": .string(
-                        description: "Phone number to search for (any formatting accepted)"
+                        description: "Phone number to search for"
                     ),
                     "email": .string(
-                        description: "Email address to search for (case insensitive)"
+                        description: "Email address to search for"
                     ),
                 ],
                 additionalProperties: false

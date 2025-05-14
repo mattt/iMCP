@@ -176,7 +176,7 @@ final class LocationService: NSObject, Service, CLLocationManagerDelegate {
             inputSchema: .object(
                 properties: [
                     "address": .string(
-                        description: "The address to geocode"
+                        description: "Address to geocode"
                     )
                 ],
                 required: ["address"],

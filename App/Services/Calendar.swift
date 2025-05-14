@@ -27,25 +27,22 @@ final class CalendarService: Service {
             inputSchema: .object(
                 properties: [
                     "startDate": .string(
-                        description:
-                            "The start of the date range (defaults to now if not specified)",
+                        description: "Start date of the range (defaults to now)",
                         format: .dateTime
                     ),
                     "endDate": .string(
-                        description:
-                            "The end of the date range (defaults to one week from start if not specified)",
+                        description: "End date of the range (defaults to one week from start)",
                         format: .dateTime
                     ),
                     "calendarNames": .array(
                         description:
-                            "Names of calendars to fetch from. If empty or not specified, fetches from all calendars.",
+                            "Names of calendars to fetch from; if empty, fetches from all calendars",
                         items: .string(),
                     ),
                     "searchText": .string(
                         description: "Text to search for in event titles and locations"
                     ),
                     "includeAllDay": .boolean(
-                        description: "Whether to include all-day events",
                         default: true
                     ),
                     "status": .string(
@@ -56,12 +53,8 @@ final class CalendarService: Service {
                         description: "Filter by availability status",
                         enum: EKEventAvailability.allCases.map { .string($0.stringValue) }
                     ),
-                    "hasAlarms": .boolean(
-                        description: "Filter for events that have alarms/reminders set"
-                    ),
-                    "isRecurring": .boolean(
-                        description: "Filter for recurring/non-recurring events"
-                    ),
+                    "hasAlarms": .boolean(),
+                    "isRecurring": .boolean(),
                 ],
                 additionalProperties: false
             ),
@@ -156,44 +149,37 @@ final class CalendarService: Service {
             description: "Create a new calendar event with specified properties",
             inputSchema: .object(
                 properties: [
-                    "title": .string(
-                        description: "The title of the event"
-                    ),
+                    "title": .string(),
                     "startDate": .string(
-                        description: "The start of the event",
+                        description: "Event start time",
                         format: .dateTime
                     ),
                     "endDate": .string(
-                        description: "The end of the event",
+                        description: "Event end time",
                         format: .dateTime
                     ),
                     "calendarName": .string(
-                        description:
-                            "Name of the calendar to create the event in (uses default calendar if not specified)"
+                        description: "Calendar to use (uses default if not specified)"
                     ),
-                    "location": .string(
-                        description: "Location of the event"
-                    ),
-                    "notes": .string(
-                        description: "Notes or description for the event"
-                    ),
+                    "location": .string(),
+                    "notes": .string(),
                     "url": .string(
-                        description: "URL associated with the event (e.g., meeting link)",
                         format: .uri
                     ),
                     "isAllDay": .boolean(
-                        description: "Whether this is an all-day event",
                         default: false
                     ),
                     "availability": .string(
-                        description: "Event availability status",
+                        description: "Availability status",
                         default: .string(EKEventAvailability.busy.stringValue),
                         enum: EKEventAvailability.allCases.map { .string($0.stringValue) }
                     ),
                     "alarms": .array(
-                        description: "Array of minutes before the event to set alarms",
+                        description: "Minutes before event to set alarms",
                         items: .integer()
                     ),
+                    "hasAlarms": .boolean(),
+                    "isRecurring": .boolean(),
                 ],
                 required: ["title", "startDate", "endDate"],
                 additionalProperties: false

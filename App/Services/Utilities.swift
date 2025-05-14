@@ -29,7 +29,7 @@ final class UtilitiesService: Service {
     var tools: [Tool] {
         Tool(
             name: "utilities.beep",
-            description: "Play a system sound. Only call if the user explicitly asks for it.",
+            description: "Play a system sound",
             inputSchema: .object(
                 properties: [
                     "sound": .string(
