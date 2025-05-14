@@ -137,7 +137,7 @@ final class RemindersService: Service {
             inputSchema: .object(
                 properties: [
                     "title": .string(),
-                    "dueDate": .string(
+                    "due": .string(
                         format: .dateTime
                     ),
                     "list": .string(
@@ -195,7 +195,7 @@ final class RemindersService: Service {
             reminder.calendar = calendar
 
             // Set optional properties
-            if case let .string(dueDateStr) = arguments["dueDate"],
+            if case let .string(dueDateStr) = arguments["due"],
                 let dueDate = ISO8601DateFormatter.parseFlexibleISODate(dueDateStr)
             {
                 reminder.dueDateComponents = Calendar.current.dateComponents(
