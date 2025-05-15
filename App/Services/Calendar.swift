@@ -50,8 +50,7 @@ final class CalendarService: Service {
                     "source": .string(calendar.source.title),
                     "color": .string(calendar.color.accessibilityName),
                     "isEditable": .bool(calendar.allowsContentModifications),
-                    "isSubscribed": .bool(calendar.isSubscribed),
-                    "type": .string(calendar.type == .local ? "local" : "subscription"),
+                    "isSubscribed": .bool(calendar.isSubscribed)
                 ])
             }
         }
