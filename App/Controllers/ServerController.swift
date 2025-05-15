@@ -200,7 +200,6 @@ final class ServerController: ObservableObject {
     func updateServiceBindings(_ bindings: [String: Binding<Bool>]) async {
         // This function is still called by ContentView's onChange when user toggles services.
         // It ensures ServerNetworkManager is updated and clients are notified.
-        log.debug("Updating service bindings to: \(bindings.mapValues { $0.wrappedValue })")
         await networkManager.updateServiceBindings(bindings)
     }
 
@@ -874,7 +873,6 @@ actor ServerNetworkManager {
 
     // Update service bindings
     func updateServiceBindings(_ newBindings: [String: Binding<Bool>]) async {
-        log.debug("Updating service bindings to: \(newBindings)")
         self.serviceBindings = newBindings
 
         // Notify clients that tool availability may have changed
