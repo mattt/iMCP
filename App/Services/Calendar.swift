@@ -22,6 +22,40 @@ final class CalendarService: Service {
 
     var tools: [Tool] {
         Tool(
+            name: "calendars_list",
+            description: "List available calendars",
+            inputSchema: .object(
+                properties: [:],
+                additionalProperties: false
+            ),
+            annotations: .init(
+                title: "List Calendars",
+                readOnlyHint: true,
+                openWorldHint: false
+            )
+        ) { arguments in
+            guard EKEventStore.authorizationStatus(for: .event) == .fullAccess else {
+                log.error("Calendar access not authorized")
+                throw NSError(
+                    domain: "CalendarError", code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "Calendar access not authorized"]
+                )
+            }
+
+            let calendars = self.eventStore.calendars(for: .event)
+
+            return calendars.map { calendar in
+                Value.object([
+                    "title": .string(calendar.title),
+                    "source": .string(calendar.source.title),
+                    "color": .string(calendar.color.accessibilityName),
+                    "isEditable": .bool(calendar.allowsContentModifications),
+                    "isSubscribed": .bool(calendar.isSubscribed)
+                ])
+            }
+        }
+
+        Tool(
             name: "events_fetch",
             description: "Get events from the calendar with flexible filtering options",
             inputSchema: .object(
