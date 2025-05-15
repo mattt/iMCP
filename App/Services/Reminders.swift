@@ -22,6 +22,40 @@ final class RemindersService: Service {
 
     var tools: [Tool] {
         Tool(
+            name: "reminders_lists",
+            description: "List available reminder lists",
+            inputSchema: .object(
+                properties: [:],
+                additionalProperties: false
+            ),
+            annotations: .init(
+                title: "List Reminder Lists",
+                readOnlyHint: true,
+                openWorldHint: false
+            )
+        ) { arguments in
+            guard EKEventStore.authorizationStatus(for: .reminder) == .fullAccess else {
+                log.error("Reminders access not authorized")
+                throw NSError(
+                    domain: "RemindersError", code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "Reminders access not authorized"]
+                )
+            }
+
+            let reminderLists = self.eventStore.calendars(for: .reminder)
+
+            return reminderLists.map { reminderList in
+                Value.object([
+                    "title": .string(reminderList.title),
+                    "source": .string(reminderList.source.title),
+                    "color": .string(reminderList.color.accessibilityName),
+                    "isEditable": .bool(reminderList.allowsContentModifications),
+                    "isSubscribed": .bool(reminderList.isSubscribed),
+                ])
+            }
+        }
+
+        Tool(
             name: "reminders_fetch",
             description: "Get reminders from the reminders app with flexible filtering options",
             inputSchema: .object(
