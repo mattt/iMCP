@@ -437,6 +437,7 @@ final class CalendarService: Service {
                         }
 
                     default:
+                        log.error("Unexpected alarm type encountered: \(alarmType, privacy: .public)")
                         continue
                     }
 
