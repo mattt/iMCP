@@ -170,10 +170,6 @@ and enter the following:
 Quit and reopen the Claude Desktop app.
 You'll be prompted to approve the connection.
 
-> [!NOTE]
-> You may see this dialog twice;
-> click approve both times.
-
 <br clear="all">
 
 After approving the connection,
