@@ -4,25 +4,6 @@ import OSLog
 
 private let log = Logger.service("utilities")
 
-private enum Sound: String, Hashable, CaseIterable {
-    static let `default`: Sound = .sosumi
-
-    case basso = "Basso"
-    case blow = "Blow"
-    case bottle = "Bottle"
-    case frog = "Frog"
-    case funk = "Funk"
-    case glass = "Glass"
-    case hero = "Hero"
-    case morse = "Morse"
-    case ping = "Ping"
-    case pop = "Pop"
-    case purr = "Purr"
-    case sosumi = "Sosumi"
-    case submarine = "Submarine"
-    case tink = "Tink"
-}
-
 final class UtilitiesService: Service {
     static let shared = UtilitiesService()
 
@@ -46,9 +27,7 @@ final class UtilitiesService: Service {
             )
         ) { input in
             let rawValue = input["sound"]?.stringValue ?? Sound.default.rawValue
-            guard let sound = Sound(rawValue: rawValue),
-                let nsSound = NSSound(named: sound.rawValue)
-            else {
+            guard let sound = Sound(rawValue: rawValue) else {
                 log.error("Invalid sound: \(rawValue)")
                 throw NSError(
                     domain: "SoundError", code: 1,
@@ -57,7 +36,7 @@ final class UtilitiesService: Service {
                     ])
             }
 
-            return nsSound.play()
+            return NSSound.play(sound)
         }
     }
 }
