@@ -457,12 +457,6 @@ final class CalendarService: Service {
                 }
 
                 event.alarms = alarms
-            } else if case let .array(alarmMinutes) = arguments["alarms"] {
-                // Maintain backwards compatibility with the old format
-                event.alarms = alarmMinutes.compactMap {
-                    guard case let .int(minutes) = $0 else { return nil }
-                    return EKAlarm(relativeOffset: TimeInterval(-minutes * 60))
-                }
             }
 
             // Save the event
