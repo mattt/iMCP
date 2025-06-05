@@ -53,6 +53,7 @@ enum ServiceRegistry {
         LocationService.shared,
         MapsService.shared,
         MessageService.shared,
+        OperatorService.shared,
         RemindersService.shared,
         UtilitiesService.shared,
         WeatherService.shared,
@@ -64,6 +65,7 @@ enum ServiceRegistry {
         locationEnabled: Binding<Bool>,
         mapsEnabled: Binding<Bool>,
         messagesEnabled: Binding<Bool>,
+        operatorEnabled: Binding<Bool>,
         remindersEnabled: Binding<Bool>,
         utilitiesEnabled: Binding<Bool>,
         weatherEnabled: Binding<Bool>
@@ -105,11 +107,25 @@ enum ServiceRegistry {
                 binding: messagesEnabled
             ),
             ServiceConfig(
+                name: "Operator",
+                iconName: "macwindow",
+                color: .indigo,
+                service: OperatorService.shared,
+                binding: operatorEnabled
+            ),
+            ServiceConfig(
                 name: "Reminders",
                 iconName: "list.bullet",
                 color: .orange,
                 service: RemindersService.shared,
                 binding: remindersEnabled
+            ),
+            ServiceConfig(
+                name: "Utilities",
+                iconName: "wrench.and.screwdriver",
+                color: .gray,
+                service: UtilitiesService.shared,
+                binding: utilitiesEnabled
             ),
             ServiceConfig(
                 name: "Weather",
@@ -138,6 +154,7 @@ final class ServerController: ObservableObject {
     @AppStorage("locationEnabled") private var locationEnabled = false
     @AppStorage("mapsEnabled") private var mapsEnabled = true  // Default for maps
     @AppStorage("messagesEnabled") private var messagesEnabled = false
+    @AppStorage("operatorEnabled") private var operatorEnabled = false
     @AppStorage("remindersEnabled") private var remindersEnabled = false
     @AppStorage("utilitiesEnabled") private var utilitiesEnabled = true  // Default for utilities
     @AppStorage("weatherEnabled") private var weatherEnabled = false
@@ -150,6 +167,7 @@ final class ServerController: ObservableObject {
             locationEnabled: $locationEnabled,
             mapsEnabled: $mapsEnabled,
             messagesEnabled: $messagesEnabled,
+            operatorEnabled: $operatorEnabled,
             remindersEnabled: $remindersEnabled,
             utilitiesEnabled: $utilitiesEnabled,
             weatherEnabled: $weatherEnabled

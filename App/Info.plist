@@ -36,5 +36,8 @@
 
 		<key>SUPublicEDKey</key>
 		<string>+2ibtYfPSNKpUJsn1R9Ywc1GnjQA5vemVN95d0EzGxg=</string>
+
+		<key>NSAppleEventsUsageDescription</key>
+		<string>${PRODUCT_NAME} needs accessibility access to provide operator tools to the MCP server.</string>
 	</dict>
 </plist>
