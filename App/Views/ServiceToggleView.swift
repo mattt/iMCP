@@ -36,8 +36,7 @@ struct ServiceToggleView: View {
                             .foregroundColor(buttonForegroundColor)
                             .padding(imagePadding)
                     )
-                    .animation(.snappy, value: config.binding.wrappedValue)
-                    .animation(.snappy, value: isEnabled)
+                    .animation(.snappy, value: config.binding.wrappedValue || isEnabled)
             }
             .buttonStyle(PlainButtonStyle())
             .disabled(!isEnabled)
