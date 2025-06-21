@@ -12,6 +12,7 @@
 		F825BDBF2D9AD00E0063ADD7 /* ServiceLifecycle in Frameworks */ = {isa = PBXBuildFile; productRef = F825BDBE2D9AD00E0063ADD7 /* ServiceLifecycle */; };
 		F825BDC12D9AD00E0063ADD7 /* UnixSignals in Frameworks */ = {isa = PBXBuildFile; productRef = F825BDC02D9AD00E0063ADD7 /* UnixSignals */; };
 		F873F48D2D712BCF0035CD0A /* Ontology in Frameworks */ = {isa = PBXBuildFile; productRef = F873F48C2D712BCF0035CD0A /* Ontology */; };
+		F87796FC2E0764AE00328CC6 /* MenuBarExtraAccess in Frameworks */ = {isa = PBXBuildFile; productRef = F87796FB2E0764AE00328CC6 /* MenuBarExtraAccess */; };
 		F88358372D64A085000317CD /* Logging in Frameworks */ = {isa = PBXBuildFile; productRef = F88358362D64A085000317CD /* Logging */; };
 		F885C6B82D66079100963B25 /* imcp-server in Copy Executables */ = {isa = PBXBuildFile; fileRef = F8F44EB62D5908D00075D79C /* imcp-server */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		F8A7DE3E2DCB76F700530587 /* MCP in Frameworks */ = {isa = PBXBuildFile; productRef = F8A7DE3D2DCB76F700530587 /* MCP */; };
@@ -20,7 +21,6 @@
 		F8D7C31A2DCBD32100A4775F /* MCP in Frameworks */ = {isa = PBXBuildFile; productRef = F8D7C3192DCBD32100A4775F /* MCP */; };
 		F8D8C48E2DCE0E6800369E5C /* JSONSchema in Frameworks */ = {isa = PBXBuildFile; productRef = F8D8C48D2DCE0E6800369E5C /* JSONSchema */; };
 		F8F1D2F82D6F9E0C00F6323D /* MCP in Frameworks */ = {isa = PBXBuildFile; productRef = F8F44E9C2D5903F70075D79C /* MCP */; };
-		F8F1D33F2D6FA7EB00F6323D /* MacControlCenterUI in Frameworks */ = {isa = PBXBuildFile; productRef = F8F1D33E2D6FA7EB00F6323D /* MacControlCenterUI */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -83,8 +83,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				F809556E2D7888920055B911 /* TypedStream in Frameworks */,
+				F87796FC2E0764AE00328CC6 /* MenuBarExtraAccess in Frameworks */,
 				F873F48D2D712BCF0035CD0A /* Ontology in Frameworks */,
-				F8F1D33F2D6FA7EB00F6323D /* MacControlCenterUI in Frameworks */,
 				F8D7C31A2DCBD32100A4775F /* MCP in Frameworks */,
 				F8A7DE3E2DCB76F700530587 /* MCP in Frameworks */,
 				F8F1D2F82D6F9E0C00F6323D /* MCP in Frameworks */,
@@ -148,7 +148,6 @@
 			name = iMCP;
 			packageProductDependencies = (
 				F8F44E9C2D5903F70075D79C /* MCP */,
-				F8F1D33E2D6FA7EB00F6323D /* MacControlCenterUI */,
 				F873F48C2D712BCF0035CD0A /* Ontology */,
 				F809556D2D7888920055B911 /* TypedStream */,
 				F809556F2D7888920055B911 /* iMessage */,
@@ -156,6 +155,7 @@
 				F8D7C3162DCBD30500A4775F /* MCP */,
 				F8D7C3192DCBD32100A4775F /* MCP */,
 				F8D8C48D2DCE0E6800369E5C /* JSONSchema */,
+				F87796FB2E0764AE00328CC6 /* MenuBarExtraAccess */,
 			);
 			productName = iMCP;
 			productReference = F8F44E6D2D59038D0075D79C /* iMCP.app */;
@@ -216,12 +216,12 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				F88358352D64A085000317CD /* XCRemoteSwiftPackageReference "swift-log" */,
-				F8F1D33D2D6FA7EB00F6323D /* XCRemoteSwiftPackageReference "MacControlCenterUI" */,
 				F873F48B2D712BCF0035CD0A /* XCRemoteSwiftPackageReference "Ontology" */,
 				F809556C2D7888920055B911 /* XCRemoteSwiftPackageReference "madrid" */,
 				F825BDBD2D9AD00E0063ADD7 /* XCRemoteSwiftPackageReference "swift-service-lifecycle" */,
 				F8D7C3182DCBD32100A4775F /* XCRemoteSwiftPackageReference "swift-sdk" */,
 				F8D8C48C2DCE0E6800369E5C /* XCRemoteSwiftPackageReference "JSONSchema" */,
+				F87796FA2E0764AE00328CC6 /* XCRemoteSwiftPackageReference "MenuBarExtraAccess" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = F8F44E6E2D59038D0075D79C /* Products */;
@@ -562,6 +562,14 @@
 				minimumVersion = 0.6.0;
 			};
 		};
+		F87796FA2E0764AE00328CC6 /* XCRemoteSwiftPackageReference "MenuBarExtraAccess" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/orchetect/MenuBarExtraAccess";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.2.1;
+			};
+		};
 		F88358352D64A085000317CD /* XCRemoteSwiftPackageReference "swift-log" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/apple/swift-log";
@@ -584,14 +592,6 @@
 			requirement = {
 				kind = upToNextMajorVersion;
 				minimumVersion = 1.1.0;
-			};
-		};
-		F8F1D33D2D6FA7EB00F6323D /* XCRemoteSwiftPackageReference "MacControlCenterUI" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/orchetect/MacControlCenterUI";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 2.4.1;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
@@ -622,6 +622,11 @@
 			package = F873F48B2D712BCF0035CD0A /* XCRemoteSwiftPackageReference "Ontology" */;
 			productName = Ontology;
 		};
+		F87796FB2E0764AE00328CC6 /* MenuBarExtraAccess */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F87796FA2E0764AE00328CC6 /* XCRemoteSwiftPackageReference "MenuBarExtraAccess" */;
+			productName = MenuBarExtraAccess;
+		};
 		F88358362D64A085000317CD /* Logging */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = F88358352D64A085000317CD /* XCRemoteSwiftPackageReference "swift-log" */;
@@ -648,11 +653,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = F8D8C48C2DCE0E6800369E5C /* XCRemoteSwiftPackageReference "JSONSchema" */;
 			productName = JSONSchema;
-		};
-		F8F1D33E2D6FA7EB00F6323D /* MacControlCenterUI */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = F8F1D33D2D6FA7EB00F6323D /* XCRemoteSwiftPackageReference "MacControlCenterUI" */;
-			productName = MacControlCenterUI;
 		};
 		F8F44E9C2D5903F70075D79C /* MCP */ = {
 			isa = XCSwiftPackageProductDependency;
