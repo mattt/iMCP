@@ -7,6 +7,7 @@ struct ContentView: View {
     @ObservedObject var serverController: ServerController
     @Binding var isEnabled: Bool
     @Binding var isMenuPresented: Bool
+    @Environment(\.openSettings) private var openSettings
 
     private let aboutWindowController: AboutWindowController
 
@@ -81,6 +82,10 @@ struct ContentView: View {
             }
 
             Divider()
+
+            MenuCommand("Settings...") {
+                openSettings()
+            }
 
             MenuCommand("About iMCP") {
                 aboutWindowController.showWindow(nil)
