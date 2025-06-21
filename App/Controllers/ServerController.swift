@@ -126,9 +126,12 @@ enum ServiceRegistry {
 final class ServerController: ObservableObject {
     @Published var serverStatus: String = "Starting..."
     @Published var pendingConnectionID: String?
+    @Published var pendingClientName: String = ""
 
     private var activeApprovalDialogs: Set<String> = []
     private var pendingApprovals: [(String, () -> Void, () -> Void)] = []
+    private var currentApprovalHandlers: (approve: () -> Void, deny: () -> Void)?
+    private let approvalWindowController = ConnectionApprovalWindowController()
 
     private let networkManager = ServerNetworkManager()
 
@@ -141,6 +144,9 @@ final class ServerController: ObservableObject {
     @AppStorage("remindersEnabled") private var remindersEnabled = false
     @AppStorage("utilitiesEnabled") private var utilitiesEnabled = true  // Default for utilities
     @AppStorage("weatherEnabled") private var weatherEnabled = false
+
+    // MARK: - AppStorage for Trusted Clients
+    @AppStorage("trustedClients") private var trustedClientsData = Data()
 
     // MARK: - Computed Properties for Service Configurations and Bindings
     var computedServiceConfigs: [ServiceConfig] {
@@ -162,6 +168,64 @@ final class ServerController: ObservableObject {
                 ($0.id, $0.binding)
             }
         )
+    }
+
+    // MARK: - Trusted Clients Management
+    private var trustedClients: Set<String> {
+        get {
+            (try? JSONDecoder().decode(Set<String>.self, from: trustedClientsData)) ?? []
+        }
+        set {
+            trustedClientsData = (try? JSONEncoder().encode(newValue)) ?? Data()
+        }
+    }
+
+    private func isClientTrusted(_ clientName: String) -> Bool {
+        trustedClients.contains(clientName)
+    }
+
+    private func addTrustedClient(_ clientName: String) {
+        var clients = trustedClients
+        clients.insert(clientName)
+        trustedClients = clients
+    }
+
+    func removeTrustedClient(_ clientName: String) {
+        var clients = trustedClients
+        clients.remove(clientName)
+        trustedClients = clients
+    }
+
+    func getTrustedClients() -> [String] {
+        Array(trustedClients).sorted()
+    }
+
+    func resetTrustedClients() {
+        trustedClients = Set<String>()
+    }
+
+    // MARK: - Connection Approval Methods
+    private func cleanupApprovalState() {
+        pendingClientName = ""
+        currentApprovalHandlers = nil
+
+        if let clientID = pendingConnectionID {
+            activeApprovalDialogs.remove(clientID)
+            pendingConnectionID = nil
+        }
+    }
+
+    private func handlePendingApprovals(for clientID: String, approved: Bool) {
+        while let pendingIndex = pendingApprovals.firstIndex(where: { $0.0 == clientID }) {
+            let (_, pendingApprove, pendingDeny) = pendingApprovals.remove(at: pendingIndex)
+            if approved {
+                log.notice("Approving pending connection for client: \(clientID)")
+                pendingApprove()
+            } else {
+                log.notice("Denying pending connection for client: \(clientID)")
+                pendingDeny()
+            }
+        }
     }
 
     init() {
@@ -227,6 +291,14 @@ final class ServerController: ObservableObject {
         clientID: String, approve: @escaping () -> Void, deny: @escaping () -> Void
     ) {
         log.notice("Connection approval requested for client: \(clientID)")
+
+        // Check if this client is already trusted
+        if isClientTrusted(clientID) {
+            log.notice("Client \(clientID) is already trusted, auto-approving")
+            approve()
+            return
+        }
+
         self.pendingConnectionID = clientID
 
         // Check if there's already an active dialog for this client
@@ -238,43 +310,31 @@ final class ServerController: ObservableObject {
 
         activeApprovalDialogs.insert(clientID)
 
-        let alert = NSAlert()
-        alert.messageText = "Client Connection Request"
-        alert.informativeText =
-            #"Allow "\#(clientID)" to connect to the MCP server?"#
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "Allow")
-        alert.addButton(withTitle: "Deny")
+        // Set up the SwiftUI approval dialog
+        pendingClientName = clientID
+        currentApprovalHandlers = (approve: approve, deny: deny)
+
+        approvalWindowController.showApprovalWindow(
+            clientName: clientID,
+            onApprove: { alwaysTrust in
+                if alwaysTrust {
+                    self.addTrustedClient(clientID)
+                }
+                approve()
+                self.cleanupApprovalState()
+                self.handlePendingApprovals(for: clientID, approved: true)
+            },
+            onDeny: {
+                deny()
+                self.cleanupApprovalState()
+                self.handlePendingApprovals(for: clientID, approved: false)
+            }
+        )
 
         NSApp.activate(ignoringOtherApps: true)
 
-        let response = alert.runModal()
-        let approved = response == .alertFirstButtonReturn
-
-        // Handle the current approval
-        if approved {
-            log.notice("Connection approved for client: \(clientID)")
-            approve()
-        } else {
-            log.notice("Connection denied for client: \(clientID)")
-            deny()
-        }
-
-        // Handle any pending approvals for the same client
-        while let pendingIndex = pendingApprovals.firstIndex(where: { $0.0 == clientID }) {
-            let (_, pendingApprove, pendingDeny) = pendingApprovals.remove(at: pendingIndex)
-            if approved {
-                log.notice("Approving pending connection for client: \(clientID)")
-                pendingApprove()
-            } else {
-                log.notice("Denying pending connection for client: \(clientID)")
-                pendingDeny()
-            }
-        }
-
-        activeApprovalDialogs.remove(clientID)
-        log.debug("Clearing pending connection")
-        self.pendingConnectionID = nil
+        // Handle any pending approvals for the same client after this one completes
+        // We'll check for pending approvals when the dialog is dismissed
     }
 }
 
