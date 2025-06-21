@@ -69,6 +69,7 @@ struct CheckboxToggleStyle: ToggleStyle {
         HStack {
             Image(systemName: configuration.isOn ? "checkmark.square.fill" : "square")
                 .foregroundColor(configuration.isOn ? .accentColor : .secondary)
+                .accessibilityLabel(configuration.isOn ? "Always trust this client, checked" : "Always trust this client, unchecked")
                 .onTapGesture {
                     configuration.isOn.toggle()
                 }
