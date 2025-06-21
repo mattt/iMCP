@@ -1,3 +1,4 @@
+import MenuBarExtraAccess
 import SwiftUI
 
 @main
@@ -16,11 +17,11 @@ struct App: SwiftUI.App {
         }
         .menuBarExtraStyle(.window)
         .menuBarExtraAccess(isPresented: $isMenuPresented)
-        
+
         Settings {
             SettingsView(serverController: serverController)
         }
-        
+
         .commands {
             CommandGroup(replacing: .appTermination) {
                 Button("Quit") {
