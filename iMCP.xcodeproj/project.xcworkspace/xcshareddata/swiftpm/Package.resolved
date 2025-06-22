@@ -1,5 +1,5 @@
 {
-  "originHash" : "407f2cefef44025b011008383143afe9b4a2f6d4725738f7f0f2a7386d66d1cb",
+  "originHash" : "0604c8a8c049fb6e696fcd8af68cdc36f2f23f938eec962e31f24cc19d550d45",
   "pins" : [
     {
       "identity" : "eventsource",
@@ -15,8 +15,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/loopwork-ai/JSONSchema.git",
       "state" : {
-        "revision" : "1c3b710fb8e65e6a651abda0b32195ff6750d84b",
-        "version" : "1.1.0"
+        "revision" : "e17c9e1fb6afbad656824d03f996cf8621f9db83",
+        "version" : "1.3.0"
       }
     },
     {
