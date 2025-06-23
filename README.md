@@ -288,7 +288,7 @@ you can use the [inspector tool](https://github.com/modelcontextprotocol/inspect
    open http://127.0.0.1:6274
    ```
 
-This tool lets you see all requests and responses between the client and the iMCP server, 
+Inspector lets you see all requests and responses between the client and the iMCP server, 
 which is helpful for understanding how the protocol works.
 
 ### Using Companion
@@ -297,6 +297,9 @@ which is helpful for understanding how the protocol works.
 
 [Companion][companion] is a utility for testing and debugging your MCP servers
 (requires macOS 15 or later).
+It gives you an easy way to browse and interact with 
+a server's prompts, resources, and tools.
+Here's how to connect it to iMCP:
 
 1. Click <img style="display: inline" width="20" height="16" src="/Assets/icon.svg" /> > "Copy server command to clipboard"
 2. [Download][companion-download] and open the Companion app
