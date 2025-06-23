@@ -41,7 +41,8 @@ struct ContentView: View {
                     .toggleStyle(.switch)
                     .labelsHidden()
             }
-            .padding([.leading, .trailing], 14)
+            .padding(.top, 2)
+            .padding(.horizontal, 14)
             .onChange(of: isEnabled, initial: true) {
                 Task {
                     await serverController.setEnabled(isEnabled)
@@ -92,6 +93,7 @@ struct ContentView: View {
                 }
             }
             .padding(.top, 8)
+            .padding(.bottom, 2)
             .padding(.horizontal, 2)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -110,8 +112,7 @@ struct ContentView: View {
                     NSApplication.shared.terminate(nil)
                 }
             }
-            .padding(.top, 8)
-            .padding(.bottom, 4)
+            .padding(.bottom, 2)
             .padding(.horizontal, 2)
         }
         .padding(.vertical, 6)
@@ -171,7 +172,7 @@ private struct MenuButton: View {
         .frame(height: 18)
         .padding(.vertical, 4)
         .background(
-            RoundedRectangle(cornerRadius: 5)
+            RoundedRectangle(cornerRadius: 6)
                 .fill(
                     isPressed
                         ? Color.accentColor
