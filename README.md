@@ -198,6 +198,7 @@ without requiring you to manually share this data during your conversation.
 ### App & CLI
 
 iMCP is a macOS app that bundles a command-line executable, `imcp-server`.
+
 * [`iMCP.app`](/App/) provides UI for configuring services and — most importantly —
   a means of interacting with macOS system permissions,
   so that it can access Contacts, Calendar, and other information.
@@ -214,8 +215,9 @@ responses from the app are received by the CLI and written to `stdout`.
 See [`StdioProxy`](https://github.com/loopwork-ai/iMCP/blob/8cf9d250286288b06bf5d3dda78f5905ad0d7729/CLI/main.swift#L47) 
 for implementation details.
 
-For this project, we created [mcp-swift-sdk]:
-a Swift SDK for Model Context Protocol servers and clients.
+For this project, we created what became
+[the official Swift SDK][swift-sdk] 
+for Model Context Protocol servers and clients.
 The app uses this package to handle proxied requests from MCP clients.
 
 ### iMessage Database Access
@@ -351,5 +353,5 @@ This project is not affiliated with, endorsed, or sponsored by Apple Inc.
 [nsopenpanel]: https://developer.apple.com/documentation/appkit/nsopenpanel
 [ontology]: https://github.com/loopwork-ai/Ontology
 [schema.org]: https://schema.org
-[mcp-swift-sdk]: https://github.com/loopwork-ai/mcp-swift-sdk
+[swift-sdk]: https://github.com/modelcontextprotocol/swift-sdk
 [typedstream-blog-post]: https://chrissardegna.com/blog/reverse-engineering-apples-typedstream-format/
