@@ -3,6 +3,7 @@ import Foundation
 import JSONSchema
 import OSLog
 import Ontology
+import OrderedCollections
 
 private let log = Logger.service("contacts")
 
@@ -23,7 +24,7 @@ private let contactKeys =
         CNContactRelationsKey,
     ] as [CNKeyDescriptor]
 
-private let contactProperties: [String: JSONSchema] = [
+private let contactProperties: OrderedDictionary<String, JSONSchema> = [
     "givenName": .string(),
     "familyName": .string(),
     "organizationName": .string(),
@@ -213,11 +214,12 @@ final class ContactsService: Service {
             description:
                 "Update an existing contact's information. Only provide values for properties that need to be changed; omit any properties that should remain unchanged.",
             inputSchema: .object(
-                properties: [
+                properties: ([
                     "identifier": .string(
                         description: "Unique identifier of the contact to update"
                     )
-                ].merging(contactProperties, uniquingKeysWith: { new, _ in new }),
+                ] as OrderedDictionary).merging(
+                    contactProperties, uniquingKeysWith: { new, _ in new }),
                 required: ["identifier"]
             ),
             annotations: .init(
