@@ -198,6 +198,7 @@ without requiring you to manually share this data during your conversation.
 ### App & CLI
 
 iMCP is a macOS app that bundles a command-line executable, `imcp-server`.
+
 * [`iMCP.app`](/App/) provides UI for configuring services and — most importantly —
   a means of interacting with macOS system permissions,
   so that it can access Contacts, Calendar, and other information.
@@ -214,8 +215,9 @@ responses from the app are received by the CLI and written to `stdout`.
 See [`StdioProxy`](https://github.com/loopwork-ai/iMCP/blob/8cf9d250286288b06bf5d3dda78f5905ad0d7729/CLI/main.swift#L47) 
 for implementation details.
 
-For this project, we created [mcp-swift-sdk]:
-a Swift SDK for Model Context Protocol servers and clients.
+For this project, we created what became
+[the official Swift SDK][swift-sdk] 
+for Model Context Protocol servers and clients.
 The app uses this package to handle proxied requests from MCP clients.
 
 ### iMessage Database Access
@@ -280,7 +282,7 @@ you can use the [inspector tool](https://github.com/modelcontextprotocol/inspect
 
 1. Click <img style="display: inline" width="20" height="16" src="/Assets/icon.svg" /> > "Copy server command to clipboard"
 2. Open a terminal and run the following commands:
-   ```
+   ```console
    # Download and run inspector package on imcp-server
    npx @modelcontextprotocol/inspector [paste-copied-command]
 
@@ -288,8 +290,29 @@ you can use the [inspector tool](https://github.com/modelcontextprotocol/inspect
    open http://127.0.0.1:6274
    ```
 
-This tool lets you see all requests and responses between the client and the iMCP server, 
+Inspector lets you see all requests and responses between the client and the iMCP server, 
 which is helpful for understanding how the protocol works.
+
+### Using Companion
+
+<img align="right" width="284" src="/Assets/companion-screenshot-add-server.png" />
+
+[Companion][companion] is a utility for testing and debugging your MCP servers
+(requires macOS 15 or later).
+It gives you an easy way to browse and interact with 
+a server's prompts, resources, and tools.
+Here's how to connect it to iMCP:
+
+1. Click <img style="display: inline" width="20" height="16" src="/Assets/icon.svg" /> > "Copy server command to clipboard"
+2. [Download][companion-download] and open the Companion app
+3. Click the <kbd>+</kbd> button in the toolbar to add an MCP server
+4. Fill out the form:
+   - Enter "iMCP" as the name
+   - Select "STDIO" as the transport 
+   - Paste the copied iMCP server command
+   - Click "Add Server"
+
+<br clear="all">
 
 ## Acknowledgments
 
@@ -317,6 +340,8 @@ This project is not affiliated with, endorsed, or sponsored by Apple Inc.
 [app-sandbox]: https://developer.apple.com/documentation/security/app-sandbox
 [bonjour]: https://developer.apple.com/bonjour/
 [claude-app]: https://claude.ai/download
+[companion]: https://github.com/loopwork-ai/Companion
+[companion-download]: https://github.com/loopwork-ai/Companion/releases/latest/download/Companion.zip
 [contacts-framework]: https://developer.apple.com/documentation/contacts
 [cncontact]: https://developer.apple.com/documentation/contacts/cncontact
 [imessage-exporter]: https://github.com/ReagentX/imessage-exporter
@@ -328,5 +353,5 @@ This project is not affiliated with, endorsed, or sponsored by Apple Inc.
 [nsopenpanel]: https://developer.apple.com/documentation/appkit/nsopenpanel
 [ontology]: https://github.com/loopwork-ai/Ontology
 [schema.org]: https://schema.org
-[mcp-swift-sdk]: https://github.com/loopwork-ai/mcp-swift-sdk
+[swift-sdk]: https://github.com/modelcontextprotocol/swift-sdk
 [typedstream-blog-post]: https://chrissardegna.com/blog/reverse-engineering-apples-typedstream-format/
