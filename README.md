@@ -291,6 +291,24 @@ you can use the [inspector tool](https://github.com/modelcontextprotocol/inspect
 This tool lets you see all requests and responses between the client and the iMCP server, 
 which is helpful for understanding how the protocol works.
 
+### Using Companion
+
+<img align="right" width="284" src="/Assets/companion-screenshot-add-server.png" />
+
+[Companion][companion] is a utility for testing and debugging your MCP servers
+(requires macOS 15 or later).
+
+1. Click <img style="display: inline" width="20" height="16" src="/Assets/icon.svg" /> > "Copy server command to clipboard"
+2. [Download][companion-download] and open the Companion app
+3. Click the <kbd>+</kbd> button in the toolbar to add an MCP server
+4. Fill out the form:
+   - Enter "iMCP" as the name
+   - Select "STDIO" as the transport 
+   - Paste the copied iMCP server command
+   - Click "Add Server"
+
+<br clear="all">
+
 ## Acknowledgments
 
 - [Justin Spahr-Summers](https://jspahrsummers.com/)
@@ -317,6 +335,8 @@ This project is not affiliated with, endorsed, or sponsored by Apple Inc.
 [app-sandbox]: https://developer.apple.com/documentation/security/app-sandbox
 [bonjour]: https://developer.apple.com/bonjour/
 [claude-app]: https://claude.ai/download
+[companion]: https://github.com/loopwork-ai/Companion
+[companion-download]: https://github.com/loopwork-ai/Companion/releases/latest/download/Companion.zip
 [contacts-framework]: https://developer.apple.com/documentation/contacts
 [cncontact]: https://developer.apple.com/documentation/contacts/cncontact
 [imessage-exporter]: https://github.com/ReagentX/imessage-exporter
