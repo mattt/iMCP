@@ -280,7 +280,7 @@ you can use the [inspector tool](https://github.com/modelcontextprotocol/inspect
 
 1. Click <img style="display: inline" width="20" height="16" src="/Assets/icon.svg" /> > "Copy server command to clipboard"
 2. Open a terminal and run the following commands:
-   ```
+   ```console
    # Download and run inspector package on imcp-server
    npx @modelcontextprotocol/inspector [paste-copied-command]
 
