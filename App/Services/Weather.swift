@@ -21,6 +21,7 @@ final class WeatherService: Service {
                     "latitude": .number(),
                     "longitude": .number(),
                 ],
+                required: ["latitude", "longitude"],
                 additionalProperties: false
             ),
             annotations: .init(
@@ -60,6 +61,7 @@ final class WeatherService: Service {
                         maximum: 10
                     ),
                 ],
+                required: ["latitude", "longitude"],
                 additionalProperties: false
             ),
             annotations: .init(
@@ -107,6 +109,7 @@ final class WeatherService: Service {
                         maximum: 240
                     ),
                 ],
+                required: ["latitude", "longitude"],
                 additionalProperties: false
             ),
             annotations: .init(
@@ -156,6 +159,7 @@ final class WeatherService: Service {
                         maximum: 120
                     ),
                 ],
+                required: ["latitude", "longitude"],
                 additionalProperties: false
             ),
             annotations: .init(
