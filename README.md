@@ -74,6 +74,13 @@ and a [growing list of clients][mcp-clients] that support the
 First, [download the iMCP app](https://iMCP.app/download)
 (requires macOS 15.3 or later).
 
+Or, if you have [Homebrew](https://brew.sh) installed,
+you can run the following command:
+
+```console
+brew install --cask loopwork/tap/iMCP
+```
+
 <img align="right" width="344" src="/Assets/imcp-screenshot-first-launch.png" alt="Screenshot of iMCP on first launch" />
 
 When you open the app,
@@ -154,13 +161,14 @@ and enter the following:
 
 ```json
 {
-  "mcpServers" : {
-    "iMCP" : {
-      "command" : "{paste iMCP server command}"
+  "mcpServers": {
+    "iMCP": {
+      "command": "{paste iMCP server command}"
     }
   }
 }
 ```
+
 </details>
 
 <img align="right" width="372" src="/Assets/imcp-screenshot-approve-connection.png" />
@@ -183,6 +191,7 @@ by iMCP.
 
 Now you can ask Claude questions that require access to your personal data,
 such as:
+
 > "How's the weather where I am?"
 
 Claude will use the appropriate tools to retrieve this information,
@@ -199,24 +208,24 @@ without requiring you to manually share this data during your conversation.
 
 iMCP is a macOS app that bundles a command-line executable, `imcp-server`.
 
-* [`iMCP.app`](/App/) provides UI for configuring services and — most importantly —
+- [`iMCP.app`](/App/) provides UI for configuring services and — most importantly —
   a means of interacting with macOS system permissions,
   so that it can access Contacts, Calendar, and other information.
-* [`imcp-server`](/CLI/) provides an MCP server that 
-  uses standard input/output for communication 
+- [`imcp-server`](/CLI/) provides an MCP server that
+  uses standard input/output for communication
   ([stdio transport][mcp-transports]).
 
 The app and CLI communicate with each other on the local network
-using [Bonjour][bonjour] for automatic discovery. 
-Both advertise a service with type "_mcp._tcp" and domain "local".
+using [Bonjour][bonjour] for automatic discovery.
+Both advertise a service with type "\_mcp.\_tcp" and domain "local".
 Requests from MCP clients are read by the CLI from `stdin`
 and relayed to the app;
 responses from the app are received by the CLI and written to `stdout`.
-See [`StdioProxy`](https://github.com/loopwork-ai/iMCP/blob/8cf9d250286288b06bf5d3dda78f5905ad0d7729/CLI/main.swift#L47) 
+See [`StdioProxy`](https://github.com/loopwork-ai/iMCP/blob/8cf9d250286288b06bf5d3dda78f5905ad0d7729/CLI/main.swift#L47)
 for implementation details.
 
 For this project, we created what became
-[the official Swift SDK][swift-sdk] 
+[the official Swift SDK][swift-sdk]
 for Model Context Protocol servers and clients.
 The app uses this package to handle proxied requests from MCP clients.
 
@@ -234,14 +243,14 @@ When you do, macOS adds that file to the app's sandbox.
 [`NSOpenPanel`][nsopenpanel] is magic like that.
 
 But opening the iMessage database is just half the battle.
-Over the past few years, 
+Over the past few years,
 Apple has moved away from storing messages in plain text
 and instead toward a proprietary `typedstream` format.
 
 For this project, we created [Madrid][madrid]:
 a Swift package for reading your iMessage database.
-It includes a Swift implementation for decoding Apple's `typedstream` format, 
-adapted from Christopher Sardegna's [imessage-exporter] project 
+It includes a Swift implementation for decoding Apple's `typedstream` format,
+adapted from Christopher Sardegna's [imessage-exporter] project
 and [blog post about reverse-engineering `typedstream`][typedstream-blog-post].
 
 ### JSON-LD for Tool Results
@@ -264,12 +273,12 @@ Here's how an object of that type is encoded as JSON-LD:
 
 [Schema.org][schema.org] provides standard vocabularies for
 people, postal addresses, events, and many other objects we want to represent.
-And JSON-LD is a convenient encoding format for 
+And JSON-LD is a convenient encoding format for
 humans, AI, and conventional software alike.
 
 For this project, we created [Ontology][ontology]:
 a Swift package for working with structured data.
-It includes convenience initializers for types from Apple frameworks, 
+It includes convenience initializers for types from Apple frameworks,
 such as those returned by iMCP tools.
 
 ## Debugging
@@ -282,6 +291,7 @@ you can use the [inspector tool](https://github.com/modelcontextprotocol/inspect
 
 1. Click <img style="display: inline" width="20" height="16" src="/Assets/icon.svg" /> > "Copy server command to clipboard"
 2. Open a terminal and run the following commands:
+
    ```console
    # Download and run inspector package on imcp-server
    npx @modelcontextprotocol/inspector [paste-copied-command]
@@ -290,7 +300,7 @@ you can use the [inspector tool](https://github.com/modelcontextprotocol/inspect
    open http://127.0.0.1:6274
    ```
 
-Inspector lets you see all requests and responses between the client and the iMCP server, 
+Inspector lets you see all requests and responses between the client and the iMCP server,
 which is helpful for understanding how the protocol works.
 
 ### Using Companion
@@ -299,7 +309,7 @@ which is helpful for understanding how the protocol works.
 
 [Companion][companion] is a utility for testing and debugging your MCP servers
 (requires macOS 15 or later).
-It gives you an easy way to browse and interact with 
+It gives you an easy way to browse and interact with
 a server's prompts, resources, and tools.
 Here's how to connect it to iMCP:
 
@@ -308,7 +318,7 @@ Here's how to connect it to iMCP:
 3. Click the <kbd>+</kbd> button in the toolbar to add an MCP server
 4. Fill out the form:
    - Enter "iMCP" as the name
-   - Select "STDIO" as the transport 
+   - Select "STDIO" as the transport
    - Paste the copied iMCP server command
    - Click "Add Server"
 
