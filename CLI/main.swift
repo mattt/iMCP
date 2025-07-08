@@ -51,6 +51,9 @@ actor StdioProxy {
     private var connection: NWConnection?
     private var isRunning = false
 
+    // Message buffering for proper JSON-RPC message boundaries
+    private var networkToStdoutBuffer = Data()
+
     /// Creates a new StdioProxy with the specified network configuration
     /// - Parameters:
     ///   - endpoint: The network endpoint to connect to
@@ -60,8 +63,8 @@ actor StdioProxy {
     init(
         endpoint: NWEndpoint,
         parameters: NWParameters = .tcp,
-        stdinBufferSize: Int = 4096,
-        networkBufferSize: Int = 4096
+        stdinBufferSize: Int = 10 * 1024 * 1024,
+        networkBufferSize: Int = 10 * 1024 * 1024
     ) {
         self.endpoint = endpoint
         self.parameters = parameters
@@ -384,31 +387,44 @@ actor StdioProxy {
                     // Reset counter when we get actual data (not just a heartbeat)
                     consecutiveEmptyReads = 0
                     await log.debug(
-                        "Received \(processedData.count) bytes of application data from network: \(String(data: processedData, encoding: .utf8) ?? "<non-UTF8 data>")"
+                        "Received \(processedData.count) bytes of application data from network"
                     )
                 }
 
-                // Write data to stdout using SystemPackage approach
-                // Handle partial writes by writing all data in chunks if necessary
-                var remainingDataToWrite = processedData
-                while !remainingDataToWrite.isEmpty {
-                    let bytesWritten: Int = try remainingDataToWrite.withUnsafeBytes { buffer in
-                        try stdout.write(UnsafeRawBufferPointer(buffer))
-                    }
+                // Add data to buffer for message assembly
+                networkToStdoutBuffer.append(processedData)
 
-                    if bytesWritten < remainingDataToWrite.count {
-                        await log.debug(
-                            "Partial write: \(bytesWritten) of \(remainingDataToWrite.count) bytes")
-                        // Remove the bytes that were written
-                        remainingDataToWrite = remainingDataToWrite.dropFirst(bytesWritten)
-                    } else {
-                        // All bytes were written
-                        remainingDataToWrite.removeAll()
-                    }
+                // Process complete messages (delimited by newlines)
+                while let newlineIndex = networkToStdoutBuffer.firstIndex(of: UInt8(ascii: "\n")) {
+                    let messageData = networkToStdoutBuffer[..<newlineIndex]
+                    var messageWithNewline = Data(messageData)
+                    messageWithNewline.append(UInt8(ascii: "\n"))
 
-                    // If we still have data to write, give a small delay to allow the system to process
-                    if !remainingDataToWrite.isEmpty {
-                        try await Task.sleep(for: .milliseconds(1))
+                    // Remove processed message from buffer
+                    networkToStdoutBuffer = networkToStdoutBuffer[(newlineIndex + 1)...]
+
+                    // Write complete message to stdout
+                    var remainingDataToWrite = messageWithNewline
+                    while !remainingDataToWrite.isEmpty {
+                        let bytesWritten: Int = try remainingDataToWrite.withUnsafeBytes { buffer in
+                            try stdout.write(UnsafeRawBufferPointer(buffer))
+                        }
+
+                        if bytesWritten < remainingDataToWrite.count {
+                            await log.debug(
+                                "Partial write: \(bytesWritten) of \(remainingDataToWrite.count) bytes"
+                            )
+                            // Remove the bytes that were written
+                            remainingDataToWrite = remainingDataToWrite.dropFirst(bytesWritten)
+                        } else {
+                            // All bytes were written
+                            remainingDataToWrite.removeAll()
+                        }
+
+                        // If we still have data to write, give a small delay to allow the system to process
+                        if !remainingDataToWrite.isEmpty {
+                            try await Task.sleep(for: .milliseconds(1))
+                        }
                     }
                 }
             } catch let error as NWError where error.errorCode == 96 {
@@ -550,8 +566,8 @@ actor MCPService: Service {
                 let proxy = StdioProxy(
                     endpoint: endpoint,
                     parameters: parameters,
-                    stdinBufferSize: 8192,
-                    networkBufferSize: 8192
+                    stdinBufferSize: 10 * 1024 * 1024,  // 10MB for large responses
+                    networkBufferSize: 10 * 1024 * 1024  // 10MB for large responses
                 )
                 self.currentProxy = proxy
 
