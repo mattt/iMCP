@@ -50,6 +50,7 @@ struct ServiceConfig: Identifiable {
 enum ServiceRegistry {
     static let services: [any Service] = [
         CalendarService.shared,
+        CameraService.shared,
         ContactsService.shared,
         LocationService.shared,
         MapsService.shared,
@@ -61,6 +62,7 @@ enum ServiceRegistry {
 
     static func configureServices(
         calendarEnabled: Binding<Bool>,
+        cameraEnabled: Binding<Bool>,
         contactsEnabled: Binding<Bool>,
         locationEnabled: Binding<Bool>,
         mapsEnabled: Binding<Bool>,
@@ -76,6 +78,13 @@ enum ServiceRegistry {
                 color: .red,
                 service: CalendarService.shared,
                 binding: calendarEnabled
+            ),
+            ServiceConfig(
+                name: "Camera",
+                iconName: "camera.fill",
+                color: .gray,
+                service: CameraService.shared,
+                binding: cameraEnabled
             ),
             ServiceConfig(
                 name: "Contacts",
@@ -138,6 +147,7 @@ final class ServerController: ObservableObject {
 
     // MARK: - AppStorage for Service Enablement States
     @AppStorage("calendarEnabled") private var calendarEnabled = false
+    @AppStorage("cameraEnabled") private var cameraEnabled = false
     @AppStorage("contactsEnabled") private var contactsEnabled = false
     @AppStorage("locationEnabled") private var locationEnabled = false
     @AppStorage("mapsEnabled") private var mapsEnabled = true  // Default for maps
@@ -153,6 +163,7 @@ final class ServerController: ObservableObject {
     var computedServiceConfigs: [ServiceConfig] {
         ServiceRegistry.configureServices(
             calendarEnabled: $calendarEnabled,
+            cameraEnabled: $cameraEnabled,
             contactsEnabled: $contactsEnabled,
             locationEnabled: $locationEnabled,
             mapsEnabled: $mapsEnabled,
@@ -391,7 +402,8 @@ actor MCPConnectionManager {
 
         self.transport = NetworkTransport(
             connection: connection,
-            logger: nil
+            logger: nil,
+            bufferConfig: .unlimited
         )
 
         // Create the MCP server
@@ -866,7 +878,7 @@ actor ServerNetworkManager {
                                 .init(
                                     name: tool.name,
                                     description: tool.description,
-                                    inputSchema: try Value(tool.inputSchema),
+                                    inputSchema: tool.inputSchema,
                                     annotations: tool.annotations
                                 )
                             )
@@ -917,7 +929,7 @@ actor ServerNetworkManager {
 
                         log.notice("Tool \(params.name) executed successfully for \(connectionID)")
                         switch value {
-                        case let .data(mimeType?, data) where mimeType.hasPrefix("image/"):
+                        case let .data(mimeType?, data):
                             return CallTool.Result(
                                 content: [
                                     .image(

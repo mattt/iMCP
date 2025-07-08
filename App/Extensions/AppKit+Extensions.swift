@@ -27,3 +27,25 @@ extension NSSound {
         return nsSound.play()
     }
 }
+
+// MARK: -
+
+extension NSImage {
+    var bitmap: NSBitmapImageRep? {
+        guard let tiffData = tiffRepresentation else { return nil }
+        return NSBitmapImageRep(data: tiffData)
+    }
+
+    func pngData() -> Data? {
+        return bitmap?.representation(using: .png, properties: [:])
+    }
+
+    func jpegData(compressionQuality: Double) -> Data? {
+        return bitmap?.representation(
+            using: .jpeg,
+            properties: [
+                .compressionFactor: compressionQuality
+            ]
+        )
+    }
+}
