@@ -22,6 +22,9 @@
 		<key>NSCalendarsFullAccessUsageDescription</key>
 		<string>${PRODUCT_NAME} needs access to provide event information to the MCP server.</string>
 
+		<key>NSCameraUsageDescription</key>
+		<string>${PRODUCT_NAME} needs access to the camera to take pictures for the MCP server.</string>
+
 		<key>NSLocalNetworkUsageDescription</key>
 		<string>${PRODUCT_NAME} uses the local network to connect to the MCP server.</string>
 
