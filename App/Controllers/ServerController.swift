@@ -50,7 +50,7 @@ struct ServiceConfig: Identifiable {
 enum ServiceRegistry {
     static let services: [any Service] = [
         CalendarService.shared,
-        CameraService.shared,
+        CaptureService.shared,
         ContactsService.shared,
         LocationService.shared,
         MapsService.shared,
@@ -80,10 +80,10 @@ enum ServiceRegistry {
                 binding: calendarEnabled
             ),
             ServiceConfig(
-                name: "Camera",
+                name: "Capture",
                 iconName: "camera.fill",
                 color: .gray,
-                service: CameraService.shared,
+                service: CaptureService.shared,
                 binding: cameraEnabled
             ),
             ServiceConfig(
