@@ -82,7 +82,7 @@ enum ServiceRegistry {
             ServiceConfig(
                 name: "Capture",
                 iconName: "camera.on.rectangle.fill",
-                color: .gray,
+                color: .gray.mix(with: .black, by: 0.7),
                 service: CaptureService.shared,
                 binding: cameraEnabled
             ),
