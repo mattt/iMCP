@@ -81,7 +81,7 @@ enum ServiceRegistry {
             ),
             ServiceConfig(
                 name: "Capture",
-                iconName: "camera.fill",
+                iconName: "camera.on.rectangle.fill",
                 color: .gray,
                 service: CaptureService.shared,
                 binding: cameraEnabled
@@ -358,9 +358,13 @@ final class ServerController: ObservableObject {
                     self.addTrustedClient(clientID)
 
                     // Request notification permissions so that the user can be notified when a trusted client connects
-                    UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+                    UNUserNotificationCenter.current().requestAuthorization(options: [
+                        .alert, .sound, .badge,
+                    ]) { granted, error in
                         if let error = error {
-                            log.error("Failed to request notification permissions: \(error.localizedDescription)")
+                            log.error(
+                                "Failed to request notification permissions: \(error.localizedDescription)"
+                            )
                         } else {
                             log.info("Notification permissions granted: \(granted)")
                         }
@@ -929,7 +933,7 @@ actor ServerNetworkManager {
 
                         log.notice("Tool \(params.name) executed successfully for \(connectionID)")
                         switch value {
-                        case let .data(mimeType?, data):
+                        case .data(let mimeType?, let data):
                             return CallTool.Result(
                                 content: [
                                     .image(
