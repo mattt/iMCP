@@ -147,7 +147,7 @@ final class CaptureService: NSObject, Service {
             ),
             annotations: .init(
                 title: "Take Picture",
-                readOnlyHint: false,
+                readOnlyHint: true,
                 openWorldHint: false
             )
         ) { arguments in
@@ -205,7 +205,7 @@ final class CaptureService: NSObject, Service {
             ),
             annotations: .init(
                 title: "Record Video",
-                readOnlyHint: false,
+                readOnlyHint: true,
                 openWorldHint: false
             )
         ) { arguments in
@@ -237,7 +237,7 @@ final class CaptureService: NSObject, Service {
             ),
             annotations: .init(
                 title: "Record Audio",
-                readOnlyHint: false,
+                readOnlyHint: true,
                 openWorldHint: false
             )
         ) { arguments in
@@ -283,7 +283,7 @@ final class CaptureService: NSObject, Service {
             ),
             annotations: .init(
                 title: "Take Screenshot",
-                readOnlyHint: false,
+                readOnlyHint: true,
                 openWorldHint: false
             )
         ) { arguments in
@@ -344,7 +344,7 @@ final class CaptureService: NSObject, Service {
             ),
             annotations: .init(
                 title: "Record Screen",
-                readOnlyHint: false,
+                readOnlyHint: true,
                 openWorldHint: false
             )
         ) { arguments in
