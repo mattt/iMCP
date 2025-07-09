@@ -18,7 +18,7 @@ final class CaptureService: NSObject, Service {
     private var movieFileOutput: AVCaptureMovieFileOutput?
     private var audioDataOutput: AVCaptureAudioDataOutput?
     private var currentPhotoDelegate: PhotoCaptureDelegate?
-    private var currentMovieDelegate: MovieCaptureDelegate?
+    private var currentMovieDelegate: VideoCaptureDelegate?
     private var currentAudioDelegate: AudioCaptureDelegate?
 
     override init() {
@@ -611,7 +611,7 @@ final class CaptureService: NSObject, Service {
             }
 
             Task { @MainActor in
-                let delegate = MovieCaptureDelegate(
+                let delegate = VideoCaptureDelegate(
                     format: format,
                     completion: { [weak self] result in
                         Task { @MainActor in
@@ -1252,9 +1252,9 @@ private class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
     }
 }
 
-// MARK: - Movie Capture Delegate
+// MARK: - Video Capture Delegate
 
-private class MovieCaptureDelegate: NSObject, AVCaptureFileOutputRecordingDelegate {
+private class VideoCaptureDelegate: NSObject, AVCaptureFileOutputRecordingDelegate {
     private let format: VideoFormat
     private let completion: (Result<Value, Swift.Error>) -> Void
     private var hasCompleted = false
