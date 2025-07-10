@@ -535,8 +535,15 @@ final class CaptureService: NSObject, Service {
                 let appWindows = availableContent.windows.filter {
                     $0.owningApplication == application
                 }
+                guard let firstDisplay = availableContent.displays.first else {
+                    throw NSError(
+                        domain: "CaptureServiceError",
+                        code: 26,
+                        userInfo: [NSLocalizedDescriptionKey: "No displays available for application capture"]
+                    )
+                }
                 contentFilter = SCContentFilter(
-                    display: availableContent.displays.first!, including: appWindows)
+                    display: firstDisplay, including: appWindows)
             }
 
             // Create stream configuration
