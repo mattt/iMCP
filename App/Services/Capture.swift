@@ -33,13 +33,15 @@ final class CaptureService: NSObject, Service {
             let cameraAuthorized = AVCaptureDevice.authorizationStatus(for: .video) == .authorized
             let microphoneAuthorized =
                 AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
-            return cameraAuthorized || microphoneAuthorized
+            let screenRecordingAuthorized = CGPreflightScreenCaptureAccess()
+            return cameraAuthorized || microphoneAuthorized || screenRecordingAuthorized
         }
     }
 
     func activate() async throws {
         try await requestPermission(for: .video)
         try await requestPermission(for: .audio)
+        try await requestScreenRecordingPermission()
     }
 
     private func requestPermission(for mediaType: AVMediaType) async throws {
@@ -81,6 +83,20 @@ final class CaptureService: NSObject, Service {
                 code: 2,
                 userInfo: [NSLocalizedDescriptionKey: "Unknown authorization status"]
             )
+        }
+    }
+
+    private func requestScreenRecordingPermission() async throws {
+        guard CGPreflightScreenCaptureAccess() else {
+            // Request screen recording access
+            guard CGRequestScreenCaptureAccess() else {
+                throw NSError(
+                    domain: "CaptureServiceError",
+                    code: 10,
+                    userInfo: [NSLocalizedDescriptionKey: "Screen recording access denied"]
+                )
+            }
+            return
         }
     }
 
@@ -423,6 +439,11 @@ final class CaptureService: NSObject, Service {
                 openWorldHint: false
             )
         ) { arguments in
+            if !CGPreflightScreenCaptureAccess() {
+                // Try to request permission if not authorized
+                try await self.requestScreenRecordingPermission()
+            }
+
             let contentType =
                 ScreenCaptureContentType(
                     rawValue: arguments["contentType"]?.stringValue
