@@ -117,28 +117,6 @@ enum ImageFormat: String, Hashable, CaseIterable {
     }
 }
 
-// MARK: - Video Format
-
-enum VideoFormat: String, Hashable, CaseIterable {
-    static let `default`: VideoFormat = .mp4
-
-    case mp4 = "mp4"
-    case mov = "mov"
-
-    var fileExtension: String {
-        return rawValue
-    }
-
-    var mimeType: String {
-        switch self {
-        case .mp4:
-            return "video/mp4"
-        case .mov:
-            return "video/quicktime"
-        }
-    }
-}
-
 // MARK: - Audio Format
 
 enum AudioFormat: String, Hashable, CaseIterable {

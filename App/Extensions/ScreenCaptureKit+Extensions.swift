@@ -34,27 +34,6 @@ enum ScreenCaptureQuality: String, Hashable, CaseIterable {
     }
 }
 
-// MARK: - Screen Capture Frame Rate
-
-enum ScreenCaptureFrameRate: String, Hashable, CaseIterable {
-    static let `default`: ScreenCaptureFrameRate = .fps30
-
-    case fps15 = "15"
-    case fps30 = "30"
-    case fps60 = "60"
-
-    var value: Int {
-        switch self {
-        case .fps15:
-            return 15
-        case .fps30:
-            return 30
-        case .fps60:
-            return 60
-        }
-    }
-}
-
 // MARK: - Screen Capture Filter
 
 enum ScreenCaptureFilter: String, Hashable, CaseIterable {
@@ -84,28 +63,6 @@ enum ScreenCaptureFilter: String, Hashable, CaseIterable {
         case .excludeMenuBar:
             let nonMenuBarWindows = content.windows.filter { $0.title?.contains("MenuBar") == true }
             return SCContentFilter(display: display, including: nonMenuBarWindows)
-        }
-    }
-}
-
-// MARK: - Screen Recording Format
-
-enum ScreenRecordingFormat: String, Hashable, CaseIterable {
-    static let `default`: ScreenRecordingFormat = .mp4
-
-    case mp4 = "mp4"
-    case mov = "mov"
-
-    var fileExtension: String {
-        return rawValue
-    }
-
-    var mimeType: String {
-        switch self {
-        case .mp4:
-            return "video/mp4"
-        case .mov:
-            return "video/quicktime"
         }
     }
 }
