@@ -318,12 +318,9 @@ final class CaptureService: NSObject, Service {
                 openWorldHint: false
             )
         ) { arguments in
-            guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else {
-                throw NSError(
-                    domain: "CaptureServiceError",
-                    code: 1,
-                    userInfo: [NSLocalizedDescriptionKey: "Microphone access not authorized"]
-                )
+            if AVCaptureDevice.authorizationStatus(for: .audio) != .authorized {
+                // Try to request permission if not authorized
+                try await self.requestPermission(for: .audio)
             }
 
             let format =
