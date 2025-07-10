@@ -147,7 +147,146 @@ final class CaptureService: NSObject, Service {
                 openWorldHint: false
             )
         ) { arguments in
-            try await self.takePicture(arguments: arguments)
+            guard await self.isActivated else {
+                throw NSError(
+                    domain: "CaptureServiceError",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "Camera access not authorized"]
+                )
+            }
+
+            let format =
+                ImageFormat(
+                    rawValue: arguments["format"]?.stringValue ?? ImageFormat.default.rawValue)
+                ?? .jpeg
+            let quality = arguments["quality"]?.doubleValue ?? 0.8
+            let preset =
+                SessionPreset(
+                    rawValue: arguments["preset"]?.stringValue ?? SessionPreset.default.rawValue)
+                ?? .photo
+            let device =
+                CaptureDeviceType(
+                    rawValue: arguments["device"]?.stringValue ?? CaptureDeviceType.default.rawValue
+                )
+                ?? .builtInWideAngle
+            let position =
+                CaptureDevicePosition(
+                    rawValue: arguments["position"]?.stringValue
+                        ?? CaptureDevicePosition.default.rawValue) ?? .unspecified
+            let flash =
+                FlashMode(rawValue: arguments["flash"]?.stringValue ?? FlashMode.default.rawValue)
+                ?? .auto
+            let autoExposure = arguments["autoExposure"]?.boolValue ?? true
+            let autoFocus = arguments["autoFocus"]?.boolValue ?? true
+            let autoWhiteBalance = arguments["autoWhiteBalance"]?.boolValue ?? true
+            let delay = arguments["delay"]?.doubleValue ?? 1.0
+
+            let captureSession = AVCaptureSession()
+            captureSession.sessionPreset = preset.avPreset
+
+            guard
+                let camera = AVCaptureDevice.device(
+                    for: device,
+                    position: position,
+                    mediaType: .video
+                )
+            else {
+                throw NSError(
+                    domain: "CaptureServiceError",
+                    code: 3,
+                    userInfo: [NSLocalizedDescriptionKey: "No camera device found"]
+                )
+            }
+
+            try camera.lockForConfiguration()
+            defer { camera.unlockForConfiguration() }
+
+            if autoExposure && camera.isExposureModeSupported(.autoExpose) {
+                camera.exposureMode = .autoExpose
+            }
+
+            if autoFocus && camera.isFocusModeSupported(.autoFocus) {
+                camera.focusMode = .autoFocus
+            }
+
+            if autoWhiteBalance && camera.isWhiteBalanceModeSupported(.autoWhiteBalance) {
+                camera.whiteBalanceMode = .autoWhiteBalance
+            }
+
+            let videoInput = try AVCaptureDeviceInput(device: camera)
+            guard captureSession.canAddInput(videoInput) else {
+                throw NSError(
+                    domain: "CaptureServiceError",
+                    code: 4,
+                    userInfo: [NSLocalizedDescriptionKey: "Cannot add video input"]
+                )
+            }
+            captureSession.addInput(videoInput)
+
+            let photoOutput = AVCapturePhotoOutput()
+            guard captureSession.canAddOutput(photoOutput) else {
+                throw NSError(
+                    domain: "CaptureServiceError",
+                    code: 5,
+                    userInfo: [NSLocalizedDescriptionKey: "Cannot add photo output"]
+                )
+            }
+            captureSession.addOutput(photoOutput)
+
+            return try await withCheckedThrowingContinuation { continuation in
+                var hasResumed = false
+                let resumeOnce = { (result: Result<Value, Error>) in
+                    guard !hasResumed else { return }
+                    hasResumed = true
+                    continuation.resume(with: result)
+                }
+
+                let timeoutTask = Task {
+                    try await Task.sleep(for: .seconds(10))
+                    if !hasResumed {
+                        await MainActor.run {
+                            captureSession.stopRunning()
+                            self.currentPhotoDelegate = nil
+                        }
+                        resumeOnce(
+                            .failure(
+                                NSError(
+                                    domain: "CaptureServiceError",
+                                    code: 9,
+                                    userInfo: [NSLocalizedDescriptionKey: "Camera capture timeout"]
+                                )))
+                    }
+                }
+
+                captureSession.startRunning()
+
+                Task { @MainActor in
+                    if delay > 0 {
+                        try await Task.sleep(for: .seconds(delay))
+                    }
+
+                    let settings = AVCapturePhotoSettings()
+                    if photoOutput.supportedFlashModes.contains(flash.avFlashMode) {
+                        settings.flashMode = flash.avFlashMode
+                    }
+
+                    let delegate = PhotoCaptureDelegate(
+                        format: format,
+                        quality: quality,
+                        completion: { [weak self] result in
+                            Task { @MainActor in
+                                timeoutTask.cancel()
+                                captureSession.stopRunning()
+                                self?.currentPhotoDelegate = nil
+                                resumeOnce(result)
+                            }
+                        }
+                    )
+
+                    self.currentPhotoDelegate = delegate
+                    photoOutput.capturePhoto(with: settings, delegate: delegate)
+                }
+            }
         }
 
         Tool(
@@ -179,7 +318,69 @@ final class CaptureService: NSObject, Service {
                 openWorldHint: false
             )
         ) { arguments in
-            try await self.recordAudio(arguments: arguments)
+            guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else {
+                throw NSError(
+                    domain: "CaptureServiceError",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "Microphone access not authorized"]
+                )
+            }
+
+            let format =
+                AudioFormat(
+                    rawValue: arguments["format"]?.stringValue ?? AudioFormat.default.rawValue)
+                ?? .mp4
+            let duration = arguments["duration"]?.doubleValue ?? 10.0
+            let quality = arguments["quality"]?.stringValue ?? "medium"
+
+            let tempURL = URL(fileURLWithPath: NSTemporaryDirectory())
+                .appendingPathComponent(UUID().uuidString)
+                .appendingPathExtension(format.fileExtension)
+
+            let settings: [String: Any] = {
+                switch quality {
+                case "low":
+                    return [
+                        AVFormatIDKey: kAudioFormatMPEG4AAC,
+                        AVSampleRateKey: 22050,
+                        AVNumberOfChannelsKey: 1,
+                        AVEncoderAudioQualityKey: AVAudioQuality.low.rawValue,
+                    ]
+                case "high":
+                    return [
+                        AVFormatIDKey: kAudioFormatMPEG4AAC,
+                        AVSampleRateKey: 44100,
+                        AVNumberOfChannelsKey: 2,
+                        AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
+                    ]
+                default:  // medium
+                    return [
+                        AVFormatIDKey: kAudioFormatMPEG4AAC,
+                        AVSampleRateKey: 44100,
+                        AVNumberOfChannelsKey: 1,
+                        AVEncoderAudioQualityKey: AVAudioQuality.medium.rawValue,
+                    ]
+                }
+            }()
+
+            let recorder = try AVAudioRecorder(url: tempURL, settings: settings)
+            recorder.record(forDuration: duration)
+
+            return try await withCheckedThrowingContinuation { continuation in
+                Task {
+                    try await Task.sleep(for: .seconds(duration + 0.5))
+                    recorder.stop()
+
+                    do {
+                        let audioData = try Data(contentsOf: tempURL)
+                        try FileManager.default.removeItem(at: tempURL)
+                        let audioValue = Value.data(mimeType: format.mimeType, audioData)
+                        continuation.resume(returning: audioValue)
+                    } catch {
+                        continuation.resume(throwing: error)
+                    }
+                }
+            }
         }
 
         Tool(
@@ -225,411 +426,194 @@ final class CaptureService: NSObject, Service {
                 openWorldHint: false
             )
         ) { arguments in
-            try await self.takeScreenshot(arguments: arguments)
-        }
+            let contentType =
+                ScreenCaptureContentType(
+                    rawValue: arguments["contentType"]?.stringValue
+                        ?? ScreenCaptureContentType.default.rawValue
+                ) ?? .display
+            let format =
+                ScreenshotFormat(
+                    rawValue: arguments["format"]?.stringValue ?? ScreenshotFormat.default.rawValue
+                ) ?? .png
+            let quality =
+                ScreenCaptureQuality(
+                    rawValue: arguments["quality"]?.stringValue
+                        ?? ScreenCaptureQuality.default.rawValue
+                ) ?? .medium
+            let includesCursor = arguments["includesCursor"]?.boolValue ?? true
 
-    }
+            let displayId = arguments["displayId"]?.intValue.map { CGDirectDisplayID($0) }
+            let windowId = arguments["windowId"]?.intValue.map { CGWindowID($0) }
+            let bundleId = arguments["bundleId"]?.stringValue
 
-    // MARK: - Photo Capture
+            // Get available content
+            let availableContent = try await SCShareableContent.getAvailableContent()
 
-    private func takePicture(arguments: [String: Value]) async throws -> Value {
-        guard await isActivated else {
-            throw NSError(
-                domain: "CaptureServiceError",
-                code: 1,
-                userInfo: [NSLocalizedDescriptionKey: "Camera access not authorized"]
-            )
-        }
-
-        let format =
-            ImageFormat(rawValue: arguments["format"]?.stringValue ?? ImageFormat.default.rawValue)
-            ?? .jpeg
-        let quality = arguments["quality"]?.doubleValue ?? 0.8
-        let preset =
-            SessionPreset(
-                rawValue: arguments["preset"]?.stringValue ?? SessionPreset.default.rawValue)
-            ?? .photo
-        let device =
-            CaptureDeviceType(
-                rawValue: arguments["device"]?.stringValue ?? CaptureDeviceType.default.rawValue)
-            ?? .builtInWideAngle
-        let position =
-            CaptureDevicePosition(
-                rawValue: arguments["position"]?.stringValue
-                    ?? CaptureDevicePosition.default.rawValue) ?? .unspecified
-        let flash =
-            FlashMode(rawValue: arguments["flash"]?.stringValue ?? FlashMode.default.rawValue)
-            ?? .auto
-        let autoExposure = arguments["autoExposure"]?.boolValue ?? true
-        let autoFocus = arguments["autoFocus"]?.boolValue ?? true
-        let autoWhiteBalance = arguments["autoWhiteBalance"]?.boolValue ?? true
-        let delay = arguments["delay"]?.doubleValue ?? 1.0
-
-        let captureSession = AVCaptureSession()
-        captureSession.sessionPreset = preset.avPreset
-
-        guard
-            let videoDevice = AVCaptureDevice.device(
-                for: device,
-                position: position,
-                mediaType: .video
-            )
-        else {
-            throw NSError(
-                domain: "CaptureServiceError",
-                code: 3,
-                userInfo: [NSLocalizedDescriptionKey: "No camera device found"]
-            )
-        }
-
-        try await configureDevice(
-            videoDevice, autoExposure: autoExposure, autoFocus: autoFocus,
-            autoWhiteBalance: autoWhiteBalance)
-
-        let videoInput = try AVCaptureDeviceInput(device: videoDevice)
-        guard captureSession.canAddInput(videoInput) else {
-            throw NSError(
-                domain: "CaptureServiceError",
-                code: 4,
-                userInfo: [NSLocalizedDescriptionKey: "Cannot add video input"]
-            )
-        }
-        captureSession.addInput(videoInput)
-
-        let photoOutput = AVCapturePhotoOutput()
-        guard captureSession.canAddOutput(photoOutput) else {
-            throw NSError(
-                domain: "CaptureServiceError",
-                code: 5,
-                userInfo: [NSLocalizedDescriptionKey: "Cannot add photo output"]
-            )
-        }
-        captureSession.addOutput(photoOutput)
-
-        return try await withCheckedThrowingContinuation { continuation in
-            var hasResumed = false
-            let resumeOnce = { (result: Result<Value, Error>) in
-                guard !hasResumed else { return }
-                hasResumed = true
-                continuation.resume(with: result)
-            }
-
-            let timeoutTask = Task {
-                try await Task.sleep(for: .seconds(10))
-                if !hasResumed {
-                    await MainActor.run {
-                        captureSession.stopRunning()
-                        self.currentPhotoDelegate = nil
+            // Create content filter based on content type
+            let contentFilter: SCContentFilter
+            switch contentType {
+            case .display:
+                let display: SCDisplay
+                if let displayId = displayId {
+                    guard
+                        let selectedDisplay = availableContent.displays.first(where: {
+                            $0.displayID == displayId
+                        })
+                    else {
+                        throw NSError(
+                            domain: "CaptureServiceError",
+                            code: 20,
+                            userInfo: [NSLocalizedDescriptionKey: "Display not found"]
+                        )
                     }
-                    resumeOnce(
-                        .failure(
-                            NSError(
-                                domain: "CaptureServiceError",
-                                code: 9,
-                                userInfo: [NSLocalizedDescriptionKey: "Camera capture timeout"]
-                            )))
-                }
-            }
-
-            captureSession.startRunning()
-
-            Task { @MainActor in
-                if delay > 0 {
-                    try await Task.sleep(for: .seconds(delay))
-                }
-
-                let settings = AVCapturePhotoSettings()
-                if photoOutput.supportedFlashModes.contains(flash.avFlashMode) {
-                    settings.flashMode = flash.avFlashMode
-                }
-
-                let delegate = PhotoCaptureDelegate(
-                    format: format,
-                    quality: quality,
-                    completion: { [weak self] result in
-                        Task { @MainActor in
-                            timeoutTask.cancel()
-                            captureSession.stopRunning()
-                            self?.currentPhotoDelegate = nil
-                            resumeOnce(result)
-                        }
+                    display = selectedDisplay
+                } else {
+                    guard let mainDisplay = availableContent.displays.first else {
+                        throw NSError(
+                            domain: "CaptureServiceError",
+                            code: 21,
+                            userInfo: [NSLocalizedDescriptionKey: "No displays available"]
+                        )
                     }
-                )
+                    display = mainDisplay
+                }
+                contentFilter = SCContentFilter(display: display, excludingWindows: [])
 
-                self.currentPhotoDelegate = delegate
-                photoOutput.capturePhoto(with: settings, delegate: delegate)
-            }
-        }
-    }
-
-    // MARK: - Screenshot Capture
-
-    private func takeScreenshot(arguments: [String: Value]) async throws -> Value {
-        let contentType =
-            ScreenCaptureContentType(
-                rawValue: arguments["contentType"]?.stringValue
-                    ?? ScreenCaptureContentType.default.rawValue
-            ) ?? .display
-        let format =
-            ScreenshotFormat(
-                rawValue: arguments["format"]?.stringValue ?? ScreenshotFormat.default.rawValue
-            ) ?? .png
-        let quality =
-            ScreenCaptureQuality(
-                rawValue: arguments["quality"]?.stringValue ?? ScreenCaptureQuality.default.rawValue
-            ) ?? .medium
-        let includesCursor = arguments["includesCursor"]?.boolValue ?? true
-
-        let displayId = arguments["displayId"]?.intValue.map { CGDirectDisplayID($0) }
-        let windowId = arguments["windowId"]?.intValue.map { CGWindowID($0) }
-        let bundleId = arguments["bundleId"]?.stringValue
-
-        // Get available content
-        let availableContent = try await SCShareableContent.getAvailableContent()
-
-        // Create content filter based on content type
-        let contentFilter: SCContentFilter
-        switch contentType {
-        case .display:
-            let display: SCDisplay
-            if let displayId = displayId {
+            case .window:
+                guard let windowId = windowId else {
+                    throw NSError(
+                        domain: "CaptureServiceError",
+                        code: 22,
+                        userInfo: [
+                            NSLocalizedDescriptionKey: "Window ID required for window capture"
+                        ]
+                    )
+                }
                 guard
-                    let selectedDisplay = availableContent.displays.first(where: {
-                        $0.displayID == displayId
+                    let window = availableContent.windows.first(where: { $0.windowID == windowId })
+                else {
+                    throw NSError(
+                        domain: "CaptureServiceError",
+                        code: 23,
+                        userInfo: [NSLocalizedDescriptionKey: "Window not found"]
+                    )
+                }
+                contentFilter = SCContentFilter(desktopIndependentWindow: window)
+
+            case .application:
+                guard let bundleId = bundleId else {
+                    throw NSError(
+                        domain: "CaptureServiceError",
+                        code: 24,
+                        userInfo: [
+                            NSLocalizedDescriptionKey: "Bundle ID required for application capture"
+                        ]
+                    )
+                }
+                guard
+                    let application = availableContent.applications.first(where: {
+                        $0.bundleIdentifier == bundleId
                     })
                 else {
                     throw NSError(
                         domain: "CaptureServiceError",
-                        code: 20,
-                        userInfo: [NSLocalizedDescriptionKey: "Display not found"]
+                        code: 25,
+                        userInfo: [NSLocalizedDescriptionKey: "Application not found"]
                     )
                 }
-                display = selectedDisplay
-            } else {
-                guard let mainDisplay = availableContent.displays.first else {
-                    throw NSError(
-                        domain: "CaptureServiceError",
-                        code: 21,
-                        userInfo: [NSLocalizedDescriptionKey: "No displays available"]
-                    )
+                let appWindows = availableContent.windows.filter {
+                    $0.owningApplication == application
                 }
-                display = mainDisplay
-            }
-            contentFilter = SCContentFilter(display: display, excludingWindows: [])
-
-        case .window:
-            guard let windowId = windowId else {
-                throw NSError(
-                    domain: "CaptureServiceError",
-                    code: 22,
-                    userInfo: [NSLocalizedDescriptionKey: "Window ID required for window capture"]
-                )
-            }
-            guard let window = availableContent.windows.first(where: { $0.windowID == windowId })
-            else {
-                throw NSError(
-                    domain: "CaptureServiceError",
-                    code: 23,
-                    userInfo: [NSLocalizedDescriptionKey: "Window not found"]
-                )
-            }
-            contentFilter = SCContentFilter(desktopIndependentWindow: window)
-
-        case .application:
-            guard let bundleId = bundleId else {
-                throw NSError(
-                    domain: "CaptureServiceError",
-                    code: 24,
-                    userInfo: [
-                        NSLocalizedDescriptionKey: "Bundle ID required for application capture"
-                    ]
-                )
-            }
-            guard
-                let application = availableContent.applications.first(where: {
-                    $0.bundleIdentifier == bundleId
-                })
-            else {
-                throw NSError(
-                    domain: "CaptureServiceError",
-                    code: 25,
-                    userInfo: [NSLocalizedDescriptionKey: "Application not found"]
-                )
-            }
-            let appWindows = availableContent.windows.filter { $0.owningApplication == application }
-            contentFilter = SCContentFilter(
-                display: availableContent.displays.first!, including: appWindows)
-        }
-
-        // Create stream configuration
-        let streamConfiguration = SCStreamConfiguration()
-        streamConfiguration.capturesAudio = false
-        streamConfiguration.showsCursor = includesCursor
-        streamConfiguration.scalesToFit = true
-        streamConfiguration.pixelFormat = kCVPixelFormatType_32BGRA
-
-        // Apply quality settings based on the display
-        if let display = availableContent.displays.first {
-            let scaledWidth = Int(CGFloat(display.width) * quality.scaleFactor)
-            let scaledHeight = Int(CGFloat(display.height) * quality.scaleFactor)
-            streamConfiguration.width = scaledWidth
-            streamConfiguration.height = scaledHeight
-        }
-
-        return try await withCheckedThrowingContinuation { continuation in
-            var hasResumed = false
-            let resumeOnce = { (result: Result<Value, Error>) in
-                guard !hasResumed else { return }
-                hasResumed = true
-                continuation.resume(with: result)
+                contentFilter = SCContentFilter(
+                    display: availableContent.displays.first!, including: appWindows)
             }
 
-            let timeoutTask = Task {
-                try await Task.sleep(for: .seconds(10))
-                if !hasResumed {
-                    resumeOnce(
-                        .failure(
-                            NSError(
-                                domain: "CaptureServiceError",
-                                code: 26,
-                                userInfo: [NSLocalizedDescriptionKey: "Screenshot capture timeout"]
+            // Create stream configuration
+            let streamConfiguration = SCStreamConfiguration()
+            streamConfiguration.capturesAudio = false
+            streamConfiguration.showsCursor = includesCursor
+            streamConfiguration.scalesToFit = true
+            streamConfiguration.pixelFormat = kCVPixelFormatType_32BGRA
+
+            // Apply quality settings based on the display
+            if let display = availableContent.displays.first {
+                let scaledWidth = Int(CGFloat(display.width) * quality.scaleFactor)
+                let scaledHeight = Int(CGFloat(display.height) * quality.scaleFactor)
+                streamConfiguration.width = scaledWidth
+                streamConfiguration.height = scaledHeight
+            }
+
+            return try await withCheckedThrowingContinuation { continuation in
+                var hasResumed = false
+                let resumeOnce = { (result: Result<Value, Error>) in
+                    guard !hasResumed else { return }
+                    hasResumed = true
+                    continuation.resume(with: result)
+                }
+
+                let timeoutTask = Task {
+                    try await Task.sleep(for: .seconds(10))
+                    if !hasResumed {
+                        resumeOnce(
+                            .failure(
+                                NSError(
+                                    domain: "CaptureServiceError",
+                                    code: 26,
+                                    userInfo: [
+                                        NSLocalizedDescriptionKey: "Screenshot capture timeout"
+                                    ]
+                                )
                             )
                         )
-                    )
-                }
-            }
-
-            Task {
-                do {
-                    // Use SCScreenshotManager for taking screenshots
-                    let image = try await SCScreenshotManager.captureImage(
-                        contentFilter: contentFilter,
-                        configuration: streamConfiguration
-                    )
-
-                    // Convert CGImage to Data
-                    let imageData: Data
-                    switch format {
-                    case .png:
-                        guard let pngData = image.pngData() else {
-                            throw NSError(
-                                domain: "CaptureServiceError",
-                                code: 28,
-                                userInfo: [NSLocalizedDescriptionKey: "Failed to create PNG data"]
-                            )
-                        }
-                        imageData = pngData
-                    case .jpeg:
-                        guard let jpegData = image.jpegData(compressionQuality: 0.8) else {
-                            throw NSError(
-                                domain: "CaptureServiceError",
-                                code: 29,
-                                userInfo: [NSLocalizedDescriptionKey: "Failed to create JPEG data"]
-                            )
-                        }
-                        imageData = jpegData
                     }
+                }
 
-                    timeoutTask.cancel()
-                    let screenshotValue = Value.data(mimeType: format.mimeType, imageData)
-                    resumeOnce(.success(screenshotValue))
-                } catch {
-                    timeoutTask.cancel()
-                    resumeOnce(.failure(error))
+                Task {
+                    do {
+                        // Use SCScreenshotManager for taking screenshots
+                        let image = try await SCScreenshotManager.captureImage(
+                            contentFilter: contentFilter,
+                            configuration: streamConfiguration
+                        )
+
+                        // Convert CGImage to Data
+                        let imageData: Data
+                        switch format {
+                        case .png:
+                            guard let pngData = image.pngData() else {
+                                throw NSError(
+                                    domain: "CaptureServiceError",
+                                    code: 28,
+                                    userInfo: [
+                                        NSLocalizedDescriptionKey: "Failed to create PNG data"
+                                    ]
+                                )
+                            }
+                            imageData = pngData
+                        case .jpeg:
+                            guard let jpegData = image.jpegData(compressionQuality: 0.8) else {
+                                throw NSError(
+                                    domain: "CaptureServiceError",
+                                    code: 29,
+                                    userInfo: [
+                                        NSLocalizedDescriptionKey: "Failed to create JPEG data"
+                                    ]
+                                )
+                            }
+                            imageData = jpegData
+                        }
+
+                        timeoutTask.cancel()
+                        let screenshotValue = Value.data(mimeType: format.mimeType, imageData)
+                        resumeOnce(.success(screenshotValue))
+                    } catch {
+                        timeoutTask.cancel()
+                        resumeOnce(.failure(error))
+                    }
                 }
             }
         }
-    }
 
-    // MARK: - Audio Recording
-
-    private func recordAudio(arguments: [String: Value]) async throws -> Value {
-        guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else {
-            throw NSError(
-                domain: "CaptureServiceError",
-                code: 1,
-                userInfo: [NSLocalizedDescriptionKey: "Microphone access not authorized"]
-            )
-        }
-
-        let format =
-            AudioFormat(rawValue: arguments["format"]?.stringValue ?? AudioFormat.default.rawValue)
-            ?? .mp4
-        let duration = arguments["duration"]?.doubleValue ?? 10.0
-        let quality = arguments["quality"]?.stringValue ?? "medium"
-
-        let tempURL = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent(UUID().uuidString)
-            .appendingPathExtension(format.fileExtension)
-
-        let settings: [String: Any] = {
-            switch quality {
-            case "low":
-                return [
-                    AVFormatIDKey: kAudioFormatMPEG4AAC,
-                    AVSampleRateKey: 22050,
-                    AVNumberOfChannelsKey: 1,
-                    AVEncoderAudioQualityKey: AVAudioQuality.low.rawValue,
-                ]
-            case "high":
-                return [
-                    AVFormatIDKey: kAudioFormatMPEG4AAC,
-                    AVSampleRateKey: 44100,
-                    AVNumberOfChannelsKey: 2,
-                    AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
-                ]
-            default:  // medium
-                return [
-                    AVFormatIDKey: kAudioFormatMPEG4AAC,
-                    AVSampleRateKey: 44100,
-                    AVNumberOfChannelsKey: 1,
-                    AVEncoderAudioQualityKey: AVAudioQuality.medium.rawValue,
-                ]
-            }
-        }()
-
-        let recorder = try AVAudioRecorder(url: tempURL, settings: settings)
-        recorder.record(forDuration: duration)
-
-        return try await withCheckedThrowingContinuation { continuation in
-            Task {
-                try await Task.sleep(for: .seconds(duration + 0.5))
-                recorder.stop()
-
-                do {
-                    let audioData = try Data(contentsOf: tempURL)
-                    try FileManager.default.removeItem(at: tempURL)
-                    let audioValue = Value.data(mimeType: format.mimeType, audioData)
-                    continuation.resume(returning: audioValue)
-                } catch {
-                    continuation.resume(throwing: error)
-                }
-            }
-        }
-    }
-
-    // MARK: - Helper Methods
-
-    private func configureDevice(
-        _ device: AVCaptureDevice,
-        autoExposure: Bool,
-        autoFocus: Bool,
-        autoWhiteBalance: Bool
-    ) async throws {
-        try device.lockForConfiguration()
-        defer { device.unlockForConfiguration() }
-
-        if autoExposure && device.isExposureModeSupported(.autoExpose) {
-            device.exposureMode = .autoExpose
-        }
-
-        if autoFocus && device.isFocusModeSupported(.autoFocus) {
-            device.focusMode = .autoFocus
-        }
-
-        if autoWhiteBalance && device.isWhiteBalanceModeSupported(.autoWhiteBalance) {
-            device.whiteBalanceMode = .autoWhiteBalance
-        }
     }
 }
 
