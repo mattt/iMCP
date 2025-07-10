@@ -606,8 +606,8 @@
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/modelcontextprotocol/swift-sdk";
 			requirement = {
-				branch = main;
-				kind = branch;
+				kind = revision;
+				revision = 106167bad12cd8d004b0cbfcec8211c5408794d8;
 			};
 		};
 		F8D8C48C2DCE0E6800369E5C /* XCRemoteSwiftPackageReference "JSONSchema" */ = {
