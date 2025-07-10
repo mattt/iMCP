@@ -308,7 +308,7 @@ final class CaptureService: NSObject, Service {
                         enum: AudioFormat.allCases.map { .string($0.rawValue) }
                     ),
                     "duration": .number(
-                        description: "Maximum recording duration in seconds",
+                        description: "Recording duration in seconds",
                         default: 10,
                         minimum: 1,
                         maximum: 300
@@ -336,7 +336,7 @@ final class CaptureService: NSObject, Service {
                 AudioFormat(
                     rawValue: arguments["format"]?.stringValue ?? AudioFormat.default.rawValue)
                 ?? .mp4
-            let duration = arguments["duration"]?.doubleValue ?? 10.0
+            let duration = arguments["duration"].flatMap { Double($0) } ?? 10.0
             let quality = arguments["quality"]?.stringValue ?? "medium"
 
             let tempURL = URL(fileURLWithPath: NSTemporaryDirectory())

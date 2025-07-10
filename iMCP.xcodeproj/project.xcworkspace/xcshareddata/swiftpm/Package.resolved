@@ -42,8 +42,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/loopwork-ai/Ontology",
       "state" : {
-        "revision" : "2cbb952ac1a0b1dc465b05c1a480a922ab767849",
-        "version" : "0.6.0"
+        "revision" : "27969c8ddedff24f90f366fcb1f79aa9ed92e8c5",
+        "version" : "0.7.1"
       }
     },
     {
@@ -78,8 +78,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/modelcontextprotocol/swift-sdk",
       "state" : {
-        "branch" : "main",
-        "revision" : "87f33d022a870cc8635d52a1a77fcca14b2cab7d"
+        "revision" : "106167bad12cd8d004b0cbfcec8211c5408794d8"
       }
     },
     {
