@@ -933,7 +933,15 @@ actor ServerNetworkManager {
 
                         log.notice("Tool \(params.name) executed successfully for \(connectionID)")
                         switch value {
-                        case .data(let mimeType?, let data):
+                        case .data(let mimeType?, let data) where mimeType.hasPrefix("audio/"):
+                            return CallTool.Result(
+                                content: [
+                                    .audio(
+                                        data: data.base64EncodedString(),
+                                        mimeType: mimeType
+                                    )
+                                ], isError: false)
+                        case .data(let mimeType?, let data) where mimeType.hasPrefix("image/"):
                             return CallTool.Result(
                                 content: [
                                     .image(
@@ -947,8 +955,10 @@ actor ServerNetworkManager {
                             encoder.userInfo[Ontology.DateTime.timeZoneOverrideKey] =
                                 TimeZone.current
                             encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+
                             let data = try encoder.encode(value)
                             let text = String(data: data, encoding: .utf8)!
+
                             return CallTool.Result(content: [.text(text)], isError: false)
                         }
                     } catch {
