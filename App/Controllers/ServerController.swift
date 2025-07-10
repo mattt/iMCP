@@ -62,7 +62,7 @@ enum ServiceRegistry {
 
     static func configureServices(
         calendarEnabled: Binding<Bool>,
-        cameraEnabled: Binding<Bool>,
+        captureEnabled: Binding<Bool>,
         contactsEnabled: Binding<Bool>,
         locationEnabled: Binding<Bool>,
         mapsEnabled: Binding<Bool>,
@@ -84,7 +84,7 @@ enum ServiceRegistry {
                 iconName: "camera.on.rectangle.fill",
                 color: .gray.mix(with: .black, by: 0.7),
                 service: CaptureService.shared,
-                binding: cameraEnabled
+                binding: captureEnabled
             ),
             ServiceConfig(
                 name: "Contacts",
@@ -147,7 +147,7 @@ final class ServerController: ObservableObject {
 
     // MARK: - AppStorage for Service Enablement States
     @AppStorage("calendarEnabled") private var calendarEnabled = false
-    @AppStorage("cameraEnabled") private var cameraEnabled = false
+    @AppStorage("captureEnabled") private var captureEnabled = false
     @AppStorage("contactsEnabled") private var contactsEnabled = false
     @AppStorage("locationEnabled") private var locationEnabled = false
     @AppStorage("mapsEnabled") private var mapsEnabled = true  // Default for maps
@@ -163,7 +163,7 @@ final class ServerController: ObservableObject {
     var computedServiceConfigs: [ServiceConfig] {
         ServiceRegistry.configureServices(
             calendarEnabled: $calendarEnabled,
-            cameraEnabled: $cameraEnabled,
+            captureEnabled: $captureEnabled,
             contactsEnabled: $contactsEnabled,
             locationEnabled: $locationEnabled,
             mapsEnabled: $mapsEnabled,
