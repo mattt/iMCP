@@ -50,6 +50,7 @@ struct ServiceConfig: Identifiable {
 enum ServiceRegistry {
     static let services: [any Service] = [
         CalendarService.shared,
+        CaptureService.shared,
         ContactsService.shared,
         LocationService.shared,
         MapsService.shared,
@@ -61,6 +62,7 @@ enum ServiceRegistry {
 
     static func configureServices(
         calendarEnabled: Binding<Bool>,
+        captureEnabled: Binding<Bool>,
         contactsEnabled: Binding<Bool>,
         locationEnabled: Binding<Bool>,
         mapsEnabled: Binding<Bool>,
@@ -76,6 +78,13 @@ enum ServiceRegistry {
                 color: .red,
                 service: CalendarService.shared,
                 binding: calendarEnabled
+            ),
+            ServiceConfig(
+                name: "Capture",
+                iconName: "camera.on.rectangle.fill",
+                color: .gray.mix(with: .black, by: 0.7),
+                service: CaptureService.shared,
+                binding: captureEnabled
             ),
             ServiceConfig(
                 name: "Contacts",
@@ -138,6 +147,7 @@ final class ServerController: ObservableObject {
 
     // MARK: - AppStorage for Service Enablement States
     @AppStorage("calendarEnabled") private var calendarEnabled = false
+    @AppStorage("captureEnabled") private var captureEnabled = false
     @AppStorage("contactsEnabled") private var contactsEnabled = false
     @AppStorage("locationEnabled") private var locationEnabled = false
     @AppStorage("mapsEnabled") private var mapsEnabled = true  // Default for maps
@@ -153,6 +163,7 @@ final class ServerController: ObservableObject {
     var computedServiceConfigs: [ServiceConfig] {
         ServiceRegistry.configureServices(
             calendarEnabled: $calendarEnabled,
+            captureEnabled: $captureEnabled,
             contactsEnabled: $contactsEnabled,
             locationEnabled: $locationEnabled,
             mapsEnabled: $mapsEnabled,
@@ -347,9 +358,13 @@ final class ServerController: ObservableObject {
                     self.addTrustedClient(clientID)
 
                     // Request notification permissions so that the user can be notified when a trusted client connects
-                    UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+                    UNUserNotificationCenter.current().requestAuthorization(options: [
+                        .alert, .sound, .badge,
+                    ]) { granted, error in
                         if let error = error {
-                            log.error("Failed to request notification permissions: \(error.localizedDescription)")
+                            log.error(
+                                "Failed to request notification permissions: \(error.localizedDescription)"
+                            )
                         } else {
                             log.info("Notification permissions granted: \(granted)")
                         }
@@ -391,7 +406,8 @@ actor MCPConnectionManager {
 
         self.transport = NetworkTransport(
             connection: connection,
-            logger: nil
+            logger: nil,
+            bufferConfig: .unlimited
         )
 
         // Create the MCP server
@@ -866,7 +882,7 @@ actor ServerNetworkManager {
                                 .init(
                                     name: tool.name,
                                     description: tool.description,
-                                    inputSchema: try Value(tool.inputSchema),
+                                    inputSchema: tool.inputSchema,
                                     annotations: tool.annotations
                                 )
                             )
@@ -917,7 +933,15 @@ actor ServerNetworkManager {
 
                         log.notice("Tool \(params.name) executed successfully for \(connectionID)")
                         switch value {
-                        case let .data(mimeType?, data) where mimeType.hasPrefix("image/"):
+                        case .data(let mimeType?, let data) where mimeType.hasPrefix("audio/"):
+                            return CallTool.Result(
+                                content: [
+                                    .audio(
+                                        data: data.base64EncodedString(),
+                                        mimeType: mimeType
+                                    )
+                                ], isError: false)
+                        case .data(let mimeType?, let data) where mimeType.hasPrefix("image/"):
                             return CallTool.Result(
                                 content: [
                                     .image(
@@ -931,8 +955,10 @@ actor ServerNetworkManager {
                             encoder.userInfo[Ontology.DateTime.timeZoneOverrideKey] =
                                 TimeZone.current
                             encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+
                             let data = try encoder.encode(value)
                             let text = String(data: data, encoding: .utf8)!
+
                             return CallTool.Result(content: [.text(text)], isError: false)
                         }
                     } catch {
