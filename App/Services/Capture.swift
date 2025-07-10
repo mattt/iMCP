@@ -15,9 +15,7 @@ final class CaptureService: NSObject, Service {
     private var captureSession: AVCaptureSession?
     private var audioRecorder: AVAudioRecorder?
     private var photoOutput: AVCapturePhotoOutput?
-    private var audioDataOutput: AVCaptureAudioDataOutput?
     private var currentPhotoDelegate: PhotoCaptureDelegate?
-    private var currentAudioDelegate: AudioCaptureDelegate?
 
     override init() {
         super.init()
@@ -716,28 +714,5 @@ private class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
         } catch {
             complete(with: .failure(error))
         }
-    }
-}
-
-// MARK: - Audio Capture Delegate
-
-private class AudioCaptureDelegate: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
-    private let format: AudioFormat
-    private let completion: (Result<Value, Swift.Error>) -> Void
-    private var hasCompleted = false
-
-    init(
-        format: AudioFormat,
-        completion: @escaping (Result<Value, Swift.Error>) -> Void
-    ) {
-        self.format = format
-        self.completion = completion
-        super.init()
-    }
-
-    private func complete(with result: Result<Value, Error>) {
-        guard !hasCompleted else { return }
-        hasCompleted = true
-        completion(result)
     }
 }
