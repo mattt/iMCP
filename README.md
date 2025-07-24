@@ -336,12 +336,12 @@ Here's how to connect it to iMCP:
 
 ## License
 
-This project is available under the MIT license. 
+This project is available under the MIT license.
 See the LICENSE file for more info.
 
 ## Legal
 
-iMessage® is a registered trademark of Apple Inc.  
+iMessage® is a registered trademark of Apple Inc.
 This project is not affiliated with, endorsed, or sponsored by Apple Inc.
 
 [app-sandbox]: https://developer.apple.com/documentation/security/app-sandbox
