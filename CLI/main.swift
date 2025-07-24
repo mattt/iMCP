@@ -7,7 +7,7 @@ import SystemPackage
 import struct Foundation.Data
 import class Foundation.RunLoop
 
-var log = Logger(label: "com.loopwork.iMCP.server") { StreamLogHandler.standardError(label: $0) }
+var log = Logger(label: "me.mattt.iMCP.server") { StreamLogHandler.standardError(label: $0) }
 log.logLevel = .debug
 
 // Network setup
