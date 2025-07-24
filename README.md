@@ -340,7 +340,8 @@ Here's how to connect it to iMCP:
 
 ## License
 
-This project is licensed under the Apache License, Version 2.0.
+This project is available under the MIT license.
+See the LICENSE file for more info.
 
 ## Legal
 
