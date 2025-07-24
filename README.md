@@ -63,10 +63,6 @@ and a [growing list of clients][mcp-clients] that support the
   </tr>
 </table>
 
-> [!TIP]
-> Have a suggestion for a new capability?
-> Reach out to us at <imcp@loopwork.com>
-
 ## Getting Started
 
 ### Download and open the app
@@ -78,7 +74,7 @@ Or, if you have [Homebrew](https://brew.sh) installed,
 you can run the following command:
 
 ```console
-brew install --cask loopwork/tap/iMCP
+brew install --cask mattt/tap/iMCP
 ```
 
 <img align="right" width="344" src="/Assets/imcp-screenshot-first-launch.png" alt="Screenshot of iMCP on first launch" />
@@ -221,7 +217,7 @@ Both advertise a service with type "\_mcp.\_tcp" and domain "local".
 Requests from MCP clients are read by the CLI from `stdin`
 and relayed to the app;
 responses from the app are received by the CLI and written to `stdout`.
-See [`StdioProxy`](https://github.com/loopwork-ai/iMCP/blob/8cf9d250286288b06bf5d3dda78f5905ad0d7729/CLI/main.swift#L47)
+See [`StdioProxy`](https://github.com/mattt/iMCP/blob/8cf9d250286288b06bf5d3dda78f5905ad0d7729/CLI/main.swift#L47)
 for implementation details.
 
 For this project, we created what became
@@ -265,9 +261,9 @@ Here's how an object of that type is encoded as JSON-LD:
 ```json
 {
   "@context": "https://schema.org",
-  "@type": "Organization",
-  "name": "Loopwork Limited",
-  "url": "https://loop.work"
+  "@type": "Person",
+  "name": "Mattt",
+  "url": "https://mat.tt"
 }
 ```
 
@@ -340,28 +336,29 @@ Here's how to connect it to iMCP:
 
 ## License
 
-This project is licensed under the Apache License, Version 2.0.
+This project is available under the MIT license.
+See the LICENSE file for more info.
 
 ## Legal
 
-iMessage® is a registered trademark of Apple Inc.  
+iMessage® is a registered trademark of Apple Inc.
 This project is not affiliated with, endorsed, or sponsored by Apple Inc.
 
 [app-sandbox]: https://developer.apple.com/documentation/security/app-sandbox
 [bonjour]: https://developer.apple.com/bonjour/
 [claude-app]: https://claude.ai/download
-[companion]: https://github.com/loopwork-ai/Companion
-[companion-download]: https://github.com/loopwork-ai/Companion/releases/latest/download/Companion.zip
+[companion]: https://github.com/mattt/Companion
+[companion-download]: https://github.com/mattt/Companion/releases/latest/download/Companion.zip
 [contacts-framework]: https://developer.apple.com/documentation/contacts
 [cncontact]: https://developer.apple.com/documentation/contacts/cncontact
 [imessage-exporter]: https://github.com/ReagentX/imessage-exporter
 [json-ld]: https://json-ld.org
-[madrid]: https://github.com/loopwork-ai/Madrid
+[madrid]: https://github.com/mattt/Madrid
 [mcp]: https://modelcontextprotocol.io/introduction
 [mcp-clients]: https://modelcontextprotocol.io/clients
 [mcp-transports]: https://modelcontextprotocol.io/docs/concepts/architecture#transport-layer
 [nsopenpanel]: https://developer.apple.com/documentation/appkit/nsopenpanel
-[ontology]: https://github.com/loopwork-ai/Ontology
+[ontology]: https://github.com/mattt/Ontology
 [schema.org]: https://schema.org
 [swift-sdk]: https://github.com/modelcontextprotocol/swift-sdk
 [typedstream-blog-post]: https://chrissardegna.com/blog/reverse-engineering-apples-typedstream-format/

@@ -6,7 +6,7 @@ import iMessage
 
 private let log = Logger.service("messages")
 private let messagesDatabasePath = "/Users/\(NSUserName())/Library/Messages/chat.db"
-private let messagesDatabaseBookmarkKey: String = "com.loopwork.iMCP.messagesDatabaseBookmark"
+private let messagesDatabaseBookmarkKey: String = "me.mattt.iMCP.messagesDatabaseBookmark"
 private let defaultLimit = 30
 
 final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {

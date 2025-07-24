@@ -6,7 +6,7 @@ import OSLog
 private let log = Logger.integration("claude-desktop")
 private let configPath =
     "/Users/\(NSUserName())/Library/Application Support/Claude/claude_desktop_config.json"
-private let configBookmarkKey = "com.loopwork.iMCP.claudeConfigBookmark"
+private let configBookmarkKey = "me.mattt.iMCP.claudeConfigBookmark"
 
 private let jsonEncoder: JSONEncoder = {
     let encoder = JSONEncoder()
