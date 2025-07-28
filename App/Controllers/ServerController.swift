@@ -52,6 +52,7 @@ enum ServiceRegistry {
         CalendarService.shared,
         CaptureService.shared,
         ContactsService.shared,
+        FilesService.shared,
         LocationService.shared,
         MapsService.shared,
         MessageService.shared,
@@ -64,6 +65,7 @@ enum ServiceRegistry {
         calendarEnabled: Binding<Bool>,
         captureEnabled: Binding<Bool>,
         contactsEnabled: Binding<Bool>,
+        filesEnabled: Binding<Bool>,
         locationEnabled: Binding<Bool>,
         mapsEnabled: Binding<Bool>,
         messagesEnabled: Binding<Bool>,
@@ -92,6 +94,13 @@ enum ServiceRegistry {
                 color: .brown,
                 service: ContactsService.shared,
                 binding: contactsEnabled
+            ),
+            ServiceConfig(
+                name: "Files",
+                iconName: "folder.fill",
+                color: .indigo,
+                service: FilesService.shared,
+                binding: filesEnabled
             ),
             ServiceConfig(
                 name: "Location",
@@ -149,6 +158,7 @@ final class ServerController: ObservableObject {
     @AppStorage("calendarEnabled") private var calendarEnabled = false
     @AppStorage("captureEnabled") private var captureEnabled = false
     @AppStorage("contactsEnabled") private var contactsEnabled = false
+    @AppStorage("finderEnabled") private var finderEnabled = false
     @AppStorage("locationEnabled") private var locationEnabled = false
     @AppStorage("mapsEnabled") private var mapsEnabled = true  // Default for maps
     @AppStorage("messagesEnabled") private var messagesEnabled = false
@@ -165,6 +175,7 @@ final class ServerController: ObservableObject {
             calendarEnabled: $calendarEnabled,
             captureEnabled: $captureEnabled,
             contactsEnabled: $contactsEnabled,
+            filesEnabled: $finderEnabled,
             locationEnabled: $locationEnabled,
             mapsEnabled: $mapsEnabled,
             messagesEnabled: $messagesEnabled,
@@ -415,6 +426,7 @@ actor MCPConnectionManager {
             name: Bundle.main.name ?? "iMCP",
             version: Bundle.main.shortVersionString ?? "unknown",
             capabilities: MCP.Server.Capabilities(
+                resources: .init(subscribe: false, listChanged: true),
                 tools: .init(listChanged: true)
             )
         )
@@ -853,10 +865,47 @@ actor ServerNetworkManager {
             return ListPrompts.Result(prompts: [])
         }
 
-        // Register the resources/list handler
+        // Register the resources/list handler (empty for now since we use templates)
         await server.withMethodHandler(ListResources.self) { _ in
             log.debug("Handling ListResources request for \(connectionID)")
             return ListResources.Result(resources: [])
+        }
+
+        // Register the resources/templates/list handler
+        await server.withMethodHandler(ListResourceTemplates.self) { [weak self] _ in
+            guard let self = self else {
+                return ListResourceTemplates.Result(templates: [])
+            }
+
+            log.debug("Handling ListResourceTemplates request for \(connectionID)")
+
+            var templates: [MCP.Resource.Template] = []
+            if await self.isEnabledState {
+                for service in await self.services {
+                    let serviceId = String(describing: type(of: service))
+
+                    // Get the binding value in an actor-safe way
+                    if let isServiceEnabled = await self.serviceBindings[serviceId]?.wrappedValue,
+                        isServiceEnabled
+                    {
+                        for template in service.resourceTemplates {
+                            log.debug("Adding resource template: \(template.name)")
+                            templates.append(
+                                .init(
+                                    uriTemplate: template.uriTemplate,
+                                    name: template.name,
+                                    description: template.description,
+                                    mimeType: template.mimeType
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+
+            log.info(
+                "Returning \(templates.count) available resource templates for \(connectionID)")
+            return ListResourceTemplates.Result(templates: templates)
         }
 
         // Register tools/list handler
@@ -877,7 +926,6 @@ actor ServerNetworkManager {
                         isServiceEnabled
                     {
                         for tool in service.tools {
-                            log.debug("Adding tool: \(tool.name)")
                             tools.append(
                                 .init(
                                     name: tool.name,
@@ -973,6 +1021,63 @@ actor ServerNetworkManager {
             return CallTool.Result(
                 content: [.text("Tool not found or service not enabled: \(params.name)")],
                 isError: true
+            )
+        }
+
+        // Register resources/read handler
+        await server.withMethodHandler(ReadResource.self) { [weak self] params in
+            guard let self = self else {
+                return ReadResource.Result(
+                    contents: [.text("Server unavailable", uri: params.uri)]
+                )
+            }
+
+            log.notice("Resource read received from \(connectionID): \(params.uri)")
+
+            guard await self.isEnabledState else {
+                log.notice("Resource read rejected: iMCP is disabled")
+                return ReadResource.Result(
+                    contents: [
+                        .text(
+                            "iMCP is currently disabled. Please enable it to read resources.",
+                            uri: params.uri)
+                    ]
+                )
+            }
+
+            for service in await self.services {
+                let serviceId = String(describing: type(of: service))
+
+                // Get the binding value in an actor-safe way
+                if let isServiceEnabled = await self.serviceBindings[serviceId]?.wrappedValue,
+                    isServiceEnabled
+                {
+                    do {
+                        guard
+                            let content = try await service.read(resource: params.uri)
+                        else {
+                            continue
+                        }
+
+                        log.notice("Resource \(params.uri) read successfully for \(connectionID)")
+
+                        return ReadResource.Result(contents: [content])
+                    } catch {
+                        log.error(
+                            "Error reading resource \(params.uri): \(error.localizedDescription)")
+                        return ReadResource.Result(
+                            contents: [.text("Error: \(error)", uri: params.uri)]
+                        )
+                    }
+                }
+            }
+
+            log.error("Resource not found or service not enabled: \(params.uri)")
+            return ReadResource.Result(
+                contents: [
+                    .text(
+                        "Resource not found or service not enabled: \(params.uri)", uri: params.uri)
+                ]
             )
         }
     }

@@ -217,7 +217,7 @@
 			packageReferences = (
 				F88358352D64A085000317CD /* XCRemoteSwiftPackageReference "swift-log" */,
 				F873F48B2D712BCF0035CD0A /* XCRemoteSwiftPackageReference "Ontology" */,
-				F809556C2D7888920055B911 /* XCRemoteSwiftPackageReference "madrid" */,
+				F809556C2D7888920055B911 /* XCRemoteSwiftPackageReference "Madrid" */,
 				F825BDBD2D9AD00E0063ADD7 /* XCRemoteSwiftPackageReference "swift-service-lifecycle" */,
 				F8D7C3182DCBD32100A4775F /* XCRemoteSwiftPackageReference "swift-sdk" */,
 				F8D8C48C2DCE0E6800369E5C /* XCRemoteSwiftPackageReference "JSONSchema" */,
@@ -385,10 +385,10 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 8;
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = 9;
 				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = R7AYS6Z734;
+				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -396,13 +396,16 @@
 				INFOPLIST_KEY_CFBundleDisplayName = iMCP;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_LSUIElement = YES;
-				INFOPLIST_KEY_NSCameraUsageDescription = "${PRODUCT_NAME} needs access to the camera to take pictures for the MCP server.";
-				INFOPLIST_KEY_NSContactsUsageDescription = "${PRODUCT_NAME} needs access to provide contact information to the MCP server.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "iMCP needs access to the camera to take pictures for the MCP server.";
+				INFOPLIST_KEY_NSContactsUsageDescription = "iMCP needs access to provide contact information to the MCP server.";
+				INFOPLIST_KEY_NSDesktopFolderUsageDescription = "iMCP needs access to the Desktop folder to provide file resources to the MCP server.";
+				INFOPLIST_KEY_NSDocumentsFolderUsageDescription = "iMCP needs access to the Documents folder to provide file resources to the MCP server.";
+				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "iMCP needs access to the Downloads folder to provide file resources to the MCP server.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2025 Loopwork Limited. All rights reserved.";
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "${PRODUCT_NAME} uses the local network to connect to the MCP server.";
-				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "${PRODUCT_NAME} needs access to provide location information to the MCP server.";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "${PRODUCT_NAME} needs access to provide location information to the MCP server.";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "${PRODUCT_NAME} needs access to the microphone to record audio for the MCP server.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "iMCP uses the local network to connect to the MCP server.";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "iMCP needs access to provide location information to the MCP server.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "iMCP needs access to provide location information to the MCP server.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "iMCP needs access to the microphone to record audio for the MCP server.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -418,8 +421,9 @@
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.1;
 				MARKETING_VERSION = 1.3.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.loopwork.iMCP;
+				PRODUCT_BUNDLE_IDENTIFIER = me.mattt.iMCP;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = macosx;
 				SUPPORTS_MACCATALYST = NO;
@@ -437,19 +441,19 @@
 				AUTOMATION_APPLE_EVENTS = NO;
 				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 8;
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = 9;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
-				ENABLE_APP_SANDBOX = YES;
+				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
-				ENABLE_INCOMING_NETWORK_CONNECTIONS = NO;
-				ENABLE_OUTGOING_NETWORK_CONNECTIONS = NO;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = YES;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
-				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
 				ENABLE_RESOURCE_ACCESS_BLUETOOTH = NO;
-				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
-				ENABLE_RESOURCE_ACCESS_CAMERA = YES;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = YES;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
 				ENABLE_RESOURCE_ACCESS_CONTACTS = YES;
 				ENABLE_RESOURCE_ACCESS_LOCATION = YES;
 				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
@@ -460,13 +464,16 @@
 				INFOPLIST_KEY_CFBundleDisplayName = iMCP;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_LSUIElement = YES;
-				INFOPLIST_KEY_NSCameraUsageDescription = "${PRODUCT_NAME} needs access to the camera to take pictures for the MCP server.";
-				INFOPLIST_KEY_NSContactsUsageDescription = "${PRODUCT_NAME} needs access to provide contact information to the MCP server.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "iMCP needs access to the camera to take pictures for the MCP server.";
+				INFOPLIST_KEY_NSContactsUsageDescription = "iMCP needs access to provide contact information to the MCP server.";
+				INFOPLIST_KEY_NSDesktopFolderUsageDescription = "iMCP needs access to the Desktop folder to provide file resources to the MCP server.";
+				INFOPLIST_KEY_NSDocumentsFolderUsageDescription = "iMCP needs access to the Documents folder to provide file resources to the MCP server.";
+				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "iMCP needs access to the Downloads folder to provide file resources to the MCP server.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2025 Loopwork Limited. All rights reserved.";
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "${PRODUCT_NAME} uses the local network to connect to the MCP server.";
-				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "${PRODUCT_NAME} needs access to provide location information to the MCP server.";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "${PRODUCT_NAME} needs access to provide location information to the MCP server.";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "${PRODUCT_NAME} needs access to the microphone to record audio for the MCP server.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "iMCP uses the local network to connect to the MCP server.";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "iMCP needs access to provide location information to the MCP server.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "iMCP needs access to provide location information to the MCP server.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "iMCP needs access to the microphone to record audio for the MCP server.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -482,10 +489,15 @@
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.1;
 				MARKETING_VERSION = 1.3.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.loopwork.iMCP;
+				PRODUCT_BUNDLE_IDENTIFIER = me.mattt.iMCP;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
-				"PROVISIONING_PROFILE_SPECIFIER[sdk=macosx*]" = "iMCP Developer Build Provision Profile";
+				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
+				RUNTIME_EXCEPTION_ALLOW_JIT = NO;
+				RUNTIME_EXCEPTION_ALLOW_UNSIGNED_EXECUTABLE_MEMORY = NO;
+				RUNTIME_EXCEPTION_DEBUGGING_TOOL = NO;
+				RUNTIME_EXCEPTION_DISABLE_EXECUTABLE_PAGE_PROTECTION = NO;
+				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = NO;
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = macosx;
 				SUPPORTS_MACCATALYST = NO;
@@ -501,9 +513,9 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = R7AYS6Z734;
+				DEVELOPMENT_TEAM = "";
 				MACOSX_DEPLOYMENT_TARGET = 15.1;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.loopwork.imcp-server";
+				PRODUCT_BUNDLE_IDENTIFIER = "me.mattt.imcp-server";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
 				SKIP_INSTALL = YES;
@@ -518,9 +530,9 @@
 				CODE_SIGN_STYLE = Manual;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
-				"DEVELOPMENT_TEAM[sdk=macosx*]" = R7AYS6Z734;
+				"DEVELOPMENT_TEAM[sdk=macosx*]" = "";
 				MACOSX_DEPLOYMENT_TARGET = 15.1;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.loopwork.imcp-server";
+				PRODUCT_BUNDLE_IDENTIFIER = "me.mattt.imcp-server";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = macosx;
@@ -562,9 +574,9 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		F809556C2D7888920055B911 /* XCRemoteSwiftPackageReference "madrid" */ = {
+		F809556C2D7888920055B911 /* XCRemoteSwiftPackageReference "Madrid" */ = {
 			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/loopwork-ai/madrid";
+			repositoryURL = "https://github.com/mattt/Madrid";
 			requirement = {
 				kind = upToNextMajorVersion;
 				minimumVersion = 0.1.0;
@@ -580,10 +592,10 @@
 		};
 		F873F48B2D712BCF0035CD0A /* XCRemoteSwiftPackageReference "Ontology" */ = {
 			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/loopwork-ai/Ontology";
+			repositoryURL = "https://github.com/mattt/Ontology";
 			requirement = {
 				kind = upToNextMajorVersion;
-				minimumVersion = 0.7.0;
+				minimumVersion = 0.7.1;
 			};
 		};
 		F87796FA2E0764AE00328CC6 /* XCRemoteSwiftPackageReference "MenuBarExtraAccess" */ = {
@@ -612,7 +624,7 @@
 		};
 		F8D8C48C2DCE0E6800369E5C /* XCRemoteSwiftPackageReference "JSONSchema" */ = {
 			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/loopwork-ai/JSONSchema.git";
+			repositoryURL = "https://github.com/mattt/JSONSchema.git";
 			requirement = {
 				kind = upToNextMajorVersion;
 				minimumVersion = 1.3.0;
@@ -623,12 +635,12 @@
 /* Begin XCSwiftPackageProductDependency section */
 		F809556D2D7888920055B911 /* TypedStream */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = F809556C2D7888920055B911 /* XCRemoteSwiftPackageReference "madrid" */;
+			package = F809556C2D7888920055B911 /* XCRemoteSwiftPackageReference "Madrid" */;
 			productName = TypedStream;
 		};
 		F809556F2D7888920055B911 /* iMessage */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = F809556C2D7888920055B911 /* XCRemoteSwiftPackageReference "madrid" */;
+			package = F809556C2D7888920055B911 /* XCRemoteSwiftPackageReference "Madrid" */;
 			productName = iMessage;
 		};
 		F825BDBE2D9AD00E0063ADD7 /* ServiceLifecycle */ = {

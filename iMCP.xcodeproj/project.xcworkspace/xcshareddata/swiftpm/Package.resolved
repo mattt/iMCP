@@ -1,5 +1,5 @@
 {
-  "originHash" : "0604c8a8c049fb6e696fcd8af68cdc36f2f23f938eec962e31f24cc19d550d45",
+  "originHash" : "75782284cc1c6049835b3b6bdc5f5c0711069c98bd8295fd2f786ec2dc8b7b86",
   "pins" : [
     {
       "identity" : "eventsource",
@@ -13,7 +13,7 @@
     {
       "identity" : "jsonschema",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/loopwork-ai/JSONSchema.git",
+      "location" : "https://github.com/mattt/JSONSchema.git",
       "state" : {
         "revision" : "e17c9e1fb6afbad656824d03f996cf8621f9db83",
         "version" : "1.3.0"
@@ -22,10 +22,10 @@
     {
       "identity" : "madrid",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/loopwork-ai/madrid",
+      "location" : "https://github.com/mattt/Madrid",
       "state" : {
-        "revision" : "9d9fdb20424483fb592e5a026d9d0816cd5c43eb",
-        "version" : "0.1.0"
+        "revision" : "d57b7b143d4229670bad0bdd05c539e0f0c8267a",
+        "version" : "0.1.2"
       }
     },
     {
@@ -40,7 +40,7 @@
     {
       "identity" : "ontology",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/loopwork-ai/Ontology",
+      "location" : "https://github.com/mattt/Ontology",
       "state" : {
         "revision" : "27969c8ddedff24f90f366fcb1f79aa9ed92e8c5",
         "version" : "0.7.1"
