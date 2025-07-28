@@ -217,7 +217,7 @@
 			packageReferences = (
 				F88358352D64A085000317CD /* XCRemoteSwiftPackageReference "swift-log" */,
 				F873F48B2D712BCF0035CD0A /* XCRemoteSwiftPackageReference "Ontology" */,
-				F809556C2D7888920055B911 /* XCRemoteSwiftPackageReference "madrid" */,
+				F809556C2D7888920055B911 /* XCRemoteSwiftPackageReference "Madrid" */,
 				F825BDBD2D9AD00E0063ADD7 /* XCRemoteSwiftPackageReference "swift-service-lifecycle" */,
 				F8D7C3182DCBD32100A4775F /* XCRemoteSwiftPackageReference "swift-sdk" */,
 				F8D8C48C2DCE0E6800369E5C /* XCRemoteSwiftPackageReference "JSONSchema" */,
@@ -574,9 +574,9 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		F809556C2D7888920055B911 /* XCRemoteSwiftPackageReference "madrid" */ = {
+		F809556C2D7888920055B911 /* XCRemoteSwiftPackageReference "Madrid" */ = {
 			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/loopwork-ai/madrid";
+			repositoryURL = "https://github.com/mattt/Madrid";
 			requirement = {
 				kind = upToNextMajorVersion;
 				minimumVersion = 0.1.0;
@@ -592,7 +592,7 @@
 		};
 		F873F48B2D712BCF0035CD0A /* XCRemoteSwiftPackageReference "Ontology" */ = {
 			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/loopwork-ai/Ontology";
+			repositoryURL = "https://github.com/mattt/Ontology";
 			requirement = {
 				kind = upToNextMajorVersion;
 				minimumVersion = 0.7.1;
@@ -624,7 +624,7 @@
 		};
 		F8D8C48C2DCE0E6800369E5C /* XCRemoteSwiftPackageReference "JSONSchema" */ = {
 			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/loopwork-ai/JSONSchema.git";
+			repositoryURL = "https://github.com/mattt/JSONSchema.git";
 			requirement = {
 				kind = upToNextMajorVersion;
 				minimumVersion = 1.3.0;
@@ -635,12 +635,12 @@
 /* Begin XCSwiftPackageProductDependency section */
 		F809556D2D7888920055B911 /* TypedStream */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = F809556C2D7888920055B911 /* XCRemoteSwiftPackageReference "madrid" */;
+			package = F809556C2D7888920055B911 /* XCRemoteSwiftPackageReference "Madrid" */;
 			productName = TypedStream;
 		};
 		F809556F2D7888920055B911 /* iMessage */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = F809556C2D7888920055B911 /* XCRemoteSwiftPackageReference "madrid" */;
+			package = F809556C2D7888920055B911 /* XCRemoteSwiftPackageReference "Madrid" */;
 			productName = iMessage;
 		};
 		F825BDBE2D9AD00E0063ADD7 /* ServiceLifecycle */ = {
