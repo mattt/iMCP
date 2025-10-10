@@ -8,7 +8,7 @@ import struct Foundation.Data
 import class Foundation.RunLoop
 
 var log = Logger(label: "me.mattt.iMCP.server") { StreamLogHandler.standardError(label: $0) }
-log.logLevel = .debug
+log.logLevel = .info
 
 // Network setup
 let serviceType = "_mcp._tcp"
