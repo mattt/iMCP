@@ -47,19 +47,17 @@ final class LocationService: NSObject, Service, CLLocationManagerDelegate {
     func activate() async throws {
         try await withCheckedThrowingContinuation {
             (continuation: CheckedContinuation<Void, Error>) in
-            self.authorizationContinuation = continuation
             locationManager.delegate = self
 
             // Check current authorization status first
             let status = locationManager.authorizationStatus
             switch status {
             case .authorizedWhenInUse, .authorizedAlways:
-                // Already authorized, resume immediately
+                // Already authorized, resume immediately without storing continuation
                 log.debug("Location access authorized")
                 continuation.resume()
-                self.authorizationContinuation = nil
             case .denied, .restricted:
-                // Already denied, throw error immediately
+                // Already denied, throw error immediately without storing continuation
                 log.error("Location access denied")
                 continuation.resume(
                     throwing: NSError(
@@ -67,13 +65,13 @@ final class LocationService: NSObject, Service, CLLocationManagerDelegate {
                         code: 7,
                         userInfo: [NSLocalizedDescriptionKey: "Location access denied"]
                     ))
-                self.authorizationContinuation = nil
             case .notDetermined:
-                // Need to request authorization
+                // Need to request authorization - store continuation for delegate callback
                 log.debug("Requesting location access")
+                self.authorizationContinuation = continuation
                 locationManager.requestWhenInUseAuthorization()
             @unknown default:
-                // Handle unknown future cases
+                // Handle unknown future cases without storing continuation
                 log.error("Unknown location authorization status")
                 continuation.resume(
                     throwing: NSError(
@@ -81,7 +79,6 @@ final class LocationService: NSObject, Service, CLLocationManagerDelegate {
                         code: 8,
                         userInfo: [NSLocalizedDescriptionKey: "Unknown authorization status"]
                     ))
-                self.authorizationContinuation = nil
             }
         }
     }
