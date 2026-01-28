@@ -245,34 +245,37 @@ final class CaptureService: NSObject, Service {
             return try await withCheckedThrowingContinuation { continuation in
                 let lock = NSLock()
                 var hasResumed = false
-                let resumeOnce = { (result: Result<Value, Error>) in
+                let resumeOnce = { (result: Result<Value, Error>, cleanup: (() async -> Void)? = nil) async in
                     lock.lock()
-                    defer { lock.unlock() }
-                    guard !hasResumed else { return }
+                    guard !hasResumed else {
+                        lock.unlock()
+                        return
+                    }
                     hasResumed = true
+                    lock.unlock()
+                    if let cleanup = cleanup {
+                        await cleanup()
+                    }
                     continuation.resume(with: result)
                 }
 
                 let timeoutTask = Task {
                     try await Task.sleep(for: .seconds(10))
-
-                    lock.lock()
-                    let alreadyResumed = hasResumed
-                    lock.unlock()
-
-                    if !alreadyResumed {
-                        await MainActor.run {
-                            captureSession.stopRunning()
-                            self.currentPhotoDelegate = nil
+                    await resumeOnce(
+                        .failure(
+                            NSError(
+                                domain: "CaptureServiceError",
+                                code: 9,
+                                userInfo: [NSLocalizedDescriptionKey: "Camera capture timeout"]
+                            )
+                        ),
+                        cleanup: {
+                            await MainActor.run {
+                                captureSession.stopRunning()
+                                self.currentPhotoDelegate = nil
+                            }
                         }
-                        resumeOnce(
-                            .failure(
-                                NSError(
-                                    domain: "CaptureServiceError",
-                                    code: 9,
-                                    userInfo: [NSLocalizedDescriptionKey: "Camera capture timeout"]
-                                )))
-                    }
+                    )
                 }
 
                 captureSession.startRunning()
@@ -295,7 +298,7 @@ final class CaptureService: NSObject, Service {
                                 timeoutTask.cancel()
                                 captureSession.stopRunning()
                                 self?.currentPhotoDelegate = nil
-                                resumeOnce(result)
+                                await resumeOnce(result)
                             }
                         }
                     )
@@ -575,34 +578,30 @@ final class CaptureService: NSObject, Service {
             return try await withCheckedThrowingContinuation { continuation in
                 let lock = NSLock()
                 var hasResumed = false
-                let resumeOnce = { (result: Result<Value, Error>) in
+                let resumeOnce = { (result: Result<Value, Error>) async in
                     lock.lock()
-                    defer { lock.unlock() }
-                    guard !hasResumed else { return }
+                    guard !hasResumed else {
+                        lock.unlock()
+                        return
+                    }
                     hasResumed = true
+                    lock.unlock()
                     continuation.resume(with: result)
                 }
 
                 let timeoutTask = Task {
                     try await Task.sleep(for: .seconds(10))
-
-                    lock.lock()
-                    let alreadyResumed = hasResumed
-                    lock.unlock()
-
-                    if !alreadyResumed {
-                        resumeOnce(
-                            .failure(
-                                NSError(
-                                    domain: "CaptureServiceError",
-                                    code: 26,
-                                    userInfo: [
-                                        NSLocalizedDescriptionKey: "Screenshot capture timeout"
-                                    ]
-                                )
+                    await resumeOnce(
+                        .failure(
+                            NSError(
+                                domain: "CaptureServiceError",
+                                code: 26,
+                                userInfo: [
+                                    NSLocalizedDescriptionKey: "Screenshot capture timeout"
+                                ]
                             )
                         )
-                    }
+                    )
                 }
 
                 Task {
@@ -642,10 +641,10 @@ final class CaptureService: NSObject, Service {
 
                         timeoutTask.cancel()
                         let screenshotValue = Value.data(mimeType: format.mimeType, imageData)
-                        resumeOnce(.success(screenshotValue))
+                        await resumeOnce(.success(screenshotValue))
                     } catch {
                         timeoutTask.cancel()
-                        resumeOnce(.failure(error))
+                        await resumeOnce(.failure(error))
                     }
                 }
             }
