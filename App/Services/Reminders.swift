@@ -253,9 +253,15 @@ final class RemindersService: Service {
 
             // Set optional properties
             if case .string(let dueDateStr) = arguments["due"],
-                let dueDate = ISO8601DateFormatter.lenientDate(fromISO8601String: dueDateStr)
+                let parsedDueDate = ISO8601DateFormatter.parsedLenientISO8601Date(
+                    fromISO8601String: dueDateStr)
             {
-                reminder.dueDateComponents = Calendar.current.dateComponents(
+                let calendar = Calendar.current
+                let dueDate = calendar.normalizedStartDate(
+                    from: parsedDueDate.date,
+                    isDateOnly: parsedDueDate.isDateOnly
+                )
+                reminder.dueDateComponents = calendar.dateComponents(
                     [.year, .month, .day, .hour, .minute, .second], from: dueDate)
             }
 

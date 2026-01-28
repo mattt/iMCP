@@ -354,9 +354,11 @@ final class CalendarService: Service {
 
             // Parse dates
             guard case .string(let startDateStr) = arguments["start"],
-                let startDate = ISO8601DateFormatter.lenientDate(fromISO8601String: startDateStr),
+                let parsedStart = ISO8601DateFormatter.parsedLenientISO8601Date(
+                    fromISO8601String: startDateStr),
                 case .string(let endDateStr) = arguments["end"],
-                let endDate = ISO8601DateFormatter.lenientDate(fromISO8601String: endDateStr)
+                let parsedEnd = ISO8601DateFormatter.parsedLenientISO8601Date(
+                    fromISO8601String: endDateStr)
             else {
                 throw NSError(
                     domain: "CalendarError", code: 2,
@@ -367,9 +369,18 @@ final class CalendarService: Service {
                 )
             }
 
+            let calendar = Calendar.current
+            let startDate = calendar.normalizedStartDate(
+                from: parsedStart.date,
+                isDateOnly: parsedStart.isDateOnly
+            )
+            let endDate = calendar.normalizedStartDate(
+                from: parsedEnd.date,
+                isDateOnly: parsedEnd.isDateOnly
+            )
+
             // For all-day events, ensure we use local midnight
             if case .bool(true) = arguments["isAllDay"] {
-                let calendar = Calendar.current
                 var startComponents = calendar.dateComponents(
                     [.year, .month, .day], from: startDate)
                 startComponents.hour = 0
@@ -436,11 +447,16 @@ final class CalendarService: Service {
                         }
 
                     case "absolute":
-                        if case .string(let datetimeStr) = config["datetime"],
-                            let absoluteDate = ISO8601DateFormatter.lenientDate(
+                        if case .string(let datetimeStr) = config["datetime"] {
+                            if ISO8601DateFormatter.isDateOnlyISO8601String(datetimeStr) {
+                                log.error(
+                                    "Absolute alarm datetime must include time component: \(datetimeStr, privacy: .public)"
+                                )
+                            } else if let absoluteDate = ISO8601DateFormatter.lenientDate(
                                 fromISO8601String: datetimeStr)
-                        {
-                            alarm = EKAlarm(absoluteDate: absoluteDate)
+                            {
+                                alarm = EKAlarm(absoluteDate: absoluteDate)
+                            }
                         }
 
                     case "proximity":
