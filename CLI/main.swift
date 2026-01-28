@@ -160,6 +160,8 @@ actor StdioProxy {
             await log.debug("Connection established to \(endpoint)")
             if let connectionState = connectionState, await connectionState.checkAndSetResumed() {
                 continuation?.resume()
+            } else if connectionState == nil {
+                continuation?.resume()
             }
         case .failed(let error):
             await log.debug("Connection failed: \(error)")
@@ -182,7 +184,7 @@ actor StdioProxy {
                         continuation.resume(throwing: CancellationError())
                     }
                 } else {
-                     continuation.resume(throwing: CancellationError())
+                    continuation.resume(throwing: CancellationError())
                 }
             }
             await stop()
