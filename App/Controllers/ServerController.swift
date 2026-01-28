@@ -48,17 +48,22 @@ struct ServiceConfig: Identifiable {
 }
 
 enum ServiceRegistry {
-    static let services: [any Service] = [
-        CalendarService.shared,
-        CaptureService.shared,
-        ContactsService.shared,
-        LocationService.shared,
-        MapsService.shared,
-        MessageService.shared,
-        RemindersService.shared,
-        UtilitiesService.shared,
-        WeatherService.shared,
-    ]
+    static let services: [any Service] = {
+        var services: [any Service] = [
+            CalendarService.shared,
+            CaptureService.shared,
+            ContactsService.shared,
+            LocationService.shared,
+            MapsService.shared,
+            MessageService.shared,
+            RemindersService.shared,
+            UtilitiesService.shared,
+        ]
+        #if WEATHERKIT_AVAILABLE
+            services.append(WeatherService.shared)
+        #endif
+        return services
+    }()
 
     static func configureServices(
         calendarEnabled: Binding<Bool>,
@@ -71,7 +76,7 @@ enum ServiceRegistry {
         utilitiesEnabled: Binding<Bool>,
         weatherEnabled: Binding<Bool>
     ) -> [ServiceConfig] {
-        [
+        var configs: [ServiceConfig] = [
             ServiceConfig(
                 name: "Calendar",
                 iconName: "calendar",
@@ -121,14 +126,19 @@ enum ServiceRegistry {
                 service: RemindersService.shared,
                 binding: remindersEnabled
             ),
-            ServiceConfig(
-                name: "Weather",
-                iconName: "cloud.sun.fill",
-                color: .cyan,
-                service: WeatherService.shared,
-                binding: weatherEnabled
-            ),
         ]
+        #if WEATHERKIT_AVAILABLE
+            configs.append(
+                ServiceConfig(
+                    name: "Weather",
+                    iconName: "cloud.sun.fill",
+                    color: .cyan,
+                    service: WeatherService.shared,
+                    binding: weatherEnabled
+                )
+            )
+        #endif
+        return configs
     }
 }
 
