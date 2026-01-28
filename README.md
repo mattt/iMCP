@@ -225,6 +225,18 @@ To add iMCP globally (available in all projects):
 amp mcp add iMCP -- /Applications/iMCP.app/Contents/MacOS/imcp-server
 ```
 
+#### Connect to [Cursor][cursor]
+
+Open this deep link to automatically install the iMCP server:
+
+<a href="https://cursor.com/en-US/install-mcp?name=iMCP&config=eyJjb21tYW5kIjoiL0FwcGxpY2F0aW9ucy9pTUNQLmFwcC9Db250ZW50cy9NYWNPUy9pbWNwLXNlcnZlciAifQ%3D%3D">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://cursor.com/deeplink/mcp-install-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="https://cursor.com/deeplink/mcp-install-light.svg">
+    <img alt="Install MCP Server" src="https://cursor.com/deeplink/mcp-install-light.svg">
+  </picture>
+</a>
+
 > [!NOTE]
 > When a client first connects, iMCP will show an approval dialog.
 > Click "Allow" and check "Always trust this client" to avoid repeated prompts.
@@ -384,6 +396,7 @@ This project is not affiliated with, endorsed, or sponsored by Apple Inc.
 [companion-download]: https://github.com/mattt/Companion/releases/latest/download/Companion.zip
 [contacts-framework]: https://developer.apple.com/documentation/contacts
 [cncontact]: https://developer.apple.com/documentation/contacts/cncontact
+[cursor]: https://cursor.com
 [imessage-exporter]: https://github.com/ReagentX/imessage-exporter
 [json-ld]: https://json-ld.org
 [madrid]: https://github.com/mattt/Madrid
