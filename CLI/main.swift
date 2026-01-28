@@ -158,34 +158,23 @@ actor StdioProxy {
         switch state {
         case .ready:
             await log.debug("Connection established to \(endpoint)")
-            if let connectionState = connectionState, await connectionState.checkAndSetResumed() {
-                continuation?.resume()
-            } else if connectionState == nil {
+            if await shouldResume(connectionState: connectionState) {
                 continuation?.resume()
             }
         case .failed(let error):
             await log.debug("Connection failed: \(error)")
-            if let continuation = continuation {
-                if let connectionState = connectionState {
-                    if await connectionState.checkAndSetResumed() {
-                        continuation.resume(throwing: error)
-                    }
-                } else {
-                    // Fallback for calls without connectionState (shouldn't happen for start logic)
-                    continuation.resume(throwing: error)
-                }
+            if let continuation = continuation,
+                await shouldResume(connectionState: connectionState)
+            {
+                continuation.resume(throwing: error)
             }
             await stop()
         case .cancelled:
             await log.debug("Connection cancelled")
-            if let continuation = continuation {
-                if let connectionState = connectionState {
-                    if await connectionState.checkAndSetResumed() {
-                        continuation.resume(throwing: CancellationError())
-                    }
-                } else {
-                    continuation.resume(throwing: CancellationError())
-                }
+            if let continuation = continuation,
+                await shouldResume(connectionState: connectionState)
+            {
+                continuation.resume(throwing: CancellationError())
             }
             await stop()
         case .waiting(let error):
@@ -197,6 +186,13 @@ actor StdioProxy {
         @unknown default:
             await log.debug("Unknown connection state")
         }
+    }
+
+    private func shouldResume(connectionState: ConnectionState?) async -> Bool {
+        if let connectionState = connectionState {
+            return await connectionState.checkAndSetResumed()
+        }
+        return true
     }
 
     private func setNonBlocking(fileDescriptor: FileDescriptor) throws {
