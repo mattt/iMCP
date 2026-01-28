@@ -217,17 +217,9 @@ claude mcp add-from-claude-desktop
 
 </details>
 
-### Connect to [Amp][amp]
+### Connect to [Cursor][cursor]
 
-To add iMCP globally (available in all projects):
-
-```console
-amp mcp add iMCP -- /Applications/iMCP.app/Contents/MacOS/imcp-server
-```
-
-#### Connect to [Cursor][cursor]
-
-Open this deep link to automatically install the iMCP server:
+Open this deep link to automatically install the iMCP server in Cursor:
 
 <a href="https://cursor.com/en-US/install-mcp?name=iMCP&config=eyJjb21tYW5kIjoiL0FwcGxpY2F0aW9ucy9pTUNQLmFwcC9Db250ZW50cy9NYWNPUy9pbWNwLXNlcnZlciAifQ%3D%3D">
   <picture>
@@ -236,6 +228,14 @@ Open this deep link to automatically install the iMCP server:
     <img alt="Install MCP Server" src="https://cursor.com/deeplink/mcp-install-light.svg">
   </picture>
 </a>
+
+### Connect to [Amp][amp]
+
+To add iMCP globally (available in all projects):
+
+```console
+amp mcp add iMCP -- /Applications/iMCP.app/Contents/MacOS/imcp-server
+```
 
 > [!NOTE]
 > When a client first connects, iMCP will show an approval dialog.
