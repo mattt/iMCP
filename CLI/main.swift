@@ -327,46 +327,25 @@ actor StdioProxy {
                     }
                 }
 
-                // Receive data from the network connection with timeout
-                let receiveTask = Task {
-                    try await withCheckedThrowingContinuation {
-                        (continuation: CheckedContinuation<Data, Swift.Error>) in
-                        connection.receive(minimumIncompleteLength: 1, maximumLength: bufferSize) {
-                            data, _, isComplete, error in
-                            if let error = error {
-                                continuation.resume(throwing: error)
-                                return
-                            }
+                // Receive data from the network connection
+                let data = try await withCheckedThrowingContinuation {
+                    (continuation: CheckedContinuation<Data, Swift.Error>) in
+                    connection.receive(minimumIncompleteLength: 1, maximumLength: bufferSize) {
+                        data, _, isComplete, error in
+                        if let error = error {
+                            continuation.resume(throwing: error)
+                            return
+                        }
 
-                            if let data = data {
-                                continuation.resume(returning: data)
-                            } else if isComplete {
-                                log.debug("Network connection complete")
-                                continuation.resume(throwing: StdioProxyError.connectionClosed)
-                            } else {
-                                continuation.resume(returning: Data())
-                            }
+                        if let data = data {
+                            continuation.resume(returning: data)
+                        } else if isComplete {
+                            log.debug("Network connection complete")
+                            continuation.resume(throwing: StdioProxyError.connectionClosed)
+                        } else {
+                            continuation.resume(returning: Data())
                         }
                     }
-                }
-
-                // Add a timeout for the receive operation
-                let timeoutTask = Task {
-                    try await Task.sleep(for: .seconds(5))
-                    receiveTask.cancel()
-                    return Data()
-                }
-
-                // Wait for either the receive task or the timeout
-                let data: Data
-                do {
-                    data = try await receiveTask.value
-                    timeoutTask.cancel()
-                } catch is CancellationError {
-                    // Receive was cancelled by timeout
-                    consecutiveEmptyReads += 10  // Accelerate the empty read counter
-                    try await Task.sleep(for: .milliseconds(10))
-                    continue
                 }
 
                 var processedData = data
@@ -486,20 +465,19 @@ enum StdioProxyError: Swift.Error {
 
 // Create MCPService class to manage lifecycle
 actor MCPService: Service {
-    let browser: NWBrowser
+    private var browser: NWBrowser?
     private var currentProxy: StdioProxy?
-
-    init() {
-        self.browser = NWBrowser(
-            for: .bonjour(type: serviceType, domain: nil),
-            using: parameters
-        )
-    }
 
     func run() async throws {
         while true {
             do {
                 await log.info("Starting Bonjour service discovery...")
+
+                let browser = NWBrowser(
+                    for: .bonjour(type: serviceType, domain: nil),
+                    using: parameters
+                )
+                self.browser = browser
 
                 // Find and connect to iMCP app with improved reliability
                 let endpoint: NWEndpoint = try await withCheckedThrowingContinuation {
@@ -527,6 +505,7 @@ actor MCPService: Service {
                                 await log.error("Browser failed: \(error)")
                                 if await connectionState.checkAndSetResumed() {
                                     timeoutTask.cancel()
+                                    browser.cancel()
                                     continuation.resume(throwing: error)
                                 }
                             case .ready:
@@ -572,6 +551,7 @@ actor MCPService: Service {
 
                                 if await connectionState.checkAndSetResumed() {
                                     timeoutTask.cancel()
+                                    browser.cancel()
                                     await log.info("Selected endpoint: \(selectedService.endpoint)")
                                     continuation.resume(returning: selectedService.endpoint)
                                 }
@@ -631,7 +611,7 @@ actor MCPService: Service {
     }
 
     func shutdown() async throws {
-        browser.cancel()
+        browser?.cancel()
         if let proxy = currentProxy {
             await proxy.stop()
         }
