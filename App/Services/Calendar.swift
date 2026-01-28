@@ -63,11 +63,13 @@ final class CalendarService: Service {
             inputSchema: .object(
                 properties: [
                     "start": .string(
-                        description: "Start date of the range (defaults to now)",
+                        description:
+                            "Start date/time of the range (defaults to now). If timezone is omitted, local time is assumed. Date-only uses local midnight.",
                         format: .dateTime
                     ),
                     "end": .string(
-                        description: "End date of the range (defaults to one week from start)",
+                        description:
+                            "End date/time of the range (defaults to one week from start; one day if start is date-only). If timezone is omitted, local time is assumed. Date-only uses local midnight.",
                         format: .dateTime
                     ),
                     "calendars": .array(
@@ -119,19 +121,44 @@ final class CalendarService: Service {
 
             // Parse dates and set defaults
             let now = Date()
+            let calendar = Calendar.current
             var startDate = now
-            var endDate = Calendar.current.date(byAdding: .weekOfYear, value: 1, to: now)!
+            var endDate = calendar.date(byAdding: .weekOfYear, value: 1, to: now)!
+            var hasStart = false
+            var hasEnd = false
+            var startIsDateOnly = false
+            var endIsDateOnly = false
 
             if case .string(let start) = arguments["start"],
-                let parsedStart = ISO8601DateFormatter.date(fromLenientISO8601String: start)
+                let parsedStart = ISO8601DateFormatter.parsedLenientISO8601Date(
+                    fromISO8601String: start)
             {
-                startDate = parsedStart
+                hasStart = true
+                startDate = parsedStart.date
+                startIsDateOnly = parsedStart.isDateOnly
             }
 
             if case .string(let end) = arguments["end"],
-               let parsedEnd = ISO8601DateFormatter.date(fromLenientISO8601String: end)
+                let parsedEnd = ISO8601DateFormatter.parsedLenientISO8601Date(
+                    fromISO8601String: end)
             {
-                endDate = parsedEnd
+                hasEnd = true
+                endDate = parsedEnd.date
+                endIsDateOnly = parsedEnd.isDateOnly
+            }
+
+            startDate = calendar.normalizedStartDate(from: startDate, isDateOnly: startIsDateOnly)
+
+            if endIsDateOnly {
+                endDate = calendar.normalizedEndDate(from: endDate, isDateOnly: true)
+            } else if !hasEnd {
+                if startIsDateOnly {
+                    endDate = calendar.normalizedEndDate(from: startDate, isDateOnly: true)
+                } else if let nextWeek = calendar.date(
+                    byAdding: .weekOfYear, value: 1, to: startDate)
+                {
+                    endDate = nextWeek
+                }
             }
 
             // Create base predicate for date range and calendars
@@ -187,9 +214,13 @@ final class CalendarService: Service {
                 properties: [
                     "title": .string(),
                     "start": .string(
+                        description:
+                            "Start date/time for the event. If timezone is omitted, local time is assumed. Date-only uses local midnight.",
                         format: .dateTime
                     ),
                     "end": .string(
+                        description:
+                            "End date/time for the event. If timezone is omitted, local time is assumed. Date-only uses local midnight.",
                         format: .dateTime
                     ),
                     "calendar": .string(
@@ -240,6 +271,8 @@ final class CalendarService: Service {
                                             const: "absolute",
                                         ),
                                         "datetime": .string(
+                                            description:
+                                                "Alarm date/time. If timezone is omitted, local time is assumed. Date-only uses local midnight.",
                                             format: .dateTime
                                         ),
                                         "sound": .string(
@@ -321,9 +354,9 @@ final class CalendarService: Service {
 
             // Parse dates
             guard case .string(let startDateStr) = arguments["start"],
-                let startDate = ISO8601DateFormatter.date(fromLenientISO8601String: startDateStr),
+                let startDate = ISO8601DateFormatter.lenientDate(fromISO8601String: startDateStr),
                 case .string(let endDateStr) = arguments["end"],
-                let endDate = ISO8601DateFormatter.date(fromLenientISO8601String: endDateStr)
+                let endDate = ISO8601DateFormatter.lenientDate(fromISO8601String: endDateStr)
             else {
                 throw NSError(
                     domain: "CalendarError", code: 2,
@@ -404,7 +437,8 @@ final class CalendarService: Service {
 
                     case "absolute":
                         if case .string(let datetimeStr) = config["datetime"],
-                            let absoluteDate = ISO8601DateFormatter.date(fromLenientISO8601String: datetimeStr)
+                            let absoluteDate = ISO8601DateFormatter.lenientDate(
+                                fromISO8601String: datetimeStr)
                         {
                             alarm = EKAlarm(absoluteDate: absoluteDate)
                         }

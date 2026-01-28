@@ -6,7 +6,7 @@ extension ISO8601DateFormatter {
     /// - Parameters:
     ///   - dateString: The string representation of the date.
     /// - Returns: A `Date` object if parsing is successful with any format, otherwise `nil`.
-    static func date(fromLenientISO8601String dateString: String) -> Date? {
+    static func lenientDate(fromISO8601String dateString: String) -> Date? {
         let formatter = ISO8601DateFormatter()
 
         let optionsToTry: [ISO8601DateFormatter.Options] = [
@@ -41,6 +41,7 @@ extension ISO8601DateFormatter {
             "yyyy-MM-dd'T'HH:mm:ss",
             "yyyy-MM-dd HH:mm:ss.SSS",
             "yyyy-MM-dd HH:mm:ss",
+            "yyyy-MM-dd",
         ]
 
         let fallbackFormatter = DateFormatter()
@@ -57,4 +58,29 @@ extension ISO8601DateFormatter {
         return nil
     }
 
+    static func parsedLenientISO8601Date(
+        fromISO8601String dateString: String
+    ) -> (date: Date, isDateOnly: Bool)? {
+        let isDateOnly = isDateOnlyISO8601String(dateString)
+        guard let date = lenientDate(fromISO8601String: dateString) else {
+            return nil
+        }
+        return (date, isDateOnly)
+    }
+
+    static func isDateOnlyISO8601String(_ dateString: String) -> Bool {
+        dateString.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil
+    }
+}
+
+extension Calendar {
+    func normalizedStartDate(from date: Date, isDateOnly: Bool) -> Date {
+        isDateOnly ? startOfDay(for: date) : date
+    }
+
+    func normalizedEndDate(from date: Date, isDateOnly: Bool) -> Date {
+        guard isDateOnly else { return date }
+        let startOfDay = startOfDay(for: date)
+        return self.date(byAdding: .day, value: 1, to: startOfDay) ?? startOfDay
+    }
 }

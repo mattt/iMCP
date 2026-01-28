@@ -65,11 +65,13 @@ final class RemindersService: Service {
                             "If true, fetch completed reminders; if false, fetch incomplete; if omitted, fetch all"
                     ),
                     "start": .string(
-                        description: "Start date range for fetching reminders",
+                        description:
+                            "Start date/time range for fetching reminders. If timezone is omitted, local time is assumed. Date-only uses local midnight.",
                         format: .dateTime
                     ),
                     "end": .string(
-                        description: "End date range for fetching reminders",
+                        description:
+                            "End date/time range for fetching reminders. If timezone is omitted, local time is assumed. Date-only uses local midnight.",
                         format: .dateTime
                     ),
                     "lists": .array(
@@ -114,12 +116,31 @@ final class RemindersService: Service {
             // Parse dates if provided
             var startDate: Date? = nil
             var endDate: Date? = nil
+            var startIsDateOnly = false
+            var endIsDateOnly = false
 
-            if case .string(let start) = arguments["start"] {
-                startDate = ISO8601DateFormatter.date(fromLenientISO8601String: start)
+            if case .string(let start) = arguments["start"],
+                let parsedStart = ISO8601DateFormatter.parsedLenientISO8601Date(
+                    fromISO8601String: start)
+            {
+                startDate = parsedStart.date
+                startIsDateOnly = parsedStart.isDateOnly
             }
-            if case .string(let end) = arguments["end"] {
-                endDate = ISO8601DateFormatter.date(fromLenientISO8601String: end)
+            if case .string(let end) = arguments["end"],
+                let parsedEnd = ISO8601DateFormatter.parsedLenientISO8601Date(
+                    fromISO8601String: end)
+            {
+                endDate = parsedEnd.date
+                endIsDateOnly = parsedEnd.isDateOnly
+            }
+
+            let calendar = Calendar.current
+            if let startDateValue = startDate {
+                startDate = calendar.normalizedStartDate(
+                    from: startDateValue, isDateOnly: startIsDateOnly)
+            }
+            if let endDateValue = endDate {
+                endDate = calendar.normalizedEndDate(from: endDateValue, isDateOnly: endIsDateOnly)
             }
 
             // Create predicate based on completion status
@@ -172,6 +193,8 @@ final class RemindersService: Service {
                 properties: [
                     "title": .string(),
                     "due": .string(
+                        description:
+                            "Due date/time for the reminder. If timezone is omitted, local time is assumed. Date-only uses local midnight.",
                         format: .dateTime
                     ),
                     "list": .string(
@@ -230,7 +253,7 @@ final class RemindersService: Service {
 
             // Set optional properties
             if case .string(let dueDateStr) = arguments["due"],
-               let dueDate = ISO8601DateFormatter.date(fromLenientISO8601String: dueDateStr)
+                let dueDate = ISO8601DateFormatter.lenientDate(fromISO8601String: dueDateStr)
             {
                 reminder.dueDateComponents = Calendar.current.dateComponents(
                     [.year, .month, .day, .hour, .minute, .second], from: dueDate)

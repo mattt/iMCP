@@ -60,11 +60,13 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                         items: .string()
                     ),
                     "start": .string(
-                        description: "Start of the date range (inclusive)",
+                        description:
+                            "Start of the date range (inclusive). If timezone is omitted, local time is assumed. Date-only uses local midnight.",
                         format: .dateTime
                     ),
                     "end": .string(
-                        description: "End of the date range (exclusive)",
+                        description:
+                            "End of the date range (exclusive). If timezone is omitted, local time is assumed. Date-only uses local midnight.",
                         format: .dateTime
                     ),
                     "query": .string(
@@ -94,10 +96,22 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
             var dateRange: Range<Date>?
             if let startDateStr = arguments["start"]?.stringValue,
                 let endDateStr = arguments["end"]?.stringValue,
-                let startDate = ISO8601DateFormatter.date(fromLenientISO8601String: startDateStr),
-                let endDate = ISO8601DateFormatter.date(fromLenientISO8601String: endDateStr)
+                let parsedStart = ISO8601DateFormatter.parsedLenientISO8601Date(
+                    fromISO8601String: startDateStr),
+                let parsedEnd = ISO8601DateFormatter.parsedLenientISO8601Date(
+                    fromISO8601String: endDateStr)
             {
-                dateRange = startDate..<endDate
+                let calendar = Calendar.current
+                let normalizedStart = calendar.normalizedStartDate(
+                    from: parsedStart.date,
+                    isDateOnly: parsedStart.isDateOnly
+                )
+                let normalizedEnd = calendar.normalizedEndDate(
+                    from: parsedEnd.date,
+                    isDateOnly: parsedEnd.isDateOnly
+                )
+
+                dateRange = normalizedStart..<normalizedEnd
             }
 
             let searchTerm = arguments["query"]?.stringValue
