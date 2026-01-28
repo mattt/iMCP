@@ -401,15 +401,15 @@ final class CalendarService: Service {
             }
 
             // Set calendar
-            var calendar = self.eventStore.defaultCalendarForNewEvents
+            var targetCalendar = self.eventStore.defaultCalendarForNewEvents
             if case .string(let calendarName) = arguments["calendar"] {
                 if let matchingCalendar = self.eventStore.calendars(for: .event)
                     .first(where: { $0.title.lowercased() == calendarName.lowercased() })
                 {
-                    calendar = matchingCalendar
+                    targetCalendar = matchingCalendar
                 }
             }
-            event.calendar = calendar
+            event.calendar = targetCalendar
 
             // Set optional properties
             if case .string(let location) = arguments["location"] {
