@@ -219,7 +219,7 @@ claude mcp add-from-claude-desktop
 
 ### Connect to [Cursor][cursor]
 
-Open this deep link to automatically install the iMCP server in Cursor:
+Open this deep link to automatically install the iMCP server:
 
 <a href="https://cursor.com/en-US/install-mcp?name=iMCP&config=eyJjb21tYW5kIjoiL0FwcGxpY2F0aW9ucy9pTUNQLmFwcC9Db250ZW50cy9NYWNPUy9pbWNwLXNlcnZlciAifQ%3D%3D">
   <picture>
