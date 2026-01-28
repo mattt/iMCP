@@ -94,8 +94,8 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
             var dateRange: Range<Date>?
             if let startDateStr = arguments["start"]?.stringValue,
                 let endDateStr = arguments["end"]?.stringValue,
-                let startDate = ISO8601DateFormatter.parseFlexibleISODate(startDateStr),
-                let endDate = ISO8601DateFormatter.parseFlexibleISODate(endDateStr)
+                let startDate = ISO8601DateFormatter.date(fromLenientISO8601String: startDateStr),
+                let endDate = ISO8601DateFormatter.date(fromLenientISO8601String: endDateStr)
             {
                 dateRange = startDate..<endDate
             }

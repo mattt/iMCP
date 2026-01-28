@@ -101,7 +101,7 @@ final class RemindersService: Service {
 
             // Filter reminder lists based on provided names
             var reminderLists = self.eventStore.calendars(for: .reminder)
-            if case let .array(listNames) = arguments["lists"],
+            if case .array(let listNames) = arguments["lists"],
                 !listNames.isEmpty
             {
                 let requestedNames = Set(
@@ -115,16 +115,16 @@ final class RemindersService: Service {
             var startDate: Date? = nil
             var endDate: Date? = nil
 
-            if case let .string(start) = arguments["start"] {
-                startDate = ISO8601DateFormatter.parseFlexibleISODate(start)
+            if case .string(let start) = arguments["start"] {
+                startDate = ISO8601DateFormatter.date(fromLenientISO8601String: start)
             }
-            if case let .string(end) = arguments["end"] {
-                endDate = ISO8601DateFormatter.parseFlexibleISODate(end)
+            if case .string(let end) = arguments["end"] {
+                endDate = ISO8601DateFormatter.date(fromLenientISO8601String: end)
             }
 
             // Create predicate based on completion status
             let predicate: NSPredicate
-            if case let .bool(completed) = arguments["completed"] {
+            if case .bool(let completed) = arguments["completed"] {
                 if completed {
                     predicate = self.eventStore.predicateForCompletedReminders(
                         withCompletionDateStarting: startDate,
@@ -154,7 +154,7 @@ final class RemindersService: Service {
             var filteredReminders = reminders
 
             // Filter by search text if provided
-            if case let .string(searchText) = arguments["query"],
+            if case .string(let searchText) = arguments["query"],
                 !searchText.isEmpty
             {
                 filteredReminders = filteredReminders.filter {
@@ -209,7 +209,7 @@ final class RemindersService: Service {
             let reminder = EKReminder(eventStore: self.eventStore)
 
             // Set required properties
-            guard case let .string(title) = arguments["title"] else {
+            guard case .string(let title) = arguments["title"] else {
                 throw NSError(
                     domain: "RemindersError", code: 2,
                     userInfo: [NSLocalizedDescriptionKey: "Reminder title is required"]
@@ -219,7 +219,7 @@ final class RemindersService: Service {
 
             // Set calendar (list)
             var calendar = self.eventStore.defaultCalendarForNewReminders()
-            if case let .string(listName) = arguments["list"] {
+            if case .string(let listName) = arguments["list"] {
                 if let matchingCalendar = self.eventStore.calendars(for: .reminder)
                     .first(where: { $0.title.lowercased() == listName.lowercased() })
                 {
@@ -229,25 +229,25 @@ final class RemindersService: Service {
             reminder.calendar = calendar
 
             // Set optional properties
-            if case let .string(dueDateStr) = arguments["due"],
-                let dueDate = ISO8601DateFormatter.parseFlexibleISODate(dueDateStr)
+            if case .string(let dueDateStr) = arguments["due"],
+               let dueDate = ISO8601DateFormatter.date(fromLenientISO8601String: dueDateStr)
             {
                 reminder.dueDateComponents = Calendar.current.dateComponents(
                     [.year, .month, .day, .hour, .minute, .second], from: dueDate)
             }
 
-            if case let .string(notes) = arguments["notes"] {
+            if case .string(let notes) = arguments["notes"] {
                 reminder.notes = notes
             }
 
-            if case let .string(priorityStr) = arguments["priority"] {
+            if case .string(let priorityStr) = arguments["priority"] {
                 reminder.priority = Int(EKReminderPriority.from(string: priorityStr).rawValue)
             }
 
             // Set alarms
-            if case let .array(alarmMinutes) = arguments["alarms"] {
+            if case .array(let alarmMinutes) = arguments["alarms"] {
                 reminder.alarms = alarmMinutes.compactMap {
-                    guard case let .int(minutes) = $0 else { return nil }
+                    guard case .int(let minutes) = $0 else { return nil }
                     return EKAlarm(relativeOffset: TimeInterval(-minutes * 60))
                 }
             }

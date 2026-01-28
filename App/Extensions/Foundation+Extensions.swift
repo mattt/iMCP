@@ -1,20 +1,21 @@
 import Foundation
 
 extension ISO8601DateFormatter {
-    /// Attempts to parse a date string using several common ISO 8601 format options.
+    /// Attempts to parse a date string using common ISO 8601 variants,
+    /// falling back to local-time parsing when no timezone is present.
     /// - Parameters:
     ///   - dateString: The string representation of the date.
     /// - Returns: A `Date` object if parsing is successful with any format, otherwise `nil`.
-    static func parseFlexibleISODate(_ dateString: String) -> Date? {
+    static func date(fromLenientISO8601String dateString: String) -> Date? {
         let formatter = ISO8601DateFormatter()
 
         let optionsToTry: [ISO8601DateFormatter.Options] = [
-            [.withInternetDateTime, .withFractionalSeconds],  // Handles yyyy-MM-dd\'T\'HH:mm:ss.SSSZ and yyyy-MM-dd\'T\'HH:mm:ss.SSSZZZZZ
-            [.withInternetDateTime],  // Handles yyyy-MM-dd\'T\'HH:mm:ssZ and yyyy-MM-dd\'T\'HH:mm:ssZZZZZ
-            [.withFullDate, .withFullTime, .withFractionalSeconds],  // Handles yyyy-MM-dd\'T\'HH:mm:ss.SSS (no Z or offset)
-            [.withFullDate, .withFullTime],  // Handles yyyy-MM-dd\'T\'HH:mm:ss (no Z or offset)
-            [.withFullDate, .withFullTime, .withSpaceBetweenDateAndTime, .withFractionalSeconds],  // Handles yyyy-MM-dd HH:mm:ss.SSSZZZZZ etc.
-            [.withFullDate, .withFullTime, .withSpaceBetweenDateAndTime],  // Handles yyyy-MM-dd HH:mm:ssZZZZZ etc.
+            [.withInternetDateTime, .withFractionalSeconds],  // `yyyy-MM-dd'T'HH:mm:ss.SSSZ`, `yyyy-MM-dd'T'HH:mm:ss.SSSZZZZZ`
+            [.withInternetDateTime],  // `yyyy-MM-dd'T'HH:mm:ssZ`, `yyyy-MM-dd'T'HH:mm:ssZZZZZ`
+            [.withFullDate, .withFullTime, .withFractionalSeconds],  // `yyyy-MM-dd'T'HH:mm:ss.SSS` (no zone)
+            [.withFullDate, .withFullTime],  // `yyyy-MM-dd'T'HH:mm:ss` (no zone)
+            [.withFullDate, .withFullTime, .withSpaceBetweenDateAndTime, .withFractionalSeconds],  // `yyyy-MM-dd HH:mm:ss.SSSZZZZZ`
+            [.withFullDate, .withFullTime, .withSpaceBetweenDateAndTime],  // `yyyy-MM-dd HH:mm:ssZZZZZ`
         ]
 
         for options in optionsToTry {
@@ -24,6 +25,36 @@ extension ISO8601DateFormatter {
             }
         }
 
+        // If the string already includes a timezone, don't guess with local-time parsing.
+        let hasTimeZoneInfo =
+            dateString.range(
+                of: #"([Zz]|[+-]\d{2}(:?\d{2})?)$"#,
+                options: .regularExpression
+            ) != nil
+        guard !hasTimeZoneInfo else {
+            return nil
+        }
+
+        // Fall back to local-time parsing for timezone-less inputs.
+        let fallbackFormats = [
+            "yyyy-MM-dd'T'HH:mm:ss.SSS",
+            "yyyy-MM-dd'T'HH:mm:ss",
+            "yyyy-MM-dd HH:mm:ss.SSS",
+            "yyyy-MM-dd HH:mm:ss",
+        ]
+
+        let fallbackFormatter = DateFormatter()
+        fallbackFormatter.locale = Locale(identifier: "en_US_POSIX")
+        fallbackFormatter.timeZone = TimeZone.current
+
+        for format in fallbackFormats {
+            fallbackFormatter.dateFormat = format
+            if let date = fallbackFormatter.date(from: dateString) {
+                return date
+            }
+        }
+
         return nil
     }
+
 }

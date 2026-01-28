@@ -110,7 +110,7 @@ final class CalendarService: Service {
 
             // Filter calendars based on provided names
             var calendars = self.eventStore.calendars(for: .event)
-            if case let .array(calendarNames) = arguments["calendars"],
+            if case .array(let calendarNames) = arguments["calendars"],
                 !calendarNames.isEmpty
             {
                 let requestedNames = Set(calendarNames.compactMap { $0.stringValue?.lowercased() })
@@ -122,14 +122,14 @@ final class CalendarService: Service {
             var startDate = now
             var endDate = Calendar.current.date(byAdding: .weekOfYear, value: 1, to: now)!
 
-            if case let .string(start) = arguments["start"],
-                let parsedStart = ISO8601DateFormatter.parseFlexibleISODate(start)
+            if case .string(let start) = arguments["start"],
+                let parsedStart = ISO8601DateFormatter.date(fromLenientISO8601String: start)
             {
                 startDate = parsedStart
             }
 
-            if case let .string(end) = arguments["end"],
-                let parsedEnd = ISO8601DateFormatter.parseFlexibleISODate(end)
+            if case .string(let end) = arguments["end"],
+               let parsedEnd = ISO8601DateFormatter.date(fromLenientISO8601String: end)
             {
                 endDate = parsedEnd
             }
@@ -145,13 +145,13 @@ final class CalendarService: Service {
             var events = self.eventStore.events(matching: predicate)
 
             // Apply additional filters
-            if case let .bool(includeAllDay) = arguments["includeAllDay"],
+            if case .bool(let includeAllDay) = arguments["includeAllDay"],
                 !includeAllDay
             {
                 events = events.filter { !$0.isAllDay }
             }
 
-            if case let .string(searchText) = arguments["query"],
+            if case .string(let searchText) = arguments["query"],
                 !searchText.isEmpty
             {
                 events = events.filter {
@@ -160,21 +160,21 @@ final class CalendarService: Service {
                 }
             }
 
-            if case let .string(status) = arguments["status"] {
+            if case .string(let status) = arguments["status"] {
                 let statusValue = EKEventStatus(status)
                 events = events.filter { $0.status == statusValue }
             }
 
-            if case let .string(availability) = arguments["availability"] {
+            if case .string(let availability) = arguments["availability"] {
                 let availabilityValue = EKEventAvailability(availability)
                 events = events.filter { $0.availability == availabilityValue }
             }
 
-            if case let .bool(hasAlarms) = arguments["hasAlarms"] {
+            if case .bool(let hasAlarms) = arguments["hasAlarms"] {
                 events = events.filter { ($0.hasAlarms) == hasAlarms }
             }
 
-            if case let .bool(isRecurring) = arguments["isRecurring"] {
+            if case .bool(let isRecurring) = arguments["isRecurring"] {
                 events = events.filter { ($0.hasRecurrenceRules) == isRecurring }
             }
 
@@ -311,7 +311,7 @@ final class CalendarService: Service {
             let event = EKEvent(eventStore: self.eventStore)
 
             // Set required properties
-            guard case let .string(title) = arguments["title"] else {
+            guard case .string(let title) = arguments["title"] else {
                 throw NSError(
                     domain: "CalendarError", code: 2,
                     userInfo: [NSLocalizedDescriptionKey: "Event title is required"]
@@ -320,10 +320,10 @@ final class CalendarService: Service {
             event.title = title
 
             // Parse dates
-            guard case let .string(startDateStr) = arguments["start"],
-                let startDate = ISO8601DateFormatter.parseFlexibleISODate(startDateStr),
-                case let .string(endDateStr) = arguments["end"],
-                let endDate = ISO8601DateFormatter.parseFlexibleISODate(endDateStr)
+            guard case .string(let startDateStr) = arguments["start"],
+                let startDate = ISO8601DateFormatter.date(fromLenientISO8601String: startDateStr),
+                case .string(let endDateStr) = arguments["end"],
+                let endDate = ISO8601DateFormatter.date(fromLenientISO8601String: endDateStr)
             else {
                 throw NSError(
                     domain: "CalendarError", code: 2,
@@ -358,7 +358,7 @@ final class CalendarService: Service {
 
             // Set calendar
             var calendar = self.eventStore.defaultCalendarForNewEvents
-            if case let .string(calendarName) = arguments["calendar"] {
+            if case .string(let calendarName) = arguments["calendar"] {
                 if let matchingCalendar = self.eventStore.calendars(for: .event)
                     .first(where: { $0.title.lowercased() == calendarName.lowercased() })
                 {
@@ -368,52 +368,51 @@ final class CalendarService: Service {
             event.calendar = calendar
 
             // Set optional properties
-            if case let .string(location) = arguments["location"] {
+            if case .string(let location) = arguments["location"] {
                 event.location = location
             }
 
-            if case let .string(notes) = arguments["notes"] {
+            if case .string(let notes) = arguments["notes"] {
                 event.notes = notes
             }
 
-            if case let .string(urlString) = arguments["url"],
+            if case .string(let urlString) = arguments["url"],
                 let url = URL(string: urlString)
             {
                 event.url = url
             }
 
-            if case let .string(availability) = arguments["availability"] {
+            if case .string(let availability) = arguments["availability"] {
                 event.availability = EKEventAvailability(availability)
             }
 
             // Set alarms
-            if case let .array(alarmConfigs) = arguments["alarms"] {
+            if case .array(let alarmConfigs) = arguments["alarms"] {
                 var alarms: [EKAlarm] = []
 
                 for alarmConfig in alarmConfigs {
-                    guard case let .object(config) = alarmConfig else { continue }
+                    guard case .object(let config) = alarmConfig else { continue }
 
                     var alarm: EKAlarm?
 
                     let alarmType = config["type"]?.stringValue ?? "relative"
                     switch alarmType {
                     case "relative":
-                        if case let .int(minutes) = config["minutes"] {
+                        if case .int(let minutes) = config["minutes"] {
                             alarm = EKAlarm(relativeOffset: TimeInterval(-minutes * 60))
                         }
 
                     case "absolute":
-                        if case let .string(datetimeStr) = config["datetime"],
-                            let absoluteDate = ISO8601DateFormatter.parseFlexibleISODate(
-                                datetimeStr)
+                        if case .string(let datetimeStr) = config["datetime"],
+                            let absoluteDate = ISO8601DateFormatter.date(fromLenientISO8601String: datetimeStr)
                         {
                             alarm = EKAlarm(absoluteDate: absoluteDate)
                         }
 
                     case "proximity":
-                        if case let .string(locationTitle) = config["locationTitle"],
-                            case let .double(latitude) = config["latitude"],
-                            case let .double(longitude) = config["longitude"]
+                        if case .string(let locationTitle) = config["locationTitle"],
+                            case .double(let latitude) = config["latitude"],
+                            case .double(let longitude) = config["longitude"]
                         {
                             alarm = EKAlarm()
 
@@ -422,9 +421,9 @@ final class CalendarService: Service {
                             structuredLocation.geoLocation = CLLocation(
                                 latitude: latitude, longitude: longitude)
 
-                            if case let .double(radius) = config["radius"] {
+                            if case .double(let radius) = config["radius"] {
                                 structuredLocation.radius = radius
-                            } else if case let .int(radiusInt) = config["radius"] {
+                            } else if case .int(let radiusInt) = config["radius"] {
                                 structuredLocation.radius = Double(radiusInt)
                             }
 
@@ -437,19 +436,20 @@ final class CalendarService: Service {
                         }
 
                     default:
-                        log.error("Unexpected alarm type encountered: \(alarmType, privacy: .public)")
+                        log.error(
+                            "Unexpected alarm type encountered: \(alarmType, privacy: .public)")
                         continue
                     }
 
                     guard let alarm = alarm else { continue }
 
-                    if case let .string(soundName) = config["sound"],
+                    if case .string(let soundName) = config["sound"],
                         Sound(rawValue: soundName) != nil
                     {
                         alarm.soundName = soundName
                     }
 
-                    if case let .string(email) = config["emailAddress"], !email.isEmpty {
+                    if case .string(let email) = config["emailAddress"], !email.isEmpty {
                         alarm.emailAddress = email
                     }
 
