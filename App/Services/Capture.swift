@@ -243,16 +243,10 @@ final class CaptureService: NSObject, Service {
             captureSession.addOutput(photoOutput)
 
             return try await withCheckedThrowingContinuation { continuation in
-                let lock = NSLock()
-                var hasResumed = false
-                let resumeOnce = { (result: Result<Value, Error>, cleanup: (() async -> Void)? = nil) async in
-                    lock.lock()
-                    guard !hasResumed else {
-                        lock.unlock()
-                        return
-                    }
-                    hasResumed = true
-                    lock.unlock()
+                let resumeGate = ResumeGate()
+                let resumeOnce: (Result<Value, Error>, (() async -> Void)?) async -> Void = {
+                    result, cleanup in
+                    guard await resumeGate.shouldResume() else { return }
                     if let cleanup = cleanup {
                         await cleanup()
                     }
@@ -269,7 +263,7 @@ final class CaptureService: NSObject, Service {
                                 userInfo: [NSLocalizedDescriptionKey: "Camera capture timeout"]
                             )
                         ),
-                        cleanup: {
+                        {
                             await MainActor.run {
                                 captureSession.stopRunning()
                                 self.currentPhotoDelegate = nil
@@ -298,7 +292,7 @@ final class CaptureService: NSObject, Service {
                                 timeoutTask.cancel()
                                 captureSession.stopRunning()
                                 self?.currentPhotoDelegate = nil
-                                await resumeOnce(result)
+                                await resumeOnce(result, nil)
                             }
                         }
                     )
@@ -576,16 +570,10 @@ final class CaptureService: NSObject, Service {
             }
 
             return try await withCheckedThrowingContinuation { continuation in
-                let lock = NSLock()
-                var hasResumed = false
-                let resumeOnce = { (result: Result<Value, Error>) async in
-                    lock.lock()
-                    guard !hasResumed else {
-                        lock.unlock()
-                        return
-                    }
-                    hasResumed = true
-                    lock.unlock()
+                let resumeGate = ResumeGate()
+                let resumeOnce: (Result<Value, Error>, (() async -> Void)?) async -> Void = {
+                    result, _ in
+                    guard await resumeGate.shouldResume() else { return }
                     continuation.resume(with: result)
                 }
 
@@ -600,7 +588,8 @@ final class CaptureService: NSObject, Service {
                                     NSLocalizedDescriptionKey: "Screenshot capture timeout"
                                 ]
                             )
-                        )
+                        ),
+                        nil
                     )
                 }
 
@@ -641,10 +630,10 @@ final class CaptureService: NSObject, Service {
 
                         timeoutTask.cancel()
                         let screenshotValue = Value.data(mimeType: format.mimeType, imageData)
-                        await resumeOnce(.success(screenshotValue))
+                        await resumeOnce(.success(screenshotValue), nil)
                     } catch {
                         timeoutTask.cancel()
-                        await resumeOnce(.failure(error))
+                        await resumeOnce(.failure(error), nil)
                     }
                 }
             }
