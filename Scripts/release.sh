@@ -43,7 +43,27 @@ Environment:
 EOF
 }
 
+resolve_app_bundle() {
+  if [[ -d "${APP_BUNDLE}" ]]; then
+    return 0
+  fi
+
+  local built_products_dir=""
+  local full_product_name=""
+
+  built_products_dir="$(xcodebuild -quiet -scheme "${SCHEME}" -configuration "${CONFIGURATION}" -destination "${DESTINATION}" -showBuildSettings | awk -F ' = ' '/BUILT_PRODUCTS_DIR/ {print $2; exit}')"
+  full_product_name="$(xcodebuild -quiet -scheme "${SCHEME}" -configuration "${CONFIGURATION}" -destination "${DESTINATION}" -showBuildSettings | awk -F ' = ' '/FULL_PRODUCT_NAME/ {print $2; exit}')"
+
+  if [[ -n "${built_products_dir}" && -n "${full_product_name}" ]]; then
+    local candidate="${built_products_dir}/${full_product_name}"
+    if [[ -d "${candidate}" ]]; then
+      APP_BUNDLE="${candidate}"
+    fi
+  fi
+}
+
 require_app_bundle() {
+  resolve_app_bundle
   if [[ ! -d "${APP_BUNDLE}" ]]; then
     echo "Missing app bundle: ${APP_BUNDLE}" >&2
     exit 1
@@ -121,6 +141,7 @@ build_zip() {
 build_check() {
   echo "Checking release build (scheme: ${SCHEME}, configuration: ${CONFIGURATION})"
   xcodebuild -quiet -scheme "${SCHEME}" -configuration "${CONFIGURATION}" -destination "${DESTINATION}" build
+  resolve_app_bundle
 }
 
 notarize() {
