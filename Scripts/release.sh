@@ -9,6 +9,7 @@ BUILD_NUMBER="${BUILD_NUMBER:-}"
 SCHEME="${SCHEME:-iMCP}"
 CONFIGURATION="${CONFIGURATION:-Release}"
 DESTINATION="${DESTINATION:-platform=macOS}"
+PROJECT_FILE="${PROJECT_FILE:-${APP_NAME}.xcodeproj/project.pbxproj}"
 
 NOTARY_ZIP="${APP_BUNDLE}.zip"
 RELEASE_ZIP="${APP_NAME}.zip"
@@ -38,6 +39,7 @@ Environment:
   SCHEME            Xcode scheme for build check (default: iMCP)
   CONFIGURATION     Build configuration for build check (default: Release)
   DESTINATION       Build destination for build check (default: platform=macOS)
+  PROJECT_FILE      Xcode project file (default: ${APP_NAME}.xcodeproj/project.pbxproj)
 EOF
 }
 
@@ -77,16 +79,36 @@ trap cleanup EXIT
 
 bump_version() {
   require_version
-  echo "Bumping version to ${VERSION}"
-  agvtool new-marketing-version "${VERSION}"
-
-  if [[ -n "${BUILD_NUMBER}" ]]; then
-    echo "Setting build number to ${BUILD_NUMBER}"
-    agvtool new-version -all "${BUILD_NUMBER}"
-  else
-    echo "Bumping build number"
-    agvtool next-version -all
+  if [[ ! -f "${PROJECT_FILE}" ]]; then
+    echo "Missing project file: ${PROJECT_FILE}" >&2
+    exit 1
   fi
+  local resolved_build_number="${BUILD_NUMBER}"
+  if [[ -z "${resolved_build_number}" ]]; then
+    resolved_build_number="0"
+    while IFS= read -r line; do
+      if [[ "${line}" =~ CURRENT_PROJECT_VERSION\ =\ ([0-9]+)\; ]]; then
+        resolved_build_number="${BASH_REMATCH[1]}"
+        break
+      fi
+    done < "${PROJECT_FILE}"
+    resolved_build_number="$((resolved_build_number + 1))"
+  fi
+
+  echo "Setting MARKETING_VERSION to ${VERSION}"
+  echo "Setting CURRENT_PROJECT_VERSION to ${resolved_build_number}"
+  local tmp_file
+  tmp_file="$(mktemp)"
+  while IFS= read -r line; do
+    if [[ "${line}" == *"MARKETING_VERSION ="* ]]; then
+      printf '%s\n' "${line%%MARKETING_VERSION = *}MARKETING_VERSION = ${VERSION};" >> "${tmp_file}"
+    elif [[ "${line}" == *"CURRENT_PROJECT_VERSION ="* ]]; then
+      printf '%s\n' "${line%%CURRENT_PROJECT_VERSION = *}CURRENT_PROJECT_VERSION = ${resolved_build_number};" >> "${tmp_file}"
+    else
+      printf '%s\n' "${line}" >> "${tmp_file}"
+    fi
+  done < "${PROJECT_FILE}"
+  mv "${tmp_file}" "${PROJECT_FILE}"
 }
 
 build_zip() {
