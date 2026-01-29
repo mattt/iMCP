@@ -82,6 +82,12 @@ final class ContactsService: Service {
 
     static let shared = ContactsService()
 
+    private func runContactStore<T>(_ operation: @escaping () throws -> T) async throws -> T {
+        try await Task(priority: .utility) {
+            try operation()
+        }.value
+    }
+
     var isActivated: Bool {
         get async {
             let status = CNContactStore.authorizationStatus(for: .contacts)
@@ -138,7 +144,9 @@ final class ContactsService: Service {
                 openWorldHint: false
             )
         ) { _ in
-            let contact = try self.contactStore.unifiedMeContactWithKeys(toFetch: contactKeys)
+            let contact = try await self.runContactStore {
+                try self.contactStore.unifiedMeContactWithKeys(toFetch: contactKeys)
+            }
             return Person(contact)
         }
 
@@ -206,10 +214,12 @@ final class ContactsService: Service {
                 ? predicates[0]
                 : NSCompoundPredicate(andPredicateWithSubpredicates: predicates)
 
-            let contacts = try self.contactStore.unifiedContacts(
-                matching: finalPredicate,
-                keysToFetch: contactKeys
-            )
+            let contacts = try await self.runContactStore {
+                try self.contactStore.unifiedContacts(
+                    matching: finalPredicate,
+                    keysToFetch: contactKeys
+                )
+            }
 
             return contacts.compactMap { Person($0) }
         }
@@ -247,7 +257,9 @@ final class ContactsService: Service {
             // Fetch the mutable copy of the contact
             let predicate = CNContact.predicateForContacts(withIdentifiers: [identifier])
             let contact =
-                try self.contactStore.unifiedContacts(matching: predicate, keysToFetch: contactKeys)
+                try await self.runContactStore {
+                    try self.contactStore.unifiedContacts(matching: predicate, keysToFetch: contactKeys)
+                }
                 .first?
                 .mutableCopy() as? CNMutableContact
 
@@ -270,7 +282,9 @@ final class ContactsService: Service {
             saveRequest.update(updatedContact)
 
             // Save the changes
-            try self.contactStore.execute(saveRequest)
+            try await self.runContactStore {
+                try self.contactStore.execute(saveRequest)
+            }
 
             return Person(updatedContact)
         }
@@ -307,7 +321,9 @@ final class ContactsService: Service {
             saveRequest.add(newContact, toContainerWithIdentifier: nil)
 
             // Execute the save request
-            try self.contactStore.execute(saveRequest)
+            try await self.runContactStore {
+                try self.contactStore.execute(saveRequest)
+            }
 
             return Person(newContact)
         }
