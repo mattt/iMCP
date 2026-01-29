@@ -65,12 +65,12 @@ final class CalendarService: Service {
                 properties: [
                     "start": .string(
                         description:
-                            "Start date/time of the range (defaults to now). If timezone is omitted, local time is assumed. Date-only uses local midnight.",
+                            "Start date/time (defaults to now; if end is date-only and start is omitted, uses end's local midnight). If timezone is omitted, local time is assumed.",
                         format: .dateTime
                     ),
                     "end": .string(
                         description:
-                            "End date/time of the range (defaults to one week from start; one day if start is date-only). If timezone is omitted, local time is assumed. Date-only uses local midnight.",
+                            "End date/time (defaults to one week from start; one day if start is date-only). If timezone is omitted, local time is assumed.",
                         format: .dateTime
                     ),
                     "calendars": .array(
@@ -126,6 +126,7 @@ final class CalendarService: Service {
             let calendar = Calendar.current
             var startDate = now
             var endDate = calendar.date(byAdding: .weekOfYear, value: 1, to: now)!
+            var hasStart = false
             var hasEnd = false
             var startIsDateOnly = false
             var endIsDateOnly = false
@@ -135,6 +136,7 @@ final class CalendarService: Service {
                     fromISO8601String: start
                 )
             {
+                hasStart = true
                 startDate = parsedStart.date
                 startIsDateOnly = parsedStart.isDateOnly
             }
@@ -147,6 +149,11 @@ final class CalendarService: Service {
                 hasEnd = true
                 endDate = parsedEnd.date
                 endIsDateOnly = parsedEnd.isDateOnly
+            }
+
+            if !hasStart, endIsDateOnly {
+                startDate = endDate
+                startIsDateOnly = true
             }
 
             startDate = calendar.normalizedStartDate(from: startDate, isDateOnly: startIsDateOnly)
