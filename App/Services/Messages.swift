@@ -97,9 +97,11 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
             if let startDateStr = arguments["start"]?.stringValue,
                 let endDateStr = arguments["end"]?.stringValue,
                 let parsedStart = ISO8601DateFormatter.parsedLenientISO8601Date(
-                    fromISO8601String: startDateStr),
+                    fromISO8601String: startDateStr
+                ),
                 let parsedEnd = ISO8601DateFormatter.parsedLenientISO8601Date(
-                    fromISO8601String: endDateStr)
+                    fromISO8601String: endDateStr
+                )
             {
                 let calendar = Calendar.current
                 let normalizedStart = calendar.normalizedStartDate(
@@ -111,7 +113,7 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                     isDateOnly: parsedEnd.isDateOnly
                 )
 
-                dateRange = normalizedStart..<normalizedEnd
+                dateRange = normalizedStart ..< normalizedEnd
             }
 
             let searchTerm = arguments["query"]?.stringValue
@@ -198,8 +200,7 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
         }
     }
 
-    private func withSecurityScopedAccess<T>(_ url: URL, _ operation: (URL) throws -> T) throws -> T
-    {
+    private func withSecurityScopedAccess<T>(_ url: URL, _ operation: (URL) throws -> T) throws -> T {
         guard url.startAccessingSecurityScopedResource() else {
             log.error("Failed to start accessing security-scoped resource")
             throw DatabaseAccessError.securityScopeAccessFailed
@@ -304,7 +305,8 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
     func panel(_ sender: Any, shouldEnable url: URL) -> Bool {
         let shouldEnable = url.lastPathComponent == "chat.db"
         log.debug(
-            "File selection panel: \(shouldEnable ? "enabling" : "disabling") URL: \(url.path)")
+            "File selection panel: \(shouldEnable ? "enabling" : "disabling") URL: \(url.path)"
+        )
         return shouldEnable
     }
 }

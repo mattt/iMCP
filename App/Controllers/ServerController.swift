@@ -337,7 +337,9 @@ final class ServerController: ObservableObject {
     }
 
     private func showConnectionApprovalAlert(
-        clientID: String, approve: @escaping () -> Void, deny: @escaping () -> Void
+        clientID: String,
+        approve: @escaping () -> Void,
+        deny: @escaping () -> Void
     ) {
         log.notice("Connection approval requested for client: \(clientID)")
 
@@ -956,7 +958,9 @@ actor ServerNetworkManager {
                                         data: data.base64EncodedString(),
                                         mimeType: mimeType
                                     )
-                                ], isError: false)
+                                ],
+                                isError: false
+                            )
                         case .data(let mimeType?, let data) where mimeType.hasPrefix("image/"):
                             return CallTool.Result(
                                 content: [
@@ -965,7 +969,9 @@ actor ServerNetworkManager {
                                         mimeType: mimeType,
                                         metadata: nil
                                     )
-                                ], isError: false)
+                                ],
+                                isError: false
+                            )
                         default:
                             let encoder = JSONEncoder()
                             encoder.userInfo[Ontology.DateTime.timeZoneOverrideKey] =
@@ -979,7 +985,8 @@ actor ServerNetworkManager {
                         }
                     } catch {
                         log.error(
-                            "Error executing tool \(params.name): \(error.localizedDescription)")
+                            "Error executing tool \(params.name): \(error.localizedDescription)"
+                        )
                         return CallTool.Result(content: [.text("Error: \(error)")], isError: true)
                     }
                 }

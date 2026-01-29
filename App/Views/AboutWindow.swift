@@ -42,7 +42,8 @@ private struct AboutView: View {
 
                     Button("Report an Issue...") {
                         NSWorkspace.shared.open(
-                            URL(string: "https://github.com/mattt/iMCP/issues/new")!)
+                            URL(string: "https://github.com/mattt/iMCP/issues/new")!
+                        )
                     }
                 }
             }

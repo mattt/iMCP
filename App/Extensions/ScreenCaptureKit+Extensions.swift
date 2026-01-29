@@ -90,7 +90,9 @@ enum ScreenshotFormat: String, Hashable, CaseIterable {
 extension SCShareableContent {
     static func getAvailableContent() async throws -> SCShareableContent {
         return try await SCShareableContent.excludingDesktopWindows(
-            false, onScreenWindowsOnly: true)
+            false,
+            onScreenWindowsOnly: true
+        )
     }
 }
 

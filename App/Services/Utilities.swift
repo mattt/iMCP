@@ -15,7 +15,8 @@ final class UtilitiesService: Service {
                 properties: [
                     "sound": .string(
                         default: .string(Sound.default.rawValue),
-                        enum: Sound.allCases.map { .string($0.rawValue) })
+                        enum: Sound.allCases.map { .string($0.rawValue) }
+                    )
                 ],
                 required: ["sound"],
                 additionalProperties: false
@@ -30,10 +31,12 @@ final class UtilitiesService: Service {
             guard let sound = Sound(rawValue: rawValue) else {
                 log.error("Invalid sound: \(rawValue)")
                 throw NSError(
-                    domain: "SoundError", code: 1,
+                    domain: "SoundError",
+                    code: 1,
                     userInfo: [
                         NSLocalizedDescriptionKey: "Invalid sound"
-                    ])
+                    ]
+                )
             }
 
             return NSSound.play(sound)

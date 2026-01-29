@@ -35,14 +35,17 @@ final class WeatherService: Service {
             else {
                 log.error("Invalid coordinates")
                 throw NSError(
-                    domain: "WeatherServiceError", code: 1,
+                    domain: "WeatherServiceError",
+                    code: 1,
                     userInfo: [NSLocalizedDescriptionKey: "Invalid coordinates"]
                 )
             }
 
             let location = CLLocation(latitude: latitude, longitude: longitude)
             let currentWeather = try await self.weatherService.weather(
-                for: location, including: .current)
+                for: location,
+                including: .current
+            )
 
             return WeatherConditions(currentWeather)
         }
@@ -75,7 +78,8 @@ final class WeatherService: Service {
             else {
                 log.error("Invalid coordinates")
                 throw NSError(
-                    domain: "WeatherServiceError", code: 1,
+                    domain: "WeatherServiceError",
+                    code: 1,
                     userInfo: [NSLocalizedDescriptionKey: "Invalid coordinates"]
                 )
             }
@@ -86,11 +90,13 @@ final class WeatherService: Service {
             } else if case let .double(daysRequested) = arguments["days"] {
                 days = Int(daysRequested)
             }
-            days = days.clamped(to: 1...10)
+            days = days.clamped(to: 1 ... 10)
 
             let location = CLLocation(latitude: latitude, longitude: longitude)
             let dailyForecast = try await self.weatherService.weather(
-                for: location, including: .daily)
+                for: location,
+                including: .daily
+            )
 
             return dailyForecast.prefix(days).map { WeatherForecast($0) }
         }
@@ -123,7 +129,8 @@ final class WeatherService: Service {
             else {
                 log.error("Invalid coordinates")
                 throw NSError(
-                    domain: "WeatherServiceError", code: 1,
+                    domain: "WeatherServiceError",
+                    code: 1,
                     userInfo: [NSLocalizedDescriptionKey: "Invalid coordinates"]
                 )
             }
@@ -140,7 +147,9 @@ final class WeatherService: Service {
 
             let location = CLLocation(latitude: latitude, longitude: longitude)
             let hourlyForecasts = try await self.weatherService.weather(
-                for: location, including: .hourly)
+                for: location,
+                including: .hourly
+            )
 
             return hourlyForecasts.prefix(hours).map { WeatherForecast($0) }
         }
@@ -173,7 +182,8 @@ final class WeatherService: Service {
             else {
                 log.error("Invalid coordinates")
                 throw NSError(
-                    domain: "WeatherServiceError", code: 1,
+                    domain: "WeatherServiceError",
+                    code: 1,
                     userInfo: [NSLocalizedDescriptionKey: "Invalid coordinates"]
                 )
             }
@@ -184,15 +194,18 @@ final class WeatherService: Service {
             } else if case let .double(minutesRequested) = arguments["minutes"] {
                 minutes = Int(minutesRequested)
             }
-            minutes = minutes.clamped(to: 1...120)
+            minutes = minutes.clamped(to: 1 ... 120)
 
             let location = CLLocation(latitude: latitude, longitude: longitude)
             guard
                 let minuteByMinuteForecast = try await self.weatherService.weather(
-                    for: location, including: .minute)
+                    for: location,
+                    including: .minute
+                )
             else {
                 throw NSError(
-                    domain: "WeatherServiceError", code: 2,
+                    domain: "WeatherServiceError",
+                    code: 2,
                     userInfo: [NSLocalizedDescriptionKey: "No minute-by-minute forecast available"]
                 )
             }

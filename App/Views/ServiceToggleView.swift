@@ -4,11 +4,11 @@ import AppKit
 struct ServiceToggleView: View {
     let config: ServiceConfig
     @State private var isServiceActivated = false
-    
+
     // MARK: Environment
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.isEnabled) private var isEnabled
-    
+
     // MARK: Private State
     private let buttonSize: CGFloat = 26
     private let imagePadding: CGFloat = 5
@@ -41,7 +41,7 @@ struct ServiceToggleView: View {
             .buttonStyle(PlainButtonStyle())
             .disabled(!isEnabled)
             .frame(width: buttonSize, height: buttonSize)
-            
+
             Text(config.name)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .foregroundColor(isEnabled ? Color.primary : .primary.opacity(0.5))
@@ -52,7 +52,7 @@ struct ServiceToggleView: View {
             isServiceActivated = await config.isActivated
         }
     }
-    
+
     private var buttonBackgroundColor: Color {
         if config.binding.wrappedValue {
             return config.color.opacity(isEnabled ? 1.0 : 0.4)

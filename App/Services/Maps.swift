@@ -69,7 +69,8 @@ final class MapsService: NSObject, Service {
         ) { arguments in
             guard let query = arguments["query"]?.stringValue else {
                 throw NSError(
-                    domain: "MapsServiceError", code: 1,
+                    domain: "MapsServiceError",
+                    code: 1,
                     userInfo: [NSLocalizedDescriptionKey: "Search query is required"]
                 )
             }
@@ -106,7 +107,8 @@ final class MapsService: NSObject, Service {
                     guard let response = response else {
                         continuation.resume(
                             throwing: NSError(
-                                domain: "MapsServiceError", code: 2,
+                                domain: "MapsServiceError",
+                                code: 2,
                                 userInfo: [NSLocalizedDescriptionKey: "No search results"]
                             )
                         )
@@ -174,7 +176,8 @@ final class MapsService: NSObject, Service {
                             != nil)
             else {
                 throw NSError(
-                    domain: "MapsServiceError", code: 3,
+                    domain: "MapsServiceError",
+                    code: 3,
                     userInfo: [NSLocalizedDescriptionKey: "Origin address or coordinates required"]
                 )
             }
@@ -188,7 +191,8 @@ final class MapsService: NSObject, Service {
                             .doubleValue != nil)
             else {
                 throw NSError(
-                    domain: "MapsServiceError", code: 4,
+                    domain: "MapsServiceError",
+                    code: 4,
                     userInfo: [
                         NSLocalizedDescriptionKey: "Destination address or coordinates required"
                     ]
@@ -236,7 +240,8 @@ final class MapsService: NSObject, Service {
                     guard let response = response, !response.routes.isEmpty else {
                         continuation.resume(
                             throwing: NSError(
-                                domain: "MapsServiceError", code: 5,
+                                domain: "MapsServiceError",
+                                code: 5,
                                 userInfo: [NSLocalizedDescriptionKey: "No routes found"]
                             )
                         )
@@ -284,7 +289,8 @@ final class MapsService: NSObject, Service {
                 let longitude = arguments["longitude"]?.doubleValue
             else {
                 throw NSError(
-                    domain: "MapsServiceError", code: 6,
+                    domain: "MapsServiceError",
+                    code: 6,
                     userInfo: [NSLocalizedDescriptionKey: "Category and coordinates are required"]
                 )
             }
@@ -294,7 +300,8 @@ final class MapsService: NSObject, Service {
 
             guard let category = MKPointOfInterestCategory.from(string: categoryString) else {
                 throw NSError(
-                    domain: "MapsServiceError", code: 7,
+                    domain: "MapsServiceError",
+                    code: 7,
                     userInfo: [NSLocalizedDescriptionKey: "Invalid POI category"]
                 )
             }
@@ -319,7 +326,8 @@ final class MapsService: NSObject, Service {
                     guard let response = response else {
                         continuation.resume(
                             throwing: NSError(
-                                domain: "MapsServiceError", code: 8,
+                                domain: "MapsServiceError",
+                                code: 8,
                                 userInfo: [NSLocalizedDescriptionKey: "No POI results found"]
                             )
                         )
@@ -369,7 +377,8 @@ final class MapsService: NSObject, Service {
                 let destLng = arguments["destinationLongitude"]?.doubleValue
             else {
                 throw NSError(
-                    domain: "MapsServiceError", code: 9,
+                    domain: "MapsServiceError",
+                    code: 9,
                     userInfo: [
                         NSLocalizedDescriptionKey: "Origin and destination coordinates required"
                     ]
@@ -422,7 +431,8 @@ final class MapsService: NSObject, Service {
                     guard let response = response else {
                         continuation.resume(
                             throwing: NSError(
-                                domain: "MapsServiceError", code: 10,
+                                domain: "MapsServiceError",
+                                code: 10,
                                 userInfo: [NSLocalizedDescriptionKey: "Could not calculate ETA"]
                             )
                         )
@@ -499,7 +509,8 @@ final class MapsService: NSObject, Service {
                 let longitudeDelta = arguments["longitudeDelta"]?.doubleValue
             else {
                 throw NSError(
-                    domain: "MapsServiceError", code: 13,
+                    domain: "MapsServiceError",
+                    code: 13,
                     userInfo: [
                         NSLocalizedDescriptionKey:
                             "Latitude, longitude, latitudeDelta, and longitudeDelta are required"
@@ -515,7 +526,9 @@ final class MapsService: NSObject, Service {
 
             let center = CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
             let span = MKCoordinateSpan(
-                latitudeDelta: latitudeDelta, longitudeDelta: longitudeDelta)
+                latitudeDelta: latitudeDelta,
+                longitudeDelta: longitudeDelta
+            )
             options.region = MKCoordinateRegion(center: center, span: span)
 
             switch mapTypeString {
@@ -575,7 +588,8 @@ final class MapsService: NSObject, Service {
                         log.error("Map snapshot failed: No snapshot data")
                         continuation.resume(
                             throwing: NSError(
-                                domain: "MapsServiceError", code: 14,
+                                domain: "MapsServiceError",
+                                code: 14,
                                 userInfo: [
                                     NSLocalizedDescriptionKey: "Failed to generate map snapshot"
                                 ]
@@ -592,7 +606,8 @@ final class MapsService: NSObject, Service {
                         log.error("Map snapshot failed: Could not convert image to PNG")
                         continuation.resume(
                             throwing: NSError(
-                                domain: "MapsServiceError", code: 15,
+                                domain: "MapsServiceError",
+                                code: 15,
                                 userInfo: [
                                     NSLocalizedDescriptionKey:
                                         "Failed to convert snapshot to PNG format"
@@ -625,7 +640,8 @@ final class MapsService: NSObject, Service {
 
             guard let mapItem = response.mapItems.first else {
                 throw NSError(
-                    domain: "MapsServiceError", code: 11,
+                    domain: "MapsServiceError",
+                    code: 11,
                     userInfo: [
                         NSLocalizedDescriptionKey: "Could not find location for address: \(address)"
                     ]
@@ -645,7 +661,8 @@ final class MapsService: NSObject, Service {
             return MKMapItem(placemark: placemark)
         } else {
             throw NSError(
-                domain: "MapsServiceError", code: 12,
+                domain: "MapsServiceError",
+                code: 12,
                 userInfo: [
                     NSLocalizedDescriptionKey: "Either address or coordinates must be provided"
                 ]

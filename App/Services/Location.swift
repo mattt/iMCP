@@ -66,7 +66,8 @@ final class LocationService: NSObject, Service, CLLocationManagerDelegate {
                         domain: "LocationServiceError",
                         code: 7,
                         userInfo: [NSLocalizedDescriptionKey: "Location access denied"]
-                    ))
+                    )
+                )
                 self.authorizationContinuation = nil
             case .notDetermined:
                 // Need to request authorization
@@ -80,7 +81,8 @@ final class LocationService: NSObject, Service, CLLocationManagerDelegate {
                         domain: "LocationServiceError",
                         code: 8,
                         userInfo: [NSLocalizedDescriptionKey: "Unknown authorization status"]
-                    ))
+                    )
+                )
                 self.authorizationContinuation = nil
             }
         }
@@ -109,18 +111,21 @@ final class LocationService: NSObject, Service, CLLocationManagerDelegate {
                         log.error("Location access not authorized")
                         continuation.resume(
                             throwing: NSError(
-                                domain: "LocationServiceError", code: 1,
+                                domain: "LocationServiceError",
+                                code: 1,
                                 userInfo: [
                                     NSLocalizedDescriptionKey: "Location access not authorized"
                                 ]
-                            ))
+                            )
+                        )
                         return
                     }
 
                     // If we already have a recent location, use it
                     if let location = self.latestLocation {
                         continuation.resume(
-                            returning: GeoCoordinates(location))
+                            returning: GeoCoordinates(location)
+                        )
                         return
                     }
 
@@ -158,13 +163,16 @@ final class LocationService: NSObject, Service, CLLocationManagerDelegate {
 
                     if let location = location {
                         continuation.resume(
-                            returning: GeoCoordinates(location))
+                            returning: GeoCoordinates(location)
+                        )
                     } else {
                         continuation.resume(
                             throwing: NSError(
-                                domain: "LocationServiceError", code: 2,
+                                domain: "LocationServiceError",
+                                code: 2,
                                 userInfo: [NSLocalizedDescriptionKey: "Failed to get location"]
-                            ))
+                            )
+                        )
                     }
                 }
             }
@@ -190,7 +198,8 @@ final class LocationService: NSObject, Service, CLLocationManagerDelegate {
         ) { arguments in
             guard let address = arguments["address"]?.stringValue else {
                 throw NSError(
-                    domain: "LocationServiceError", code: 3,
+                    domain: "LocationServiceError",
+                    code: 3,
                     userInfo: [NSLocalizedDescriptionKey: "Invalid address"]
                 )
             }
@@ -209,11 +218,13 @@ final class LocationService: NSObject, Service, CLLocationManagerDelegate {
                     else {
                         continuation.resume(
                             throwing: NSError(
-                                domain: "LocationServiceError", code: 4,
+                                domain: "LocationServiceError",
+                                code: 4,
                                 userInfo: [
                                     NSLocalizedDescriptionKey: "No location found for address"
                                 ]
-                            ))
+                            )
+                        )
                         return
                     }
 
@@ -286,7 +297,8 @@ final class LocationService: NSObject, Service, CLLocationManagerDelegate {
             else {
                 log.error("Invalid coordinates")
                 throw NSError(
-                    domain: "LocationServiceError", code: 5,
+                    domain: "LocationServiceError",
+                    code: 5,
                     userInfo: [NSLocalizedDescriptionKey: "Invalid coordinates"]
                 )
             }
@@ -305,11 +317,13 @@ final class LocationService: NSObject, Service, CLLocationManagerDelegate {
                     guard let placemark = placemarks?.first else {
                         continuation.resume(
                             throwing: NSError(
-                                domain: "LocationServiceError", code: 6,
+                                domain: "LocationServiceError",
+                                code: 6,
                                 userInfo: [
                                     NSLocalizedDescriptionKey: "No address found for location"
                                 ]
-                            ))
+                            )
+                        )
                         return
                     }
 
@@ -376,7 +390,8 @@ final class LocationService: NSObject, Service, CLLocationManagerDelegate {
     }
 
     func locationManager(
-        _ manager: CLLocationManager, didChangeAuthorization status: CLAuthorizationStatus
+        _ manager: CLLocationManager,
+        didChangeAuthorization status: CLAuthorizationStatus
     ) {
         switch status {
         case .authorizedWhenInUse, .authorizedAlways:
@@ -390,7 +405,8 @@ final class LocationService: NSObject, Service, CLLocationManagerDelegate {
                     domain: "LocationServiceError",
                     code: 7,
                     userInfo: [NSLocalizedDescriptionKey: "Location access denied"]
-                ))
+                )
+            )
             authorizationContinuation = nil
         case .notDetermined:
             log.debug("Location access not determined")

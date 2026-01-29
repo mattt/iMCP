@@ -8,7 +8,11 @@ extension CGImage {
         let mutableData = NSMutableData()
         guard
             let destination = CGImageDestinationCreateWithData(
-                mutableData, UTType.png.identifier as CFString, 1, nil)
+                mutableData,
+                UTType.png.identifier as CFString,
+                1,
+                nil
+            )
         else {
             return nil
         }
@@ -23,7 +27,11 @@ extension CGImage {
         let mutableData = NSMutableData()
         guard
             let destination = CGImageDestinationCreateWithData(
-                mutableData, UTType.jpeg.identifier as CFString, 1, nil)
+                mutableData,
+                UTType.jpeg.identifier as CFString,
+                1,
+                nil
+            )
         else {
             return nil
         }

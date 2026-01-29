@@ -102,7 +102,10 @@ actor StdioProxy {
             connection.stateUpdateHandler = { state in
                 Task { [weak self] in
                     await self?.handleConnectionState(
-                        state, continuation: continuation, connectionState: connectionState)
+                        state,
+                        continuation: continuation,
+                        connectionState: connectionState
+                    )
                 }
             }
         }
@@ -224,7 +227,8 @@ actor StdioProxy {
             // Also check connection state
             if connection.state != .ready && connection.state != .preparing {
                 await log.debug(
-                    "Connection state changed to \(connection.state), stopping stdin handler")
+                    "Connection state changed to \(connection.state), stopping stdin handler"
+                )
                 throw StdioProxyError.connectionClosed
             }
 
@@ -242,7 +246,7 @@ actor StdioProxy {
 
                 if bytesRead > 0 {
                     // Append the read bytes to pending data
-                    pendingData.append(contentsOf: buffer[0..<bytesRead])
+                    pendingData.append(contentsOf: buffer[0 ..< bytesRead])
 
                     // Check if the data is only whitespace
                     let isOnlyWhitespace = pendingData.allSatisfy {
@@ -263,13 +267,15 @@ actor StdioProxy {
                                     } else {
                                         continuation.resume()
                                     }
-                                })
+                                }
+                            )
                         }
 
                         await log.debug("Sent \(pendingData.count) bytes to network")
                     } else if isOnlyWhitespace && !pendingData.isEmpty {
                         await log.trace(
-                            "Skipping send of \(pendingData.count) whitespace-only bytes")
+                            "Skipping send of \(pendingData.count) whitespace-only bytes"
+                        )
                     }
 
                     // Clear pending data after processing
@@ -305,7 +311,8 @@ actor StdioProxy {
             // Also check connection state
             if connection.state != .ready && connection.state != .preparing {
                 await log.debug(
-                    "Connection state changed to \(connection.state), stopping network handler")
+                    "Connection state changed to \(connection.state), stopping network handler"
+                )
                 throw StdioProxyError.connectionClosed
             }
 
@@ -327,7 +334,10 @@ actor StdioProxy {
                 let data = try await withCheckedThrowingContinuation {
                     (continuation: CheckedContinuation<Data, Swift.Error>) in
                     connection.receive(minimumIncompleteLength: 1, maximumLength: bufferSize) {
-                        data, _, isComplete, error in
+                        data,
+                        _,
+                        isComplete,
+                        error in
                         if let error = error {
                             continuation.resume(throwing: error)
                             return
@@ -489,7 +499,8 @@ actor MCPService: Service {
                         if await connectionState.checkAndSetResumed() {
                             await log.error("Bonjour service discovery timed out after 30 seconds")
                             continuation.resume(
-                                throwing: MCPError.internalError("Service discovery timeout"))
+                                throwing: MCPError.internalError("Service discovery timeout")
+                            )
                         }
                     }
 
@@ -536,7 +547,8 @@ actor MCPService: Service {
                                     // Prefer services with iMCP in the description
                                     selectedService = imcpServices.first!
                                     await log.info(
-                                        "Selected iMCP service: \(selectedService.endpoint)")
+                                        "Selected iMCP service: \(selectedService.endpoint)"
+                                    )
                                 } else {
                                     // Fall back to the first available service
                                     selectedService = results.first!

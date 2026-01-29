@@ -37,7 +37,8 @@ final class RemindersService: Service {
             guard EKEventStore.authorizationStatus(for: .reminder) == .fullAccess else {
                 log.error("Reminders access not authorized")
                 throw NSError(
-                    domain: "RemindersError", code: 1,
+                    domain: "RemindersError",
+                    code: 1,
                     userInfo: [NSLocalizedDescriptionKey: "Reminders access not authorized"]
                 )
             }
@@ -96,7 +97,8 @@ final class RemindersService: Service {
             guard EKEventStore.authorizationStatus(for: .reminder) == .fullAccess else {
                 log.error("Reminders access not authorized")
                 throw NSError(
-                    domain: "RemindersError", code: 1,
+                    domain: "RemindersError",
+                    code: 1,
                     userInfo: [NSLocalizedDescriptionKey: "Reminders access not authorized"]
                 )
             }
@@ -107,7 +109,8 @@ final class RemindersService: Service {
                 !listNames.isEmpty
             {
                 let requestedNames = Set(
-                    listNames.compactMap { $0.stringValue?.lowercased() })
+                    listNames.compactMap { $0.stringValue?.lowercased() }
+                )
                 reminderLists = reminderLists.filter {
                     requestedNames.contains($0.title.lowercased())
                 }
@@ -121,14 +124,16 @@ final class RemindersService: Service {
 
             if case .string(let start) = arguments["start"],
                 let parsedStart = ISO8601DateFormatter.parsedLenientISO8601Date(
-                    fromISO8601String: start)
+                    fromISO8601String: start
+                )
             {
                 startDate = parsedStart.date
                 startIsDateOnly = parsedStart.isDateOnly
             }
             if case .string(let end) = arguments["end"],
                 let parsedEnd = ISO8601DateFormatter.parsedLenientISO8601Date(
-                    fromISO8601String: end)
+                    fromISO8601String: end
+                )
             {
                 endDate = parsedEnd.date
                 endIsDateOnly = parsedEnd.isDateOnly
@@ -137,7 +142,9 @@ final class RemindersService: Service {
             let calendar = Calendar.current
             if let startDateValue = startDate {
                 startDate = calendar.normalizedStartDate(
-                    from: startDateValue, isDateOnly: startIsDateOnly)
+                    from: startDateValue,
+                    isDateOnly: startIsDateOnly
+                )
             }
             if let endDateValue = endDate {
                 endDate = calendar.normalizedEndDate(from: endDateValue, isDateOnly: endIsDateOnly)
@@ -224,7 +231,8 @@ final class RemindersService: Service {
             guard EKEventStore.authorizationStatus(for: .reminder) == .fullAccess else {
                 log.error("Reminders access not authorized")
                 throw NSError(
-                    domain: "RemindersError", code: 1,
+                    domain: "RemindersError",
+                    code: 1,
                     userInfo: [NSLocalizedDescriptionKey: "Reminders access not authorized"]
                 )
             }
@@ -234,7 +242,8 @@ final class RemindersService: Service {
             // Set required properties
             guard case .string(let title) = arguments["title"] else {
                 throw NSError(
-                    domain: "RemindersError", code: 2,
+                    domain: "RemindersError",
+                    code: 2,
                     userInfo: [NSLocalizedDescriptionKey: "Reminder title is required"]
                 )
             }
@@ -254,7 +263,8 @@ final class RemindersService: Service {
             // Set optional properties
             if case .string(let dueDateStr) = arguments["due"],
                 let parsedDueDate = ISO8601DateFormatter.parsedLenientISO8601Date(
-                    fromISO8601String: dueDateStr)
+                    fromISO8601String: dueDateStr
+                )
             {
                 let calendar = Calendar.current
                 let dueDate = calendar.normalizedStartDate(
@@ -262,7 +272,9 @@ final class RemindersService: Service {
                     isDateOnly: parsedDueDate.isDateOnly
                 )
                 reminder.dueDateComponents = calendar.dateComponents(
-                    [.year, .month, .day, .hour, .minute, .second], from: dueDate)
+                    [.year, .month, .day, .hour, .minute, .second],
+                    from: dueDate
+                )
             }
 
             if case .string(let notes) = arguments["notes"] {

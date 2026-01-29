@@ -91,7 +91,8 @@ private func getSecurityScopedConfigURL() throws -> URL? {
         resolvingBookmarkData: bookmarkData,
         options: .withSecurityScope,
         relativeTo: nil,
-        bookmarkDataIsStale: &isStale)
+        bookmarkDataIsStale: &isStale
+    )
 
     if isStale {
         log.debug("Bookmark data is stale but URL was resolved: \(url.path). Attempting to use it.")
@@ -118,7 +119,8 @@ private func loadConfig() throws -> ([String: Value], ClaudeDesktop.Config.MCPSe
     let imcpServer = ClaudeDesktop.Config.MCPServer(
         command: Bundle.main.bundleURL
             .appendingPathComponent("Contents/MacOS/imcp-server")
-            .path)
+            .path
+    )
 
     var loadedConfiguration: [String: Value]?
 
@@ -143,11 +145,13 @@ private func loadConfig() throws -> ([String: Value], ClaudeDesktop.Config.MCPSe
                 }
             } else {
                 log.debug(
-                    "Security-scoped URL \(secureURL.path) does not point to an existing file.")
+                    "Security-scoped URL \(secureURL.path) does not point to an existing file."
+                )
             }
         } else {
             log.debug(
-                "Failed to start accessing security-scoped resource for URL: \(secureURL.path)")
+                "Failed to start accessing security-scoped resource for URL: \(secureURL.path)"
+            )
         }
     } else {
         log.debug("No security-scoped URL obtained or an error occurred retrieving it.")

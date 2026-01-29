@@ -166,12 +166,14 @@ final class CaptureService: NSObject, Service {
 
             let format =
                 ImageFormat(
-                    rawValue: arguments["format"]?.stringValue ?? ImageFormat.default.rawValue)
+                    rawValue: arguments["format"]?.stringValue ?? ImageFormat.default.rawValue
+                )
                 ?? .jpeg
             let quality = arguments["quality"]?.doubleValue ?? 0.8
             let preset =
                 SessionPreset(
-                    rawValue: arguments["preset"]?.stringValue ?? SessionPreset.default.rawValue)
+                    rawValue: arguments["preset"]?.stringValue ?? SessionPreset.default.rawValue
+                )
                 ?? .photo
             let device =
                 CaptureDeviceType(
@@ -181,7 +183,8 @@ final class CaptureService: NSObject, Service {
             let position =
                 CaptureDevicePosition(
                     rawValue: arguments["position"]?.stringValue
-                        ?? CaptureDevicePosition.default.rawValue) ?? .unspecified
+                        ?? CaptureDevicePosition.default.rawValue
+                ) ?? .unspecified
             let flash =
                 FlashMode(rawValue: arguments["flash"]?.stringValue ?? FlashMode.default.rawValue)
                 ?? .auto
@@ -245,7 +248,8 @@ final class CaptureService: NSObject, Service {
             return try await withCheckedThrowingContinuation { continuation in
                 let resumeGate = ResumeGate()
                 let resumeOnce: (Result<Value, Error>, (() async -> Void)?) async -> Void = {
-                    result, cleanup in
+                    result,
+                    cleanup in
                     guard await resumeGate.shouldResume() else { return }
                     if let cleanup = cleanup {
                         await cleanup()
@@ -339,7 +343,8 @@ final class CaptureService: NSObject, Service {
 
             let format =
                 AudioFormat(
-                    rawValue: arguments["format"]?.stringValue ?? AudioFormat.default.rawValue)
+                    rawValue: arguments["format"]?.stringValue ?? AudioFormat.default.rawValue
+                )
                 ?? .mp4
             let duration = arguments["duration"].flatMap { Double($0) } ?? 10.0
             let quality = arguments["quality"]?.stringValue ?? "medium"
@@ -551,7 +556,9 @@ final class CaptureService: NSObject, Service {
                     )
                 }
                 contentFilter = SCContentFilter(
-                    display: firstDisplay, including: appWindows)
+                    display: firstDisplay,
+                    including: appWindows
+                )
             }
 
             // Create stream configuration
@@ -572,7 +579,8 @@ final class CaptureService: NSObject, Service {
             return try await withCheckedThrowingContinuation { continuation in
                 let resumeGate = ResumeGate()
                 let resumeOnce: (Result<Value, Error>, (() async -> Void)?) async -> Void = {
-                    result, _ in
+                    result,
+                    _ in
                     guard await resumeGate.shouldResume() else { return }
                     continuation.resume(with: result)
                 }
@@ -684,7 +692,9 @@ private class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
                         domain: "CaptureServiceError",
                         code: 6,
                         userInfo: [NSLocalizedDescriptionKey: "Failed to get image data"]
-                    )))
+                    )
+                )
+            )
             return
         }
 

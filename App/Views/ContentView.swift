@@ -18,7 +18,8 @@ struct ContentView: View {
         Dictionary(
             uniqueKeysWithValues: serviceConfigs.map {
                 ($0.id, $0.binding)
-            })
+            }
+        )
     }
 
     init(
@@ -176,7 +177,8 @@ private struct MenuButton: View {
                 .fill(
                     isPressed
                         ? Color.accentColor
-                        : isHighlighted ? Color.accentColor.opacity(0.7) : Color.clear)
+                        : isHighlighted ? Color.accentColor.opacity(0.7) : Color.clear
+                )
         )
         .onHover { state in
             guard isEnabled else { return }

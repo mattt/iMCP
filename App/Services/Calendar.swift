@@ -39,7 +39,8 @@ final class CalendarService: Service {
             guard EKEventStore.authorizationStatus(for: .event) == .fullAccess else {
                 log.error("Calendar access not authorized")
                 throw NSError(
-                    domain: "CalendarError", code: 1,
+                    domain: "CalendarError",
+                    code: 1,
                     userInfo: [NSLocalizedDescriptionKey: "Calendar access not authorized"]
                 )
             }
@@ -105,7 +106,8 @@ final class CalendarService: Service {
             guard EKEventStore.authorizationStatus(for: .event) == .fullAccess else {
                 log.error("Calendar access not authorized")
                 throw NSError(
-                    domain: "CalendarError", code: 1,
+                    domain: "CalendarError",
+                    code: 1,
                     userInfo: [NSLocalizedDescriptionKey: "Calendar access not authorized"]
                 )
             }
@@ -131,7 +133,8 @@ final class CalendarService: Service {
 
             if case .string(let start) = arguments["start"],
                 let parsedStart = ISO8601DateFormatter.parsedLenientISO8601Date(
-                    fromISO8601String: start)
+                    fromISO8601String: start
+                )
             {
                 hasStart = true
                 startDate = parsedStart.date
@@ -140,7 +143,8 @@ final class CalendarService: Service {
 
             if case .string(let end) = arguments["end"],
                 let parsedEnd = ISO8601DateFormatter.parsedLenientISO8601Date(
-                    fromISO8601String: end)
+                    fromISO8601String: end
+                )
             {
                 hasEnd = true
                 endDate = parsedEnd.date
@@ -155,8 +159,10 @@ final class CalendarService: Service {
                 if startIsDateOnly {
                     endDate = calendar.normalizedEndDate(from: startDate, isDateOnly: true)
                 } else if let nextWeek = calendar.date(
-                    byAdding: .weekOfYear, value: 1, to: startDate)
-                {
+                    byAdding: .weekOfYear,
+                    value: 1,
+                    to: startDate
+                ) {
                     endDate = nextWeek
                 }
             }
@@ -335,7 +341,8 @@ final class CalendarService: Service {
             guard EKEventStore.authorizationStatus(for: .event) == .fullAccess else {
                 log.error("Calendar access not authorized")
                 throw NSError(
-                    domain: "CalendarError", code: 1,
+                    domain: "CalendarError",
+                    code: 1,
                     userInfo: [NSLocalizedDescriptionKey: "Calendar access not authorized"]
                 )
             }
@@ -346,7 +353,8 @@ final class CalendarService: Service {
             // Set required properties
             guard case .string(let title) = arguments["title"] else {
                 throw NSError(
-                    domain: "CalendarError", code: 2,
+                    domain: "CalendarError",
+                    code: 2,
                     userInfo: [NSLocalizedDescriptionKey: "Event title is required"]
                 )
             }
@@ -355,13 +363,16 @@ final class CalendarService: Service {
             // Parse dates
             guard case .string(let startDateStr) = arguments["start"],
                 let parsedStart = ISO8601DateFormatter.parsedLenientISO8601Date(
-                    fromISO8601String: startDateStr),
+                    fromISO8601String: startDateStr
+                ),
                 case .string(let endDateStr) = arguments["end"],
                 let parsedEnd = ISO8601DateFormatter.parsedLenientISO8601Date(
-                    fromISO8601String: endDateStr)
+                    fromISO8601String: endDateStr
+                )
             else {
                 throw NSError(
-                    domain: "CalendarError", code: 2,
+                    domain: "CalendarError",
+                    code: 2,
                     userInfo: [
                         NSLocalizedDescriptionKey:
                             "Invalid start or end date format. Expected ISO 8601 format."
@@ -382,7 +393,9 @@ final class CalendarService: Service {
             // For all-day events, ensure we use local midnight
             if case .bool(true) = arguments["isAllDay"] {
                 var startComponents = calendar.dateComponents(
-                    [.year, .month, .day], from: startDate)
+                    [.year, .month, .day],
+                    from: startDate
+                )
                 startComponents.hour = 0
                 startComponents.minute = 0
                 startComponents.second = 0
@@ -453,8 +466,8 @@ final class CalendarService: Service {
                                     "Absolute alarm datetime must include time component: \(datetimeStr, privacy: .public)"
                                 )
                             } else if let absoluteDate = ISO8601DateFormatter.lenientDate(
-                                fromISO8601String: datetimeStr)
-                            {
+                                fromISO8601String: datetimeStr
+                            ) {
                                 alarm = EKAlarm(absoluteDate: absoluteDate)
                             }
                         }
@@ -469,7 +482,9 @@ final class CalendarService: Service {
                             // Create structured location
                             let structuredLocation = EKStructuredLocation(title: locationTitle)
                             structuredLocation.geoLocation = CLLocation(
-                                latitude: latitude, longitude: longitude)
+                                latitude: latitude,
+                                longitude: longitude
+                            )
 
                             if case .double(let radius) = config["radius"] {
                                 structuredLocation.radius = radius
@@ -487,7 +502,8 @@ final class CalendarService: Service {
 
                     default:
                         log.error(
-                            "Unexpected alarm type encountered: \(alarmType, privacy: .public)")
+                            "Unexpected alarm type encountered: \(alarmType, privacy: .public)"
+                        )
                         continue
                     }
 

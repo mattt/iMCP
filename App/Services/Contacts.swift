@@ -99,13 +99,15 @@ final class ContactsService: Service {
         case .denied:
             log.error("Contacts access denied")
             throw NSError(
-                domain: "ContactsService", code: 1,
+                domain: "ContactsService",
+                code: 1,
                 userInfo: [NSLocalizedDescriptionKey: "Contacts access denied"]
             )
         case .restricted:
             log.error("Contacts access restricted")
             throw NSError(
-                domain: "ContactsService", code: 1,
+                domain: "ContactsService",
+                code: 1,
                 userInfo: [NSLocalizedDescriptionKey: "Contacts access restricted"]
             )
         case .notDetermined:
@@ -114,7 +116,8 @@ final class ContactsService: Service {
         @unknown default:
             log.error("Unknown contacts authorization status")
             throw NSError(
-                domain: "ContactsService", code: 1,
+                domain: "ContactsService",
+                code: 1,
                 userInfo: [NSLocalizedDescriptionKey: "Unknown contacts authorization status"]
             )
         }
@@ -182,13 +185,15 @@ final class ContactsService: Service {
                 let normalizedEmail = email.trimmingCharacters(in: .whitespaces).lowercased()
                 if !normalizedEmail.isEmpty {
                     predicates.append(
-                        CNContact.predicateForContacts(matchingEmailAddress: normalizedEmail))
+                        CNContact.predicateForContacts(matchingEmailAddress: normalizedEmail)
+                    )
                 }
             }
 
             guard !predicates.isEmpty else {
                 throw NSError(
-                    domain: "ContactsService", code: 1,
+                    domain: "ContactsService",
+                    code: 1,
                     userInfo: [
                         NSLocalizedDescriptionKey: "At least one valid search parameter is required"
                     ]
@@ -219,7 +224,9 @@ final class ContactsService: Service {
                         description: "Unique identifier of the contact to update"
                     )
                 ] as OrderedDictionary).merging(
-                    contactProperties, uniquingKeysWith: { new, _ in new }),
+                    contactProperties,
+                    uniquingKeysWith: { new, _ in new }
+                ),
                 required: ["identifier"]
             ),
             annotations: .init(
@@ -231,7 +238,8 @@ final class ContactsService: Service {
         ) { arguments in
             guard case let .string(identifier) = arguments["identifier"], !identifier.isEmpty else {
                 throw NSError(
-                    domain: "ContactsService", code: 1,
+                    domain: "ContactsService",
+                    code: 1,
                     userInfo: [NSLocalizedDescriptionKey: "Valid contact identifier required"]
                 )
             }
@@ -245,7 +253,8 @@ final class ContactsService: Service {
 
             guard let updatedContact = contact else {
                 throw NSError(
-                    domain: "ContactsService", code: 2,
+                    domain: "ContactsService",
+                    code: 2,
                     userInfo: [
                         NSLocalizedDescriptionKey:
                             "Contact not found with identifier: \(identifier)"
@@ -287,7 +296,8 @@ final class ContactsService: Service {
             // Validate that given name is provided and not empty
             if newContact.givenName.isEmpty {
                 throw NSError(
-                    domain: "ContactsService", code: 1,
+                    domain: "ContactsService",
+                    code: 1,
                     userInfo: [NSLocalizedDescriptionKey: "Given name is required"]
                 )
             }
