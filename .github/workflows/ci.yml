@@ -1,0 +1,41 @@
+name: CI
+
+on:
+    push:
+        branches: ["main"]
+    pull_request:
+        branches: ["main"]
+
+permissions:
+    contents: read
+    pull-requests: write
+
+jobs:
+    build:
+        name: Build on macOS ${{ matrix.macos }} with Xcode ${{ matrix.xcode }}
+        runs-on: macos-${{ matrix.macos }}
+        env:
+            DEVELOPER_DIR: "/Applications/Xcode_${{ matrix.xcode }}.app/Contents/Developer"
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    - macos: "26"
+                      xcode: "26.0"
+        timeout-minutes: 10
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v6
+
+            - name: Cache Xcode build artifacts
+              uses: actions/cache@v5
+              with:
+                  path: |
+                      ~/Library/Developer/Xcode/DerivedData
+                      ~/Library/Caches/org.swift.swiftpm
+                  key: ${{ runner.os }}-xcode-${{ matrix.xcode }}-derived-${{ hashFiles('**/Package.resolved') }}
+                  restore-keys: |
+                      ${{ runner.os }}-xcode-${{ matrix.xcode }}-derived-
+
+            - name: Build
+              run: xcodebuild -quiet -scheme iMCP -configuration Debug -destination "platform=macOS" build
