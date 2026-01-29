@@ -126,7 +126,6 @@ final class CalendarService: Service {
             let calendar = Calendar.current
             var startDate = now
             var endDate = calendar.date(byAdding: .weekOfYear, value: 1, to: now)!
-            var hasStart = false
             var hasEnd = false
             var startIsDateOnly = false
             var endIsDateOnly = false
@@ -136,7 +135,6 @@ final class CalendarService: Service {
                     fromISO8601String: start
                 )
             {
-                hasStart = true
                 startDate = parsedStart.date
                 startIsDateOnly = parsedStart.isDateOnly
             }
