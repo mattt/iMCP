@@ -20,7 +20,8 @@ Usage: Scripts/release.sh [command]
 Commands:
   all         Build check, bump, package, notarize, staple, commit/tag, release, upload (default)
   check       Quick release build check
-  package     Bump version and create the release zip from the app bundle
+  bump        Bump version/build numbers
+  package     Create the release zip from the app bundle
   notarize    Submit the app bundle for notarization
   staple      Staple the notarization ticket to the app bundle
   commit      Commit version bump and create release tag
@@ -117,7 +118,6 @@ staple() {
 
 package_release() {
   require_app_bundle
-  bump_version
   build_zip "${APP_BUNDLE}" "${RELEASE_ZIP}"
   echo "Done: ${RELEASE_ZIP}"
 }
@@ -170,6 +170,7 @@ upload_asset() {
 all() {
   build_check
   require_clean_tree
+  bump_version
   package_release
   notarize
   staple
@@ -193,6 +194,9 @@ case "${COMMAND}" in
     ;;
   check)
     build_check
+    ;;
+  bump)
+    bump_version
     ;;
   package)
     package_release
