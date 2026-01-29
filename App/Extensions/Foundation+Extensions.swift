@@ -10,12 +10,23 @@ extension ISO8601DateFormatter {
         let formatter = ISO8601DateFormatter()
 
         let optionsToTry: [ISO8601DateFormatter.Options] = [
-            [.withInternetDateTime, .withFractionalSeconds],  // `yyyy-MM-dd'T'HH:mm:ss.SSSZ`, `yyyy-MM-dd'T'HH:mm:ss.SSSZZZZZ`
-            [.withInternetDateTime],  // `yyyy-MM-dd'T'HH:mm:ssZ`, `yyyy-MM-dd'T'HH:mm:ssZZZZZ`
-            [.withFullDate, .withFullTime, .withFractionalSeconds],  // `yyyy-MM-dd'T'HH:mm:ss.SSS` (no zone)
-            [.withFullDate, .withFullTime],  // `yyyy-MM-dd'T'HH:mm:ss` (no zone)
-            [.withFullDate, .withFullTime, .withSpaceBetweenDateAndTime, .withFractionalSeconds],  // `yyyy-MM-dd HH:mm:ss.SSSZZZZZ`
-            [.withFullDate, .withFullTime, .withSpaceBetweenDateAndTime],  // `yyyy-MM-dd HH:mm:ssZZZZZ`
+            // `yyyy-MM-dd'T'HH:mm:ss.SSSZ`, `yyyy-MM-dd'T'HH:mm:ss.SSSZZZZZ`
+            [.withInternetDateTime, .withFractionalSeconds],
+
+            // `yyyy-MM-dd'T'HH:mm:ssZ`, `yyyy-MM-dd'T'HH:mm:ssZZZZZ`
+            [.withInternetDateTime],
+
+            // `yyyy-MM-dd'T'HH:mm:ss.SSS` (no timezone)
+            [.withFullDate, .withFullTime, .withFractionalSeconds],
+
+            // `yyyy-MM-dd'T'HH:mm:ss` (no timezone)
+            [.withFullDate, .withFullTime],
+
+            // `yyyy-MM-dd HH:mm:ss.SSSZZZZZ`
+            [.withFullDate, .withFullTime, .withSpaceBetweenDateAndTime, .withFractionalSeconds],
+
+            // `yyyy-MM-dd HH:mm:ssZZZZZ`
+            [.withFullDate, .withFullTime, .withSpaceBetweenDateAndTime],
         ]
 
         for options in optionsToTry {
@@ -58,6 +69,11 @@ extension ISO8601DateFormatter {
         return nil
     }
 
+    /// Attempts to parse a date string using common ISO 8601 variants,
+    /// falling back to local-time parsing when no timezone is present.
+    /// - Parameters:
+    ///   - dateString: The string representation of the date.
+    /// - Returns: A tuple containing the `Date` object and a boolean indicating if the date is date-only.
     static func parsedLenientISO8601Date(
         fromISO8601String dateString: String
     ) -> (date: Date, isDateOnly: Bool)? {
@@ -68,16 +84,30 @@ extension ISO8601DateFormatter {
         return (date, isDateOnly)
     }
 
+    /// Checks if a date string is a date-only ISO 8601 string.
+    /// - Parameters:
+    ///   - dateString: The string representation of the date.
+    /// - Returns: A boolean indicating if the date is date-only.
     static func isDateOnlyISO8601String(_ dateString: String) -> Bool {
         dateString.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil
     }
 }
 
 extension Calendar {
+    /// Normalizes a start date to ensure it is a date-only date.
+    /// - Parameters:
+    ///   - date: The date to normalize.
+    ///   - isDateOnly: A boolean indicating if the date is date-only.
+    /// - Returns: The normalized date.
     func normalizedStartDate(from date: Date, isDateOnly: Bool) -> Date {
         isDateOnly ? startOfDay(for: date) : date
     }
 
+    /// Normalizes an end date to ensure it is a date-only date.
+    /// - Parameters:
+    ///   - date: The date to normalize.
+    ///   - isDateOnly: A boolean indicating if the date is date-only.
+    /// - Returns: The normalized date.
     func normalizedEndDate(from date: Date, isDateOnly: Bool) -> Date {
         guard isDateOnly else { return date }
         let startOfDay = startOfDay(for: date)
