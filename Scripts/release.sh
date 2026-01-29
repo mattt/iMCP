@@ -10,9 +10,10 @@ SCHEME="${SCHEME:-iMCP}"
 CONFIGURATION="${CONFIGURATION:-Release}"
 DESTINATION="${DESTINATION:-platform=macOS}"
 PROJECT_FILE="${PROJECT_FILE:-${APP_NAME}.xcodeproj/project.pbxproj}"
+DIST_DIR="${DIST_DIR:-dist}"
 
-NOTARY_ZIP="${APP_BUNDLE}.zip"
-RELEASE_ZIP="${APP_NAME}.zip"
+# Derived artifact names for notarization/release steps.
+NOTARY_ZIP="${DIST_DIR}/${APP_NAME}-notarize.zip"
 
 print_usage() {
   cat <<'EOF'
@@ -40,9 +41,11 @@ Environment:
   CONFIGURATION     Build configuration for build check (default: Release)
   DESTINATION       Build destination for build check (default: platform=macOS)
   PROJECT_FILE      Xcode project file (default: ${APP_NAME}.xcodeproj/project.pbxproj)
+  DIST_DIR          Output directory for artifacts (default: dist)
 EOF
 }
 
+# If APP_BUNDLE isn't explicit, derive the built app path from Xcode settings.
 resolve_app_bundle() {
   if [[ -d "${APP_BUNDLE}" ]]; then
     return 0
@@ -91,6 +94,15 @@ require_clean_tree() {
   fi
 }
 
+ensure_dist_dir() {
+  mkdir -p "${DIST_DIR}"
+}
+
+release_zip() {
+  require_version
+  printf '%s/%s-%s.zip' "${DIST_DIR}" "${APP_NAME}" "${VERSION}"
+}
+
 cleanup() {
   rm -f "${NOTARY_ZIP}"
 }
@@ -105,6 +117,7 @@ bump_version() {
   fi
   local resolved_build_number="${BUILD_NUMBER}"
   if [[ -z "${resolved_build_number}" ]]; then
+    # Find the current build number and increment it if not provided.
     resolved_build_number="0"
     while IFS= read -r line; do
       if [[ "${line}" =~ CURRENT_PROJECT_VERSION\ =\ ([0-9]+)\; ]]; then
@@ -117,6 +130,7 @@ bump_version() {
 
   echo "Setting MARKETING_VERSION to ${VERSION}"
   echo "Setting CURRENT_PROJECT_VERSION to ${resolved_build_number}"
+  # Replace both version fields in the project file without agvtool.
   local tmp_file
   tmp_file="$(mktemp)"
   while IFS= read -r line; do
@@ -134,6 +148,7 @@ bump_version() {
 build_zip() {
   local source_bundle="$1"
   local output_zip="$2"
+  ensure_dist_dir
   echo "Creating zip: ${output_zip}"
   ditto -c -k --keepParent "${source_bundle}" "${output_zip}"
 }
@@ -147,6 +162,7 @@ build_check() {
 notarize() {
   require_app_bundle
   require_keychain_profile
+  ensure_dist_dir
   echo "Zipping for notarization: ${NOTARY_ZIP}"
   ditto -c -k --keepParent "${APP_BUNDLE}" "${NOTARY_ZIP}"
   echo "Submitting to notarization"
@@ -161,8 +177,11 @@ staple() {
 
 package_release() {
   require_app_bundle
-  build_zip "${APP_BUNDLE}" "${RELEASE_ZIP}"
-  echo "Done: ${RELEASE_ZIP}"
+  local release_zip_path
+  release_zip_path="$(release_zip)"
+  build_zip "${APP_BUNDLE}" "${release_zip_path}"
+  shasum -a 256 "${release_zip_path}" > "${release_zip_path}.sha256"
+  echo "Done: ${release_zip_path}"
 }
 
 validate_staple() {
@@ -173,10 +192,13 @@ validate_staple() {
 
 commit_and_tag() {
   require_version
-  if [[ ! -f "${RELEASE_ZIP}" ]]; then
-    echo "Missing release asset: ${RELEASE_ZIP}" >&2
+  local release_zip_path
+  release_zip_path="$(release_zip)"
+  if [[ ! -f "${release_zip_path}" ]]; then
+    echo "Missing release asset: ${release_zip_path}" >&2
     exit 1
   fi
+  # Ensure the stapled build exists before tagging a release.
   validate_staple
   if git rev-parse --verify "refs/tags/${VERSION}" >/dev/null 2>&1; then
     echo "Tag already exists: ${VERSION}" >&2
@@ -201,16 +223,19 @@ create_release() {
 
 upload_asset() {
   require_version
-  if [[ ! -f "${RELEASE_ZIP}" ]]; then
-    echo "Missing release asset: ${RELEASE_ZIP}" >&2
+  local release_zip_path
+  release_zip_path="$(release_zip)"
+  if [[ ! -f "${release_zip_path}" ]]; then
+    echo "Missing release asset: ${release_zip_path}" >&2
     exit 1
   fi
-  echo "Uploading release asset ${RELEASE_ZIP}"
-  gh release upload "${VERSION}" "${RELEASE_ZIP}" --clobber
+  echo "Uploading release asset ${release_zip_path}"
+  gh release upload "${VERSION}" "${release_zip_path}" --clobber
   gh release view --web "${VERSION}"
 }
 
 all() {
+  # Full release flow with strict gating at each step.
   build_check
   require_clean_tree
   bump_version
