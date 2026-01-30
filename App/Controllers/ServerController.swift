@@ -130,8 +130,8 @@ enum ServiceRegistry {
             ),
             ServiceConfig(
                 name: "Shortcuts",
-                iconName: "bolt.fill",
-                color: .yellow,
+                iconName: "square.2.layers.3d",
+                color: .indigo,
                 service: ShortcutsService.shared,
                 binding: shortcutsEnabled
             ),
