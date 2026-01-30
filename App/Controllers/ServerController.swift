@@ -57,6 +57,7 @@ enum ServiceRegistry {
             LocationService.shared,
             MapsService.shared,
             MailService.shared,
+            MusicService.shared,
             MessageService.shared,
             PhoneService.shared,
             RemindersService.shared,
@@ -80,6 +81,7 @@ enum ServiceRegistry {
         locationEnabled: Binding<Bool>,
         mapsEnabled: Binding<Bool>,
         mailEnabled: Binding<Bool>,
+        musicEnabled: Binding<Bool>,
         messagesEnabled: Binding<Bool>,
         phoneEnabled: Binding<Bool>,
         remindersEnabled: Binding<Bool>,
@@ -137,6 +139,13 @@ enum ServiceRegistry {
                 color: .blue,
                 service: MailService.shared,
                 binding: mailEnabled
+            ),
+            ServiceConfig(
+                name: "Music",
+                iconName: "music.note",
+                color: .pink,
+                service: MusicService.shared,
+                binding: musicEnabled
             ),
             ServiceConfig(
                 name: "Messages",
@@ -214,6 +223,7 @@ final class ServerController: ObservableObject {
     @AppStorage("locationEnabled") private var locationEnabled = false
     @AppStorage("mapsEnabled") private var mapsEnabled = true  // Default enabled
     @AppStorage("mailEnabled") private var mailEnabled = false
+    @AppStorage("musicEnabled") private var musicEnabled = false
     @AppStorage("messagesEnabled") private var messagesEnabled = false
     @AppStorage("phoneEnabled") private var phoneEnabled = false
     @AppStorage("remindersEnabled") private var remindersEnabled = false
@@ -239,6 +249,7 @@ final class ServerController: ObservableObject {
             locationEnabled: $locationEnabled,
             mapsEnabled: $mapsEnabled,
             mailEnabled: $mailEnabled,
+            musicEnabled: $musicEnabled,
             messagesEnabled: $messagesEnabled,
             phoneEnabled: $phoneEnabled,
             remindersEnabled: $remindersEnabled,
