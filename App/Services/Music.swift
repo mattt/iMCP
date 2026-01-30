@@ -165,6 +165,18 @@ extension MusicService {
 
         let result = script.executeAndReturnError(&errorInfo)
         if let errorInfo {
+            if let errorNumber = errorInfo[NSAppleScript.errorNumber] as? NSNumber,
+                errorNumber.intValue == -1743
+            {
+                throw NSError(
+                    domain: "MusicServiceError",
+                    code: 4,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Not authorized to send Apple events to Music. Enable iMCP in System Settings > Privacy & Security > Automation."
+                    ]
+                )
+            }
             throw NSError(
                 domain: "MusicServiceError",
                 code: 4,
