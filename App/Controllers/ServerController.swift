@@ -57,6 +57,7 @@ enum ServiceRegistry {
             MapsService.shared,
             MessageService.shared,
             RemindersService.shared,
+            ShortcutsService.shared,
             UtilitiesService.shared,
         ]
         #if WEATHERKIT_AVAILABLE
@@ -73,6 +74,7 @@ enum ServiceRegistry {
         mapsEnabled: Binding<Bool>,
         messagesEnabled: Binding<Bool>,
         remindersEnabled: Binding<Bool>,
+        shortcutsEnabled: Binding<Bool>,
         utilitiesEnabled: Binding<Bool>,
         weatherEnabled: Binding<Bool>
     ) -> [ServiceConfig] {
@@ -126,6 +128,13 @@ enum ServiceRegistry {
                 service: RemindersService.shared,
                 binding: remindersEnabled
             ),
+            ServiceConfig(
+                name: "Shortcuts",
+                iconName: "bolt.fill",
+                color: .yellow,
+                service: ShortcutsService.shared,
+                binding: shortcutsEnabled
+            ),
         ]
         #if WEATHERKIT_AVAILABLE
             configs.append(
@@ -163,6 +172,7 @@ final class ServerController: ObservableObject {
     @AppStorage("mapsEnabled") private var mapsEnabled = true  // Default enabled
     @AppStorage("messagesEnabled") private var messagesEnabled = false
     @AppStorage("remindersEnabled") private var remindersEnabled = false
+    @AppStorage("shortcutsEnabled") private var shortcutsEnabled = false
     @AppStorage("utilitiesEnabled") private var utilitiesEnabled = true  // Default enabled
     @AppStorage("weatherEnabled") private var weatherEnabled = false
 
@@ -179,6 +189,7 @@ final class ServerController: ObservableObject {
             mapsEnabled: $mapsEnabled,
             messagesEnabled: $messagesEnabled,
             remindersEnabled: $remindersEnabled,
+            shortcutsEnabled: $shortcutsEnabled,
             utilitiesEnabled: $utilitiesEnabled,
             weatherEnabled: $weatherEnabled
         )
