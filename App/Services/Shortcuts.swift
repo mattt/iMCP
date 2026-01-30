@@ -83,6 +83,13 @@ final class ShortcutsService: Service {
         process.standardOutput = outputPipe
         process.standardError = errorPipe
 
+        let outputHandle = outputPipe.fileHandleForReading
+        let errorHandle = errorPipe.fileHandleForReading
+        defer {
+            outputHandle.closeFile()
+            errorHandle.closeFile()
+        }
+
         do {
             try await runProcess(process)
         } catch {
@@ -96,8 +103,8 @@ final class ShortcutsService: Service {
             )
         }
 
-        let outputData = (try? outputPipe.fileHandleForReading.readToEnd()) ?? Data()
-        let errorData = (try? errorPipe.fileHandleForReading.readToEnd()) ?? Data()
+        let outputData = (try? outputHandle.readToEnd()) ?? Data()
+        let errorData = (try? errorHandle.readToEnd()) ?? Data()
 
         guard process.terminationStatus == 0 else {
             let errorMessage = String(data: errorData, encoding: .utf8) ?? "Unknown error"
@@ -153,7 +160,10 @@ final class ShortcutsService: Service {
 
         let errorPipe = Pipe()
         process.standardError = errorPipe
+        let errorHandle = errorPipe.fileHandleForReading
+        defer { errorHandle.closeFile() }
 
+        var errorData = Data()
         do {
             try await withThrowingTaskGroup(of: Void.self) { group in
                 group.addTask {
@@ -180,11 +190,18 @@ final class ShortcutsService: Service {
             if process.isRunning {
                 process.terminate()
             }
+            errorData = (try? errorHandle.readToEnd()) ?? Data()
+            if !errorData.isEmpty {
+                let stderrMessage = String(data: errorData, encoding: .utf8) ?? "Unknown error"
+                log.error("Shortcut '\(name, privacy: .public)' stderr: \(stderrMessage, privacy: .public)")
+            }
             log.error("Failed to run shortcut '\(name, privacy: .public)': \(error.localizedDescription)")
             throw error
         }
 
-        let errorData = (try? errorPipe.fileHandleForReading.readToEnd()) ?? Data()
+        if errorData.isEmpty {
+            errorData = (try? errorHandle.readToEnd()) ?? Data()
+        }
 
         guard process.terminationStatus == 0 else {
             let errorMessage = String(data: errorData, encoding: .utf8) ?? "Unknown error"
