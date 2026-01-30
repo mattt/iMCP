@@ -113,7 +113,8 @@ final class ShortcutsService: Service {
             return .array([])
         }
 
-        let shortcuts = output
+        let shortcuts =
+            output
             .split(separator: "\n")
             .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
