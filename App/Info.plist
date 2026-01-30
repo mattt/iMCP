@@ -4,6 +4,8 @@
 <dict>
 	<key>LSMultipleInstancesProhibited</key>
 	<true/>
+	<key>NSAppleMusicUsageDescription</key>
+	<string>iMCP uses Apple Music access to search the catalog and report now playing information.</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_mcp._tcp</string>
