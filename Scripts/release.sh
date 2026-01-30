@@ -16,6 +16,9 @@ EXPORT_DIR="${EXPORT_DIR:-${DIST_DIR}/export}"
 EXPORT_OPTIONS_PLIST="${EXPORT_OPTIONS_PLIST:-${DIST_DIR}/export-options.plist}"
 TEAM_ID="${TEAM_ID:-}"
 SIGNING_CERTIFICATE="${SIGNING_CERTIFICATE:-Developer ID Application}"
+BUNDLE_ID="${BUNDLE_ID:-}"
+PROVISIONING_PROFILE_NAME="${PROVISIONING_PROFILE_NAME:-}"
+PROVISIONING_PROFILE_UUID="${PROVISIONING_PROFILE_UUID:-}"
 
 # Derived artifact names for notarization/release steps.
 NOTARY_ZIP="${DIST_DIR}/${APP_NAME}-notarize.zip"
@@ -30,6 +33,7 @@ Commands:
   bump        Bump version/build numbers
   archive     Create an Xcode archive for direct distribution
   export      Export a Developer ID signed app from the archive
+  profiles    List installed provisioning profiles
   package     Create the release zip from the app bundle
   notarize    Submit the app bundle for notarization
   staple      Staple the notarization ticket to the app bundle
@@ -54,6 +58,9 @@ Environment:
   EXPORT_OPTIONS_PLIST Export options plist path (default: dist/export-options.plist)
   TEAM_ID           Team ID for Developer ID signing (optional)
   SIGNING_CERTIFICATE Signing certificate (default: Developer ID Application)
+  BUNDLE_ID         Bundle identifier for export profiles (optional)
+  PROVISIONING_PROFILE_NAME Provisioning profile name for export (optional)
+  PROVISIONING_PROFILE_UUID Provisioning profile UUID for export (optional)
 EOF
 }
 
@@ -109,6 +116,79 @@ require_clean_tree() {
 
 ensure_dist_dir() {
   mkdir -p "${DIST_DIR}"
+}
+
+resolve_bundle_id() {
+  if [[ -n "${BUNDLE_ID}" ]]; then
+    return 0
+  fi
+  if [[ ! -f "${PROJECT_FILE}" ]]; then
+    return 1
+  fi
+  while IFS= read -r line; do
+    if [[ "${line}" == *"PRODUCT_BUNDLE_IDENTIFIER ="* && "${line}" != *"imcp-server"* ]]; then
+      BUNDLE_ID="${line#*PRODUCT_BUNDLE_IDENTIFIER = }"
+      BUNDLE_ID="${BUNDLE_ID%;}"
+      return 0
+    fi
+  done < "${PROJECT_FILE}"
+  return 1
+}
+
+list_profiles() {
+  local profiles_dir
+  local found_dir="0"
+  local profile tmp_plist name uuid team weatherkit app_id
+  local profiles_dirs=(
+    "${HOME}/Library/MobileDevice/Provisioning Profiles"
+    "${HOME}/Library/Developer/Xcode/UserData/Provisioning Profiles"
+  )
+  resolve_bundle_id || true
+
+  for profiles_dir in "${profiles_dirs[@]}"; do
+    if [[ ! -d "${profiles_dir}" ]]; then
+      continue
+    fi
+    found_dir="1"
+    for profile in "${profiles_dir}"/*.mobileprovision "${profiles_dir}"/*.provisionprofile; do
+      if [[ ! -f "${profile}" ]]; then
+        continue
+      fi
+      tmp_plist="$(mktemp)"
+      if ! security cms -D -i "${profile}" > "${tmp_plist}" 2>/dev/null; then
+        rm -f "${tmp_plist}"
+        continue
+      fi
+      name="$("/usr/libexec/PlistBuddy" -c "Print Name" "${tmp_plist}" 2>/dev/null || true)"
+      uuid="$("/usr/libexec/PlistBuddy" -c "Print UUID" "${tmp_plist}" 2>/dev/null || true)"
+      team="$("/usr/libexec/PlistBuddy" -c "Print TeamIdentifier:0" "${tmp_plist}" 2>/dev/null || true)"
+      weatherkit="$("/usr/libexec/PlistBuddy" -c "Print Entitlements:com.apple.developer.weatherkit" "${tmp_plist}" 2>/dev/null || true)"
+      app_id="$("/usr/libexec/PlistBuddy" -c "Print Entitlements:com.apple.application-identifier" "${tmp_plist}" 2>/dev/null || true)"
+      rm -f "${tmp_plist}"
+      if [[ -n "${BUNDLE_ID}" && -n "${app_id}" ]]; then
+        if [[ "${app_id}" != *".${BUNDLE_ID}" && "${app_id}" != "${BUNDLE_ID}" ]]; then
+          continue
+        fi
+      fi
+      printf '%s\n' "Name: ${name}"
+      printf '%s\n' "UUID: ${uuid}"
+      printf '%s\n' "Team: ${team}"
+      if [[ -n "${app_id}" ]]; then
+        printf '%s\n' "App ID: ${app_id}"
+      fi
+      if [[ -n "${weatherkit}" ]]; then
+        printf '%s\n' "WeatherKit: ${weatherkit}"
+      fi
+      printf '%s\n\n' "File: ${profile}"
+    done
+  done
+
+  if [[ "${found_dir}" != "1" ]]; then
+    echo "No provisioning profiles directory found at expected locations:" >&2
+    echo "  ${profiles_dirs[0]}" >&2
+    echo "  ${profiles_dirs[1]}" >&2
+    exit 1
+  fi
 }
 
 resolve_exported_app() {
@@ -205,6 +285,25 @@ write_export_options() {
   <key>signingCertificate</key>
   <string>${SIGNING_CERTIFICATE}</string>
 EOF
+  local profile_value=""
+  if [[ -n "${PROVISIONING_PROFILE_UUID}" ]]; then
+    profile_value="${PROVISIONING_PROFILE_UUID}"
+  elif [[ -n "${PROVISIONING_PROFILE_NAME}" ]]; then
+    profile_value="${PROVISIONING_PROFILE_NAME}"
+  fi
+  if [[ -n "${profile_value}" ]]; then
+    if ! resolve_bundle_id; then
+      echo "BUNDLE_ID is required when using provisioning profiles." >&2
+      exit 1
+    fi
+    cat >> "${tmp_file}" <<EOF
+  <key>provisioningProfiles</key>
+  <dict>
+    <key>${BUNDLE_ID}</key>
+    <string>${profile_value}</string>
+  </dict>
+EOF
+  fi
   if [[ -n "${TEAM_ID}" ]]; then
     cat >> "${tmp_file}" <<EOF
   <key>teamID</key>
@@ -339,6 +438,9 @@ case "${COMMAND}" in
     ;;
   export)
     export_app
+    ;;
+  profiles)
+    list_profiles
     ;;
   package)
     package_release
