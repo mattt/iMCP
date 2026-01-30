@@ -11,6 +11,11 @@ CONFIGURATION="${CONFIGURATION:-Release}"
 DESTINATION="${DESTINATION:-platform=macOS}"
 PROJECT_FILE="${PROJECT_FILE:-${APP_NAME}.xcodeproj/project.pbxproj}"
 DIST_DIR="${DIST_DIR:-dist}"
+ARCHIVE_PATH="${ARCHIVE_PATH:-${DIST_DIR}/${APP_NAME}.xcarchive}"
+EXPORT_DIR="${EXPORT_DIR:-${DIST_DIR}/export}"
+EXPORT_OPTIONS_PLIST="${EXPORT_OPTIONS_PLIST:-${DIST_DIR}/export-options.plist}"
+TEAM_ID="${TEAM_ID:-}"
+SIGNING_CERTIFICATE="${SIGNING_CERTIFICATE:-Developer ID Application}"
 
 # Derived artifact names for notarization/release steps.
 NOTARY_ZIP="${DIST_DIR}/${APP_NAME}-notarize.zip"
@@ -20,9 +25,11 @@ print_usage() {
 Usage: Scripts/release.sh [command]
 
 Commands:
-  all         Build check, bump, package, notarize, staple, commit/tag, release, upload (default)
+  all         Build check, bump, archive, export, package, notarize, staple, commit/tag, release, upload (default)
   check       Quick release build check
   bump        Bump version/build numbers
+  archive     Create an Xcode archive for direct distribution
+  export      Export a Developer ID signed app from the archive
   package     Create the release zip from the app bundle
   notarize    Submit the app bundle for notarization
   staple      Staple the notarization ticket to the app bundle
@@ -42,11 +49,17 @@ Environment:
   DESTINATION       Build destination for build check (default: platform=macOS)
   PROJECT_FILE      Xcode project file (default: ${APP_NAME}.xcodeproj/project.pbxproj)
   DIST_DIR          Output directory for artifacts (default: dist)
+  ARCHIVE_PATH      Archive path (default: dist/${APP_NAME}.xcarchive)
+  EXPORT_DIR        Export path for the signed app (default: dist/export)
+  EXPORT_OPTIONS_PLIST Export options plist path (default: dist/export-options.plist)
+  TEAM_ID           Team ID for Developer ID signing (optional)
+  SIGNING_CERTIFICATE Signing certificate (default: Developer ID Application)
 EOF
 }
 
 # If APP_BUNDLE isn't explicit, derive the built app path from Xcode settings.
 resolve_app_bundle() {
+  resolve_exported_app || true
   if [[ -d "${APP_BUNDLE}" ]]; then
     return 0
   fi
@@ -96,6 +109,17 @@ require_clean_tree() {
 
 ensure_dist_dir() {
   mkdir -p "${DIST_DIR}"
+}
+
+resolve_exported_app() {
+  local candidate
+  for candidate in "${EXPORT_DIR}"/*.app "${EXPORT_DIR}"/Applications/*.app "${EXPORT_DIR}"/Products/Applications/*.app; do
+    if [[ -d "${candidate}" ]]; then
+      APP_BUNDLE="${candidate}"
+      return 0
+    fi
+  done
+  return 1
 }
 
 release_zip() {
@@ -156,6 +180,48 @@ build_zip() {
 build_check() {
   echo "Checking release build (scheme: ${SCHEME}, configuration: ${CONFIGURATION})"
   xcodebuild -quiet -scheme "${SCHEME}" -configuration "${CONFIGURATION}" -destination "${DESTINATION}" build
+  resolve_app_bundle
+}
+
+archive_app() {
+  ensure_dist_dir
+  echo "Archiving app to ${ARCHIVE_PATH}"
+  xcodebuild -quiet -scheme "${SCHEME}" -configuration "${CONFIGURATION}" -destination "generic/platform=macOS" archive -archivePath "${ARCHIVE_PATH}"
+}
+
+write_export_options() {
+  ensure_dist_dir
+  local tmp_file
+  tmp_file="$(mktemp)"
+  cat > "${tmp_file}" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>method</key>
+  <string>developer-id</string>
+  <key>signingStyle</key>
+  <string>manual</string>
+  <key>signingCertificate</key>
+  <string>${SIGNING_CERTIFICATE}</string>
+EOF
+  if [[ -n "${TEAM_ID}" ]]; then
+    cat >> "${tmp_file}" <<EOF
+  <key>teamID</key>
+  <string>${TEAM_ID}</string>
+EOF
+  fi
+  cat >> "${tmp_file}" <<'EOF'
+</dict>
+</plist>
+EOF
+  mv "${tmp_file}" "${EXPORT_OPTIONS_PLIST}"
+}
+
+export_app() {
+  write_export_options
+  echo "Exporting Developer ID app to ${EXPORT_DIR}"
+  xcodebuild -quiet -exportArchive -archivePath "${ARCHIVE_PATH}" -exportPath "${EXPORT_DIR}" -exportOptionsPlist "${EXPORT_OPTIONS_PLIST}"
   resolve_app_bundle
 }
 
@@ -239,6 +305,8 @@ all() {
   build_check
   require_clean_tree
   bump_version
+  archive_app
+  export_app
   package_release
   notarize
   staple
@@ -265,6 +333,12 @@ case "${COMMAND}" in
     ;;
   bump)
     bump_version
+    ;;
+  archive)
+    archive_app
+    ;;
+  export)
+    export_app
     ;;
   package)
     package_release
