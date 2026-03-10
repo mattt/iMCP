@@ -432,6 +432,8 @@ actor MCPConnectionManager {
         self.transport = NetworkTransport(
             connection: connection,
             logger: nil,
+            heartbeatConfig: .disabled,
+            reconnectionConfig: .disabled,
             bufferConfig: .unlimited
         )
 
@@ -873,7 +875,10 @@ actor ServerNetworkManager {
                                 .init(
                                     name: tool.name,
                                     description: tool.description,
-                                    inputSchema: tool.inputSchema,
+                                    inputSchema: {
+                                        let data = try! JSONEncoder().encode(tool.inputSchema)
+                                        return try! JSONDecoder().decode(Value.self, from: data)
+                                    }(),
                                     annotations: tool.annotations
                                 )
                             )
@@ -889,7 +894,7 @@ actor ServerNetworkManager {
         await server.withMethodHandler(CallTool.self) { [weak self] params in
             guard let self = self else {
                 return CallTool.Result(
-                    content: [.text("Server unavailable")],
+                    content: [.text(text: "Server unavailable", annotations: nil, _meta: nil)],
                     isError: true
                 )
             }
@@ -899,7 +904,13 @@ actor ServerNetworkManager {
             guard await self.isEnabledState else {
                 log.notice("Tool call rejected: iMCP is disabled")
                 return CallTool.Result(
-                    content: [.text("iMCP is currently disabled. Please enable it to use tools.")],
+                    content: [
+                        .text(
+                            text: "iMCP is currently disabled. Please enable it to use tools.",
+                            annotations: nil,
+                            _meta: nil
+                        )
+                    ],
                     isError: true
                 )
             }
@@ -928,7 +939,9 @@ actor ServerNetworkManager {
                                 content: [
                                     .audio(
                                         data: data.base64EncodedString(),
-                                        mimeType: mimeType
+                                        mimeType: mimeType,
+                                        annotations: nil,
+                                        _meta: nil
                                     )
                                 ],
                                 isError: false
@@ -939,7 +952,8 @@ actor ServerNetworkManager {
                                     .image(
                                         data: data.base64EncodedString(),
                                         mimeType: mimeType,
-                                        metadata: nil
+                                        annotations: nil,
+                                        _meta: nil
                                     )
                                 ],
                                 isError: false
@@ -953,20 +967,32 @@ actor ServerNetworkManager {
                             let data = try encoder.encode(value)
                             let text = String(data: data, encoding: .utf8)!
 
-                            return CallTool.Result(content: [.text(text)], isError: false)
+                            return CallTool.Result(
+                                content: [.text(text: text, annotations: nil, _meta: nil)],
+                                isError: false
+                            )
                         }
                     } catch {
                         log.error(
                             "Error executing tool \(params.name): \(error.localizedDescription)"
                         )
-                        return CallTool.Result(content: [.text("Error: \(error)")], isError: true)
+                        return CallTool.Result(
+                            content: [.text(text: "Error: \(error)", annotations: nil, _meta: nil)],
+                            isError: true
+                        )
                     }
                 }
             }
 
             log.error("Tool not found or service not enabled: \(params.name)")
             return CallTool.Result(
-                content: [.text("Tool not found or service not enabled: \(params.name)")],
+                content: [
+                    .text(
+                        text: "Tool not found or service not enabled: \(params.name)",
+                        annotations: nil,
+                        _meta: nil
+                    )
+                ],
                 isError: true
             )
         }
