@@ -15,8 +15,8 @@ struct App: SwiftUI.App {
                 isMenuPresented: $isMenuPresented
             )
         }
-        .menuBarExtraStyle(.window)
         .menuBarExtraAccess(isPresented: $isMenuPresented)
+        .menuBarExtraStyle(.window)
 
         Settings {
             SettingsView(serverController: serverController)
