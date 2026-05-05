@@ -239,9 +239,10 @@ actor StdioProxy {
                 }
 
                 if bytesRead == 0 {
-                    // EOF reached
-                    await log.debug("EOF reached on stdin, stopping stdin handler")
-                    break
+                    // EOF reached - signal to MCPService that stdin closed
+                    // so it can reconnect for a new client session
+                    await log.info("EOF reached on stdin, client disconnected")
+                    throw StdioProxyError.stdinClosed
                 }
 
                 if bytesRead > 0 {
@@ -465,6 +466,7 @@ actor StdioProxy {
 
 // Define custom errors for the StdioProxy
 enum StdioProxyError: Swift.Error {
+    case stdinClosed
     case networkTimeout
     case connectionClosed
 }
@@ -588,23 +590,24 @@ actor MCPService: Service {
                     try await proxy.start()
                 } catch let error as StdioProxyError {
                     switch error {
-                    // Removed stdinTimeout case as it's no longer thrown
-                    // case .stdinTimeout:
-                    //     await log.info("Stdin timed out, will reconnect...")
-                    //     try await Task.sleep(for: .seconds(1))
-                    //     continue
+                    case .stdinClosed:
+                        await log.info("Client disconnected (stdin closed), waiting for new connection...")
+                        try await Task.sleep(for: .seconds(1))
+                        continue
                     case .networkTimeout:
                         await log.info("Network timed out, will reconnect...")
                         try await Task.sleep(for: .seconds(1))
                         continue
                     case .connectionClosed:
-                        await log.critical("Connection closed, terminating...")
-                        return
+                        await log.info("Connection closed, will reconnect...")
+                        try await Task.sleep(for: .seconds(1))
+                        continue
                     }
                 } catch let error as NWError where error.errorCode == 54 || error.errorCode == 57 {
                     // Handle connection reset by peer (54) or socket not connected (57)
-                    await log.critical("Network connection terminated: \(error), shutting down...")
-                    return
+                    await log.info("Network connection terminated: \(error), reconnecting...")
+                    try await Task.sleep(for: .seconds(1))
+                    continue
                 } catch {
                     // Rethrow other errors to be handled by the outer catch block
                     throw error
