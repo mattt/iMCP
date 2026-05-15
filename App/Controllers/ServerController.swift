@@ -55,6 +55,7 @@ enum ServiceRegistry {
             ContactsService.shared,
             LocationService.shared,
             MapsService.shared,
+            MusicService.shared,
             MessageService.shared,
             RemindersService.shared,
             ShortcutsService.shared,
@@ -72,6 +73,7 @@ enum ServiceRegistry {
         contactsEnabled: Binding<Bool>,
         locationEnabled: Binding<Bool>,
         mapsEnabled: Binding<Bool>,
+        musicEnabled: Binding<Bool>,
         messagesEnabled: Binding<Bool>,
         remindersEnabled: Binding<Bool>,
         shortcutsEnabled: Binding<Bool>,
@@ -113,6 +115,13 @@ enum ServiceRegistry {
                 color: .purple,
                 service: MapsService.shared,
                 binding: mapsEnabled
+            ),
+            ServiceConfig(
+                name: "Music",
+                iconName: "music.note",
+                color: .pink,
+                service: MusicService.shared,
+                binding: musicEnabled
             ),
             ServiceConfig(
                 name: "Messages",
@@ -170,6 +179,7 @@ final class ServerController: ObservableObject {
     @AppStorage("contactsEnabled") private var contactsEnabled = false
     @AppStorage("locationEnabled") private var locationEnabled = false
     @AppStorage("mapsEnabled") private var mapsEnabled = true  // Default enabled
+    @AppStorage("musicEnabled") private var musicEnabled = false
     @AppStorage("messagesEnabled") private var messagesEnabled = false
     @AppStorage("remindersEnabled") private var remindersEnabled = false
     @AppStorage("shortcutsEnabled") private var shortcutsEnabled = false
@@ -187,6 +197,7 @@ final class ServerController: ObservableObject {
             contactsEnabled: $contactsEnabled,
             locationEnabled: $locationEnabled,
             mapsEnabled: $mapsEnabled,
+            musicEnabled: $musicEnabled,
             messagesEnabled: $messagesEnabled,
             remindersEnabled: $remindersEnabled,
             shortcutsEnabled: $shortcutsEnabled,

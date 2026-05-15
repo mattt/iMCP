@@ -1,18 +1,23 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
-<dict>
-	<key>LSMultipleInstancesProhibited</key>
-	<true/>
-	<key>NSBonjourServices</key>
-	<array>
-		<string>_mcp._tcp</string>
-	</array>
-	<key>SUEnableInstallerLauncherService</key>
-	<true/>
-	<key>SUFeedURL</key>
-	<string>https://downloads.imcp.app/appcast.xml</string>
-	<key>SUPublicEDKey</key>
-	<string>+2ibtYfPSNKpUJsn1R9Ywc1GnjQA5vemVN95d0EzGxg=</string>
-</dict>
+	<dict>
+		<key>LSMultipleInstancesProhibited</key>
+		<true />
+		<key>NSAppleMusicUsageDescription</key>
+		<string>iMCP uses Apple Music access to search the catalog and report now playing
+			information.</string>
+		<key>NSAppleEventsUsageDescription</key>
+		<string>iMCP uses Apple Events to control and read now playing data from Music.</string>
+		<key>NSBonjourServices</key>
+		<array>
+			<string>_mcp._tcp</string>
+		</array>
+		<key>SUEnableInstallerLauncherService</key>
+		<true />
+		<key>SUFeedURL</key>
+		<string>https://downloads.imcp.app/appcast.xml</string>
+		<key>SUPublicEDKey</key>
+		<string>+2ibtYfPSNKpUJsn1R9Ywc1GnjQA5vemVN95d0EzGxg=</string>
+	</dict>
 </plist>
