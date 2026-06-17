@@ -30,6 +30,9 @@ playground.xcworkspace
 # .swiftpm
 
 .build/
+build/
 
 # Release artifacts
 dist/
+
+.DS_Store

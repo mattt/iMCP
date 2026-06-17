@@ -885,7 +885,7 @@ actor ServerNetworkManager {
                                 .init(
                                     name: tool.name,
                                     description: tool.description,
-                                    inputSchema: try Value(tool.inputSchema),
+                                    inputSchema: try JSONSchemaToValueConverter.convert(tool.inputSchema),
                                     annotations: tool.annotations
                                 )
                             )
