@@ -28,10 +28,11 @@ struct ServicesSettingsView: View {
 
                         Spacer()
 
-                        Toggle("", isOn: serviceBinding(config))
+                        Toggle(config.name, isOn: serviceBinding(config))
                             .toggleStyle(.switch)
                             .controlSize(.small)
                             .labelsHidden()
+                            .id("\(config.id)-\(config.binding.wrappedValue)")
                     }
                 }
             }
@@ -64,12 +65,12 @@ struct ServicesSettingsView: View {
 
             Spacer()
 
-            Toggle("", isOn: toolBinding(tool.name))
+            Toggle(tool.annotations.title ?? tool.name, isOn: toolBinding(tool.name))
                 .toggleStyle(.switch)
                 .controlSize(.mini)
                 .labelsHidden()
+                .id("\(tool.name)-\(serverController.isToolEnabled(tool.name))")
         }
-        .accessibilityElement(children: .combine)
     }
 
     // Route writes through ServerController so views observing it refresh;
