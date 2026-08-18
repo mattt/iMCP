@@ -90,18 +90,24 @@ struct GeneralSettingsView: View {
                         }
                     }
 
-                    Text("Clients that automatically connect without approval.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Text(
+                        "Clients that connect automatically, without an approval dialog. A notification appears whenever one connects."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 }
                 .padding(.bottom, 4)
 
                 if trustedClients.isEmpty {
-                    HStack {
+                    VStack(alignment: .leading, spacing: 4) {
                         Text("No trusted clients")
                             .foregroundStyle(.secondary)
                             .italic()
-                        Spacer()
+                        Text(
+                            "Clients appear here when you check \"Always trust this client\" while approving a connection."
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     }
                     .padding(.vertical, 8)
                 } else {
@@ -124,6 +130,10 @@ struct GeneralSettingsView: View {
                         }
                         selectedClients.removeAll()
                     }
+
+                    Text("Clients are identified by the name they report, not by a verified identity.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
         }
