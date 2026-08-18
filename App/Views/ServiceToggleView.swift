@@ -41,6 +41,7 @@ struct ServiceToggleView: View {
             .buttonStyle(PlainButtonStyle())
             .disabled(!isEnabled)
             .frame(width: buttonSize, height: buttonSize)
+            .help("\(config.name) tools: \(toolSummary)")
 
             Text(config.name)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -68,5 +69,11 @@ struct ServiceToggleView: View {
         } else {
             return .primary.opacity(isEnabled ? 0.7 : 0.4)
         }
+    }
+
+    private var toolSummary: String {
+        config.service.tools
+            .map { $0.annotations.title ?? $0.name }
+            .joined(separator: ", ")
     }
 }
