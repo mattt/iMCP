@@ -269,6 +269,23 @@ final class ServerController: ObservableObject {
         disabledTools = tools
     }
 
+    func setService(_ config: ServiceConfig, enabled: Bool) {
+        objectWillChange.send()
+        config.binding.wrappedValue = enabled
+
+        Task {
+            if enabled, await !config.isActivated {
+                do {
+                    try await config.service.activate()
+                } catch {
+                    self.objectWillChange.send()
+                    config.binding.wrappedValue = false
+                }
+            }
+            await networkManager.updateServiceBindings(self.currentServiceBindings)
+        }
+    }
+
     // MARK: - Connection Approval Methods
     private func cleanupApprovalState() {
         pendingClientName = ""

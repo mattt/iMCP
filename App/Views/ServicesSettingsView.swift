@@ -73,15 +73,12 @@ struct ServicesSettingsView: View {
         }
     }
 
-    // Route writes through ServerController so views observing it refresh;
-    // @AppStorage-backed bindings don't publish through ObservableObject alone.
+    // Delegate to ServerController so toggling activates the service (permission
+    // prompt, revert on failure) and pushes updated bindings to connected clients.
     private func serviceBinding(_ config: ServiceConfig) -> Binding<Bool> {
         Binding(
             get: { config.binding.wrappedValue },
-            set: { newValue in
-                serverController.objectWillChange.send()
-                config.binding.wrappedValue = newValue
-            }
+            set: { serverController.setService(config, enabled: $0) }
         )
     }
 
