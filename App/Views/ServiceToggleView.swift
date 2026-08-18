@@ -1,9 +1,10 @@
-import SwiftUI
 import AppKit
+import SwiftUI
 
 struct ServiceToggleView: View {
     let config: ServiceConfig
     @State private var isServiceActivated = false
+    @State private var isHovering = false
 
     // MARK: Environment
     @Environment(\.colorScheme) private var colorScheme
@@ -14,19 +15,19 @@ struct ServiceToggleView: View {
     private let imagePadding: CGFloat = 5
 
     var body: some View {
-        HStack {
-            Button(action: {
-                config.binding.wrappedValue.toggle()
-                if config.binding.wrappedValue && !isServiceActivated {
-                    Task {
-                        do {
-                            try await config.service.activate()
-                        } catch {
-                            config.binding.wrappedValue = false
-                        }
+        Button(action: {
+            config.binding.wrappedValue.toggle()
+            if config.binding.wrappedValue && !isServiceActivated {
+                Task {
+                    do {
+                        try await config.service.activate()
+                    } catch {
+                        config.binding.wrappedValue = false
                     }
                 }
-            }) {
+            }
+        }) {
+            HStack {
                 Circle()
                     .fill(buttonBackgroundColor)
                     .overlay(
@@ -36,21 +37,36 @@ struct ServiceToggleView: View {
                             .foregroundColor(buttonForegroundColor)
                             .padding(imagePadding)
                     )
+                    .frame(width: buttonSize, height: buttonSize)
                     .animation(.snappy, value: config.binding.wrappedValue || isEnabled)
-            }
-            .buttonStyle(PlainButtonStyle())
-            .disabled(!isEnabled)
-            .frame(width: buttonSize, height: buttonSize)
-            .accessibilityLabel(config.name)
-            .accessibilityValue(config.binding.wrappedValue ? "Enabled" : "Disabled")
-            .accessibilityAddTraits(.isButton)
 
-            Text(config.name)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .foregroundColor(isEnabled ? Color.primary : .primary.opacity(0.5))
+                Text(config.name)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .foregroundColor(isEnabled ? Color.primary : .primary.opacity(0.5))
+            }
+            .padding(.horizontal, 14)
+            .frame(height: buttonSize + 6)
+            .contentShape(Rectangle())
         }
-        .frame(height: buttonSize)
-        .padding(.horizontal, 14)
+        .buttonStyle(ServiceToggleRowStyle())
+        .disabled(!isEnabled)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isHovering && isEnabled ? Color.primary.opacity(0.07) : Color.clear)
+        )
+        .onHover { hovering in
+            isHovering = hovering && isEnabled
+        }
+        .onChange(of: isEnabled) { _, enabled in
+            if !enabled {
+                isHovering = false
+            }
+        }
+        .animation(.easeOut(duration: 0.12), value: isHovering)
+        .pointerStyle(isEnabled ? .link : .default)
+        .help("\(config.binding.wrappedValue ? "Disable" : "Enable") \(config.name)")
+        .accessibilityLabel(config.name)
+        .accessibilityValue(config.binding.wrappedValue ? "Enabled" : "Disabled")
         .task {
             isServiceActivated = await config.isActivated
         }
@@ -71,5 +87,15 @@ struct ServiceToggleView: View {
         } else {
             return .primary.opacity(isEnabled ? 0.7 : 0.4)
         }
+    }
+}
+
+// Press feedback for the whole row: a slight scale-down while the mouse is held.
+private struct ServiceToggleRowStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.98 : 1.0)
+            .opacity(configuration.isPressed ? 0.85 : 1.0)
+            .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
     }
 }
