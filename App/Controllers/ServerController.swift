@@ -181,6 +181,7 @@ final class ServerController: ObservableObject {
 
     // MARK: - AppStorage for Disabled Tools
     @AppStorage("disabledTools") private var disabledToolsData = Data()
+    private var disabledToolsGeneration = 0
 
     // MARK: - Computed Properties for Service Configurations and Bindings
     var computedServiceConfigs: [ServiceConfig] {
@@ -248,8 +249,9 @@ final class ServerController: ObservableObject {
         set {
             objectWillChange.send()
             disabledToolsData = (try? JSONEncoder().encode(newValue)) ?? Data()
-            let snapshot = newValue
-            Task { await networkManager.updateDisabledTools(snapshot) }
+            disabledToolsGeneration += 1
+            let generation = disabledToolsGeneration
+            Task { await networkManager.updateDisabledTools(newValue, generation: generation) }
         }
     }
 
@@ -295,7 +297,7 @@ final class ServerController: ObservableObject {
         Task {
             // Initialize bindings from AppStorage before the server starts.
             await networkManager.updateServiceBindings(self.currentServiceBindings)
-            await networkManager.updateDisabledTools(self.disabledTools)
+            await networkManager.updateDisabledTools(self.disabledTools, generation: 0)
             await self.networkManager.start()
             self.updateServerStatus("Running")
 
@@ -668,6 +670,7 @@ actor ServerNetworkManager {
     private let services = ServiceRegistry.services
     private var serviceBindings: [String: Binding<Bool>] = [:]
     private var disabledTools: Set<String> = []
+    private var disabledToolsLastGeneration = -1
 
     init() {
         do {
@@ -1079,8 +1082,11 @@ actor ServerNetworkManager {
         }
     }
 
-    // Update the disabled tool set.
-    func updateDisabledTools(_ newDisabledTools: Set<String>) async {
+    // Update the disabled tool set, discarding out-of-order deliveries.
+    func updateDisabledTools(_ newDisabledTools: Set<String>, generation: Int) async {
+        guard generation > disabledToolsLastGeneration else { return }
+        disabledToolsLastGeneration = generation
+
         guard disabledTools != newDisabledTools else { return }
         self.disabledTools = newDisabledTools
 
