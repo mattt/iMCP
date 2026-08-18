@@ -101,11 +101,7 @@ struct ContentView: View {
                 Divider()
 
                 MenuButton("Settings...", isMenuPresented: $isMenuPresented) {
-                    // iMCP is an accessory app (LSUIElement), so openSettings() alone is
-                    // unreliable here: it routes through a responder-chain action that only
-                    // lands when the app is already frontmost, which is ambiguous right as
-                    // this menu bar popover dismisses. Activate first, as the other
-                    // window-showing actions in this file already do.
+                    // openSettings() alone is unreliable for this accessory (LSUIElement) app.
                     NSApp.activate(ignoringOtherApps: true)
                     openSettings()
                 }
