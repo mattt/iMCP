@@ -43,9 +43,18 @@ struct ServiceToggleView: View {
                 Text(config.name)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .foregroundColor(isEnabled ? Color.primary : .primary.opacity(0.5))
+
+                // Display-only: clicks pass through so the whole row stays one control.
+                Toggle("", isOn: config.binding)
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .labelsHidden()
+                    .allowsHitTesting(false)
+                    .opacity(isEnabled ? 1.0 : 0.4)
+                    .accessibilityHidden(true)
             }
             .padding(.horizontal, 14)
-            .frame(height: buttonSize + 6)
+            .frame(height: buttonSize)
             .contentShape(Rectangle())
         }
         .buttonStyle(ServiceToggleRowStyle())
