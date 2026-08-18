@@ -381,6 +381,9 @@ final class ServerController: ObservableObject {
 
         approvalWindowController.showApprovalWindow(
             clientName: clientID,
+            enabledServiceNames: computedServiceConfigs
+                .filter { $0.binding.wrappedValue }
+                .map { $0.name },
             onApprove: { alwaysTrust in
                 if alwaysTrust {
                     self.addTrustedClient(clientID)
