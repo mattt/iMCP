@@ -498,6 +498,7 @@ actor MCPService: Service {
                         // If we haven't found a service by now, resume with an error
                         if await connectionState.checkAndSetResumed() {
                             await log.error("Bonjour service discovery timed out after 30 seconds")
+                            browser.cancel()
                             continuation.resume(
                                 throwing: MCPError.internalError("Service discovery timeout")
                             )
