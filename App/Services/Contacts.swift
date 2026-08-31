@@ -129,6 +129,44 @@ final class ContactsService: Service {
         }
     }
 
+    /// Resolve a saved place name — "home", "work", or any custom label on the
+    /// user's "Me" contact card — to its postal address. Returns `nil` if no
+    /// postal address on the Me card matches the given name.
+    func savedPostalAddress(named name: String) async throws -> CNPostalAddress? {
+        let target = name.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !target.isEmpty else { return nil }
+
+        try await activate()
+
+        let contact = try await runContactStore {
+            try self.contactStore.unifiedMeContactWithKeys(toFetch: contactKeys)
+        }
+
+        // Map common English names to Apple's label constants so "home"/"work"
+        // resolve regardless of the system locale (localizedString would return
+        // e.g. "thuis"/"werk" under a Dutch locale).
+        let canonicalLabels: [String] = {
+            switch target {
+            case "home": return [CNLabelHome]
+            case "work": return [CNLabelWork]
+            default: return []
+            }
+        }()
+
+        for labeled in contact.postalAddresses {
+            guard let label = labeled.label else { continue }
+            let localized = CNLabeledValue<NSString>.localizedString(forLabel: label)
+            if canonicalLabels.contains(label)
+                || localized.lowercased() == target
+                || label.lowercased() == target
+            {
+                return labeled.value
+            }
+        }
+
+        return nil
+    }
+
     var tools: [Tool] {
         Tool(
             name: "contacts_me",
