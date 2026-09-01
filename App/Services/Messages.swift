@@ -101,7 +101,8 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
     var tools: [Tool] {
         Tool(
             name: "messages_fetch",
-            description: "Fetch messages from the Messages app",
+            description:
+                "Fetch messages from the Messages app. Each message names the conversation it belongs to (isPartOf), with its participants.",
             inputSchema: .object(
                 properties: [
                     "participants": .array(
@@ -212,6 +213,9 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                 ? try self.attachments(ofMessages: fetched.map { $0.id.rawValue }, in: access)
                 : [:]
 
+            // Each chat is looked up once and shared by all of its messages.
+            var conversations: [Chat.ID: [String: Value]] = [:]
+
             for message in fetched {
                 guard messages.count < (limit ?? defaultLimit) else { break }
                 let attachments = attachmentsByMessage[message.id.rawValue] ?? []
@@ -271,6 +275,13 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                 }
                 if !attachments.isEmpty {
                     object["attachment"] = .array(attachments.map { .object($0) })
+                }
+
+                if let chatID = message.chatID {
+                    if conversations[chatID] == nil {
+                        conversations[chatID] = try self.conversation(for: chatID, in: db)
+                    }
+                    object["isPartOf"] = conversations[chatID].map { .object($0) }
                 }
 
                 messages.append(object)
@@ -481,6 +492,30 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
         static func text(_ stmt: OpaquePointer, _ column: Int32) -> String? {
             sqlite3_column_text(stmt, column).map { String(cString: $0) }
         }
+    }
+
+    /// Describes the chat a message belongs to:
+    /// its identifier, its display name (group chats) and its participants.
+    private func conversation(
+        for chatID: Chat.ID,
+        in db: iMessage.Database
+    ) throws -> [String: Value] {
+        var conversation: [String: Value] = [
+            "@type": "Conversation",
+            "@id": .string(chatID.rawValue),
+        ]
+
+        let request = FetchRequest<Chat>(predicate: .id(chatID), limit: 1)
+        if let chat = try db.fetch(request).first {
+            if let name = chat.displayName, !name.isEmpty {
+                conversation["name"] = .string(name)
+            }
+            conversation["participant"] = .array(
+                chat.participants.map { .object(["@id": .string($0.rawValue)]) }
+            )
+        }
+
+        return conversation
     }
 
     private var canAccessDatabaseAtDefaultPath: Bool {
