@@ -277,9 +277,17 @@ However, the Messages app on macOS stores data in a SQLite database located at
 iMCP runs in [App Sandbox][app-sandbox],
 which limits its access to user data and system resources.
 When you go to enable the Messages service,
-you'll be prompted to open the `chat.db` file through the standard file picker.
-When you do, macOS adds that file to the app's sandbox.
+you'll be prompted to select your `~/Library/Messages` folder through the standard file picker.
+When you do, macOS adds that folder to the app's sandbox.
 [`NSOpenPanel`][nsopenpanel] is magic like that.
+The folder matters: `chat.db` is a WAL-mode database,
+and Messages writes every new message to `chat.db-wal` next to it first,
+only folding the log into `chat.db` at a checkpoint every few MB —
+often hours later.
+A grant on `chat.db` alone (what earlier versions asked for)
+leaves that log unreadable, so the newest messages were missing until then.
+If you granted `chat.db` with an earlier version, Messages keeps working from the last checkpoint;
+switch Messages off and on in the iMCP menu to grant the folder instead.
 
 But opening the iMessage database is just half the battle.
 Over the past few years,
