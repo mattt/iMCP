@@ -72,6 +72,9 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                     "query": .string(
                         description: "Search term to filter messages by content"
                     ),
+                    "isRead": .boolean(
+                        description: "If true, fetch read messages; if false, unread incoming; if omitted, fetch all"
+                    ),
                     "limit": .integer(
                         description: "Maximum messages to return",
                         default: .int(defaultLimit)
@@ -117,6 +120,7 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
             }
 
             let searchTerm = arguments["query"]?.stringValue
+            let isReadFilter = arguments["isRead"]?.boolValue
             let limit = arguments["limit"]?.intValue
 
             let db = try self.createDatabaseConnection()
@@ -145,6 +149,14 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                 guard messages.count < (limit ?? defaultLimit) else { break }
                 guard !message.text.isEmpty else { continue }
 
+                if let isReadFilter {
+                    if isReadFilter {
+                        guard message.isRead else { continue }
+                    } else {
+                        guard !message.isFromMe, !message.isRead else { continue }
+                    }
+                }
+
                 let sender: String
                 if message.isFromMe {
                     sender = "me"
@@ -160,14 +172,20 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                     }
                 }
 
-                messages.append([
+                var object: [String: Value] = [
                     "@id": .string(message.id.description),
                     "sender": [
                         "@id": .string(sender)
                     ],
                     "text": .string(message.text),
                     "createdAt": .string(message.date.formatted(.iso8601)),
-                ])
+                    "isRead": .bool(message.isRead),
+                ]
+                if let readAt = message.readAt {
+                    object["dateRead"] = .string(readAt.formatted(.iso8601))
+                }
+
+                messages.append(object)
             }
 
             log.debug("Successfully fetched \(messages.count) messages")
