@@ -128,11 +128,20 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
             log.debug(
                 "Fetching messages with date range: \(String(describing: dateRange)), limit: \(limit ?? -1)"
             )
-            for message in try db.fetchMessages(
-                with: Set(handles),
-                in: dateRange,
+            // Match the old fetchMessages(with:in:limit:) semantics:
+            // no participant filter when no handles matched.
+            var predicates: [MessagePredicate] = []
+            if !handles.isEmpty {
+                predicates.append(.participantHandles(Set(handles)))
+            }
+            if let dateRange {
+                predicates.append(.dateRange(dateRange))
+            }
+            let request = FetchRequest<Message>(
+                predicate: .and(predicates),
                 limit: max(limit ?? defaultLimit, 1024)
-            ) {
+            )
+            for message in try db.fetch(request) {
                 guard messages.count < (limit ?? defaultLimit) else { break }
                 guard !message.text.isEmpty else { continue }
 
