@@ -628,6 +628,10 @@ actor ServerNetworkManager {
     private var discoveryManager: NetworkDiscoveryManager?
     private var connections: [UUID: MCPConnectionManager] = [:]
     private var connectionTasks: [UUID: Task<Void, Never>] = [:]
+    /// Connections whose setup is waiting on the user's approval decision.
+    /// The setup timeout leaves these alone:
+    /// the person reading the dialog is not a stalled handshake.
+    private var connectionsAwaitingApproval: Set<UUID> = []
     private var pendingConnections: [UUID: String] = [:]
     private var removedConnections: Set<UUID> = []
 
@@ -824,7 +828,11 @@ actor ServerNetworkManager {
                 }
 
                 try await connectionManager.start { clientInfo in
-                    await approvalHandler(connectionID, clientInfo)
+                    // From here the wait is on a person, not the client,
+                    // so exempt the connection from the setup timeout (#193).
+                    self.connectionsAwaitingApproval.insert(connectionID)
+                    defer { self.connectionsAwaitingApproval.remove(connectionID) }
+                    return await approvalHandler(connectionID, clientInfo)
                 }
 
                 log.notice("Connection \(connectionID) successfully established")
@@ -840,9 +848,11 @@ actor ServerNetworkManager {
         Task {
             try? await Task.sleep(nanoseconds: 10_000_000_000)  // 10 seconds
 
-            // If the setup task is still registered, treat it as timed out.
+            // If the setup task is still registered, treat it as timed out,
+            // unless it is waiting on the approval dialog.
             if self.connectionTasks[connectionID] != nil,
-                self.connections[connectionID] != nil
+                self.connections[connectionID] != nil,
+                !self.connectionsAwaitingApproval.contains(connectionID)
             {
                 log.warning(
                     "Connection \(connectionID) setup timed out (task still in registry), closing it"
