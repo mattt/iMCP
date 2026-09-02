@@ -628,10 +628,11 @@ actor ServerNetworkManager {
     private var discoveryManager: NetworkDiscoveryManager?
     private var connections: [UUID: MCPConnectionManager] = [:]
     private var connectionTasks: [UUID: Task<Void, Never>] = [:]
-    /// Connections whose setup is waiting on the user's approval decision.
-    /// The setup timeout leaves these alone:
-    /// the person reading the dialog is not a stalled handshake.
-    private var connectionsAwaitingApproval: Set<UUID> = []
+    /// Setup timers, keyed by connection.
+    /// A timer is cancelled while the user is deciding on the approval dialog
+    /// and started again with a fresh budget once they have,
+    /// so human deliberation never counts as a stalled handshake (#193).
+    private var setupTimeoutTasks: [UUID: Task<Void, Never>] = [:]
     private var pendingConnections: [UUID: String] = [:]
     private var removedConnections: Set<UUID> = []
 
@@ -818,6 +819,7 @@ actor ServerNetworkManager {
             // Ensure this task is removed so the timeout logic doesn't fire afterward.
             defer {
                 self.connectionTasks.removeValue(forKey: connectionID)
+                self.cancelSetupTimeout(for: connectionID)
             }
 
             do {
@@ -828,11 +830,15 @@ actor ServerNetworkManager {
                 }
 
                 try await connectionManager.start { clientInfo in
-                    // From here the wait is on a person, not the client,
-                    // so exempt the connection from the setup timeout (#193).
-                    self.connectionsAwaitingApproval.insert(connectionID)
-                    defer { self.connectionsAwaitingApproval.remove(connectionID) }
-                    return await approvalHandler(connectionID, clientInfo)
+                    // From here the wait is on a person, not the client:
+                    // stop the setup timer for the dialog
+                    // and restart it for the rest of the handshake afterwards.
+                    self.cancelSetupTimeout(for: connectionID)
+                    let approved = await approvalHandler(connectionID, clientInfo)
+                    if approved {
+                        self.scheduleSetupTimeout(for: connectionID)
+                    }
+                    return approved
                 }
 
                 log.notice("Connection \(connectionID) successfully established")
@@ -845,14 +851,21 @@ actor ServerNetworkManager {
         connectionTasks[connectionID] = task
 
         // Time out stalled setups to avoid orphaned connections.
-        Task {
-            try? await Task.sleep(nanoseconds: 10_000_000_000)  // 10 seconds
+        scheduleSetupTimeout(for: connectionID)
+    }
 
-            // If the setup task is still registered, treat it as timed out,
-            // unless it is waiting on the approval dialog.
+    /// Gives the connection a fresh setup budget.
+    /// Any previous timer for it is replaced.
+    private func scheduleSetupTimeout(for connectionID: UUID) {
+        setupTimeoutTasks[connectionID]?.cancel()
+        setupTimeoutTasks[connectionID] = Task {
+            try? await Task.sleep(nanoseconds: 10_000_000_000)  // 10 seconds
+            guard !Task.isCancelled else { return }
+            self.setupTimeoutTasks.removeValue(forKey: connectionID)
+
+            // If the setup task is still registered, treat it as timed out.
             if self.connectionTasks[connectionID] != nil,
-                self.connections[connectionID] != nil,
-                !self.connectionsAwaitingApproval.contains(connectionID)
+                self.connections[connectionID] != nil
             {
                 log.warning(
                     "Connection \(connectionID) setup timed out (task still in registry), closing it"
@@ -860,6 +873,10 @@ actor ServerNetworkManager {
                 await removeConnection(connectionID)
             }
         }
+    }
+
+    private func cancelSetupTimeout(for connectionID: UUID) {
+        setupTimeoutTasks.removeValue(forKey: connectionID)?.cancel()
     }
 
     func registerHandlers(for server: MCP.Server, connectionID: UUID) async {
