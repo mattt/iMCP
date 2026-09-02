@@ -717,7 +717,7 @@
 			repositoryURL = "https://github.com/loopwork-ai/madrid";
 			requirement = {
 				kind = upToNextMajorVersion;
-				minimumVersion = 0.1.0;
+				minimumVersion = 0.5.0;
 			};
 		};
 		F825BDBD2D9AD00E0063ADD7 /* XCRemoteSwiftPackageReference "swift-service-lifecycle" */ = {

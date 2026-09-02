@@ -24,8 +24,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/loopwork-ai/madrid",
       "state" : {
-        "revision" : "9d9fdb20424483fb592e5a026d9d0816cd5c43eb",
-        "version" : "0.1.0"
+        "revision" : "11ec80cb67700e47948f90cef6de38bce4dbfb12",
+        "version" : "0.5.0"
       }
     },
     {
