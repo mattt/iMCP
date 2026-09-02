@@ -17,6 +17,7 @@
 		F825BDC12D9AD00E0063ADD7 /* UnixSignals in Frameworks */ = {isa = PBXBuildFile; productRef = F825BDC02D9AD00E0063ADD7 /* UnixSignals */; };
 		F873F48D2D712BCF0035CD0A /* Ontology in Frameworks */ = {isa = PBXBuildFile; productRef = F873F48C2D712BCF0035CD0A /* Ontology */; };
 		F87796FC2E0764AE00328CC6 /* MenuBarExtraAccess in Frameworks */ = {isa = PBXBuildFile; productRef = F87796FB2E0764AE00328CC6 /* MenuBarExtraAccess */; };
+		158948D22D0E610E83A4433C /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = B75D49165A453E912E36DBFE /* Sparkle */; };
 		F88358372D64A085000317CD /* Logging in Frameworks */ = {isa = PBXBuildFile; productRef = F88358362D64A085000317CD /* Logging */; };
 		F885C6B82D66079100963B25 /* imcp-server in Copy Executables */ = {isa = PBXBuildFile; fileRef = F8F44EB62D5908D00075D79C /* imcp-server */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		F8A7DE3E2DCB76F700530587 /* MCP in Frameworks */ = {isa = PBXBuildFile; productRef = F8A7DE3D2DCB76F700530587 /* MCP */; };
@@ -103,6 +104,7 @@
 			files = (
 				F809556E2D7888920055B911 /* TypedStream in Frameworks */,
 				F87796FC2E0764AE00328CC6 /* MenuBarExtraAccess in Frameworks */,
+				158948D22D0E610E83A4433C /* Sparkle in Frameworks */,
 				F873F48D2D712BCF0035CD0A /* Ontology in Frameworks */,
 				F8D7C31A2DCBD32100A4775F /* MCP in Frameworks */,
 				F8A7DE3E2DCB76F700530587 /* MCP in Frameworks */,
@@ -224,6 +226,7 @@
 				F8D7C3192DCBD32100A4775F /* MCP */,
 				F8D8C48D2DCE0E6800369E5C /* JSONSchema */,
 				F87796FB2E0764AE00328CC6 /* MenuBarExtraAccess */,
+				B75D49165A453E912E36DBFE /* Sparkle */,
 			);
 			productName = iMCP;
 			productReference = F8F44E6D2D59038D0075D79C /* iMCP.app */;
@@ -290,6 +293,7 @@
 				F8D7C3182DCBD32100A4775F /* XCRemoteSwiftPackageReference "swift-sdk" */,
 				F8D8C48C2DCE0E6800369E5C /* XCRemoteSwiftPackageReference "JSONSchema" */,
 				F87796FA2E0764AE00328CC6 /* XCRemoteSwiftPackageReference "MenuBarExtraAccess" */,
+				26120478122FBFCB2B073DE5 /* XCRemoteSwiftPackageReference "Sparkle" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = F8F44E6E2D59038D0075D79C /* Products */;
@@ -768,6 +772,14 @@
 				minimumVersion = 1.3.0;
 			};
 		};
+		26120478122FBFCB2B073DE5 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.6.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -846,6 +858,11 @@
 		F8F44E9C2D5903F70075D79C /* MCP */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = MCP;
+		};
+		B75D49165A453E912E36DBFE /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 26120478122FBFCB2B073DE5 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

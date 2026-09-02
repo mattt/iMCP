@@ -1,5 +1,6 @@
 import AppKit
 import MenuBarExtraAccess
+import Sparkle
 import SwiftUI
 
 struct ContentView: View {
@@ -9,6 +10,7 @@ struct ContentView: View {
     @Environment(\.openSettings) private var openSettings
 
     private let aboutWindowController: AboutWindowController
+    private let updater: SPUUpdater
 
     private var serviceConfigs: [ServiceConfig] {
         serverController.computedServiceConfigs
@@ -25,12 +27,14 @@ struct ContentView: View {
     init(
         serverManager: ServerController,
         isEnabled: Binding<Bool>,
-        isMenuPresented: Binding<Bool>
+        isMenuPresented: Binding<Bool>,
+        updater: SPUUpdater
     ) {
         self.serverController = serverManager
         self._isEnabled = isEnabled
         self._isMenuPresented = isMenuPresented
         self.aboutWindowController = AboutWindowController()
+        self.updater = updater
     }
 
     var body: some View {
@@ -103,6 +107,11 @@ struct ContentView: View {
                 MenuButton("Settings...", isMenuPresented: $isMenuPresented) {
                     openSettings()
                 }
+
+                MenuButton("Check for Updates...", isMenuPresented: $isMenuPresented) {
+                    updater.checkForUpdates()
+                }
+                .disabled(!updater.canCheckForUpdates)
 
                 MenuButton("About iMCP", isMenuPresented: $isMenuPresented) {
                     aboutWindowController.showWindow(nil)
