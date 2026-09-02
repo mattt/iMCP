@@ -13,8 +13,11 @@ final class BonjourDiscoveryTests: XCTestCase {
     /// A browser that times out without finding anything must be cancelled,
     /// not left running.
     func testTimedOutBrowserIsCancelled() async throws {
+        // Bonjour service names are limited to 15 characters,
+        // so keep this one valid; an invalid type fails the browser immediately
+        // instead of exercising the timeout path.
         let browser = NWBrowser(
-            for: .bonjour(type: "_imcp-test-absent._tcp", domain: nil),
+            for: .bonjour(type: "_imcp-absent._tcp", domain: nil),
             using: .tcp
         )
 
@@ -25,8 +28,10 @@ final class BonjourDiscoveryTests: XCTestCase {
                 preferring: { _ in true }
             )
             XCTFail("Expected discovery to time out")
+        } catch BonjourDiscovery.Error.timeout {
+            // Expected: nothing advertises this type, so only the timeout can end discovery.
         } catch {
-            // Expected.
+            XCTFail("Expected the timeout error, got \(error)")
         }
 
         let cancelled = await waitForCancellation(of: browser)
