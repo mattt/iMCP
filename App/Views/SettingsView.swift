@@ -1,3 +1,4 @@
+import ServiceManagement
 import SwiftUI
 
 struct SettingsView: View {
@@ -68,6 +69,7 @@ struct GeneralSettingsView: View {
     @ObservedObject var serverController: ServerController
     @State private var showingResetAlert = false
     @State private var selectedClients = Set<String>()
+    @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
 
     private var trustedClients: [String] {
         serverController.getTrustedClients()
@@ -75,6 +77,30 @@ struct GeneralSettingsView: View {
 
     var body: some View {
         Form {
+            Section {
+                VStack(alignment: .leading, spacing: 4) {
+                    Toggle("Launch at Login", isOn: $launchAtLogin)
+                        .onChange(of: launchAtLogin) { _, enabled in
+                            do {
+                                if enabled {
+                                    try SMAppService.mainApp.register()
+                                } else {
+                                    try SMAppService.mainApp.unregister()
+                                }
+                            } catch {
+                                launchAtLogin = SMAppService.mainApp.status == .enabled
+                            }
+                        }
+
+                    Text("Opens iMCP automatically when you log in.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .onAppear {
+                    launchAtLogin = SMAppService.mainApp.status == .enabled
+                }
+            }
+
             Section {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
