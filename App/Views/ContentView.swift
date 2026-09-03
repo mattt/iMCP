@@ -103,6 +103,8 @@ struct ContentView: View {
                 Divider()
 
                 MenuButton("Settings...", isMenuPresented: $isMenuPresented) {
+                    // openSettings() alone is unreliable for this accessory (LSUIElement) app.
+                    NSApp.activate(ignoringOtherApps: true)
                     openSettings()
                 }
 
