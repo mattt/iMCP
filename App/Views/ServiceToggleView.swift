@@ -41,6 +41,9 @@ struct ServiceToggleView: View {
             .buttonStyle(PlainButtonStyle())
             .disabled(!isEnabled)
             .frame(width: buttonSize, height: buttonSize)
+            .accessibilityLabel(config.name)
+            .accessibilityValue(config.binding.wrappedValue ? "Enabled" : "Disabled")
+            .accessibilityAddTraits(.isButton)
 
             Text(config.name)
                 .frame(maxWidth: .infinity, alignment: .leading)
