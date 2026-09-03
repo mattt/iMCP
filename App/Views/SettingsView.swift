@@ -110,6 +110,14 @@ struct GeneralSettingsView: View {
                             Text(client)
                                 .font(.system(.body, design: .monospaced))
                             Spacer()
+                            Button {
+                                serverController.removeTrustedClient(client)
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Remove Client")
                         }
                         .contextMenu {
                             Button("Remove Client", role: .destructive) {
