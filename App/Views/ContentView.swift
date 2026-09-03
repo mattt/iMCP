@@ -91,6 +91,8 @@ struct ContentView: View {
                     let pasteboard = NSPasteboard.general
                     pasteboard.clearContents()
                     pasteboard.setString(command, forType: .string)
+
+                    _ = NSSound.play(.pop)
                 }
             }
             .padding(.top, 8)
