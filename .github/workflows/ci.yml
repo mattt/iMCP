@@ -32,6 +32,7 @@ jobs:
               with:
                   path: |
                       ~/Library/Developer/Xcode/DerivedData
+                      !~/Library/Developer/Xcode/DerivedData/ModuleCache.noindex
                       ~/Library/Caches/org.swift.swiftpm
                   key: ${{ runner.os }}-xcode-${{ matrix.xcode }}-derived-${{ hashFiles('**/Package.resolved') }}
                   restore-keys: |
