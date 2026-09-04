@@ -38,7 +38,7 @@ print_usage() {
 Usage: Scripts/release.sh [command]
 
 Commands:
-  all         Build check, bump, archive, export, notarize, staple, package, commit/tag, release, upload, appcast (default)
+  all         Build check, bump, archive, export, notarize, staple, package, commit/tag, appcast, release, upload, upload-appcast, publish (default)
   check       Quick release build check
   bump        Bump version/build numbers
   archive     Create an Xcode archive for direct distribution
@@ -48,9 +48,11 @@ Commands:
   notarize    Submit the app bundle for notarization
   staple      Staple the notarization ticket to the app bundle
   commit      Commit version bump and create release tag
-  release     Create a GitHub release (no assets)
-  upload      Upload the release asset to GitHub
-  appcast     Generate the signed Sparkle appcast and upload it to the release
+  appcast     Generate and validate the signed Sparkle appcast
+  release     Create a draft GitHub release for the tag at HEAD (no assets)
+  upload      Upload the release asset to the draft release
+  upload-appcast Upload the appcast to the draft release
+  publish     Publish the draft release and mark it latest
   help        Show this help
 
 Environment:
@@ -363,10 +365,14 @@ export_app() {
 
 notarize() {
   require_app_bundle
+  # Capture first so a validation failure in the helper stops the script;
+  # a process substitution would swallow its exit status.
+  local credential_output
+  credential_output="$(notary_credential_args)"
   local credential_args=()
   while IFS= read -r line; do
     credential_args+=("${line}")
-  done < <(notary_credential_args)
+  done <<< "${credential_output}"
   ensure_dist_dir
   echo "Zipping for notarization: ${NOTARY_ZIP}"
   ditto -c -k --keepParent "${APP_BUNDLE}" "${NOTARY_ZIP}"
@@ -435,14 +441,47 @@ push_tags() {
   git push --tags
 }
 
+# The release tag must exist and point at the commit being released,
+# or gh would mint a tag on the default branch that doesn't match the binary.
+require_release_tag() {
+  require_version
+  local tag_commit head_commit
+  tag_commit="$(git rev-list -n 1 "refs/tags/${VERSION}" 2>/dev/null || true)"
+  if [[ -z "${tag_commit}" ]]; then
+    echo "Missing tag: ${VERSION}. Tag the release commit before publishing." >&2
+    exit 1
+  fi
+  head_commit="$(git rev-parse HEAD)"
+  if [[ "${tag_commit}" != "${head_commit}" ]]; then
+    echo "Tag ${VERSION} points at ${tag_commit}, but HEAD is ${head_commit}." >&2
+    exit 1
+  fi
+}
+
+# The release starts as a draft so a failure partway through
+# never leaves a half-populated release as the latest one.
 create_release() {
   require_version
   if [[ -n "${DRY_RUN}" ]]; then
-    echo "Dry run: would create GitHub release ${VERSION}"
+    echo "Dry run: would create draft GitHub release ${VERSION}"
     return 0
   fi
-  echo "Creating GitHub release ${VERSION}"
-  gh release create "${VERSION}" --generate-notes
+  require_release_tag
+  echo "Creating draft GitHub release ${VERSION}"
+  gh release create "${VERSION}" --draft --generate-notes
+}
+
+publish_release() {
+  require_version
+  if [[ -n "${DRY_RUN}" ]]; then
+    echo "Dry run: would publish GitHub release ${VERSION}"
+    return 0
+  fi
+  echo "Publishing GitHub release ${VERSION}"
+  gh release edit "${VERSION}" --draft=false --latest
+  if [[ -t 1 && -z "${CI:-}" ]]; then
+    gh release view --web "${VERSION}"
+  fi
 }
 
 upload_asset() {
@@ -463,9 +502,6 @@ upload_asset() {
   fi
   echo "Uploading release asset ${upload_path}"
   gh release upload "${VERSION}" "${upload_path}" --clobber
-  if [[ -t 1 && -z "${CI:-}" ]]; then
-    gh release view --web "${VERSION}"
-  fi
 }
 
 # Sparkle ships generate_appcast inside its SwiftPM artifact,
@@ -581,15 +617,15 @@ all() {
   package_release
   commit_and_tag
   push_tags
+  build_appcast
   create_release
   upload_asset
-  build_appcast
   upload_appcast
+  publish_release
 }
 
 appcast() {
   build_appcast
-  upload_appcast
 }
 
 release() {
@@ -643,6 +679,12 @@ case "${COMMAND}" in
     ;;
   appcast)
     appcast
+    ;;
+  upload-appcast)
+    upload_appcast
+    ;;
+  publish)
+    publish_release
     ;;
   help|-h|--help)
     print_usage

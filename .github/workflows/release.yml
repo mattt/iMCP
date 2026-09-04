@@ -72,6 +72,16 @@ jobs:
               if: github.event_name == 'workflow_dispatch' && inputs.dry_run
               run: echo "DRY_RUN=1" >> "${GITHUB_ENV}"
 
+            # A manual publish must run from the version's tag,
+            # so the release's source matches the binary it ships.
+            - name: Require the release tag
+              if: github.event_name == 'workflow_dispatch' && !inputs.dry_run
+              run: |
+                  if [[ "${GITHUB_REF_TYPE}" != "tag" || "${GITHUB_REF_NAME}" != "${VERSION}" ]]; then
+                    echo "Publishing runs must be started from the ${VERSION} tag, not ${GITHUB_REF_TYPE} ${GITHUB_REF_NAME}." >&2
+                    exit 1
+                  fi
+
             - name: Import signing certificate
               env:
                   CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
@@ -154,7 +164,14 @@ jobs:
             - name: Package
               run: ./Scripts/release.sh package
 
-            - name: Create GitHub release
+            - name: Generate appcast
+              env:
+                  SPARKLE_PUBLIC_KEY: ${{ vars.SPARKLE_PUBLIC_KEY }}
+              run: ./Scripts/release.sh appcast
+
+            # Everything is built and validated before anything is published.
+            # The release stays a draft until both uploads have succeeded.
+            - name: Create draft release
               env:
                   GH_TOKEN: ${{ github.token }}
               run: ./Scripts/release.sh release
@@ -164,11 +181,15 @@ jobs:
                   GH_TOKEN: ${{ github.token }}
               run: ./Scripts/release.sh upload
 
-            - name: Generate and upload appcast
+            - name: Upload appcast
               env:
                   GH_TOKEN: ${{ github.token }}
-                  SPARKLE_PUBLIC_KEY: ${{ vars.SPARKLE_PUBLIC_KEY }}
-              run: ./Scripts/release.sh appcast
+              run: ./Scripts/release.sh upload-appcast
+
+            - name: Publish release
+              env:
+                  GH_TOKEN: ${{ github.token }}
+              run: ./Scripts/release.sh publish
 
             - name: Attach build products to the workflow run
               if: always()
