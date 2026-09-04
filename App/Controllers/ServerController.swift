@@ -51,6 +51,7 @@ enum ServiceRegistry {
     static let services: [any Service] = {
         var services: [any Service] = [
             CalendarService.shared,
+            CallHistoryService.shared,
             CaptureService.shared,
             ContactsService.shared,
             LocationService.shared,
@@ -68,6 +69,7 @@ enum ServiceRegistry {
 
     static func configureServices(
         calendarEnabled: Binding<Bool>,
+        callHistoryEnabled: Binding<Bool>,
         captureEnabled: Binding<Bool>,
         contactsEnabled: Binding<Bool>,
         locationEnabled: Binding<Bool>,
@@ -85,6 +87,13 @@ enum ServiceRegistry {
                 color: .red,
                 service: CalendarService.shared,
                 binding: calendarEnabled
+            ),
+            ServiceConfig(
+                name: "Call History",
+                iconName: "phone.fill",
+                color: .green.mix(with: .blue, by: 0.3),
+                service: CallHistoryService.shared,
+                binding: callHistoryEnabled
             ),
             ServiceConfig(
                 name: "Capture",
@@ -166,6 +175,7 @@ final class ServerController: ObservableObject {
 
     // MARK: - AppStorage for Service Enablement States
     @AppStorage("calendarEnabled") private var calendarEnabled = false
+    @AppStorage("callHistoryEnabled") private var callHistoryEnabled = false
     @AppStorage("captureEnabled") private var captureEnabled = false
     @AppStorage("contactsEnabled") private var contactsEnabled = false
     @AppStorage("locationEnabled") private var locationEnabled = false
@@ -187,6 +197,7 @@ final class ServerController: ObservableObject {
     var computedServiceConfigs: [ServiceConfig] {
         ServiceRegistry.configureServices(
             calendarEnabled: $calendarEnabled,
+            callHistoryEnabled: $callHistoryEnabled,
             captureEnabled: $captureEnabled,
             contactsEnabled: $contactsEnabled,
             locationEnabled: $locationEnabled,
