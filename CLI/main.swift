@@ -115,13 +115,24 @@ actor StdioProxy {
                     }
                 }
 
-                // Wait for any task to complete (or fail)
-                try await group.next()
+                // Wait for any task to complete (or fail).
+                // On throw, skip a bare `cancelAll()`: the sibling is often
+                // parked in `NWConnection.receive`, which is not
+                // cancellation-aware. Cancel the connection first so that
+                // receive completes and the group can finish unwinding.
+                let firstError: (any Swift.Error)?
+                do {
+                    try await group.next()
+                    firstError = nil
+                } catch {
+                    firstError = error
+                }
                 await log.debug("A task completed, cancelling remaining tasks")
-
-                // If we get here, one of the tasks completed or failed
-                // Cancel all remaining tasks
+                await self.stop()
                 group.cancelAll()
+                if let firstError {
+                    throw firstError
+                }
             }
         } catch {
             sessionError = error
