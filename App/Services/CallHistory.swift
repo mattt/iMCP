@@ -71,8 +71,8 @@ final class CallHistoryService: NSObject, Service, NSOpenSavePanelDelegate {
                         format: .dateTime
                     ),
                     "call_type": .string(
-                        description:
-                            "Filter by call type: 'incoming', 'outgoing', 'missed', or omit for all"
+                        description: "Filter by call type, or omit for all",
+                        enum: ["incoming", "outgoing", "missed"]
                     ),
                     "limit": .integer(
                         description: "Maximum calls to return",
