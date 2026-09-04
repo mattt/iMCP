@@ -98,13 +98,15 @@ final class CallHistoryService: NSObject, Service, NSOpenSavePanelDelegate {
             var endDate: Date?
             if let startStr = arguments["start"]?.stringValue,
                 let parsedStart = ISO8601DateFormatter.parsedLenientISO8601Date(
-                    fromISO8601String: startStr)
+                    fromISO8601String: startStr
+                )
             {
                 startDate = parsedStart.date
             }
             if let endStr = arguments["end"]?.stringValue,
                 let parsedEnd = ISO8601DateFormatter.parsedLenientISO8601Date(
-                    fromISO8601String: endStr)
+                    fromISO8601String: endStr
+                )
             {
                 endDate = parsedEnd.date
             }
@@ -171,8 +173,7 @@ final class CallHistoryService: NSObject, Service, NSOpenSavePanelDelegate {
         )
     }
 
-    private func withSecurityScopedAccess<T>(_ url: URL, _ operation: (URL) throws -> T) throws -> T
-    {
+    private func withSecurityScopedAccess<T>(_ url: URL, _ operation: (URL) throws -> T) throws -> T {
         guard url.startAccessingSecurityScopedResource() else {
             log.error("Failed to start accessing security-scoped resource")
             throw DatabaseAccessError.securityScopeAccessFailed
@@ -266,7 +267,12 @@ final class CallHistoryService: NSObject, Service, NSOpenSavePanelDelegate {
             for param in params {
                 if let stringParam = param as? String {
                     sqlite3_bind_text(
-                        stmt, paramIndex, (stringParam as NSString).utf8String, -1, nil)
+                        stmt,
+                        paramIndex,
+                        (stringParam as NSString).utf8String,
+                        -1,
+                        nil
+                    )
                 } else if let doubleParam = param as? Double {
                     sqlite3_bind_double(stmt, paramIndex, doubleParam)
                 } else if let timeInterval = param as? TimeInterval {
