@@ -467,12 +467,13 @@ push_tags() {
     exit 1
   fi
   local response=""
-  read -r -p "Push tags to origin? [y/N] " response
+  read -r -p "Push tag ${VERSION} to origin? [y/N] " response
   if [[ "${response}" != "y" && "${response}" != "Y" ]]; then
     echo "Tag push cancelled."
     exit 1
   fi
-  git push --tags
+  # Push only this release's tag: every pushed version tag starts a release.
+  git push origin "refs/tags/${VERSION}"
 }
 
 # The release tag must exist and point at the commit being released,
