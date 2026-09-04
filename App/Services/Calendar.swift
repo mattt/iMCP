@@ -541,5 +541,69 @@ final class CalendarService: Service {
             result.identifier = event.eventIdentifier
             return result
         }
+
+        Tool(
+            name: "events_delete",
+            description: "Delete a calendar event by identifier",
+            inputSchema: .object(
+                properties: [
+                    "identifier": .string(description: "The event identifier"),
+                    "span": .string(
+                        description:
+                            "For recurring events: delete only this occurrence, or this and all future events",
+                        default: .string("thisEvent"),
+                        enum: ["thisEvent", "futureEvents"]
+                    ),
+                ],
+                required: ["identifier"],
+                additionalProperties: false
+            ),
+            annotations: .init(
+                title: "Delete Event",
+                readOnlyHint: false,
+                destructiveHint: true,
+                idempotentHint: true,
+                openWorldHint: false
+            )
+        ) { arguments in
+            guard EKEventStore.authorizationStatus(for: .event) == .fullAccess else {
+                log.error("Calendar access not authorized")
+                throw NSError(
+                    domain: "CalendarError",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "Calendar access not authorized"]
+                )
+            }
+
+            guard case .string(let identifier) = arguments["identifier"] else {
+                throw NSError(
+                    domain: "CalendarError",
+                    code: 2,
+                    userInfo: [NSLocalizedDescriptionKey: "Event identifier is required"]
+                )
+            }
+
+            // For a recurring series this returns the first occurrence,
+            // so `.futureEvents` on it removes the whole series.
+            guard let event = self.eventStore.event(withIdentifier: identifier) else {
+                throw NSError(
+                    domain: "CalendarError",
+                    code: 3,
+                    userInfo: [
+                        NSLocalizedDescriptionKey: "No event found with identifier \(identifier)"
+                    ]
+                )
+            }
+
+            let span: EKSpan =
+                arguments["span"]?.stringValue == "futureEvents" ? .futureEvents : .thisEvent
+
+            try self.eventStore.remove(event, span: span, commit: true)
+
+            return Value.object([
+                "deleted": .bool(true),
+                "identifier": .string(identifier),
+            ])
+        }
     }
 }
