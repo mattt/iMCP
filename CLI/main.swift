@@ -92,37 +92,44 @@ actor StdioProxy {
         }
 
         // Create a structured concurrency task group for handling I/O
-        try await withThrowingTaskGroup(of: Void.self) { group in
-            // Add task for handling stdin to network
-            group.addTask { [stdinBufferSize] in
-                do {
-                    try await self.handleStdinToNetwork(bufferSize: stdinBufferSize)
-                } catch {
-                    await log.error("Stdin handler failed: \(error)")
-                    throw error
+        var sessionError: (any Swift.Error)?
+        do {
+            try await withThrowingTaskGroup(of: Void.self) { group in
+                // Add task for handling stdin to network
+                group.addTask { [stdinBufferSize] in
+                    do {
+                        try await self.handleStdinToNetwork(bufferSize: stdinBufferSize)
+                    } catch {
+                        await log.error("Stdin handler failed: \(error)")
+                        throw error
+                    }
                 }
-            }
 
-            // Add task for handling network to stdout
-            group.addTask { [networkBufferSize] in
-                do {
-                    try await self.handleNetworkToStdout(bufferSize: networkBufferSize)
-                } catch {
-                    await log.error("Network handler failed: \(error)")
-                    throw error
+                // Add task for handling network to stdout
+                group.addTask { [networkBufferSize] in
+                    do {
+                        try await self.handleNetworkToStdout(bufferSize: networkBufferSize)
+                    } catch {
+                        await log.error("Network handler failed: \(error)")
+                        throw error
+                    }
                 }
+
+                // Wait for any task to complete (or fail)
+                try await group.next()
+                await log.debug("A task completed, cancelling remaining tasks")
+
+                // If we get here, one of the tasks completed or failed
+                // Cancel all remaining tasks
+                group.cancelAll()
             }
+        } catch {
+            sessionError = error
+        }
 
-            // Wait for any task to complete (or fail)
-            try await group.next()
-            await log.debug("A task completed, cancelling remaining tasks")
-
-            // If we get here, one of the tasks completed or failed
-            // Cancel all remaining tasks
-            group.cancelAll()
-
-            // Stop the proxy
-            await self.stop()
+        await self.stop()
+        if let sessionError {
+            throw sessionError
         }
     }
 
@@ -220,9 +227,11 @@ actor StdioProxy {
                 }
 
                 if bytesRead == 0 {
-                    // EOF reached
+                    // The MCP client closed stdin. Exit rather than return:
+                    // a clean return made MCPService reconnect in a tight loop
+                    // while stdin stayed at EOF.
                     await log.debug("EOF reached on stdin, stopping stdin handler")
-                    break
+                    throw StdioProxyError.connectionClosed
                 }
 
                 if bytesRead > 0 {
@@ -262,6 +271,8 @@ actor StdioProxy {
                     // Clear pending data after processing
                     pendingData.removeAll(keepingCapacity: true)
                 }
+            } catch let error as StdioProxyError {
+                throw error
             } catch {
                 if let posixError = error as? Errno, posixError == .wouldBlock {
                     try await Task.sleep(for: .milliseconds(10))  // Keep the sleep to yield CPU
@@ -272,8 +283,6 @@ actor StdioProxy {
                 throw error
             }
         }
-
-        await log.debug("Stdin handler task completed")
     }
 
     /// Handles forwarding data from the network to stdout
@@ -444,12 +453,6 @@ actor StdioProxy {
     }
 }
 
-// Define custom errors for the StdioProxy
-enum StdioProxyError: Swift.Error {
-    case networkTimeout
-    case connectionClosed
-}
-
 // Create MCPService class to manage lifecycle
 actor MCPService: Service {
     private var currentProxy: StdioProxy?
@@ -491,33 +494,27 @@ actor MCPService: Service {
                 )
                 self.currentProxy = proxy
 
+                let sessionError: (any Swift.Error)?
                 do {
                     try await proxy.start()
-                } catch let error as StdioProxyError {
-                    switch error {
-                    // Removed stdinTimeout case as it's no longer thrown
-                    // case .stdinTimeout:
-                    //     await log.info("Stdin timed out, will reconnect...")
-                    //     try await Task.sleep(for: .seconds(1))
-                    //     continue
-                    case .networkTimeout:
-                        await log.info("Network timed out, will reconnect...")
-                        try await Task.sleep(for: .seconds(1))
-                        continue
-                    case .connectionClosed:
-                        await log.critical("Connection closed, terminating...")
-                        return
-                    }
-                } catch let error as NWError where error.errorCode == 54 || error.errorCode == 57 {
-                    // Handle connection reset by peer (54) or socket not connected (57)
-                    await log.critical("Network connection terminated: \(error), shutting down...")
-                    return
+                    sessionError = nil
                 } catch {
-                    // Rethrow other errors to be handled by the outer catch block
-                    throw error
+                    sessionError = error
+                }
+
+                switch MCPServiceLoop.decision(error: sessionError) {
+                case .terminate:
+                    await log.critical("Connection closed, terminating...")
+                    return
+                case .reconnect(let seconds):
+                    if let sessionError {
+                        await log.error("Connection error: \(sessionError)")
+                    }
+                    await log.info("Will retry connection in \(Int(seconds)) seconds...")
+                    try await Task.sleep(for: .seconds(seconds))
                 }
             } catch {
-                // Handle all other errors with retry
+                // Handle discovery and other errors with retry
                 await log.error("Connection error: \(error)")
                 await log.info("Will retry connection in 5 seconds...")
                 try await Task.sleep(for: .seconds(5))

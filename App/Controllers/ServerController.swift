@@ -326,9 +326,10 @@ final class ServerController: ObservableObject {
             // Initialize bindings from AppStorage before the server starts.
             await networkManager.updateServiceBindings(self.currentServiceBindings)
             await networkManager.updateDisabledTools(self.disabledTools, generation: 0)
-            await self.networkManager.start()
-            self.updateServerStatus("Running")
 
+            // Register the approval handler before advertising the Bonjour
+            // service. Otherwise the first connection after launch is rejected
+            // immediately because the handler is still nil.
             await networkManager.setConnectionApprovalHandler {
                 [weak self] connectionID, clientInfo in
                 guard let self = self else {
@@ -358,6 +359,9 @@ final class ServerController: ObservableObject {
                     }
                 }
             }
+
+            await self.networkManager.start()
+            self.updateServerStatus("Running")
         }
     }
 
