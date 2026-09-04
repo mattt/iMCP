@@ -3,6 +3,7 @@ import SwiftUI
 
 struct ConnectionApprovalView: View {
     let clientName: String
+    let enabledServiceNames: [String]
     let onApprove: (Bool) -> Void  // Bool parameter is for "always trust"
     let onDeny: () -> Void
 
@@ -26,10 +27,17 @@ struct ConnectionApprovalView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Allow \"\(clientName)\" to connect to iMCP?")
 
-                Text("This will give the client access to enabled services.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.leading)
+                if enabledServiceNames.isEmpty {
+                    Text("No services are currently enabled.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.leading)
+                } else {
+                    Text("This will give the client access to: \(enabledServiceNames.joined(separator: ", ")).")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.leading)
+                }
             }
 
             // Always trust checkbox
@@ -91,12 +99,14 @@ class ConnectionApprovalWindowController: NSObject {
 
     func showApprovalWindow(
         clientName: String,
+        enabledServiceNames: [String],
         onApprove: @escaping (Bool) -> Void,
         onDeny: @escaping () -> Void
     ) {
         // Create the SwiftUI view
         let approvalView = ConnectionApprovalView(
             clientName: clientName,
+            enabledServiceNames: enabledServiceNames,
             onApprove: { alwaysTrust in
                 onApprove(alwaysTrust)
                 self.closeWindow()
@@ -160,6 +170,7 @@ class ConnectionApprovalWindowController: NSObject {
 #Preview {
     ConnectionApprovalView(
         clientName: "Claude Desktop",
+        enabledServiceNames: ["Calendar", "Contacts", "Location"],
         onApprove: { alwaysTrust in
             print("Approved with always trust: \(alwaysTrust)")
         },

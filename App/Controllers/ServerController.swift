@@ -431,6 +431,10 @@ final class ServerController: ObservableObject {
 
         approvalWindowController.showApprovalWindow(
             clientName: clientID,
+            enabledServiceNames:
+                computedServiceConfigs
+                .filter { $0.binding.wrappedValue }
+                .map { $0.name },
             onApprove: { alwaysTrust in
                 if alwaysTrust {
                     self.addTrustedClient(clientID)
@@ -678,6 +682,11 @@ actor ServerNetworkManager {
     private var discoveryManager: NetworkDiscoveryManager?
     private var connections: [UUID: MCPConnectionManager] = [:]
     private var connectionTasks: [UUID: Task<Void, Never>] = [:]
+    /// Setup timers, keyed by connection.
+    /// A timer is cancelled while the user is deciding on the approval dialog
+    /// and started again with a fresh budget once they have,
+    /// so human deliberation never counts as a stalled handshake (#193).
+    private var setupTimeoutTasks: [UUID: Task<Void, Never>] = [:]
     private var pendingConnections: [UUID: String] = [:]
     private var removedConnections: Set<UUID> = []
 
@@ -866,6 +875,7 @@ actor ServerNetworkManager {
             // Ensure this task is removed so the timeout logic doesn't fire afterward.
             defer {
                 self.connectionTasks.removeValue(forKey: connectionID)
+                self.cancelSetupTimeout(for: connectionID)
             }
 
             do {
@@ -876,7 +886,15 @@ actor ServerNetworkManager {
                 }
 
                 try await connectionManager.start { clientInfo in
-                    await approvalHandler(connectionID, clientInfo)
+                    // From here the wait is on a person, not the client:
+                    // stop the setup timer for the dialog
+                    // and restart it for the rest of the handshake afterwards.
+                    self.cancelSetupTimeout(for: connectionID)
+                    let approved = await approvalHandler(connectionID, clientInfo)
+                    if approved {
+                        self.scheduleSetupTimeout(for: connectionID)
+                    }
+                    return approved
                 }
 
                 log.notice("Connection \(connectionID) successfully established")
@@ -889,8 +907,17 @@ actor ServerNetworkManager {
         connectionTasks[connectionID] = task
 
         // Time out stalled setups to avoid orphaned connections.
-        Task {
+        scheduleSetupTimeout(for: connectionID)
+    }
+
+    /// Gives the connection a fresh setup budget.
+    /// Any previous timer for it is replaced.
+    private func scheduleSetupTimeout(for connectionID: UUID) {
+        setupTimeoutTasks[connectionID]?.cancel()
+        setupTimeoutTasks[connectionID] = Task {
             try? await Task.sleep(nanoseconds: 10_000_000_000)  // 10 seconds
+            guard !Task.isCancelled else { return }
+            self.setupTimeoutTasks.removeValue(forKey: connectionID)
 
             // If the setup task is still registered, treat it as timed out.
             if self.connectionTasks[connectionID] != nil,
@@ -902,6 +929,10 @@ actor ServerNetworkManager {
                 await removeConnection(connectionID)
             }
         }
+    }
+
+    private func cancelSetupTimeout(for connectionID: UUID) {
+        setupTimeoutTasks.removeValue(forKey: connectionID)?.cancel()
     }
 
     func registerHandlers(for server: MCP.Server, connectionID: UUID) async {
