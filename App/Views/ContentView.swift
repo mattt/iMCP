@@ -9,6 +9,7 @@ struct ContentView: View {
     @Environment(\.openSettings) private var openSettings
 
     private let aboutWindowController: AboutWindowController
+    @State private var contentHeight: CGFloat = 0
 
     private var serviceConfigs: [ServiceConfig] {
         serverController.computedServiceConfigs
@@ -72,9 +73,8 @@ struct ContentView: View {
                         await serverController.updateServiceBindings(serviceBindings)
                     }
                 }
-                .transition(.opacity.combined(with: .move(edge: .top)))
-                .animation(.easeInOut(duration: 0.3), value: isEnabled)
             }
+            // No animation: it desyncs this auto-sizing panel's frame from its content.
 
             VStack(alignment: .leading, spacing: 2) {
                 Divider()
@@ -121,7 +121,35 @@ struct ContentView: View {
             .padding(.horizontal, 2)
         }
         .padding(.vertical, 6)
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.height
+        } action: { height in
+            contentHeight = height
+            resizeMenuBarExtraWindow()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Material.thick)
+        .onChange(of: isMenuPresented) { _, presented in
+            if presented {
+                resizeMenuBarExtraWindow()
+            }
+        }
+    }
+
+    // MenuBarExtra's window keeps a stale taller frame when its content shrinks,
+    // leaving the content vertically centered in an oversized panel. Resize it to fit.
+    private func resizeMenuBarExtraWindow() {
+        DispatchQueue.main.async {
+            guard contentHeight > 0,
+                let window = NSApp.windows.first(where: { $0.className.contains("MenuBarExtraWindow") })
+            else { return }
+            let frame = window.frame
+            guard abs(frame.height - contentHeight) > 0.5 else { return }
+            window.setFrame(
+                NSRect(x: frame.minX, y: frame.maxY - contentHeight, width: frame.width, height: contentHeight),
+                display: true
+            )
+        }
     }
 }
 
