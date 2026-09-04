@@ -1,0 +1,190 @@
+name: Release
+
+# Builds, signs, notarizes, and publishes a release
+# with the same Scripts/release.sh steps used locally.
+#
+# A pushed version tag (for example 1.5.0) runs the full flow.
+# Manual runs default to a dry run,
+# which does everything except create the GitHub release and upload assets;
+# the artifacts are attached to the workflow run instead.
+
+on:
+    push:
+        tags: ["[0-9]+.[0-9]+.[0-9]+"]
+    workflow_dispatch:
+        inputs:
+            version:
+                description: "Version to release (defaults to the tag name when run from a tag)"
+                required: false
+                type: string
+            dry_run:
+                description: "Skip creating the GitHub release and uploading assets"
+                required: false
+                type: boolean
+                default: true
+
+permissions:
+    contents: write
+
+concurrency:
+    group: release-${{ github.ref }}
+    cancel-in-progress: false
+
+env:
+    DEVELOPER_DIR: "/Applications/Xcode_26.0.app/Contents/Developer"
+    TEAM_ID: TTY35UM57S
+    SIGNING_CERTIFICATE: "Developer ID Application: dododo, LLC (TTY35UM57S)"
+    SPARKLE_VERSION: "2.9.6"
+    SPARKLE_SHA256: "52bf9e88cdd972fc0c81501377a880e90d47031bd8ca5462488f843e2609e192"
+
+jobs:
+    release:
+        name: Build, notarize, and publish
+        runs-on: macos-26
+        timeout-minutes: 60
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v6
+
+            - name: Resolve version
+              id: version
+              env:
+                  INPUT_VERSION: ${{ inputs.version }}
+              run: |
+                  if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+                    version="${GITHUB_REF_NAME}"
+                  else
+                    version="${INPUT_VERSION}"
+                  fi
+                  if [[ -z "${version}" ]]; then
+                    echo "No version: push a version tag or pass the version input." >&2
+                    exit 1
+                  fi
+                  project_version="$(grep -m1 -o 'MARKETING_VERSION = [0-9.]*' iMCP.xcodeproj/project.pbxproj | awk '{print $3}')"
+                  if [[ "${project_version}" != "${version}" ]]; then
+                    echo "MARKETING_VERSION in the project is ${project_version}, not ${version}." >&2
+                    exit 1
+                  fi
+                  echo "VERSION=${version}" >> "${GITHUB_ENV}"
+
+            # Tag pushes always publish; manual runs publish only when dry_run is off.
+            - name: Note dry run
+              if: github.event_name == 'workflow_dispatch' && inputs.dry_run
+              run: echo "DRY_RUN=1" >> "${GITHUB_ENV}"
+
+            - name: Import signing certificate
+              env:
+                  CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+                  CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+              run: |
+                  keychain="${RUNNER_TEMP}/release.keychain-db"
+                  keychain_password="$(uuidgen)"
+                  certificate="${RUNNER_TEMP}/certificate.p12"
+                  echo "${CERTIFICATE_P12}" | base64 --decode > "${certificate}"
+                  security create-keychain -p "${keychain_password}" "${keychain}"
+                  security set-keychain-settings -lut 21600 "${keychain}"
+                  security unlock-keychain -p "${keychain_password}" "${keychain}"
+                  security import "${certificate}" -P "${CERTIFICATE_PASSWORD}" -A -t cert -f pkcs12 -k "${keychain}"
+                  security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${keychain_password}" "${keychain}" > /dev/null
+                  security list-keychains -d user -s "${keychain}" login.keychain-db
+                  rm -f "${certificate}"
+                  security find-identity -v -p codesigning "${keychain}"
+                  echo "RELEASE_KEYCHAIN=${keychain}" >> "${GITHUB_ENV}"
+
+            - name: Install provisioning profile
+              env:
+                  PROVISIONING_PROFILE: ${{ secrets.PROVISIONING_PROFILE }}
+              run: |
+                  profile="${RUNNER_TEMP}/profile.provisionprofile"
+                  echo "${PROVISIONING_PROFILE}" | base64 --decode > "${profile}"
+                  plist="${RUNNER_TEMP}/profile.plist"
+                  security cms -D -i "${profile}" > "${plist}"
+                  uuid="$(/usr/libexec/PlistBuddy -c "Print UUID" "${plist}")"
+                  for dir in "${HOME}/Library/MobileDevice/Provisioning Profiles" "${HOME}/Library/Developer/Xcode/UserData/Provisioning Profiles"; do
+                    mkdir -p "${dir}"
+                    cp "${profile}" "${dir}/${uuid}.provisionprofile"
+                  done
+                  echo "PROVISIONING_PROFILE_UUID=${uuid}" >> "${GITHUB_ENV}"
+                  /usr/libexec/PlistBuddy -c "Print Name" "${plist}"
+
+            - name: Write notarization key
+              env:
+                  APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+              run: |
+                  key="${RUNNER_TEMP}/AuthKey.p8"
+                  printf '%s\n' "${APP_STORE_CONNECT_PRIVATE_KEY}" > "${key}"
+                  chmod 600 "${key}"
+                  echo "NOTARY_KEY_FILE=${key}" >> "${GITHUB_ENV}"
+
+            - name: Install Sparkle tools
+              run: |
+                  archive="${RUNNER_TEMP}/Sparkle-${SPARKLE_VERSION}.tar.xz"
+                  curl -sSL -o "${archive}" "https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz"
+                  echo "${SPARKLE_SHA256}  ${archive}" | shasum -a 256 -c -
+                  mkdir -p "${RUNNER_TEMP}/sparkle"
+                  tar -xJf "${archive}" -C "${RUNNER_TEMP}/sparkle" ./bin/generate_appcast ./bin/sign_update
+                  echo "SPARKLE_BIN=${RUNNER_TEMP}/sparkle/bin" >> "${GITHUB_ENV}"
+
+            - name: Write Sparkle signing key
+              env:
+                  SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+              run: |
+                  key="${RUNNER_TEMP}/sparkle_private_key"
+                  printf '%s' "${SPARKLE_PRIVATE_KEY}" > "${key}"
+                  chmod 600 "${key}"
+                  echo "SPARKLE_PRIVATE_KEY_FILE=${key}" >> "${GITHUB_ENV}"
+
+            - name: Archive
+              run: ./Scripts/release.sh archive
+
+            - name: Export
+              run: ./Scripts/release.sh export
+
+            - name: Notarize
+              env:
+                  NOTARY_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+                  NOTARY_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+              run: ./Scripts/release.sh notarize
+
+            - name: Staple
+              run: |
+                  ./Scripts/release.sh staple
+                  xcrun stapler validate dist/export/*.app
+
+            - name: Package
+              run: ./Scripts/release.sh package
+
+            - name: Create GitHub release
+              env:
+                  GH_TOKEN: ${{ github.token }}
+              run: ./Scripts/release.sh release
+
+            - name: Upload release asset
+              env:
+                  GH_TOKEN: ${{ github.token }}
+              run: ./Scripts/release.sh upload
+
+            - name: Generate and upload appcast
+              env:
+                  GH_TOKEN: ${{ github.token }}
+                  SPARKLE_PUBLIC_KEY: ${{ vars.SPARKLE_PUBLIC_KEY }}
+              run: ./Scripts/release.sh appcast
+
+            - name: Attach build products to the workflow run
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: iMCP-${{ env.VERSION }}
+                  path: |
+                      dist/*.zip
+                      dist/*.sha256
+                      dist/appcast/appcast.xml
+                  if-no-files-found: ignore
+
+            - name: Clean up secrets
+              if: always()
+              run: |
+                  rm -f "${RUNNER_TEMP}/sparkle_private_key" "${RUNNER_TEMP}/AuthKey.p8" "${RUNNER_TEMP}/profile.provisionprofile"
+                  if [[ -n "${RELEASE_KEYCHAIN:-}" && -f "${RELEASE_KEYCHAIN}" ]]; then
+                    security delete-keychain "${RELEASE_KEYCHAIN}"
+                  fi
