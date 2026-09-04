@@ -1,18 +1,32 @@
 import AppKit
 import OSLog
 import SQLite3
-import UniformTypeIdentifiers
 import iMessage
 
 private let log = Logger.service("messages")
-private let messagesDatabasePath = "/Users/\(NSUserName())/Library/Messages/chat.db"
+private let messagesDirectoryPath = "/Users/\(NSUserName())/Library/Messages"
+private let messagesDatabasePath = messagesDirectoryPath + "/chat.db"
 private let messagesDatabaseBookmarkKey: String = "me.mattt.iMCP.messagesDatabaseBookmark"
 private let defaultLimit = 30
 
 final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
     static let shared = MessageService()
 
+    /// Logged once per launch when the stored grant covers `chat.db` alone.
+    private var warnedAboutFileGrant = false
+
     func activate() async throws {
+        try await activate(offeringUpgrade: true)
+    }
+
+    /// Makes sure the database is reachable, asking for the Messages folder when nothing is
+    /// granted yet. `offeringUpgrade` decides what happens with a grant on `chat.db` alone, as
+    /// earlier versions requested: that grant cannot reach the write-ahead log next to it,
+    /// where Messages keeps everything since its last checkpoint, so the newest messages stay
+    /// invisible for hours. The menu-bar toggle passes `true` and offers the folder; tool calls
+    /// pass `false` and keep working with the old grant instead of parking the whole server
+    /// behind a modal alert that nobody may be there to answer.
+    private func activate(offeringUpgrade: Bool) async throws {
         log.debug("Starting message service activation")
 
         if canAccessDatabaseAtDefaultPath {
@@ -20,19 +34,40 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
             return
         }
 
+        let grant = try? resolveBookmarkedGrant()
+        var upgrading = false
         if canAccessDatabaseUsingBookmark {
-            log.debug("Successfully activated using stored bookmark")
+            switch grant {
+            case .directory:
+                log.debug("Successfully activated using stored bookmark")
+                return
+            case .file:
+                upgrading = true
+            case nil:
+                break
+            }
+        }
+
+        if upgrading, !offeringUpgrade {
+            if !warnedAboutFileGrant {
+                warnedAboutFileGrant = true
+                log.warning(
+                    "The Messages grant covers chat.db alone, so messages since its last checkpoint are not visible. Switch Messages off and on in the iMCP menu to grant the Messages folder."
+                )
+            }
             return
         }
 
-        log.debug("Opening file picker for manual database selection")
-        guard try await showDatabaseAccessAlert() else {
+        log.debug("Opening folder picker for manual database selection")
+        guard try await showDatabaseAccessAlert(upgrading: upgrading) else {
+            // Keeping the old grant is a valid answer; the service stays on.
+            if upgrading { return }
             throw DatabaseAccessError.userDeclinedAccess
         }
 
-        let selectedURL = try await showFilePicker()
+        let selectedURL = try await showFolderPicker()
 
-        guard FileManager.default.isReadableFile(atPath: selectedURL.path) else {
+        guard FileManager.default.isReadableFile(atPath: databaseURL(in: selectedURL).path) else {
             throw DatabaseAccessError.fileNotReadable
         }
 
@@ -42,7 +77,12 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
 
     var isActivated: Bool {
         get async {
-            let isActivated = canAccessDatabaseAtDefaultPath || canAccessDatabaseUsingBookmark
+            // A grant on chat.db alone still serves tool calls, but the service is only fully set
+            // up once the Messages folder is granted; until then the toggle offers the upgrade.
+            var isActivated = canAccessDatabaseAtDefaultPath
+            if case .directory = try? resolveBookmarkedGrant() {
+                isActivated = isActivated || canAccessDatabaseUsingBookmark
+            }
             log.debug("Message service activation status: \(isActivated)")
             return isActivated
         }
@@ -89,7 +129,7 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
             )
         ) { arguments in
             log.debug("Starting message fetch with arguments: \(arguments)")
-            try await self.activate()
+            try await self.activate(offeringUpgrade: false)
 
             let participants =
                 arguments["participants"]?.arrayValue?.compactMap({
@@ -123,7 +163,10 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
             let isReadFilter = arguments["isRead"]?.boolValue
             let limit = arguments["limit"]?.intValue
 
-            let db = try self.createDatabaseConnection()
+            // The grant must stay open until the last read: SQLite opens the write-ahead log lazily.
+            let access = try self.openDatabase()
+            defer { access.stop() }
+            let db = access.database
             var messages: [[String: Value]] = []
 
             log.debug("Fetching handles for participants: \(participants)")
@@ -220,9 +263,9 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
             case .userDeclinedAccess:
                 return "User declined to grant access to the messages database"
             case .invalidFileSelected:
-                return "Messages database access denied or invalid file selected"
+                return "Messages database access denied or the selection is not the Messages folder"
             case .fileNotReadable:
-                return "Selected database file is not readable"
+                return "The selected folder has no readable chat.db"
             }
         }
     }
@@ -251,22 +294,86 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
         )
     }
 
-    private func createDatabaseConnection() throws -> iMessage.Database {
-        if canAccessDatabaseAtDefaultPath {
-            return try iMessage.Database()
+    /// What the stored bookmark grants access to.
+    private enum BookmarkedGrant {
+        /// The Messages folder: `chat.db` together with its write-ahead log.
+        case directory(URL)
+        /// `chat.db` alone, as stored by earlier versions: the log next to it is unreadable,
+        /// so SQLite has to ignore it and messages since the last checkpoint are missing.
+        case file(URL)
+
+        var url: URL {
+            switch self {
+            case .directory(let url), .file(let url):
+                return url
+            }
         }
 
-        let databaseURL = try resolveBookmarkURL()
-        return try withSecurityScopedAccess(databaseURL) { url in
-            try iMessage.Database(path: url.path)
+        var databaseURL: URL {
+            switch self {
+            case .directory(let url):
+                return url.appendingPathComponent("chat.db")
+            case .file(let url):
+                return url
+            }
+        }
+    }
+
+    private func databaseURL(in directory: URL) -> URL {
+        return directory.appendingPathComponent("chat.db")
+    }
+
+    private func resolveBookmarkedGrant() throws -> BookmarkedGrant {
+        let url = try resolveBookmarkURL()
+        let isDirectory = try withSecurityScopedAccess(url) { url in
+            (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? url.hasDirectoryPath
+        }
+        return isDirectory ? .directory(url) : .file(url)
+    }
+
+    /// An open connection and the security scope it reads through.
+    private struct DatabaseAccess {
+        let database: iMessage.Database
+        fileprivate let scopedURL: URL?
+
+        /// Ends the security scope. Call it after the last read on `database`.
+        func stop() {
+            scopedURL?.stopAccessingSecurityScopedResource()
+        }
+    }
+
+    private func openDatabase() throws -> DatabaseAccess {
+        if canAccessDatabaseAtDefaultPath {
+            return DatabaseAccess(database: try iMessage.Database(), scopedURL: nil)
+        }
+
+        let grant = try resolveBookmarkedGrant()
+        guard grant.url.startAccessingSecurityScopedResource() else {
+            log.error("Failed to start accessing security-scoped resource")
+            throw DatabaseAccessError.securityScopeAccessFailed
+        }
+
+        do {
+            let database: iMessage.Database
+            switch grant {
+            case .directory:
+                database = try iMessage.Database(path: grant.databaseURL.path, mode: .live)
+            case .file:
+                // Warned about once, in activate(offeringUpgrade:).
+                database = try iMessage.Database(path: grant.databaseURL.path, mode: .immutable)
+            }
+            return DatabaseAccess(database: database, scopedURL: grant.url)
+        } catch {
+            grant.url.stopAccessingSecurityScopedResource()
+            throw error
         }
     }
 
     private var canAccessDatabaseUsingBookmark: Bool {
         do {
-            let url = try resolveBookmarkURL()
-            return try withSecurityScopedAccess(url) { url in
-                FileManager.default.isReadableFile(atPath: url.path)
+            let grant = try resolveBookmarkedGrant()
+            return try withSecurityScopedAccess(grant.url) { _ in
+                FileManager.default.isReadableFile(atPath: grant.databaseURL.path)
             }
         } catch {
             log.error("Error accessing database with bookmark: \(error.localizedDescription)")
@@ -275,14 +382,24 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
     }
 
     @MainActor
-    private func showDatabaseAccessAlert() async throws -> Bool {
+    private func showDatabaseAccessAlert(upgrading: Bool) async throws -> Bool {
         let alert = NSAlert()
         alert.messageText = "Messages Database Access Required"
-        alert.informativeText = """
-            To read your Messages history, we need to open your database file.
+        if upgrading {
+            alert.informativeText = """
+                iMCP can currently read `chat.db` alone. Messages writes new messages to a log \
+                next to it first, so the latest ones stay invisible for hours.
 
-            In the next screen, please select the file `chat.db` and click "Grant Access".
-            """
+                In the next screen, please select the `Messages` folder and click "Grant Access".
+                """
+        } else {
+            alert.informativeText = """
+                To read your Messages history, we need access to your Messages folder: the \
+                database and the log Messages writes new messages to.
+
+                In the next screen, please select the `Messages` folder and click "Grant Access".
+                """
+        }
         alert.alertStyle = .informational
         alert.addButton(withTitle: "Continue")
         alert.addButton(withTitle: "Cancel")
@@ -291,22 +408,21 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
     }
 
     @MainActor
-    private func showFilePicker() async throws -> URL {
+    private func showFolderPicker() async throws -> URL {
         let openPanel = NSOpenPanel()
         openPanel.delegate = self
-        openPanel.message = "Please select the Messages database file (chat.db)"
+        openPanel.message = "Please select your Messages folder (~/Library/Messages)"
         openPanel.prompt = "Grant Access"
-        openPanel.allowedContentTypes = [UTType.item]
-        openPanel.directoryURL = URL(fileURLWithPath: messagesDatabasePath)
+        openPanel.directoryURL = URL(fileURLWithPath: messagesDirectoryPath)
             .deletingLastPathComponent()
         openPanel.allowsMultipleSelection = false
-        openPanel.canChooseDirectories = false
-        openPanel.canChooseFiles = true
+        openPanel.canChooseDirectories = true
+        openPanel.canChooseFiles = false
         openPanel.showsHiddenFiles = true
 
         guard openPanel.runModal() == .OK,
             let url = openPanel.url,
-            url.lastPathComponent == "chat.db"
+            isMessagesDirectory(url)
         else {
             throw DatabaseAccessError.invalidFileSelected
         }
@@ -328,9 +444,13 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
         }
     }
 
-    // NSOpenSavePanelDelegate method to constrain file selection
+    private func isMessagesDirectory(_ url: URL) -> Bool {
+        return url.lastPathComponent == "Messages"
+    }
+
+    // NSOpenSavePanelDelegate method to constrain the selection to the Messages folder
     func panel(_ sender: Any, shouldEnable url: URL) -> Bool {
-        let shouldEnable = url.lastPathComponent == "chat.db"
+        let shouldEnable = isMessagesDirectory(url)
         log.debug(
             "File selection panel: \(shouldEnable ? "enabling" : "disabling") URL: \(url.path)"
         )
