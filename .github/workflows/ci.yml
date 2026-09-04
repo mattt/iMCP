@@ -27,6 +27,13 @@ jobs:
             - name: Checkout code
               uses: actions/checkout@v6
 
+            # Key the cache on the exact Xcode build,
+            # so a runner image update can't restore module files
+            # compiled against an older toolchain.
+            - name: Read Xcode build number
+              id: xcode
+              run: echo "build=$(xcodebuild -version | awk '/Build version/ {print $3}')" >> "${GITHUB_OUTPUT}"
+
             - name: Cache Xcode build artifacts
               uses: actions/cache@v5
               with:
@@ -34,9 +41,9 @@ jobs:
                       ~/Library/Developer/Xcode/DerivedData
                       !~/Library/Developer/Xcode/DerivedData/ModuleCache.noindex
                       ~/Library/Caches/org.swift.swiftpm
-                  key: ${{ runner.os }}-xcode-${{ matrix.xcode }}-derived-${{ hashFiles('**/Package.resolved') }}
+                  key: ${{ runner.os }}-xcode-${{ steps.xcode.outputs.build }}-derived-${{ hashFiles('**/Package.resolved') }}
                   restore-keys: |
-                      ${{ runner.os }}-xcode-${{ matrix.xcode }}-derived-
+                      ${{ runner.os }}-xcode-${{ steps.xcode.outputs.build }}-derived-
 
             - name: Lint
               run: swift format lint --strict --recursive .
