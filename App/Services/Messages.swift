@@ -72,6 +72,9 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                     "query": .string(
                         description: "Search term to filter messages by content"
                     ),
+                    "isRead": .boolean(
+                        description: "If true, fetch read messages; if false, unread incoming; if omitted, fetch all"
+                    ),
                     "limit": .integer(
                         description: "Maximum messages to return",
                         default: .int(defaultLimit)
@@ -117,6 +120,7 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
             }
 
             let searchTerm = arguments["query"]?.stringValue
+            let isReadFilter = arguments["isRead"]?.boolValue
             let limit = arguments["limit"]?.intValue
 
             let db = try self.createDatabaseConnection()
@@ -128,13 +132,30 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
             log.debug(
                 "Fetching messages with date range: \(String(describing: dateRange)), limit: \(limit ?? -1)"
             )
-            for message in try db.fetchMessages(
-                with: Set(handles),
-                in: dateRange,
+            // Match the old fetchMessages(with:in:limit:) semantics:
+            // no participant filter when no handles matched.
+            var predicates: [MessagePredicate] = []
+            if !handles.isEmpty {
+                predicates.append(.participantHandles(Set(handles)))
+            }
+            if let dateRange {
+                predicates.append(.dateRange(dateRange))
+            }
+            let request = FetchRequest<Message>(
+                predicate: .and(predicates),
                 limit: max(limit ?? defaultLimit, 1024)
-            ) {
+            )
+            for message in try db.fetch(request) {
                 guard messages.count < (limit ?? defaultLimit) else { break }
                 guard !message.text.isEmpty else { continue }
+
+                if let isReadFilter {
+                    if isReadFilter {
+                        guard message.isRead else { continue }
+                    } else {
+                        guard !message.isFromMe, !message.isRead else { continue }
+                    }
+                }
 
                 let sender: String
                 if message.isFromMe {
@@ -151,14 +172,20 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                     }
                 }
 
-                messages.append([
+                var object: [String: Value] = [
                     "@id": .string(message.id.description),
                     "sender": [
                         "@id": .string(sender)
                     ],
                     "text": .string(message.text),
                     "createdAt": .string(message.date.formatted(.iso8601)),
-                ])
+                    "isRead": .bool(message.isRead),
+                ]
+                if let readAt = message.readAt {
+                    object["dateRead"] = .string(readAt.formatted(.iso8601))
+                }
+
+                messages.append(object)
             }
 
             log.debug("Successfully fetched \(messages.count) messages")

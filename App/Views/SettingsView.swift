@@ -1,3 +1,4 @@
+import ServiceManagement
 import SwiftUI
 
 struct SettingsView: View {
@@ -6,12 +7,14 @@ struct SettingsView: View {
 
     enum SettingsSection: String, CaseIterable, Identifiable {
         case general = "General"
+        case services = "Services"
 
         var id: String { self.rawValue }
 
         var icon: String {
             switch self {
             case .general: return "gear"
+            case .services: return "square.grid.2x2"
             }
         }
     }
@@ -40,6 +43,9 @@ struct SettingsView: View {
                     GeneralSettingsView(serverController: serverController)
                         .navigationTitle("General")
                         .formStyle(.grouped)
+                case .services:
+                    ServicesSettingsView(serverController: serverController)
+                        .navigationTitle("Services")
                 }
             } else {
                 Text("Select a category")
@@ -68,6 +74,7 @@ struct GeneralSettingsView: View {
     @ObservedObject var serverController: ServerController
     @State private var showingResetAlert = false
     @State private var selectedClients = Set<String>()
+    @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
 
     private var trustedClients: [String] {
         serverController.getTrustedClients()
@@ -75,6 +82,30 @@ struct GeneralSettingsView: View {
 
     var body: some View {
         Form {
+            Section {
+                VStack(alignment: .leading, spacing: 4) {
+                    Toggle("Launch at Login", isOn: $launchAtLogin)
+                        .onChange(of: launchAtLogin) { _, enabled in
+                            do {
+                                if enabled {
+                                    try SMAppService.mainApp.register()
+                                } else {
+                                    try SMAppService.mainApp.unregister()
+                                }
+                            } catch {
+                                launchAtLogin = SMAppService.mainApp.status == .enabled
+                            }
+                        }
+
+                    Text("Opens iMCP automatically when you log in.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .onAppear {
+                    launchAtLogin = SMAppService.mainApp.status == .enabled
+                }
+            }
+
             Section {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
@@ -90,18 +121,24 @@ struct GeneralSettingsView: View {
                         }
                     }
 
-                    Text("Clients that automatically connect without approval.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Text(
+                        "Clients that connect automatically, without an approval dialog. A notification appears whenever one connects."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 }
                 .padding(.bottom, 4)
 
                 if trustedClients.isEmpty {
-                    HStack {
+                    VStack(alignment: .leading, spacing: 4) {
                         Text("No trusted clients")
                             .foregroundStyle(.secondary)
                             .italic()
-                        Spacer()
+                        Text(
+                            "Clients appear here when you check \"Always trust this client\" while approving a connection."
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     }
                     .padding(.vertical, 8)
                 } else {
@@ -110,6 +147,14 @@ struct GeneralSettingsView: View {
                             Text(client)
                                 .font(.system(.body, design: .monospaced))
                             Spacer()
+                            Button {
+                                serverController.removeTrustedClient(client)
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Remove Client")
                         }
                         .contextMenu {
                             Button("Remove Client", role: .destructive) {
@@ -124,6 +169,10 @@ struct GeneralSettingsView: View {
                         }
                         selectedClients.removeAll()
                     }
+
+                    Text("Clients are identified by the name they report, not by a verified identity.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
         }

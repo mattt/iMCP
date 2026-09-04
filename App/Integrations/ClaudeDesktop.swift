@@ -259,10 +259,26 @@ private func updateConfig(
         throw ClaudeDesktop.Error.noLocationSelected
     }
 
-    // Create the file first
+    // The save panel grants us access to the selected URL, so re-read any
+    // existing contents to merge rather than overwrite.
     log.debug("Creating configuration at selected URL: \(selectedURL.path)")
     do {
-        try writeConfig(updatedConfig, to: selectedURL)
+        var configToWrite = updatedConfig
+        if FileManager.default.fileExists(atPath: selectedURL.path) {
+            log.debug("Selected file exists, re-reading to merge existing config")
+            let existingData = try Data(contentsOf: selectedURL)
+            let existingConfig = try jsonDecoder.decode([String: Value].self, from: existingData)
+            // Start from the existing config and upsert iMCP into it
+            configToWrite = existingConfig
+            if var mcpServers = existingConfig["mcpServers"]?.objectValue {
+                mcpServers["iMCP"] = imcpServerValue
+                configToWrite["mcpServers"] = .object(mcpServers)
+            } else {
+                configToWrite["mcpServers"] = .object(["iMCP": imcpServerValue])
+            }
+        }
+
+        try writeConfig(configToWrite, to: selectedURL)
 
         // Then create the security-scoped bookmark
         log.debug("Creating security-scoped access for selected URL")

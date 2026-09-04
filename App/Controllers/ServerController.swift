@@ -189,6 +189,10 @@ final class ServerController: ObservableObject {
     // MARK: - AppStorage for Trusted Clients
     @AppStorage("trustedClients") private var trustedClientsData = Data()
 
+    // MARK: - AppStorage for Disabled Tools
+    @AppStorage("disabledTools") private var disabledToolsData = Data()
+    private var disabledToolsGeneration = 0
+
     // MARK: - Computed Properties for Service Configurations and Bindings
     var computedServiceConfigs: [ServiceConfig] {
         ServiceRegistry.configureServices(
@@ -248,6 +252,51 @@ final class ServerController: ObservableObject {
         trustedClients = Set<String>()
     }
 
+    // MARK: - Disabled Tools Management
+    var disabledTools: Set<String> {
+        get {
+            (try? JSONDecoder().decode(Set<String>.self, from: disabledToolsData)) ?? []
+        }
+        set {
+            objectWillChange.send()
+            disabledToolsData = (try? JSONEncoder().encode(newValue)) ?? Data()
+            disabledToolsGeneration += 1
+            let generation = disabledToolsGeneration
+            Task { await networkManager.updateDisabledTools(newValue, generation: generation) }
+        }
+    }
+
+    func isToolEnabled(_ name: String) -> Bool {
+        !disabledTools.contains(name)
+    }
+
+    func setTool(_ name: String, enabled: Bool) {
+        var tools = disabledTools
+        if enabled {
+            tools.remove(name)
+        } else {
+            tools.insert(name)
+        }
+        disabledTools = tools
+    }
+
+    func setService(_ config: ServiceConfig, enabled: Bool) {
+        objectWillChange.send()
+        config.binding.wrappedValue = enabled
+
+        Task {
+            if enabled, await !config.isActivated {
+                do {
+                    try await config.service.activate()
+                } catch {
+                    self.objectWillChange.send()
+                    config.binding.wrappedValue = false
+                }
+            }
+            await networkManager.updateServiceBindings(self.currentServiceBindings)
+        }
+    }
+
     // MARK: - Connection Approval Methods
     private func cleanupApprovalState() {
         pendingClientName = ""
@@ -276,6 +325,7 @@ final class ServerController: ObservableObject {
         Task {
             // Initialize bindings from AppStorage before the server starts.
             await networkManager.updateServiceBindings(self.currentServiceBindings)
+            await networkManager.updateDisabledTools(self.disabledTools, generation: 0)
             await self.networkManager.start()
             self.updateServerStatus("Running")
 
@@ -392,6 +442,10 @@ final class ServerController: ObservableObject {
 
         approvalWindowController.showApprovalWindow(
             clientName: clientID,
+            enabledServiceNames:
+                computedServiceConfigs
+                .filter { $0.binding.wrappedValue }
+                .map { $0.name },
             onApprove: { alwaysTrust in
                 if alwaysTrust {
                     self.addTrustedClient(clientID)
@@ -443,6 +497,8 @@ actor MCPConnectionManager {
         self.transport = NetworkTransport(
             connection: connection,
             logger: nil,
+            heartbeatConfig: .init(enabled: false),
+            reconnectionConfig: .disabled,
             bufferConfig: .unlimited
         )
 
@@ -637,13 +693,21 @@ actor ServerNetworkManager {
     private var discoveryManager: NetworkDiscoveryManager?
     private var connections: [UUID: MCPConnectionManager] = [:]
     private var connectionTasks: [UUID: Task<Void, Never>] = [:]
+    /// Setup timers, keyed by connection.
+    /// A timer is cancelled while the user is deciding on the approval dialog
+    /// and started again with a fresh budget once they have,
+    /// so human deliberation never counts as a stalled handshake (#193).
+    private var setupTimeoutTasks: [UUID: Task<Void, Never>] = [:]
     private var pendingConnections: [UUID: String] = [:]
+    private var removedConnections: Set<UUID> = []
 
     typealias ConnectionApprovalHandler = @Sendable (UUID, MCP.Client.Info) async -> Bool
     private var connectionApprovalHandler: ConnectionApprovalHandler?
 
     private let services = ServiceRegistry.services
     private var serviceBindings: [String: Binding<Bool>] = [:]
+    private var disabledTools: Set<String> = []
+    private var disabledToolsLastGeneration = -1
 
     init() {
         do {
@@ -775,11 +839,20 @@ actor ServerNetworkManager {
         connections.removeAll()
         connectionTasks.removeAll()
         pendingConnections.removeAll()
+        removedConnections.removeAll()
 
         await discoveryManager?.stop()
     }
 
     func removeConnection(_ id: UUID) async {
+        // Guard against redundant removal — calling stop() on an already-stopped
+        // connection can trigger a double-resume in the SDK's transport continuation.
+        guard !removedConnections.contains(id) else {
+            log.debug("Connection \(id) already removed, skipping")
+            return
+        }
+        removedConnections.insert(id)
+
         log.debug("Removing connection: \(id)")
 
         if let connectionManager = connections[id] {
@@ -813,6 +886,7 @@ actor ServerNetworkManager {
             // Ensure this task is removed so the timeout logic doesn't fire afterward.
             defer {
                 self.connectionTasks.removeValue(forKey: connectionID)
+                self.cancelSetupTimeout(for: connectionID)
             }
 
             do {
@@ -823,7 +897,15 @@ actor ServerNetworkManager {
                 }
 
                 try await connectionManager.start { clientInfo in
-                    await approvalHandler(connectionID, clientInfo)
+                    // From here the wait is on a person, not the client:
+                    // stop the setup timer for the dialog
+                    // and restart it for the rest of the handshake afterwards.
+                    self.cancelSetupTimeout(for: connectionID)
+                    let approved = await approvalHandler(connectionID, clientInfo)
+                    if approved {
+                        self.scheduleSetupTimeout(for: connectionID)
+                    }
+                    return approved
                 }
 
                 log.notice("Connection \(connectionID) successfully established")
@@ -836,8 +918,17 @@ actor ServerNetworkManager {
         connectionTasks[connectionID] = task
 
         // Time out stalled setups to avoid orphaned connections.
-        Task {
+        scheduleSetupTimeout(for: connectionID)
+    }
+
+    /// Gives the connection a fresh setup budget.
+    /// Any previous timer for it is replaced.
+    private func scheduleSetupTimeout(for connectionID: UUID) {
+        setupTimeoutTasks[connectionID]?.cancel()
+        setupTimeoutTasks[connectionID] = Task {
             try? await Task.sleep(nanoseconds: 10_000_000_000)  // 10 seconds
+            guard !Task.isCancelled else { return }
+            self.setupTimeoutTasks.removeValue(forKey: connectionID)
 
             // If the setup task is still registered, treat it as timed out.
             if self.connectionTasks[connectionID] != nil,
@@ -849,6 +940,10 @@ actor ServerNetworkManager {
                 await removeConnection(connectionID)
             }
         }
+    }
+
+    private func cancelSetupTimeout(for connectionID: UUID) {
+        setupTimeoutTasks.removeValue(forKey: connectionID)?.cancel()
     }
 
     func registerHandlers(for server: MCP.Server, connectionID: UUID) async {
@@ -879,12 +974,16 @@ actor ServerNetworkManager {
                         isServiceEnabled
                     {
                         for tool in service.tools {
+                            if await self.disabledTools.contains(tool.name) {
+                                log.debug("Skipping disabled tool: \(tool.name)")
+                                continue
+                            }
                             log.debug("Adding tool: \(tool.name)")
                             tools.append(
                                 .init(
                                     name: tool.name,
                                     description: tool.description,
-                                    inputSchema: tool.inputSchema,
+                                    inputSchema: try Value(tool.inputSchema),
                                     annotations: tool.annotations
                                 )
                             )
@@ -900,7 +999,7 @@ actor ServerNetworkManager {
         await server.withMethodHandler(CallTool.self) { [weak self] params in
             guard let self = self else {
                 return CallTool.Result(
-                    content: [.text("Server unavailable")],
+                    content: [.text(text: "Server unavailable", annotations: nil, _meta: nil)],
                     isError: true
                 )
             }
@@ -910,7 +1009,27 @@ actor ServerNetworkManager {
             guard await self.isEnabledState else {
                 log.notice("Tool call rejected: iMCP is disabled")
                 return CallTool.Result(
-                    content: [.text("iMCP is currently disabled. Please enable it to use tools.")],
+                    content: [
+                        .text(
+                            text: "iMCP is currently disabled. Please enable it to use tools.",
+                            annotations: nil,
+                            _meta: nil
+                        )
+                    ],
+                    isError: true
+                )
+            }
+
+            if await self.disabledTools.contains(params.name) {
+                log.notice("Tool call rejected: \(params.name) is disabled")
+                return CallTool.Result(
+                    content: [
+                        .text(
+                            text: "Tool \(params.name) is currently disabled in iMCP settings.",
+                            annotations: nil,
+                            _meta: nil
+                        )
+                    ],
                     isError: true
                 )
             }
@@ -939,7 +1058,9 @@ actor ServerNetworkManager {
                                 content: [
                                     .audio(
                                         data: data.base64EncodedString(),
-                                        mimeType: mimeType
+                                        mimeType: mimeType,
+                                        annotations: nil,
+                                        _meta: nil
                                     )
                                 ],
                                 isError: false
@@ -950,7 +1071,8 @@ actor ServerNetworkManager {
                                     .image(
                                         data: data.base64EncodedString(),
                                         mimeType: mimeType,
-                                        metadata: nil
+                                        annotations: nil,
+                                        _meta: nil
                                     )
                                 ],
                                 isError: false
@@ -964,20 +1086,28 @@ actor ServerNetworkManager {
                             let data = try encoder.encode(value)
                             let text = String(data: data, encoding: .utf8)!
 
-                            return CallTool.Result(content: [.text(text)], isError: false)
+                            return CallTool.Result(
+                                content: [.text(text: text, annotations: nil, _meta: nil)],
+                                isError: false
+                            )
                         }
                     } catch {
                         log.error(
                             "Error executing tool \(params.name): \(error.localizedDescription)"
                         )
-                        return CallTool.Result(content: [.text("Error: \(error)")], isError: true)
+                        return CallTool.Result(
+                            content: [.text(text: "Error: \(error)", annotations: nil, _meta: nil)],
+                            isError: true
+                        )
                     }
                 }
             }
 
             log.error("Tool not found or service not enabled: \(params.name)")
             return CallTool.Result(
-                content: [.text("Tool not found or service not enabled: \(params.name)")],
+                content: [
+                    .text(text: "Tool not found or service not enabled: \(params.name)", annotations: nil, _meta: nil)
+                ],
                 isError: true
             )
         }
@@ -1002,6 +1132,22 @@ actor ServerNetworkManager {
     // Update service bindings.
     func updateServiceBindings(_ newBindings: [String: Binding<Bool>]) async {
         self.serviceBindings = newBindings
+
+        // Notify clients that tool availability may have changed.
+        Task {
+            for (_, connectionManager) in connections {
+                await connectionManager.notifyToolListChanged()
+            }
+        }
+    }
+
+    // Update the disabled tool set, discarding out-of-order deliveries.
+    func updateDisabledTools(_ newDisabledTools: Set<String>, generation: Int) async {
+        guard generation > disabledToolsLastGeneration else { return }
+        disabledToolsLastGeneration = generation
+
+        guard disabledTools != newDisabledTools else { return }
+        self.disabledTools = newDisabledTools
 
         // Notify clients that tool availability may have changed.
         Task {
