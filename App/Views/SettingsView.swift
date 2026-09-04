@@ -7,12 +7,14 @@ struct SettingsView: View {
 
     enum SettingsSection: String, CaseIterable, Identifiable {
         case general = "General"
+        case services = "Services"
 
         var id: String { self.rawValue }
 
         var icon: String {
             switch self {
             case .general: return "gear"
+            case .services: return "square.grid.2x2"
             }
         }
     }
@@ -41,6 +43,9 @@ struct SettingsView: View {
                     GeneralSettingsView(serverController: serverController)
                         .navigationTitle("General")
                         .formStyle(.grouped)
+                case .services:
+                    ServicesSettingsView(serverController: serverController)
+                        .navigationTitle("Services")
                 }
             } else {
                 Text("Select a category")
