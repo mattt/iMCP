@@ -38,7 +38,7 @@ print_usage() {
 Usage: Scripts/release.sh [command]
 
 Commands:
-  all         Build check, bump, archive, export, notarize, staple, package, commit/tag, appcast, release, upload, upload-appcast, publish (default)
+  all         Build check, bump, archive, export, notarize, staple, package, commit/tag, push tag (default); the Release workflow publishes
   check       Quick release build check
   bump        Bump version/build numbers
   archive     Create an Xcode archive for direct distribution
@@ -302,10 +302,44 @@ build_check() {
   resolve_app_bundle
 }
 
+# The project's Release configuration signs the app with an Apple Development identity,
+# which a release machine may not have.
+# When a Developer ID certificate is configured, archive with it directly;
+# export re-signs with the provisioning profile afterwards.
+archive_signing_args() {
+  if [[ -z "${TEAM_ID}" ]]; then
+    return 0
+  fi
+  printf '%s\n' \
+    "CODE_SIGN_STYLE=Manual" \
+    "CODE_SIGN_IDENTITY=${SIGNING_CERTIFICATE}" \
+    "DEVELOPMENT_TEAM=${TEAM_ID}"
+  # The app's WeatherKit entitlement needs its provisioning profile at archive time,
+  # but a command-line override applies to every target,
+  # and the embedded CLI has a different bundle identifier.
+  # Route the profile through a setting keyed by product name
+  # so only the app target resolves to it.
+  local profile_value=""
+  if [[ -n "${PROVISIONING_PROFILE_UUID}" ]]; then
+    profile_value="${PROVISIONING_PROFILE_UUID}"
+  elif [[ -n "${PROVISIONING_PROFILE_NAME}" ]]; then
+    profile_value="${PROVISIONING_PROFILE_NAME}"
+  fi
+  if [[ -n "${profile_value}" ]]; then
+    printf '%s\n' \
+      'PROVISIONING_PROFILE_SPECIFIER=$(RELEASE_PROFILE_FOR_$(PRODUCT_NAME))' \
+      "RELEASE_PROFILE_FOR_${APP_NAME}=${profile_value}"
+  fi
+}
+
 archive_app() {
   ensure_dist_dir
+  local signing_args=()
+  while IFS= read -r line; do
+    [[ -n "${line}" ]] && signing_args+=("${line}")
+  done <<< "$(archive_signing_args)"
   echo "Archiving app to ${ARCHIVE_PATH}"
-  xcodebuild -quiet -scheme "${SCHEME}" -configuration "${CONFIGURATION}" -destination "generic/platform=macOS" archive -archivePath "${ARCHIVE_PATH}"
+  xcodebuild -quiet -scheme "${SCHEME}" -configuration "${CONFIGURATION}" -destination "generic/platform=macOS" archive -archivePath "${ARCHIVE_PATH}" ${signing_args[@]+"${signing_args[@]}"}
 }
 
 write_export_options() {
@@ -467,6 +501,17 @@ create_release() {
     return 0
   fi
   require_release_tag
+  # A rerun after a partial failure finds the draft from the last attempt;
+  # reuse it so the --clobber uploads can repair it.
+  local is_draft
+  if is_draft="$(gh release view "${VERSION}" --json isDraft --jq '.isDraft' 2>/dev/null)"; then
+    if [[ "${is_draft}" == "true" ]]; then
+      echo "Reusing existing draft release ${VERSION}"
+      return 0
+    fi
+    echo "Release ${VERSION} is already published." >&2
+    exit 1
+  fi
   echo "Creating draft GitHub release ${VERSION}"
   gh release create "${VERSION}" --draft --generate-notes
 }
@@ -617,11 +662,10 @@ all() {
   package_release
   commit_and_tag
   push_tags
-  build_appcast
-  create_release
-  upload_asset
-  upload_appcast
-  publish_release
+  # The Release workflow publishes from the pushed tag.
+  # Publishing here too would race it for the same release.
+  echo "Tag ${VERSION} pushed. The Release workflow builds and publishes it."
+  echo "Use the appcast, release, upload, upload-appcast, and publish commands only if it can't."
 }
 
 appcast() {
