@@ -490,6 +490,17 @@ require_release_tag() {
     echo "Tag ${VERSION} points at ${tag_commit}, but HEAD is ${head_commit}." >&2
     exit 1
   fi
+  # The remote tag is what the release records, so it must exist and match too.
+  local remote_commit
+  remote_commit="$(git ls-remote --tags origin "refs/tags/${VERSION}^{}" "refs/tags/${VERSION}" 2>/dev/null | awk '{print $1}' | tail -n 1 || true)"
+  if [[ -z "${remote_commit}" ]]; then
+    echo "Tag ${VERSION} hasn't been pushed to origin." >&2
+    exit 1
+  fi
+  if [[ "${remote_commit}" != "${tag_commit}" && "${remote_commit}" != "$(git rev-parse "refs/tags/${VERSION}")" ]]; then
+    echo "Tag ${VERSION} on origin (${remote_commit}) doesn't match the local tag (${tag_commit})." >&2
+    exit 1
+  fi
 }
 
 # The release starts as a draft so a failure partway through
@@ -513,7 +524,7 @@ create_release() {
     exit 1
   fi
   echo "Creating draft GitHub release ${VERSION}"
-  gh release create "${VERSION}" --draft --generate-notes
+  gh release create "${VERSION}" --draft --generate-notes --verify-tag
 }
 
 publish_release() {
