@@ -36,9 +36,15 @@ extension ISO8601DateFormatter {
             }
         }
 
-        // If the string already includes a timezone, don't guess with local-time parsing.
+        // If the string already includes a timezone suffix on a *time* component,
+        // don't guess with local-time parsing. We must NOT run this check on a
+        // bare `yyyy-MM-dd` because the trailing `-DD` would match the
+        // `[+-]\d{2}` branch of this regex and falsely classify the day as a
+        // timezone offset, causing the parser to bail before trying the
+        // `yyyy-MM-dd` fallback below.
         let hasTimeZoneInfo =
-            dateString.range(
+            dateString.count > 10
+            && dateString.range(
                 of: #"([Zz]|[+-]\d{2}(:?\d{2})?)$"#,
                 options: .regularExpression
             ) != nil

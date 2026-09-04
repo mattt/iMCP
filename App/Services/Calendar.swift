@@ -216,7 +216,11 @@ final class CalendarService: Service {
                 events = events.filter { ($0.hasRecurrenceRules) == isRecurring }
             }
 
-            return events.map { Event($0) }
+            return events.map { event -> Event in
+                var e = Event(event)
+                e.identifier = event.eventIdentifier
+                return e
+            }
         }
         Tool(
             name: "events_create",
@@ -533,7 +537,9 @@ final class CalendarService: Service {
             // Save the event
             try self.eventStore.save(event, span: .thisEvent)
 
-            return Event(event)
+            var result = Event(event)
+            result.identifier = event.eventIdentifier
+            return result
         }
     }
 }

@@ -91,6 +91,8 @@ struct ContentView: View {
                     let pasteboard = NSPasteboard.general
                     pasteboard.clearContents()
                     pasteboard.setString(command, forType: .string)
+
+                    _ = NSSound.play(.pop)
                 }
             }
             .padding(.top, 8)
@@ -101,6 +103,8 @@ struct ContentView: View {
                 Divider()
 
                 MenuButton("Settings...", isMenuPresented: $isMenuPresented) {
+                    // openSettings() alone is unreliable for this accessory (LSUIElement) app.
+                    NSApp.activate(ignoringOtherApps: true)
                     openSettings()
                 }
 
