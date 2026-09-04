@@ -66,20 +66,10 @@ actor StdioProxy {
         let connection = NWConnection(to: endpoint, using: parameters)
         self.connection = connection
 
-        // Start the connection
-        connection.start(queue: .main)
-
-        // Set up state monitoring for the entire lifetime of the connection
-        connection.stateUpdateHandler = { state in
-            Task { [weak self] in
-                await self?.handleConnectionState(state, continuation: nil, connectionState: nil)
-            }
-        }
-
-        // Wait for the connection to become ready
+        // Install one state handler before starting the connection.
+        let connectionState = ConnectionState()
         try await withCheckedThrowingContinuation {
             (continuation: CheckedContinuation<Void, Swift.Error>) in
-            let connectionState = ConnectionState()
             connection.stateUpdateHandler = { state in
                 Task { [weak self] in
                     await self?.handleConnectionState(
@@ -89,6 +79,8 @@ actor StdioProxy {
                     )
                 }
             }
+
+            connection.start(queue: .main)
         }
 
         // Create a structured concurrency task group for handling I/O
@@ -113,16 +105,18 @@ actor StdioProxy {
                 }
             }
 
-            // Wait for any task to complete (or fail)
-            try await group.next()
+            // Wait for either handler to finish, then tear down.
+            // The result is inspected only after cleanup so that a reconnect
+            // never inherits a half-open connection from the previous attempt.
+            let result = await group.nextResult()
             await log.debug("A task completed, cancelling remaining tasks")
 
-            // If we get here, one of the tasks completed or failed
-            // Cancel all remaining tasks
             group.cancelAll()
-
-            // Stop the proxy
             await self.stop()
+
+            if case .failure(let error) = result {
+                throw error
+            }
         }
     }
 
@@ -220,9 +214,9 @@ actor StdioProxy {
                 }
 
                 if bytesRead == 0 {
-                    // EOF reached
+                    // EOF: the client closed our pipes.
                     await log.debug("EOF reached on stdin, stopping stdin handler")
-                    break
+                    throw StdioProxyError.stdinClosed
                 }
 
                 if bytesRead > 0 {
@@ -272,8 +266,6 @@ actor StdioProxy {
                 throw error
             }
         }
-
-        await log.debug("Stdin handler task completed")
     }
 
     /// Handles forwarding data from the network to stdout
@@ -448,6 +440,7 @@ actor StdioProxy {
 enum StdioProxyError: Swift.Error {
     case networkTimeout
     case connectionClosed
+    case stdinClosed
 }
 
 // Create MCPService class to manage lifecycle
@@ -505,13 +498,20 @@ actor MCPService: Service {
                         try await Task.sleep(for: .seconds(1))
                         continue
                     case .connectionClosed:
-                        await log.critical("Connection closed, terminating...")
+                        // The menubar app went away, try to reconnect
+                        await log.info("Connection to iMCP closed, will reconnect...")
+                        try await Task.sleep(for: .seconds(1))
+                        continue
+                    case .stdinClosed:
+                        // The client closed our pipes; there is nothing left to proxy.
+                        await log.info("stdin closed, shutting down")
                         return
                     }
                 } catch let error as NWError where error.errorCode == 54 || error.errorCode == 57 {
-                    // Handle connection reset by peer (54) or socket not connected (57)
-                    await log.critical("Network connection terminated: \(error), shutting down...")
-                    return
+                    // Connection reset by peer (54) or socket not connected (57):
+                    await log.info("Network connection terminated: \(error), will reconnect...")
+                    try await Task.sleep(for: .seconds(1))
+                    continue
                 } catch {
                     // Rethrow other errors to be handled by the outer catch block
                     throw error
