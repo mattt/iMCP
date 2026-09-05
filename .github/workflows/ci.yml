@@ -50,3 +50,11 @@ jobs:
 
             - name: Build
               run: xcodebuild -quiet -scheme iMCP -configuration Debug -destination "platform=macOS" build
+
+            # The cache action's exclude pattern has not kept the module cache out of
+            # the archive, and runner images with the same Xcode build can differ in
+            # toolchain file timestamps, which makes a restored module cache fatal.
+            # Remove it before the cache is saved at the end of the job.
+            - name: Drop the module cache before saving
+              if: always()
+              run: rm -rf ~/Library/Developer/Xcode/DerivedData/ModuleCache.noindex
