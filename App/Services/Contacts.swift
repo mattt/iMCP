@@ -147,7 +147,7 @@ final class ContactsService: Service {
             let contact = try await self.runContactStore {
                 try self.contactStore.unifiedMeContactWithKeys(toFetch: contactKeys)
             }
-            return Person(contact)
+            return listedPerson(from: contact)
         }
 
         Tool(
@@ -261,6 +261,7 @@ final class ContactsService: Service {
                 var results: [CNContact] = []
                 let request = CNContactFetchRequest(keysToFetch: contactKeys)
                 request.unifyResults = true
+                request.sortOrder = .userDefault
                 try self.contactStore.enumerateContacts(with: request) { contact, _ in
                     results.append(contact)
                 }
@@ -272,7 +273,6 @@ final class ContactsService: Service {
             // than `limit` items for a full page — callers treat that as EOF and
             // never request the next offset.
             let people = contacts.compactMap { listedPerson(from: $0) }
-                .sorted { ($0.identifier ?? "") < ($1.identifier ?? "") }
             return Array(people.dropFirst(offset).prefix(limit))
         }
 
@@ -382,40 +382,20 @@ final class ContactsService: Service {
     }
 }
 
-/// `Person(CNContact)` returns nil when `contactType == .organization`. Contacts.app
-/// still stores people that way (the company toggle) with given/family names filled
-/// in. Represent those cards as `Person` so search and list don't omit them.
+/// `Person(CNContact)` returns nil when `contactType == .organization`.
+/// Contacts.app still stores people that way (the "Company" toggle)
+/// with given and family names filled in.
+/// Treat those cards as people so search and list don't omit them;
+/// cards that carry only an organization name stay excluded.
 private func listedPerson(from contact: CNContact) -> Person? {
     if let person = Person(contact) {
         return person
     }
-    guard contact.contactType == .organization else { return nil }
+    guard contact.contactType == .organization,
+        !contact.givenName.isEmpty || !contact.familyName.isEmpty,
+        let copy = contact.mutableCopy() as? CNMutableContact
+    else { return nil }
 
-    let display = [contact.givenName, contact.familyName]
-        .filter { !$0.isEmpty }
-        .joined(separator: " ")
-    let fallback = display.isEmpty ? contact.organizationName : display
-    guard !fallback.isEmpty else { return nil }
-
-    var person = Person(name: fallback)
-    person.identifier = contact.identifier
-    person.givenName = contact.givenName.isEmpty ? nil : contact.givenName
-    person.familyName = contact.familyName.isEmpty ? nil : contact.familyName
-    if person.givenName == nil && person.familyName == nil {
-        person.familyName = contact.organizationName
-    }
-    person.email =
-        contact.emailAddresses.isEmpty
-        ? nil : contact.emailAddresses.map { $0.value as String }
-    person.telephone =
-        contact.phoneNumbers.isEmpty
-        ? nil : contact.phoneNumbers.map { $0.value.stringValue }
-    person.jobTitle = contact.jobTitle.isEmpty ? nil : contact.jobTitle
-    if !contact.organizationName.isEmpty {
-        person.worksFor = Organization(name: contact.organizationName)
-    }
-    if !contact.postalAddresses.isEmpty {
-        person.address = contact.postalAddresses.map { PostalAddress($0.value) }
-    }
-    return person
+    copy.contactType = .person
+    return Person(copy)
 }
