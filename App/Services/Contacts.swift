@@ -221,7 +221,59 @@ final class ContactsService: Service {
                 )
             }
 
-            return contacts.compactMap { Person($0) }
+            return contacts.compactMap { listedPerson(from: $0) }
+        }
+
+        Tool(
+            name: "contacts_list",
+            description:
+                "List contacts in a stable order. Returns every contact by default; use limit and offset to page through large address books.",
+            inputSchema: .object(
+                properties: [
+                    "limit": .integer(
+                        description: "Maximum number of contacts to return",
+                        minimum: 1
+                    ),
+                    "offset": .integer(
+                        description: "Number of contacts to skip, in the same stable order",
+                        default: .int(0),
+                        minimum: 0
+                    ),
+                ],
+                additionalProperties: false
+            ),
+            annotations: .init(
+                title: "List Contacts",
+                readOnlyHint: true,
+                openWorldHint: false
+            )
+        ) { arguments in
+            var limit = Int.max
+            if case .int(let value) = arguments["limit"], value > 0 {
+                limit = value
+            }
+            var offset = 0
+            if case .int(let value) = arguments["offset"], value > 0 {
+                offset = value
+            }
+
+            let contacts = try await self.runContactStore {
+                var results: [CNContact] = []
+                let request = CNContactFetchRequest(keysToFetch: contactKeys)
+                request.unifyResults = true
+                try self.contactStore.enumerateContacts(with: request) { contact, _ in
+                    results.append(contact)
+                }
+                return results
+            }
+
+            // Map then page. `Person(CNContact)` is nil for `.organization` cards,
+            // so paging the raw store and compactMapping afterward can return fewer
+            // than `limit` items for a full page — callers treat that as EOF and
+            // never request the next offset.
+            let people = contacts.compactMap { listedPerson(from: $0) }
+                .sorted { ($0.identifier ?? "") < ($1.identifier ?? "") }
+            return Array(people.dropFirst(offset).prefix(limit))
         }
 
         Tool(
@@ -328,4 +380,42 @@ final class ContactsService: Service {
             return Person(newContact)
         }
     }
+}
+
+/// `Person(CNContact)` returns nil when `contactType == .organization`. Contacts.app
+/// still stores people that way (the company toggle) with given/family names filled
+/// in. Represent those cards as `Person` so search and list don't omit them.
+private func listedPerson(from contact: CNContact) -> Person? {
+    if let person = Person(contact) {
+        return person
+    }
+    guard contact.contactType == .organization else { return nil }
+
+    let display = [contact.givenName, contact.familyName]
+        .filter { !$0.isEmpty }
+        .joined(separator: " ")
+    let fallback = display.isEmpty ? contact.organizationName : display
+    guard !fallback.isEmpty else { return nil }
+
+    var person = Person(name: fallback)
+    person.identifier = contact.identifier
+    person.givenName = contact.givenName.isEmpty ? nil : contact.givenName
+    person.familyName = contact.familyName.isEmpty ? nil : contact.familyName
+    if person.givenName == nil && person.familyName == nil {
+        person.familyName = contact.organizationName
+    }
+    person.email =
+        contact.emailAddresses.isEmpty
+        ? nil : contact.emailAddresses.map { $0.value as String }
+    person.telephone =
+        contact.phoneNumbers.isEmpty
+        ? nil : contact.phoneNumbers.map { $0.value.stringValue }
+    person.jobTitle = contact.jobTitle.isEmpty ? nil : contact.jobTitle
+    if !contact.organizationName.isEmpty {
+        person.worksFor = Organization(name: contact.organizationName)
+    }
+    if !contact.postalAddresses.isEmpty {
+        person.address = contact.postalAddresses.map { PostalAddress($0.value) }
+    }
+    return person
 }
