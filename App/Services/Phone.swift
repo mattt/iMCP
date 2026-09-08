@@ -107,7 +107,8 @@ final class PhoneService: NSObject, Service, NSOpenSavePanelDelegate {
             inputSchema: .object(
                 properties: [
                     "phoneNumber": .string(
-                        description: "Phone number to call. E.164 format is recommended."
+                        description:
+                            "Phone number to call. E.164 format is recommended. Digits, a leading +, and common formatting only; * and # are not supported."
                     )
                 ],
                 required: ["phoneNumber"],
@@ -126,10 +127,11 @@ final class PhoneService: NSObject, Service, NSOpenSavePanelDelegate {
                 throw CallError.missingPhoneNumber
             }
 
-            // Accept only dialable characters plus common formatting; reject anything else
+            // Accept only digits, a leading "+", and common formatting; reject anything else
             // rather than silently dialing a different number (e.g. "help911" -> "911").
+            // The Phone app refuses tel: URLs containing "*" or "#", so those are rejected too.
             let digits = Set("0123456789")
-            let dialable = digits.union("+*#")
+            let dialable = digits.union("+")
             let formatting = Set(" -().")
             guard phoneNumber.allSatisfy({ dialable.contains($0) || formatting.contains($0) })
             else {
@@ -141,7 +143,6 @@ final class PhoneService: NSObject, Service, NSOpenSavePanelDelegate {
                 throw CallError.invalidPhoneNumber(phoneNumber)
             }
 
-            // Build through URLComponents so "#" is percent-encoded rather than parsed as a fragment
             var components = URLComponents()
             components.scheme = "tel"
             components.path = dialString
