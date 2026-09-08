@@ -41,7 +41,7 @@ final class MusicService: Service {
             )
         ) { _ in
             try await self.activate()
-            return try self.fetchNowPlaying()
+            return try await self.fetchNowPlaying()
         }
 
         Tool(
@@ -77,7 +77,7 @@ final class MusicService: Service {
             }
 
             let position = arguments["position"]?.doubleValue
-            try self.performControlAction(action, position: position)
+            try await self.performControlAction(action, position: position)
             return true
         }
 
@@ -153,6 +153,7 @@ private struct MusicCatalogResult: Encodable {
 }
 
 extension MusicService {
+    @MainActor
     private func executeAppleScript(_ source: String) throws -> NSAppleEventDescriptor {
         var errorInfo: NSDictionary?
         guard let script = NSAppleScript(source: source) else {
@@ -188,7 +189,7 @@ extension MusicService {
     }
 
     private func listItems(from descriptor: NSAppleEventDescriptor) -> [NSAppleEventDescriptor] {
-        guard descriptor.descriptorType == typeAEList else {
+        guard descriptor.descriptorType == typeAEList, descriptor.numberOfItems > 0 else {
             return []
         }
 
@@ -197,6 +198,7 @@ extension MusicService {
         }
     }
 
+    @MainActor
     private func fetchNowPlaying() throws -> [String: Value] {
         let script = """
             tell application "Music"
@@ -240,6 +242,7 @@ extension MusicService {
         ]
     }
 
+    @MainActor
     private func performControlAction(_ action: ControlAction, position: Double?) throws {
         let script: String
         switch action {
@@ -290,20 +293,32 @@ extension MusicService {
         var request = MusicCatalogSearchRequest(term: term, types: types)
         request.includeTopResults = includeTopResults || includeTopResultsResolved
 
-        let requestedLimit: Int
-        if let limit = arguments["limit"]?.intValue {
-            requestedLimit = limit
-        } else if let limit = arguments["limit"]?.doubleValue {
-            requestedLimit = Int(limit)
+        if let value = arguments["limit"], !value.isNull {
+            guard let limit = Int(value, strict: false), (1 ... 50).contains(limit) else {
+                throw NSError(
+                    domain: "MusicServiceError",
+                    code: 9,
+                    userInfo: [
+                        NSLocalizedDescriptionKey: "Limit must be an integer between 1 and 50"
+                    ]
+                )
+            }
+            request.limit = limit
         } else {
-            requestedLimit = defaultSearchLimit
+            request.limit = defaultSearchLimit
         }
-        request.limit = min(50, max(1, requestedLimit))
 
-        if let offset = arguments["offset"]?.intValue {
-            request.offset = max(0, offset)
-        } else if let offset = arguments["offset"]?.doubleValue {
-            request.offset = max(0, Int(offset))
+        if let value = arguments["offset"], !value.isNull {
+            guard let offset = Int(value, strict: false), offset >= 0 else {
+                throw NSError(
+                    domain: "MusicServiceError",
+                    code: 10,
+                    userInfo: [
+                        NSLocalizedDescriptionKey: "Offset must be a non-negative integer"
+                    ]
+                )
+            }
+            request.offset = offset
         }
 
         let response = try await request.response()
