@@ -12,42 +12,6 @@ private let defaultLimit = 30
 final class PhoneService: NSObject, Service, NSOpenSavePanelDelegate {
     static let shared = PhoneService()
 
-    func activate() async throws {
-        log.debug("Starting phone service activation")
-
-        if canAccessDatabaseAtDefaultPath {
-            log.debug("Successfully activated using default database path")
-            return
-        }
-
-        if canAccessDatabaseUsingBookmark {
-            log.debug("Successfully activated using stored bookmark")
-            return
-        }
-
-        log.debug("Opening file picker for manual database selection")
-        guard try await showDatabaseAccessAlert() else {
-            throw DatabaseAccessError.userDeclinedAccess
-        }
-
-        let selectedURL = try await showFilePicker()
-
-        guard FileManager.default.isReadableFile(atPath: selectedURL.path) else {
-            throw DatabaseAccessError.fileNotReadable
-        }
-
-        storeBookmark(for: selectedURL)
-        log.debug("Successfully activated phone service")
-    }
-
-    var isActivated: Bool {
-        get async {
-            let isActivated = canAccessDatabaseAtDefaultPath || canAccessDatabaseUsingBookmark
-            log.debug("Phone service activation status: \(isActivated)")
-            return isActivated
-        }
-    }
-
     var tools: [Tool] {
         Tool(
             name: "phone_calls_fetch",
@@ -74,7 +38,8 @@ final class PhoneService: NSObject, Service, NSOpenSavePanelDelegate {
                     ),
                     "limit": .integer(
                         description: "Maximum calls to return",
-                        default: .int(defaultLimit)
+                        default: .int(defaultLimit),
+                        minimum: 1
                     ),
                 ],
                 additionalProperties: false
@@ -86,30 +51,43 @@ final class PhoneService: NSObject, Service, NSOpenSavePanelDelegate {
             )
         ) { arguments in
             log.debug("Starting call history fetch with arguments: \(arguments)")
-            try await self.activate()
 
-            var request = CallRecord.FetchRequest(
-                limit: arguments["limit"]?.intValue ?? defaultLimit
-            )
+            let limit = arguments["limit"]?.intValue ?? defaultLimit
+            guard limit >= 1 else {
+                throw ArgumentError.invalid("limit must be a positive integer")
+            }
+            var request = CallRecord.FetchRequest(limit: limit)
             request.participant = arguments["participant"]?.stringValue
-            request.callType = arguments["call_type"]?.stringValue.flatMap {
-                CallRecord.CallType(rawValue: $0.lowercased())
+            if let callType = arguments["call_type"]?.stringValue {
+                guard let type = CallRecord.CallType(rawValue: callType.lowercased()) else {
+                    throw ArgumentError.invalid(
+                        "call_type must be one of: incoming, outgoing, missed"
+                    )
+                }
+                request.callType = type
             }
-            if let startStr = arguments["start"]?.stringValue,
-                let parsedStart = ISO8601DateFormatter.parsedLenientISO8601Date(
-                    fromISO8601String: startStr
-                )
-            {
-                request.startDate = parsedStart.date
+            if let start = arguments["start"]?.stringValue {
+                guard
+                    let parsed = ISO8601DateFormatter.parsedLenientISO8601Date(
+                        fromISO8601String: start
+                    )
+                else {
+                    throw ArgumentError.invalid("start must be an ISO 8601 date")
+                }
+                request.startDate = parsed.date
             }
-            if let endStr = arguments["end"]?.stringValue,
-                let parsedEnd = ISO8601DateFormatter.parsedLenientISO8601Date(
-                    fromISO8601String: endStr
-                )
-            {
-                request.endDate = parsedEnd.date
+            if let end = arguments["end"]?.stringValue {
+                guard
+                    let parsed = ISO8601DateFormatter.parsedLenientISO8601Date(
+                        fromISO8601String: end
+                    )
+                else {
+                    throw ArgumentError.invalid("end must be an ISO 8601 date")
+                }
+                request.endDate = parsed.date
             }
 
+            try await self.requestDatabaseAccess()
             let calls = try self.withDatabase { try $0.fetch(request) }
 
             log.debug("Successfully fetched \(calls.count) calls")
@@ -148,8 +126,20 @@ final class PhoneService: NSObject, Service, NSOpenSavePanelDelegate {
                 throw CallError.missingPhoneNumber
             }
 
-            let dialString = phoneNumber.filter { $0.isNumber || $0 == "+" || $0 == "*" || $0 == "#" }
-            guard !dialString.isEmpty, let url = URL(string: "tel:\(dialString)") else {
+            // Accept only dialable characters plus common formatting; reject anything else
+            // rather than silently dialing a different number (e.g. "help911" -> "911").
+            let digits = Set("0123456789")
+            let dialable = digits.union("+*#")
+            let formatting = Set(" -().")
+            guard phoneNumber.allSatisfy({ dialable.contains($0) || formatting.contains($0) })
+            else {
+                throw CallError.invalidPhoneNumber(phoneNumber)
+            }
+
+            let dialString = phoneNumber.filter { !formatting.contains($0) }
+            guard dialString.contains(where: digits.contains),
+                let url = URL(string: "tel:\(dialString)")
+            else {
                 throw CallError.invalidPhoneNumber(phoneNumber)
             }
 
@@ -167,6 +157,33 @@ final class PhoneService: NSObject, Service, NSOpenSavePanelDelegate {
     }
 
     // MARK: - Database Access
+
+    /// Ensures the call history database is readable, asking the user to grant access if needed.
+    private func requestDatabaseAccess() async throws {
+        if canAccessDatabaseAtDefaultPath {
+            log.debug("Using call history database at default path")
+            return
+        }
+
+        if canAccessDatabaseUsingBookmark {
+            log.debug("Using call history database from stored bookmark")
+            return
+        }
+
+        log.debug("Opening file picker for manual database selection")
+        guard try await showDatabaseAccessAlert() else {
+            throw DatabaseAccessError.userDeclinedAccess
+        }
+
+        let selectedURL = try await showFilePicker()
+
+        guard FileManager.default.isReadableFile(atPath: selectedURL.path) else {
+            throw DatabaseAccessError.fileNotReadable
+        }
+
+        storeBookmark(for: selectedURL)
+        log.debug("Granted access to call history database")
+    }
 
     private var canAccessDatabaseAtDefaultPath: Bool {
         return FileManager.default.isReadableFile(atPath: callHistoryDatabasePath)
@@ -247,6 +264,17 @@ final class PhoneService: NSObject, Service, NSOpenSavePanelDelegate {
                 return "Call history database access denied or invalid file selected"
             case .fileNotReadable:
                 return "Selected database file is not readable"
+            }
+        }
+    }
+
+    private enum ArgumentError: LocalizedError {
+        case invalid(String)
+
+        var errorDescription: String? {
+            switch self {
+            case .invalid(let message):
+                return "Invalid argument: \(message)"
             }
         }
     }
@@ -396,7 +424,7 @@ private enum SQLiteValue {
         case .double(let double):
             sqlite3_bind_double(statement, index, double)
         case .int(let int):
-            sqlite3_bind_int(statement, index, Int32(int))
+            sqlite3_bind_int(statement, index, Int32(clamping: int))
         }
     }
 }
