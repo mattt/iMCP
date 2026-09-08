@@ -52,13 +52,13 @@ final class PhoneService: NSObject, Service, NSOpenSavePanelDelegate {
         ) { arguments in
             log.debug("Starting call history fetch with arguments: \(arguments)")
 
-            let limit = arguments["limit"]?.intValue ?? defaultLimit
+            let limit = try self.argument("limit", in: arguments, as: \.intValue) ?? defaultLimit
             guard limit >= 1 else {
                 throw ArgumentError.invalid("limit must be a positive integer")
             }
             var request = CallRecord.FetchRequest(limit: limit)
-            request.participant = arguments["participant"]?.stringValue
-            if let callType = arguments["call_type"]?.stringValue {
+            request.participant = try self.argument("participant", in: arguments, as: \.stringValue)
+            if let callType = try self.argument("call_type", in: arguments, as: \.stringValue) {
                 guard let type = CallRecord.CallType(rawValue: callType.lowercased()) else {
                     throw ArgumentError.invalid(
                         "call_type must be one of: incoming, outgoing, missed"
@@ -66,7 +66,7 @@ final class PhoneService: NSObject, Service, NSOpenSavePanelDelegate {
                 }
                 request.callType = type
             }
-            if let start = arguments["start"]?.stringValue {
+            if let start = try self.argument("start", in: arguments, as: \.stringValue) {
                 guard
                     let parsed = ISO8601DateFormatter.parsedLenientISO8601Date(
                         fromISO8601String: start
@@ -76,7 +76,7 @@ final class PhoneService: NSObject, Service, NSOpenSavePanelDelegate {
                 }
                 request.startDate = parsed.date
             }
-            if let end = arguments["end"]?.stringValue {
+            if let end = try self.argument("end", in: arguments, as: \.stringValue) {
                 guard
                     let parsed = ISO8601DateFormatter.parsedLenientISO8601Date(
                         fromISO8601String: end
@@ -137,9 +137,15 @@ final class PhoneService: NSObject, Service, NSOpenSavePanelDelegate {
             }
 
             let dialString = phoneNumber.filter { !formatting.contains($0) }
-            guard dialString.contains(where: digits.contains),
-                let url = URL(string: "tel:\(dialString)")
-            else {
+            guard dialString.contains(where: digits.contains) else {
+                throw CallError.invalidPhoneNumber(phoneNumber)
+            }
+
+            // Build through URLComponents so "#" is percent-encoded rather than parsed as a fragment
+            var components = URLComponents()
+            components.scheme = "tel"
+            components.path = dialString
+            guard let url = components.url else {
                 throw CallError.invalidPhoneNumber(phoneNumber)
             }
 
@@ -181,8 +187,21 @@ final class PhoneService: NSObject, Service, NSOpenSavePanelDelegate {
             throw DatabaseAccessError.fileNotReadable
         }
 
-        storeBookmark(for: selectedURL)
+        try storeBookmark(for: selectedURL)
         log.debug("Granted access to call history database")
+    }
+
+    /// Returns an optional argument, or throws if it is present with the wrong type.
+    private func argument<T>(
+        _ name: String,
+        in arguments: [String: Value],
+        as transform: (Value) -> T?
+    ) throws -> T? {
+        guard let value = arguments[name], !value.isNull else { return nil }
+        guard let result = transform(value) else {
+            throw ArgumentError.invalid("\(name) has the wrong type")
+        }
+        return result
     }
 
     private var canAccessDatabaseAtDefaultPath: Bool {
@@ -340,18 +359,14 @@ final class PhoneService: NSObject, Service, NSOpenSavePanelDelegate {
         return url
     }
 
-    private func storeBookmark(for url: URL) {
-        do {
-            let bookmarkData = try url.bookmarkData(
-                options: .securityScopeAllowOnlyReadAccess,
-                includingResourceValuesForKeys: nil,
-                relativeTo: nil
-            )
-            UserDefaults.standard.set(bookmarkData, forKey: callHistoryDatabaseBookmarkKey)
-            log.debug("Successfully created and stored bookmark")
-        } catch {
-            log.error("Failed to create bookmark: \(error.localizedDescription)")
-        }
+    private func storeBookmark(for url: URL) throws {
+        let bookmarkData = try url.bookmarkData(
+            options: .securityScopeAllowOnlyReadAccess,
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil
+        )
+        UserDefaults.standard.set(bookmarkData, forKey: callHistoryDatabaseBookmarkKey)
+        log.debug("Successfully created and stored bookmark")
     }
 
     func panel(_ sender: Any, shouldEnable url: URL) -> Bool {
@@ -396,8 +411,13 @@ private final class CallHistoryDatabase {
         }
 
         var records: [CallRecord] = []
-        while sqlite3_step(statement) == SQLITE_ROW {
+        var result = sqlite3_step(statement)
+        while result == SQLITE_ROW {
             records.append(CallRecord(statement))
+            result = sqlite3_step(statement)
+        }
+        guard result == SQLITE_DONE else {
+            throw SQLiteError(message: String(cString: sqlite3_errmsg(connection)))
         }
         return records
     }
