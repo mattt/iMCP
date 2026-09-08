@@ -130,6 +130,54 @@ final class PhoneService: NSObject, Service, NSOpenSavePanelDelegate {
                 "itemListElement": Value.array(calls.map({ .object($0) })),
             ]
         }
+
+        Tool(
+            name: "phone_call",
+            description:
+                "Start a phone call from the Mac (via iPhone). The system asks the user to confirm before dialing.",
+            inputSchema: .object(
+                properties: [
+                    "phoneNumber": .string(
+                        description: "Phone number to call. E.164 format is recommended."
+                    )
+                ],
+                required: ["phoneNumber"],
+                additionalProperties: false
+            ),
+            annotations: .init(
+                title: "Call Phone Number",
+                readOnlyHint: false,
+                destructiveHint: false,
+                openWorldHint: true
+            )
+        ) { arguments in
+            guard let phoneNumber = arguments["phoneNumber"]?.stringValue,
+                !phoneNumber.isEmpty
+            else {
+                throw CallError.missingPhoneNumber
+            }
+
+            let dialString = phoneNumber.filter { $0.isNumber || $0 == "+" || $0 == "*" || $0 == "#" }
+            guard !dialString.isEmpty, let url = URL(string: "tel:\(dialString)") else {
+                throw CallError.invalidPhoneNumber(phoneNumber)
+            }
+
+            log.debug("Requesting phone call to \(dialString)")
+            guard NSWorkspace.shared.open(url) else {
+                throw CallError.openFailed
+            }
+
+            return [
+                "@context": "https://schema.org",
+                "@type": "CommunicateAction",
+                "actionStatus": "PotentialActionStatus",
+                "recipient": Value.object([
+                    "@type": "Person",
+                    "telephone": .string(dialString),
+                ]),
+                "description": "The system asked the user to confirm the call.",
+            ]
+        }
     }
 
     // MARK: - Database Access
@@ -386,6 +434,24 @@ final class PhoneService: NSObject, Service, NSOpenSavePanelDelegate {
                 return "Selected database file is not readable"
             case .sqliteError(let message):
                 return "SQLite error: \(message)"
+            }
+        }
+    }
+
+    private enum CallError: LocalizedError {
+        case missingPhoneNumber
+        case invalidPhoneNumber(String)
+        case openFailed
+
+        var errorDescription: String? {
+            switch self {
+            case .missingPhoneNumber:
+                return "A phone number is required"
+            case .invalidPhoneNumber(let number):
+                return "Invalid phone number: \(number)"
+            case .openFailed:
+                return
+                    "Failed to start the call. Check that your iPhone is nearby and Calls on Other Devices is enabled."
             }
         }
     }
