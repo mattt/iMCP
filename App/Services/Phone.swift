@@ -9,9 +9,6 @@ private let callHistoryDatabasePath =
 private let callHistoryDatabaseBookmarkKey: String = "me.mattt.iMCP.callHistoryDatabaseBookmark"
 private let defaultLimit = 30
 
-// Apple's Core Data epoch: 2001-01-01 00:00:00 UTC
-private let coreDataEpoch: TimeInterval = 978_307_200
-
 final class PhoneService: NSObject, Service, NSOpenSavePanelDelegate {
     static let shared = PhoneService()
 
@@ -91,36 +88,29 @@ final class PhoneService: NSObject, Service, NSOpenSavePanelDelegate {
             log.debug("Starting call history fetch with arguments: \(arguments)")
             try await self.activate()
 
-            let participant = arguments["participant"]?.stringValue
-            let callTypeFilter = arguments["call_type"]?.stringValue
-            let limit = arguments["limit"]?.intValue ?? defaultLimit
-
-            var startDate: Date?
-            var endDate: Date?
+            var request = CallRecord.FetchRequest(
+                limit: arguments["limit"]?.intValue ?? defaultLimit
+            )
+            request.participant = arguments["participant"]?.stringValue
+            request.callType = arguments["call_type"]?.stringValue.flatMap {
+                CallRecord.CallType(rawValue: $0.lowercased())
+            }
             if let startStr = arguments["start"]?.stringValue,
                 let parsedStart = ISO8601DateFormatter.parsedLenientISO8601Date(
                     fromISO8601String: startStr
                 )
             {
-                startDate = parsedStart.date
+                request.startDate = parsedStart.date
             }
             if let endStr = arguments["end"]?.stringValue,
                 let parsedEnd = ISO8601DateFormatter.parsedLenientISO8601Date(
                     fromISO8601String: endStr
                 )
             {
-                endDate = parsedEnd.date
+                request.endDate = parsedEnd.date
             }
 
-            let databaseURL = try self.resolveDatabaseURL()
-            let calls = try self.fetchCalls(
-                from: databaseURL,
-                participant: participant,
-                startDate: startDate,
-                endDate: endDate,
-                callTypeFilter: callTypeFilter,
-                limit: limit
-            )
+            let calls = try self.withDatabase { try $0.fetch(request) }
 
             log.debug("Successfully fetched \(calls.count) calls")
             return [
@@ -128,7 +118,7 @@ final class PhoneService: NSObject, Service, NSOpenSavePanelDelegate {
                 "@type": "ItemList",
                 "name": "Call History",
                 "numberOfItems": .int(calls.count),
-                "itemListElement": Value.array(calls.map({ .object($0) })),
+                "itemListElement": Value.array(calls.map(\.value)),
             ]
         }
 
@@ -226,183 +216,13 @@ final class PhoneService: NSObject, Service, NSOpenSavePanelDelegate {
         return try operation(url)
     }
 
-    // MARK: - SQLite Query
-
-    private func fetchCalls(
-        from databaseURL: URL,
-        participant: String?,
-        startDate: Date?,
-        endDate: Date?,
-        callTypeFilter: String?,
-        limit: Int
-    ) throws -> [[String: Value]] {
-        let accessBlock: (URL) throws -> [[String: Value]] = { url in
-            var db: OpaquePointer?
-            guard sqlite3_open_v2(url.path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
-                let errorMessage = String(cString: sqlite3_errmsg(db))
-                sqlite3_close(db)
-                throw DatabaseAccessError.sqliteError(errorMessage)
-            }
-            defer { sqlite3_close(db) }
-
-            // Build query with filters
-            var conditions: [String] = []
-            var params: [Any] = []
-
-            if let participant = participant {
-                conditions.append("(c.ZADDRESS LIKE ? OR c.ZNAME LIKE ?)")
-                params.append("%\(participant)%")
-                params.append("%\(participant)%")
-            }
-
-            if let startDate = startDate {
-                let coreDataTimestamp = startDate.timeIntervalSince1970 - coreDataEpoch
-                conditions.append("c.ZDATE >= ?")
-                params.append(coreDataTimestamp)
-            }
-
-            if let endDate = endDate {
-                let coreDataTimestamp = endDate.timeIntervalSince1970 - coreDataEpoch
-                conditions.append("c.ZDATE < ?")
-                params.append(coreDataTimestamp)
-            }
-
-            if let callTypeFilter = callTypeFilter {
-                switch callTypeFilter.lowercased() {
-                case "incoming":
-                    conditions.append("c.ZORIGINATED = 0 AND c.ZANSWERED = 1")
-                case "outgoing":
-                    conditions.append("c.ZORIGINATED = 1")
-                case "missed":
-                    conditions.append("c.ZORIGINATED = 0 AND c.ZANSWERED = 0")
-                default:
-                    break
-                }
-            }
-
-            let whereClause =
-                conditions.isEmpty ? "" : "WHERE " + conditions.joined(separator: " AND ")
-
-            let query = """
-                SELECT
-                    c.Z_PK,
-                    c.ZADDRESS,
-                    c.ZNAME,
-                    c.ZDATE,
-                    c.ZDURATION,
-                    c.ZORIGINATED,
-                    c.ZANSWERED,
-                    c.ZSERVICE_PROVIDER
-                FROM ZCALLRECORD c
-                \(whereClause)
-                ORDER BY c.ZDATE DESC
-                LIMIT ?
-                """
-
-            var stmt: OpaquePointer?
-            guard sqlite3_prepare_v2(db, query, -1, &stmt, nil) == SQLITE_OK else {
-                let errorMessage = String(cString: sqlite3_errmsg(db))
-                throw DatabaseAccessError.sqliteError(errorMessage)
-            }
-            defer { sqlite3_finalize(stmt) }
-
-            // Bind parameters
-            var paramIndex: Int32 = 1
-            for param in params {
-                if let stringParam = param as? String {
-                    sqlite3_bind_text(
-                        stmt,
-                        paramIndex,
-                        (stringParam as NSString).utf8String,
-                        -1,
-                        nil
-                    )
-                } else if let doubleParam = param as? Double {
-                    sqlite3_bind_double(stmt, paramIndex, doubleParam)
-                } else if let timeInterval = param as? TimeInterval {
-                    sqlite3_bind_double(stmt, paramIndex, timeInterval)
-                }
-                paramIndex += 1
-            }
-            sqlite3_bind_int(stmt, paramIndex, Int32(limit))
-
-            var calls: [[String: Value]] = []
-            while sqlite3_step(stmt) == SQLITE_ROW {
-                // Columns: 0=Z_PK, 1=ZADDRESS, 2=ZNAME, 3=ZDATE, 4=ZDURATION,
-                //          5=ZORIGINATED, 6=ZANSWERED, 7=ZSERVICE_PROVIDER
-                let id = Int(sqlite3_column_int64(stmt, 0))
-
-                let address: String
-                if let cStr = sqlite3_column_text(stmt, 1) {
-                    address = String(cString: cStr)
-                } else {
-                    address = "Unknown"
-                }
-
-                let name: String?
-                if let cStr = sqlite3_column_text(stmt, 2) {
-                    let n = String(cString: cStr)
-                    name = n.isEmpty ? nil : n
-                } else {
-                    name = nil
-                }
-
-                let coreDataDate = sqlite3_column_double(stmt, 3)
-                let unixTimestamp = coreDataDate + coreDataEpoch
-                let date = Date(timeIntervalSince1970: unixTimestamp)
-
-                let duration = sqlite3_column_double(stmt, 4)
-                let originated = sqlite3_column_int(stmt, 5)
-                let answered = sqlite3_column_int(stmt, 6)
-
-                let callType: String
-                if originated == 1 {
-                    callType = "outgoing"
-                } else if answered == 1 {
-                    callType = "incoming"
-                } else {
-                    callType = "missed"
-                }
-
-                let serviceProvider: String
-                if let cStr = sqlite3_column_text(stmt, 7) {
-                    serviceProvider = String(cString: cStr)
-                } else {
-                    serviceProvider = "unknown"
-                }
-
-                let durationMinutes = Int(duration) / 60
-                let durationSeconds = Int(duration) % 60
-                let durationStr =
-                    durationMinutes > 0
-                    ? "\(durationMinutes)m \(durationSeconds)s" : "\(durationSeconds)s"
-
-                var entry: [String: Value] = [
-                    "@id": .string(String(id)),
-                    "phoneNumber": .string(address),
-                    "callType": .string(callType),
-                    "date": .string(date.formatted(.iso8601)),
-                    "duration": .string(durationStr),
-                    "durationSeconds": .double(duration),
-                    "serviceProvider": .string(serviceProvider),
-                ]
-                if let name = name {
-                    entry["name"] = .string(name)
-                }
-
-                calls.append(entry)
-            }
-
-            return calls
-        }
-
-        // Use security-scoped access if needed
+    private func withDatabase<T>(_ operation: (CallHistoryDatabase) throws -> T) throws -> T {
+        let url = try resolveDatabaseURL()
         if canAccessDatabaseAtDefaultPath {
-            return try accessBlock(databaseURL)
-        } else {
-            return try withSecurityScopedAccess(databaseURL) { url in
-                try accessBlock(url)
-            }
+            return try operation(CallHistoryDatabase(path: url.path))
+        }
+        return try withSecurityScopedAccess(url) { url in
+            try operation(CallHistoryDatabase(path: url.path))
         }
     }
 
@@ -414,7 +234,6 @@ final class PhoneService: NSObject, Service, NSOpenSavePanelDelegate {
         case userDeclinedAccess
         case invalidFileSelected
         case fileNotReadable
-        case sqliteError(String)
 
         var errorDescription: String? {
             switch self {
@@ -428,8 +247,6 @@ final class PhoneService: NSObject, Service, NSOpenSavePanelDelegate {
                 return "Call history database access denied or invalid file selected"
             case .fileNotReadable:
                 return "Selected database file is not readable"
-            case .sqliteError(let message):
-                return "SQLite error: \(message)"
             }
         }
     }
@@ -515,6 +332,196 @@ final class PhoneService: NSObject, Service, NSOpenSavePanelDelegate {
             "File selection panel: \(shouldEnable ? "enabling" : "disabling") URL: \(url.path)"
         )
         return shouldEnable
+    }
+}
+
+// MARK: -
+
+/// A read-only connection to the Call History database.
+private final class CallHistoryDatabase {
+    private let connection: OpaquePointer
+
+    init(path: String) throws {
+        var connection: OpaquePointer?
+        guard sqlite3_open_v2(path, &connection, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
+            defer { sqlite3_close(connection) }
+            throw SQLiteError(message: String(cString: sqlite3_errmsg(connection)))
+        }
+        self.connection = connection!
+    }
+
+    deinit {
+        sqlite3_close(connection)
+    }
+
+    func fetch(_ request: CallRecord.FetchRequest) throws -> [CallRecord] {
+        let (sql, bindings) = request.statement
+
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(connection, sql, -1, &statement, nil) == SQLITE_OK else {
+            throw SQLiteError(message: String(cString: sqlite3_errmsg(connection)))
+        }
+        defer { sqlite3_finalize(statement) }
+
+        for (offset, binding) in bindings.enumerated() {
+            binding.bind(to: statement, at: Int32(offset + 1))
+        }
+
+        var records: [CallRecord] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            records.append(CallRecord(statement))
+        }
+        return records
+    }
+}
+
+private struct SQLiteError: LocalizedError {
+    let message: String
+
+    var errorDescription: String? {
+        return "SQLite error: \(message)"
+    }
+}
+
+/// A value bound to a `?` placeholder in a prepared statement.
+private enum SQLiteValue {
+    case text(String)
+    case double(Double)
+    case int(Int)
+
+    func bind(to statement: OpaquePointer?, at index: Int32) {
+        switch self {
+        case .text(let string):
+            sqlite3_bind_text(statement, index, string, -1, SQLITE_TRANSIENT)
+        case .double(let double):
+            sqlite3_bind_double(statement, index, double)
+        case .int(let int):
+            sqlite3_bind_int(statement, index, Int32(int))
+        }
+    }
+}
+
+private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+
+/// A row of the `ZCALLRECORD` table.
+private struct CallRecord {
+    enum CallType: String {
+        case incoming
+        case outgoing
+        case missed
+
+        /// The SQL predicate that selects records of this type.
+        fileprivate var predicate: String {
+            switch self {
+            case .incoming: return "ZORIGINATED = 0 AND ZANSWERED = 1"
+            case .outgoing: return "ZORIGINATED = 1"
+            case .missed: return "ZORIGINATED = 0 AND ZANSWERED = 0"
+            }
+        }
+    }
+
+    let id: Int
+    let address: String?
+    let name: String?
+    let date: Date
+    let duration: TimeInterval
+    let isOriginated: Bool
+    let isAnswered: Bool
+    let serviceProvider: String?
+
+    var callType: CallType {
+        if isOriginated {
+            return .outgoing
+        } else if isAnswered {
+            return .incoming
+        } else {
+            return .missed
+        }
+    }
+
+    /// Reads the current row of a statement prepared from `FetchRequest.statement`.
+    fileprivate init(_ statement: OpaquePointer?) {
+        func text(_ column: Int32) -> String? {
+            guard let cString = sqlite3_column_text(statement, column) else { return nil }
+            let string = String(cString: cString)
+            return string.isEmpty ? nil : string
+        }
+
+        id = Int(sqlite3_column_int64(statement, 0))
+        address = text(1)
+        name = text(2)
+        // ZDATE is stored as seconds since the Core Data reference date (2001-01-01)
+        date = Date(timeIntervalSinceReferenceDate: sqlite3_column_double(statement, 3))
+        duration = sqlite3_column_double(statement, 4)
+        isOriginated = sqlite3_column_int(statement, 5) == 1
+        isAnswered = sqlite3_column_int(statement, 6) == 1
+        serviceProvider = text(7)
+    }
+}
+
+extension CallRecord {
+    struct FetchRequest {
+        /// Phone number or contact name to match (partial, case-insensitive).
+        var participant: String?
+        /// Start of the date range (inclusive).
+        var startDate: Date?
+        /// End of the date range (exclusive).
+        var endDate: Date?
+        var callType: CallType?
+        var limit: Int
+
+        /// The SQL and its bound values, in placeholder order.
+        fileprivate var statement: (sql: String, bindings: [SQLiteValue]) {
+            var conditions: [String] = []
+            var bindings: [SQLiteValue] = []
+
+            if let participant {
+                conditions.append("(ZADDRESS LIKE ? OR ZNAME LIKE ?)")
+                bindings += [.text("%\(participant)%"), .text("%\(participant)%")]
+            }
+            if let startDate {
+                conditions.append("ZDATE >= ?")
+                bindings.append(.double(startDate.timeIntervalSinceReferenceDate))
+            }
+            if let endDate {
+                conditions.append("ZDATE < ?")
+                bindings.append(.double(endDate.timeIntervalSinceReferenceDate))
+            }
+            if let callType {
+                conditions.append(callType.predicate)
+            }
+            bindings.append(.int(limit))
+
+            let whereClause =
+                conditions.isEmpty ? "" : "WHERE " + conditions.joined(separator: " AND ")
+            let sql = """
+                SELECT Z_PK, ZADDRESS, ZNAME, ZDATE, ZDURATION, ZORIGINATED, ZANSWERED, ZSERVICE_PROVIDER
+                FROM ZCALLRECORD
+                \(whereClause)
+                ORDER BY ZDATE DESC
+                LIMIT ?
+                """
+            return (sql, bindings)
+        }
+    }
+
+    /// The record as a JSON object for tool output.
+    var value: Value {
+        let minutes = Int(duration) / 60
+        let seconds = Int(duration) % 60
+        var object: [String: Value] = [
+            "@id": .string(String(id)),
+            "phoneNumber": .string(address ?? "Unknown"),
+            "callType": .string(callType.rawValue),
+            "date": .string(date.formatted(.iso8601)),
+            "duration": .string(minutes > 0 ? "\(minutes)m \(seconds)s" : "\(seconds)s"),
+            "durationSeconds": .double(duration),
+            "serviceProvider": .string(serviceProvider ?? "unknown"),
+        ]
+        if let name {
+            object["name"] = .string(name)
+        }
+        return .object(object)
     }
 }
 
