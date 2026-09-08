@@ -126,7 +126,7 @@ enum ServiceRegistry {
             ServiceConfig(
                 name: "Phone",
                 iconName: "phone.fill",
-                color: .green.mix(with: .blue, by: 0.3),
+                color: .green,
                 service: PhoneService.shared,
                 binding: phoneEnabled
             ),
