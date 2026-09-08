@@ -325,16 +325,28 @@ extension MusicService {
             }
         }
 
-        let includeTopResults =
-            arguments["includeTopResults"]?.boolValue
-            ?? requestedTypes.contains(.topResults)
+        let includeTopResults: Bool
+        if let value = arguments["includeTopResults"], !value.isNull {
+            guard let flag = value.boolValue else {
+                throw NSError(
+                    domain: "MusicServiceError",
+                    code: 13,
+                    userInfo: [
+                        NSLocalizedDescriptionKey: "Include top results must be a boolean"
+                    ]
+                )
+            }
+            includeTopResults = flag
+        } else {
+            includeTopResults = requestedTypes.contains(.topResults)
+        }
 
         let (types, includeTopResultsResolved) = resolveSearchTypes(from: requestedTypes)
         var request = MusicCatalogSearchRequest(term: term, types: types)
         request.includeTopResults = includeTopResults || includeTopResultsResolved
 
         if let value = arguments["limit"], !value.isNull {
-            guard let limit = Int(value, strict: false), (1 ... 50).contains(limit) else {
+            guard let limit = exactInt(from: value), (1 ... 50).contains(limit) else {
                 throw NSError(
                     domain: "MusicServiceError",
                     code: 9,
@@ -349,7 +361,7 @@ extension MusicService {
         }
 
         if let value = arguments["offset"], !value.isNull {
-            guard let offset = Int(value, strict: false), offset >= 0 else {
+            guard let offset = exactInt(from: value), offset >= 0 else {
                 throw NSError(
                     domain: "MusicServiceError",
                     code: 10,
@@ -449,6 +461,20 @@ extension MusicService {
         )
 
         return results
+    }
+
+    /// Returns the integer value of an integer or whole-number argument.
+    ///
+    /// Numeric strings are rejected so runtime behavior matches the integer schema.
+    private func exactInt(from value: Value) -> Int? {
+        switch value {
+        case .int(let value):
+            return value
+        case .double(let value):
+            return Int(exactly: value)
+        default:
+            return nil
+        }
     }
 
     private func resolveSearchTypes(
