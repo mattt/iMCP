@@ -1,5 +1,6 @@
 import AppKit
 import OSLog
+import Ontology
 import SQLite3
 
 private let log = Logger.service("phone")
@@ -167,16 +168,11 @@ final class PhoneService: NSObject, Service, NSOpenSavePanelDelegate {
                 throw CallError.openFailed
             }
 
-            return [
-                "@context": "https://schema.org",
-                "@type": "CommunicateAction",
-                "actionStatus": "PotentialActionStatus",
-                "recipient": Value.object([
-                    "@type": "Person",
-                    "telephone": .string(dialString),
-                ]),
-                "description": "The system asked the user to confirm the call.",
-            ]
+            return CommunicateAction(
+                recipient: Person(telephone: dialString),
+                status: .potential,
+                description: "The system asked the user to confirm the call."
+            )
         }
     }
 
@@ -519,5 +515,101 @@ final class PhoneService: NSObject, Service, NSOpenSavePanelDelegate {
             "File selection panel: \(shouldEnable ? "enabling" : "disabling") URL: \(url.path)"
         )
         return shouldEnable
+    }
+}
+
+// MARK: -
+
+/// A CommunicateAction model following Schema.org ontology (https://schema.org/CommunicateAction)
+private struct CommunicateAction: Hashable, Sendable {
+    /// Unique identifier for the action
+    var identifier: String?
+
+    /// Description of the action
+    var description: String?
+
+    /// Action status values based on Schema.org ActionStatusType
+    enum Status: String, Codable, Hashable, Sendable {
+        case active = "ActiveActionStatus"
+        case completed = "CompletedActionStatus"
+        case failed = "FailedActionStatus"
+        case potential = "PotentialActionStatus"
+    }
+
+    /// Status of the action
+    var status: Status?
+
+    /// The participant who receives the communication
+    var recipient: Person?
+
+    init(recipient: Person? = nil, status: Status? = nil, description: String? = nil) {
+        self.recipient = recipient
+        self.status = status
+        self.description = description
+    }
+}
+
+extension CommunicateAction: Codable {
+    private enum CodingKeys: String, CodingKey {
+        case description
+        case status = "actionStatus"
+        case recipient
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: JSONLDCodingKey<CodingKeys>.self)
+
+        // Encode @context if we're at the root level
+        if encoder.codingPath.isEmpty {
+            try container.encode("https://schema.org", forKey: .context)
+        }
+
+        // Encode @type
+        try container.encode(String(describing: Self.self), forKey: .type)
+
+        // Encode @id
+        try container.encodeIfPresent(identifier, forKey: .id)
+
+        // Encode properties
+        try container.encodeIfPresent(description, forKey: .attribute(.description))
+        try container.encodeIfPresent(status?.rawValue, forKey: .attribute(.status))
+        try container.encodeIfPresent(recipient, forKey: .attribute(.recipient))
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: JSONLDCodingKey<CodingKeys>.self)
+
+        // Verify type is correct
+        let describedType = String(describing: Self.self)
+        let decodedType = try container.decode(String.self, forKey: .type)
+        guard decodedType == describedType else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .type,
+                in: container,
+                debugDescription: "Expected type to be '\(describedType)', but found \(decodedType)"
+            )
+        }
+
+        // Decode @id
+        identifier = try container.decodeIfPresent(String.self, forKey: .id)
+
+        // Decode properties
+        description = try container.decodeIfPresent(String.self, forKey: .attribute(.description))
+        if let statusString = try container.decodeIfPresent(
+            String.self,
+            forKey: .attribute(.status)
+        ) {
+            status = Status(rawValue: statusString)
+        }
+        recipient = try container.decodeIfPresent(Person.self, forKey: .attribute(.recipient))
+    }
+}
+
+extension Person {
+    /// Initialize a Person known only by a telephone number
+    fileprivate init(telephone: String) {
+        self.init(name: "")
+        self.givenName = nil
+        self.telephone = [telephone]
     }
 }
