@@ -179,7 +179,7 @@ extension MusicService {
             }
             throw NSError(
                 domain: "MusicServiceError",
-                code: 4,
+                code: 8,
                 userInfo: [NSLocalizedDescriptionKey: String(describing: errorInfo)]
             )
         }
@@ -290,11 +290,15 @@ extension MusicService {
         var request = MusicCatalogSearchRequest(term: term, types: types)
         request.includeTopResults = includeTopResults || includeTopResultsResolved
 
+        let requestedLimit: Int
         if let limit = arguments["limit"]?.intValue {
-            request.limit = min(50, max(1, limit))
+            requestedLimit = limit
         } else if let limit = arguments["limit"]?.doubleValue {
-            request.limit = min(50, max(1, Int(limit)))
+            requestedLimit = Int(limit)
+        } else {
+            requestedLimit = defaultSearchLimit
         }
+        request.limit = min(50, max(1, requestedLimit))
 
         if let offset = arguments["offset"]?.intValue {
             request.offset = max(0, offset)
