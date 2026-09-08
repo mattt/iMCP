@@ -55,8 +55,8 @@ enum ServiceRegistry {
             ContactsService.shared,
             LocationService.shared,
             MapsService.shared,
-            MusicService.shared,
             MessageService.shared,
+            MusicService.shared,
             PhoneService.shared,
             RemindersService.shared,
             ShortcutsService.shared,
@@ -74,8 +74,8 @@ enum ServiceRegistry {
         contactsEnabled: Binding<Bool>,
         locationEnabled: Binding<Bool>,
         mapsEnabled: Binding<Bool>,
-        musicEnabled: Binding<Bool>,
         messagesEnabled: Binding<Bool>,
+        musicEnabled: Binding<Bool>,
         phoneEnabled: Binding<Bool>,
         remindersEnabled: Binding<Bool>,
         shortcutsEnabled: Binding<Bool>,
@@ -119,18 +119,18 @@ enum ServiceRegistry {
                 binding: mapsEnabled
             ),
             ServiceConfig(
-                name: "Music",
-                iconName: "music.note",
-                color: .pink,
-                service: MusicService.shared,
-                binding: musicEnabled
-            ),
-            ServiceConfig(
                 name: "Messages",
                 iconName: "message.fill",
                 color: .green,
                 service: MessageService.shared,
                 binding: messagesEnabled
+            ),
+            ServiceConfig(
+                name: "Music",
+                iconName: "music.note",
+                color: .pink,
+                service: MusicService.shared,
+                binding: musicEnabled
             ),
             ServiceConfig(
                 name: "Phone",
@@ -188,8 +188,8 @@ final class ServerController: ObservableObject {
     @AppStorage("contactsEnabled") private var contactsEnabled = false
     @AppStorage("locationEnabled") private var locationEnabled = false
     @AppStorage("mapsEnabled") private var mapsEnabled = true  // Default enabled
-    @AppStorage("musicEnabled") private var musicEnabled = false
     @AppStorage("messagesEnabled") private var messagesEnabled = false
+    @AppStorage("musicEnabled") private var musicEnabled = false
     @AppStorage("phoneEnabled") private var phoneEnabled = false
     @AppStorage("remindersEnabled") private var remindersEnabled = false
     @AppStorage("shortcutsEnabled") private var shortcutsEnabled = false
@@ -211,8 +211,8 @@ final class ServerController: ObservableObject {
             contactsEnabled: $contactsEnabled,
             locationEnabled: $locationEnabled,
             mapsEnabled: $mapsEnabled,
-            musicEnabled: $musicEnabled,
             messagesEnabled: $messagesEnabled,
+            musicEnabled: $musicEnabled,
             phoneEnabled: $phoneEnabled,
             remindersEnabled: $remindersEnabled,
             shortcutsEnabled: $shortcutsEnabled,
