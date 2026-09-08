@@ -76,7 +76,20 @@ final class MusicService: Service {
                 )
             }
 
-            let position = arguments["position"]?.doubleValue
+            var position: Double?
+            if let value = arguments["position"], !value.isNull {
+                guard let parsed = Double(value), parsed.isFinite else {
+                    throw NSError(
+                        domain: "MusicServiceError",
+                        code: 11,
+                        userInfo: [
+                            NSLocalizedDescriptionKey: "Position must be a finite number"
+                        ]
+                    )
+                }
+                position = parsed
+            }
+
             try await self.performControlAction(action, position: position)
             return true
         }
@@ -283,11 +296,38 @@ extension MusicService {
             )
         }
 
-        let requestedTypes =
-            arguments["types"]?.arrayValue?.compactMap { $0.stringValue } ?? []
+        var requestedTypes: [CatalogSearchType] = []
+        if let value = arguments["types"], !value.isNull {
+            guard let rawTypes = value.arrayValue else {
+                throw NSError(
+                    domain: "MusicServiceError",
+                    code: 12,
+                    userInfo: [
+                        NSLocalizedDescriptionKey: "Types must be an array of catalog types"
+                    ]
+                )
+            }
+
+            for rawType in rawTypes {
+                guard let name = rawType.stringValue,
+                    let type = CatalogSearchType(rawValue: name)
+                else {
+                    throw NSError(
+                        domain: "MusicServiceError",
+                        code: 12,
+                        userInfo: [
+                            NSLocalizedDescriptionKey:
+                                "Unknown catalog type. Expected one of: \(CatalogSearchType.allCases.map(\.rawValue).joined(separator: ", "))"
+                        ]
+                    )
+                }
+                requestedTypes.append(type)
+            }
+        }
+
         let includeTopResults =
             arguments["includeTopResults"]?.boolValue
-            ?? requestedTypes.contains(CatalogSearchType.topResults.rawValue)
+            ?? requestedTypes.contains(.topResults)
 
         let (types, includeTopResultsResolved) = resolveSearchTypes(from: requestedTypes)
         var request = MusicCatalogSearchRequest(term: term, types: types)
@@ -412,13 +452,13 @@ extension MusicService {
     }
 
     private func resolveSearchTypes(
-        from rawTypes: [String]
+        from requestedTypes: [CatalogSearchType]
     ) -> ([any MusicCatalogSearchable.Type], Bool) {
         var types: [any MusicCatalogSearchable.Type] = []
         var includeTopResults = false
 
-        for rawType in rawTypes {
-            switch CatalogSearchType(rawValue: rawType) {
+        for requestedType in requestedTypes {
+            switch requestedType {
             case .songs:
                 types.append(Song.self)
             case .albums:
@@ -433,8 +473,6 @@ extension MusicService {
                 types.append(Station.self)
             case .topResults:
                 includeTopResults = true
-            case .none:
-                continue
             }
         }
 
