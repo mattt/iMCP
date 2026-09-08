@@ -51,12 +51,12 @@ enum ServiceRegistry {
     static let services: [any Service] = {
         var services: [any Service] = [
             CalendarService.shared,
-            CallHistoryService.shared,
             CaptureService.shared,
             ContactsService.shared,
             LocationService.shared,
             MapsService.shared,
             MessageService.shared,
+            PhoneService.shared,
             RemindersService.shared,
             ShortcutsService.shared,
             UtilitiesService.shared,
@@ -69,12 +69,12 @@ enum ServiceRegistry {
 
     static func configureServices(
         calendarEnabled: Binding<Bool>,
-        callHistoryEnabled: Binding<Bool>,
         captureEnabled: Binding<Bool>,
         contactsEnabled: Binding<Bool>,
         locationEnabled: Binding<Bool>,
         mapsEnabled: Binding<Bool>,
         messagesEnabled: Binding<Bool>,
+        phoneEnabled: Binding<Bool>,
         remindersEnabled: Binding<Bool>,
         shortcutsEnabled: Binding<Bool>,
         utilitiesEnabled: Binding<Bool>,
@@ -87,13 +87,6 @@ enum ServiceRegistry {
                 color: .red,
                 service: CalendarService.shared,
                 binding: calendarEnabled
-            ),
-            ServiceConfig(
-                name: "Call History",
-                iconName: "phone.fill",
-                color: .green.mix(with: .blue, by: 0.3),
-                service: CallHistoryService.shared,
-                binding: callHistoryEnabled
             ),
             ServiceConfig(
                 name: "Capture",
@@ -129,6 +122,13 @@ enum ServiceRegistry {
                 color: .green,
                 service: MessageService.shared,
                 binding: messagesEnabled
+            ),
+            ServiceConfig(
+                name: "Phone",
+                iconName: "phone.fill",
+                color: .green.mix(with: .blue, by: 0.3),
+                service: PhoneService.shared,
+                binding: phoneEnabled
             ),
             ServiceConfig(
                 name: "Reminders",
@@ -175,12 +175,12 @@ final class ServerController: ObservableObject {
 
     // MARK: - AppStorage for Service Enablement States
     @AppStorage("calendarEnabled") private var calendarEnabled = false
-    @AppStorage("callHistoryEnabled") private var callHistoryEnabled = false
     @AppStorage("captureEnabled") private var captureEnabled = false
     @AppStorage("contactsEnabled") private var contactsEnabled = false
     @AppStorage("locationEnabled") private var locationEnabled = false
     @AppStorage("mapsEnabled") private var mapsEnabled = true  // Default enabled
     @AppStorage("messagesEnabled") private var messagesEnabled = false
+    @AppStorage("phoneEnabled") private var phoneEnabled = false
     @AppStorage("remindersEnabled") private var remindersEnabled = false
     @AppStorage("shortcutsEnabled") private var shortcutsEnabled = false
     @AppStorage("utilitiesEnabled") private var utilitiesEnabled = true  // Default enabled
@@ -197,12 +197,12 @@ final class ServerController: ObservableObject {
     var computedServiceConfigs: [ServiceConfig] {
         ServiceRegistry.configureServices(
             calendarEnabled: $calendarEnabled,
-            callHistoryEnabled: $callHistoryEnabled,
             captureEnabled: $captureEnabled,
             contactsEnabled: $contactsEnabled,
             locationEnabled: $locationEnabled,
             mapsEnabled: $mapsEnabled,
             messagesEnabled: $messagesEnabled,
+            phoneEnabled: $phoneEnabled,
             remindersEnabled: $remindersEnabled,
             shortcutsEnabled: $shortcutsEnabled,
             utilitiesEnabled: $utilitiesEnabled,

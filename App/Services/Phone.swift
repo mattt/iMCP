@@ -2,7 +2,7 @@ import AppKit
 import OSLog
 import SQLite3
 
-private let log = Logger.service("callhistory")
+private let log = Logger.service("phone")
 private let callHistoryDatabasePath =
     "/Users/\(NSUserName())/Library/Application Support/CallHistoryDB/CallHistory.storedata"
 private let callHistoryDatabaseBookmarkKey: String = "me.mattt.iMCP.callHistoryDatabaseBookmark"
@@ -11,11 +11,11 @@ private let defaultLimit = 30
 // Apple's Core Data epoch: 2001-01-01 00:00:00 UTC
 private let coreDataEpoch: TimeInterval = 978_307_200
 
-final class CallHistoryService: NSObject, Service, NSOpenSavePanelDelegate {
-    static let shared = CallHistoryService()
+final class PhoneService: NSObject, Service, NSOpenSavePanelDelegate {
+    static let shared = PhoneService()
 
     func activate() async throws {
-        log.debug("Starting call history service activation")
+        log.debug("Starting phone service activation")
 
         if canAccessDatabaseAtDefaultPath {
             log.debug("Successfully activated using default database path")
@@ -39,20 +39,20 @@ final class CallHistoryService: NSObject, Service, NSOpenSavePanelDelegate {
         }
 
         storeBookmark(for: selectedURL)
-        log.debug("Successfully activated call history service")
+        log.debug("Successfully activated phone service")
     }
 
     var isActivated: Bool {
         get async {
             let isActivated = canAccessDatabaseAtDefaultPath || canAccessDatabaseUsingBookmark
-            log.debug("Call history service activation status: \(isActivated)")
+            log.debug("Phone service activation status: \(isActivated)")
             return isActivated
         }
     }
 
     var tools: [Tool] {
         Tool(
-            name: "callhistory_fetch",
+            name: "phone_calls_fetch",
             description: "Fetch phone call history from the Mac (synced from iPhone)",
             inputSchema: .object(
                 properties: [
