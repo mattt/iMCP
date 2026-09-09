@@ -51,7 +51,8 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
     var tools: [Tool] {
         Tool(
             name: "messages_fetch",
-            description: "Fetch messages from the Messages app",
+            description:
+                "Fetch messages from the Messages app. Each message names the conversation it belongs to (isPartOf), with its participants.",
             inputSchema: .object(
                 properties: [
                     "participants": .array(
@@ -145,6 +146,10 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                 predicate: .and(predicates),
                 limit: max(limit ?? defaultLimit, 1024)
             )
+
+            // Each chat is looked up once and shared by all of its messages.
+            var conversations: [Chat.ID: [String: Value]] = [:]
+
             for message in try db.fetch(request) {
                 guard messages.count < (limit ?? defaultLimit) else { break }
                 guard !message.text.isEmpty else { continue }
@@ -185,6 +190,13 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                     object["dateRead"] = .string(readAt.formatted(.iso8601))
                 }
 
+                if let chatID = message.chatID {
+                    if conversations[chatID] == nil {
+                        conversations[chatID] = try self.conversation(for: chatID, in: db)
+                    }
+                    object["isPartOf"] = conversations[chatID].map { .object($0) }
+                }
+
                 messages.append(object)
             }
 
@@ -195,6 +207,30 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                 "hasPart": Value.array(messages.map({ .object($0) })),
             ]
         }
+    }
+
+    /// Describes the chat a message belongs to:
+    /// its identifier, its display name (group chats) and its participants.
+    private func conversation(
+        for chatID: Chat.ID,
+        in db: iMessage.Database
+    ) throws -> [String: Value] {
+        var conversation: [String: Value] = [
+            "@type": "Conversation",
+            "@id": .string(chatID.rawValue),
+        ]
+
+        let request = FetchRequest<Chat>(predicate: .id(chatID), limit: 1)
+        if let chat = try db.fetch(request).first {
+            if let name = chat.displayName, !name.isEmpty {
+                conversation["name"] = .string(name)
+            }
+            conversation["participant"] = .array(
+                chat.participants.map { .object(["@id": .string($0.rawValue)]) }
+            )
+        }
+
+        return conversation
     }
 
     private var canAccessDatabaseAtDefaultPath: Bool {
