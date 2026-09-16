@@ -67,7 +67,7 @@ final class HomeKitBackend: HomeBackend {
         case "accessories_assign_room": return try await assignRoom(args)
         case "accessories_remove":
             let accessory = try store.accessory(args.required("accessory"))
-            guard let home = accessory.home else { throw HomeError("The accessory has no home.") }
+            guard let home = store.home(containing: accessory) else { throw HomeError("The accessory has no home.") }
             try await home.removeAccessory(accessory)
             return removed(accessory.uniqueIdentifier)
         case "rooms_create":
@@ -147,7 +147,7 @@ final class HomeKitBackend: HomeBackend {
         for id in try args.ids("accessories", required: true) {
             do {
                 let accessory = try store.accessory(id)
-                try requireSameHome(accessory.home, home)
+                try requireSameHome(store.home(containing: accessory), home)
                 if accessory.room?.uniqueIdentifier != room.uniqueIdentifier {
                     try await home.assignAccessory(accessory, to: room)
                 }
@@ -205,7 +205,7 @@ final class HomeKitBackend: HomeBackend {
             guard case .object(let object) = value else { throw HomeError("Each action must be an object.") }
             let args = HomeArguments(object)
             let characteristic = try store.characteristic(args.required("characteristic"))
-            try requireSameHome(characteristic.service?.accessory?.home, home)
+            try requireSameHome(store.home(containing: characteristic), home)
             guard seen.insert(characteristic.uniqueIdentifier).inserted else {
                 throw HomeError("Actions must use distinct characteristic IDs.")
             }
@@ -242,7 +242,7 @@ final class HomeKitBackend: HomeBackend {
         let remove = try Set(
             args.ids("remove_characteristics").map { id -> UUID in
                 let characteristic = try store.characteristic(id)
-                try requireSameHome(characteristic.service?.accessory?.home, home)
+                try requireSameHome(store.home(containing: characteristic), home)
                 return characteristic.uniqueIdentifier
             }
         )
@@ -332,7 +332,7 @@ final class HomeKitBackend: HomeBackend {
             }
         } else if let id = try triggerArgs.string("characteristic") {
             let characteristic = try store.characteristic(id)
-            try requireSameHome(characteristic.service?.accessory?.home, home)
+            try requireSameHome(store.home(containing: characteristic), home)
             let value = try HomeValue.decode(triggerArgs.value("value"), for: characteristic, writable: false)
             trigger = HMEventTrigger(
                 name: name,
@@ -420,13 +420,14 @@ extension HomeKitBackend {
         )
     }
     func accessorySummary(_ accessory: HMAccessory) -> AccessorySummary {
-        let bridge = accessory.home?.accessories.first {
+        let home = store.home(containing: accessory)
+        let bridge = home?.accessories.first {
             $0.uniqueIdentifiersForBridgedAccessories?.contains(accessory.uniqueIdentifier) == true
         }
         return AccessorySummary(
             id: accessory.uniqueIdentifier.uuidString,
             name: accessory.name,
-            home: accessory.home?.uniqueIdentifier.uuidString,
+            home: home?.uniqueIdentifier.uuidString,
             room: accessory.room?.uniqueIdentifier.uuidString,
             category: accessory.category.categoryType,
             categoryDescription: accessory.category.localizedDescription,

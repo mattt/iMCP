@@ -71,6 +71,15 @@ final class HomeKitStore: NSObject, HMHomeManagerDelegate {
     func accessory(_ id: String) throws -> HMAccessory {
         try find(homes.flatMap(\.accessories), id, id: \.uniqueIdentifier, kind: "accessory")
     }
+    /// The Xcode 26 SDK does not declare `HMAccessory.home`, so resolve it by membership.
+    func home(containing accessory: HMAccessory) -> HMHome? {
+        homes.first { home in
+            home.accessories.contains { $0.uniqueIdentifier == accessory.uniqueIdentifier }
+        }
+    }
+    func home(containing characteristic: HMCharacteristic) -> HMHome? {
+        characteristic.service?.accessory.flatMap(home(containing:))
+    }
     func rooms(_ home: HMHome) -> [HMRoom] {
         let all = home.roomForEntireHome()
         return home.rooms.contains(where: { $0.uniqueIdentifier == all.uniqueIdentifier })
