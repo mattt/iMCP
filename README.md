@@ -350,6 +350,69 @@ a Swift package for working with structured data.
 It includes convenience initializers for types from Apple frameworks,
 such as those returned by iMCP tools.
 
+### HomeKit Helper
+
+Apple doesn't make the HomeKit framework available to native macOS apps,
+only to Mac Catalyst apps.
+So the Home service runs in a separate Catalyst app,
+[`iMCP Home`](/Home/),
+bundled at `iMCP.app/Contents/Helpers/iMCP Home.app`.
+When you enable Home,
+iMCP launches the helper and the helper asks for HomeKit access.
+The helper exits when iMCP exits,
+and its status window reports startup and permission errors.
+The Mac's iCloud account must have access to the home,
+and writes can require the owner or administrator role.
+
+Both apps compile the same tool definitions from
+[`Shared/Home/HomeTools.swift`](/Shared/Home/HomeTools.swift).
+The helper implements them with HomeKit;
+the app forwards each call over an MCP connection on the loopback interface,
+so the usual service and per-tool switches apply.
+Object IDs are HomeKit UUID strings.
+Inventory tools return live characteristic values only when `include_values` is true,
+with a five-second timeout and at most four outstanding HomeKit reads.
+After a lost connection, read-only calls retry once.
+Writes are not repeated, because HomeKit may have applied them already;
+the error asks the caller to inspect the home before retrying.
+
+iMCP passes an ephemeral loopback port to the helper it launches.
+A helper started some other way (for example, from Xcode)
+advertises "\_imcp-home.\_tcp" on the local-only DNS-SD interface instead.
+If iMCP can't find such a helper, quit it and let iMCP launch its own.
+To point `imcp-server` (and so the MCP Inspector) at a running helper directly,
+set `IMCP_SERVICE_TYPE=_imcp-home._tcp`.
+`uv run Scripts/check-home.py <path-to-imcp-server>` runs a read-only
+integration check against it.
+
+#### Building the helper
+
+Building the `iMCP` scheme runs
+[`Scripts/build-home-helper.sh`](/Scripts/build-home-helper.sh),
+which builds the `iMCP Home` scheme for Mac Catalyst in its own
+derived-data directory and copies the product into the app.
+A direct target dependency selects the iOS variant of the helper,
+so the nested build is required.
+
+The HomeKit entitlement requires a development certificate and a
+provisioning profile with the HomeKit capability.
+So the helper uses automatic signing with team `TTY35UM57S`
+in both Debug and Release, even though the native Debug app is unsigned.
+To build with another team, change it in the helper target's
+Signing & Capabilities tab.
+If automatic provisioning doesn't include HomeKit at first,
+enable the HomeKit capability for the iOS destination,
+or build the helper once with `-allowProvisioningUpdates`.
+
+CI builds both apps unsigned,
+which checks compilation and packaging but can't access HomeKit:
+
+```console
+xcodebuild -scheme iMCP -configuration Debug -destination "platform=macOS" \
+  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+  HOME_HELPER_CODE_SIGNING_ALLOWED=NO build
+```
+
 ## Debugging
 
 ### Using the MCP Inspector

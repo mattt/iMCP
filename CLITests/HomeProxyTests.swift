@@ -7,7 +7,7 @@ final class HomeProxyTests: XCTestCase {
         guard let path = ProcessInfo.processInfo.environment["IMCP_HOME_HELPER_PATH"] else {
             throw XCTSkip("Set IMCP_HOME_HELPER_PATH to run the signed helper integration test.")
         }
-        let backend = HomeProxyBackend(helperURL: URL(fileURLWithPath: path))
+        let backend = HomeService(helperURL: URL(fileURLWithPath: path))
         let initial = await backend.isActivated
         XCTAssertFalse(initial)
         try await backend.activate()
