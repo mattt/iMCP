@@ -322,7 +322,7 @@ final class ServerController: ObservableObject {
     }
 
     init() {
-        Task {
+        Task { [self] in
             // Initialize bindings from AppStorage before the server starts.
             await networkManager.updateServiceBindings(self.currentServiceBindings)
             await networkManager.updateDisabledTools(self.disabledTools, generation: 0)
