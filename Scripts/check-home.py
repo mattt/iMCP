@@ -2,7 +2,7 @@
 # requires-python = ">=3.11"
 # dependencies = []
 # ///
-"""Check the running Home helper through imcp-server without changing the home."""
+"""Check the running iMCP Helper through imcp-server without changing the home."""
 
 import argparse
 import json
@@ -14,7 +14,7 @@ from pathlib import Path
 
 
 class HomeClient:
-    def __init__(self, server: Path, service_type: str = "_imcp-home._tcp"):
+    def __init__(self, server: Path, service_type: str = "_imcp-helper._tcp"):
         self.process = subprocess.Popen(
             [str(server.resolve())],
             stdin=subprocess.PIPE,
@@ -30,7 +30,7 @@ class HomeClient:
                 {
                     "protocolVersion": "2025-11-25",
                     "capabilities": {},
-                    "clientInfo": {"name": "iMCP Home checks", "version": "1.0"},
+                    "clientInfo": {"name": "iMCP Helper checks", "version": "1.0"},
                 },
             )
             self.send({"jsonrpc": "2.0", "method": "notifications/initialized"})
@@ -149,7 +149,7 @@ def main():
     parser.add_argument(
         "server", type=Path, help="Path to the built imcp-server executable"
     )
-    parser.add_argument("--service-type", default="_imcp-home._tcp")
+    parser.add_argument("--service-type", default="_imcp-helper._tcp")
     args = parser.parse_args()
     client = None
     try:

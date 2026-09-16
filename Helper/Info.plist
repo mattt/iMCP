@@ -6,7 +6,7 @@
     <true/>
     <key>NSBonjourServices</key>
     <array>
-        <string>_imcp-home._tcp</string>
+        <string>_imcp-helper._tcp</string>
     </array>
 </dict>
 </plist>

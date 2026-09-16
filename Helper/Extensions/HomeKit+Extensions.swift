@@ -87,7 +87,7 @@ func homeErrorMessage(_ error: Error) -> String {
     guard error.domain == HMErrorDomain else { return error.localizedDescription }
     switch HMError.Code(rawValue: error.code) {
     case .homeAccessNotAuthorized:
-        return "HomeKit access is not authorized. Enable iMCP Home in System Settings → Privacy & Security → HomeKit."
+        return "HomeKit access is not authorized. Enable iMCP Helper in System Settings → Privacy & Security → HomeKit."
     case .accessoryNotReachable: return "The accessory is not reachable. Check its power and connection."
     case .readOnlyCharacteristic: return "The characteristic is read-only."
     case .insufficientPrivileges: return "This operation requires a home owner or administrator."

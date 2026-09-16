@@ -8,10 +8,10 @@ actor HelperServer {
     private let backend: any HomeBackend
     private let port: NWEndpoint.Port?
     private var listener: NWListener?
-    private var advertisement: HomeAdvertisement?
+    private var advertisement: HelperAdvertisement?
     private var sessions: [UUID: MCP.Server] = [:]
     private var startup: CheckedContinuation<Void, Error>?
-    private let log = Logger.service("home.server")
+    private let log = Logger.service("helper.server")
 
     init(backend: any HomeBackend, port: NWEndpoint.Port? = nil) {
         self.backend = backend
@@ -45,8 +45,8 @@ actor HelperServer {
         // Parent-launched helpers use the private port passed by iMCP.
         // Manual launches retain Bonjour discovery for development clients.
         if port != nil { return }
-        guard let port = listener.port else { throw HomeError("The Home helper has no TCP port.") }
-        let advertisement = await HomeAdvertisement()
+        guard let port = listener.port else { throw HomeError("iMCP Helper has no TCP port.") }
+        let advertisement = await HelperAdvertisement()
         self.advertisement = advertisement
         do { try await advertisement.start(port: port.rawValue) } catch {
             listener.cancel()
@@ -78,13 +78,13 @@ actor HelperServer {
         self.startup = nil
         listener?.cancel()
         listener = nil
-        startup.resume(throwing: HomeError("The Home helper listener did not start within 10 seconds."))
+        startup.resume(throwing: HomeError("The iMCP Helper listener did not start within 10 seconds."))
     }
 
     private func accept(_ connection: NWConnection) async {
         let id = UUID()
         let server = MCP.Server(
-            name: "iMCP Home",
+            name: "iMCP Helper",
             version: Bundle.main.shortVersionString ?? "1.0",
             capabilities: .init(tools: .init(listChanged: false))
         )

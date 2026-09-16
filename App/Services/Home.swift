@@ -48,7 +48,7 @@ actor HomeService: Service, HomeBackend {
 
     func call(_ tool: String, _ input: [String: Value]) async throws -> Value {
         try await activate()
-        guard let active = client else { throw HomeError("The Home helper is not connected.") }
+        guard let active = client else { throw HomeError("iMCP Helper is not connected.") }
         do { return try await forward(active, tool, input) } catch let error as HomeError { throw error } catch {
             if client === active {
                 authorized = false
@@ -62,10 +62,10 @@ actor HomeService: Service, HomeBackend {
             guard tools.first(where: { $0.name == tool })?.annotations.readOnlyHint == true
             else {
                 throw HomeError(
-                    "The Home helper connection was lost. The write may have completed. Inspect the home before retrying."
+                    "The iMCP Helper connection was lost. The write may have completed. Inspect the home before retrying."
                 )
             }
-            guard let client else { throw HomeError("The Home helper could not reconnect.") }
+            guard let client else { throw HomeError("iMCP Helper could not reconnect.") }
             return try await forward(client, tool, input)
         }
     }
@@ -94,10 +94,10 @@ actor HomeService: Service, HomeBackend {
         }
         if result.isError == true { throw HomeError(texts.joined(separator: "\n")) }
         guard let text = texts.first, let data = text.data(using: .utf8) else {
-            throw HomeError("The Home helper returned no JSON text.")
+            throw HomeError("iMCP Helper returned no JSON text.")
         }
         do { return try JSONDecoder().decode(Value.self, from: data) } catch {
-            throw HomeError("The Home helper returned invalid JSON: \(error.localizedDescription)")
+            throw HomeError("iMCP Helper returned invalid JSON: \(error.localizedDescription)")
         }
     }
 
@@ -118,16 +118,16 @@ actor HomeService: Service, HomeBackend {
         if let launchedHelper {
             endpoint = launchedHelper.endpoint
         } else {
-            let browser = NWBrowser(for: .bonjour(type: "_imcp-home._tcp", domain: "local."), using: .tcp)
+            let browser = NWBrowser(for: .bonjour(type: "_imcp-helper._tcp", domain: "local."), using: .tcp)
             do {
                 endpoint = try await BonjourDiscovery.discoverEndpoint(
                     using: browser,
                     timeout: .seconds(15),
-                    preferring: { String(describing: $0.endpoint).contains("iMCP Home") }
+                    preferring: { String(describing: $0.endpoint).contains("iMCP Helper") }
                 )
             } catch {
                 throw HomeError(
-                    "The Home helper was not found. Quit any manually started iMCP Home helper and enable Home again. \(error.localizedDescription)"
+                    "iMCP Helper was not found. Quit any manually started iMCP Helper and enable Home again. \(error.localizedDescription)"
                 )
             }
         }
@@ -165,14 +165,14 @@ actor HomeService: Service, HomeBackend {
         defer { timeout.cancel() }
         do {
             let result = try await client.connect(transport: transport)
-            guard result.serverInfo.name == "iMCP Home" else {
-                throw HomeError("The selected endpoint is not an iMCP Home helper.")
+            guard result.serverInfo.name == "iMCP Helper" else {
+                throw HomeError("The selected endpoint is not iMCP Helper.")
             }
             _ = try await forward(client, "homes_list", [:])
             self.client = client
             self.connection = connection
             authorized = true
-            log.info("Connected to the Home helper")
+            log.info("Connected to iMCP Helper")
         } catch {
             connection.cancel()
             await client.disconnect()
@@ -185,15 +185,15 @@ actor HomeService: Service, HomeBackend {
     @MainActor
     private func launchHelper(previous: LaunchedHelper?, overrideURL: URL?) async throws -> LaunchedHelper? {
         if let running = NSWorkspace.shared.runningApplications.first(where: {
-            $0.bundleIdentifier == "co.dododo.iMCP.Home" && !$0.isTerminated
+            $0.bundleIdentifier == "co.dododo.iMCP.Helper" && !$0.isTerminated
         }) {
             return previous?.pid == running.processIdentifier ? previous : nil
         }
-        let embedded = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/iMCP Home.app")
+        let embedded = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/iMCP Helper.app")
         let url =
             overrideURL
             ?? (FileManager.default.fileExists(atPath: embedded.path)
-                ? embedded : NSWorkspace.shared.urlForApplication(withBundleIdentifier: "co.dododo.iMCP.Home"))
+                ? embedded : NSWorkspace.shared.urlForApplication(withBundleIdentifier: "co.dododo.iMCP.Helper"))
         guard let url else { return nil }
         let port = try availableLoopbackPort()
         let configuration = NSWorkspace.OpenConfiguration()
@@ -210,7 +210,7 @@ actor HomeService: Service, HomeBackend {
     /// The helper reports a bind error if another process takes it before launch.
     private nonisolated func availableLoopbackPort() throws -> UInt16 {
         let descriptor = socket(AF_INET, SOCK_STREAM, 0)
-        guard descriptor >= 0 else { throw HomeError("Cannot allocate a Home helper socket.") }
+        guard descriptor >= 0 else { throw HomeError("Cannot allocate a socket for iMCP Helper.") }
         defer { close(descriptor) }
         var address = sockaddr_in()
         address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
@@ -221,12 +221,12 @@ actor HomeService: Service, HomeBackend {
                 bind(descriptor, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
             }
         }
-        guard result == 0 else { throw HomeError("Cannot bind a Home helper socket.") }
+        guard result == 0 else { throw HomeError("Cannot bind a socket for iMCP Helper.") }
         var length = socklen_t(MemoryLayout<sockaddr_in>.size)
         let nameResult = withUnsafeMutablePointer(to: &address) { pointer in
             pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(descriptor, $0, &length) }
         }
-        guard nameResult == 0 else { throw HomeError("Cannot select a Home helper port.") }
+        guard nameResult == 0 else { throw HomeError("Cannot select a port for iMCP Helper.") }
         return UInt16(bigEndian: address.sin_port)
     }
 }
