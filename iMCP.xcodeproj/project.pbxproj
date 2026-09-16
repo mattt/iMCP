@@ -92,7 +92,7 @@
 		E0E66768348853754D32208C /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/System/Library/Frameworks/Cocoa.framework; sourceTree = DEVELOPER_DIR; };
 		F8F44E6D2D59038D0075D79C /* iMCP.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = iMCP.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F8F44EB62D5908D00075D79C /* imcp-server */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "imcp-server"; sourceTree = BUILT_PRODUCTS_DIR; };
-		A10000000000000000000001 /* iMCP Home.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; path = "iMCP Home.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10000000000000000000001 /* iMCP Helper.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; path = "iMCP Helper.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		A30000000000000000000010 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "HomeToolsTests.swift"; sourceTree = "<group>"; };
 		A30000000000000000000011 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Shared/Home/HomeBackend.swift"; sourceTree = "<group>"; };
 		A30000000000000000000012 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Shared/Home/HomeError.swift"; sourceTree = "<group>"; };
@@ -115,7 +115,7 @@
 			);
 			target = F8F44E6C2D59038D0075D79C /* iMCP */;
 		};
-		A1000000000000000000000B = {isa = PBXFileSystemSynchronizedBuildFileExceptionSet; membershipExceptions = (Info.plist, Home.entitlements, ); target = A10000000000000000000003; };
+		A1000000000000000000000B = {isa = PBXFileSystemSynchronizedBuildFileExceptionSet; membershipExceptions = (Info.plist, Helper.entitlements, ); target = A10000000000000000000003; };
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -132,7 +132,7 @@
 			path = CLI;
 			sourceTree = "<group>";
 		};
-		A10000000000000000000002 /* Home */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (A1000000000000000000000B, ); path = Home; sourceTree = "<group>"; };
+		A10000000000000000000002 /* Helper */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (A1000000000000000000000B, ); path = Helper; sourceTree = "<group>"; };
 		A20000000000000000000001 /* Shared */ = {isa = PBXFileSystemSynchronizedRootGroup; path = Shared; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
@@ -227,7 +227,7 @@
 			isa = PBXGroup;
 			children = (
 				F8F44E6F2D59038D0075D79C /* App */,
-				A10000000000000000000002 /* Home */,
+				A10000000000000000000002 /* Helper */,
 				A20000000000000000000001 /* Shared */,
 				F8F44EB72D5908D00075D79C /* CLI */,
 				F8F44E6E2D59038D0075D79C /* Products */,
@@ -240,7 +240,7 @@
 			isa = PBXGroup;
 			children = (
 				F8F44E6D2D59038D0075D79C /* iMCP.app */,
-				A10000000000000000000001 /* iMCP Home.app */,
+				A10000000000000000000001 /* iMCP Helper.app */,
 				F8F44EB62D5908D00075D79C /* imcp-server */,
 				6A5CFBBEC66BC8CDA9D65496 /* imcp-serverTests.xctest */,
 			);
@@ -336,16 +336,16 @@
 			productReference = F8F44EB62D5908D00075D79C /* imcp-server */;
 			productType = "com.apple.product-type.tool";
 		};
-		A10000000000000000000003 /* iMCP Home */ = {
+		A10000000000000000000003 /* iMCP Helper */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = A10000000000000000000004;
 			buildPhases = (A10000000000000000000005, A10000000000000000000006, A10000000000000000000007, );
 			buildRules = ();
 			dependencies = ();
 			fileSystemSynchronizedGroups = (A10000000000000000000002, A20000000000000000000001, );
-			name = "iMCP Home";
+			name = "iMCP Helper";
 			packageProductDependencies = (A20000000000000000000010, A20000000000000000000011, A20000000000000000000012, A20000000000000000000013, );
-			productName = "iMCP Home";
+			productName = "iMCP Helper";
 			productReference = A10000000000000000000001;
 			productType = "com.apple.product-type.application";
 		};
@@ -397,7 +397,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				A10000000000000000000003 /* iMCP Home */,
+				A10000000000000000000003 /* iMCP Helper */,
 				F8F44E6C2D59038D0075D79C /* iMCP */,
 				F8F44EB52D5908D00075D79C /* imcp-server */,
 				8F6A71ADC0CC6BD168A9167D /* imcp-serverTests */,
@@ -434,7 +434,7 @@
 			name = "Build and Embed Home Helper";
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
-			shellScript = "bash \"$SRCROOT/Scripts/build-home-helper.sh\"";
+			shellScript = "bash \"$SRCROOT/Scripts/build-helper.sh\"";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -639,7 +639,7 @@
 		F8F44E932D59038E0075D79C /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				HOME_HELPER_CODE_SIGNING_ALLOWED = YES;
+				HELPER_CODE_SIGNING_ALLOWED = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -708,7 +708,7 @@
 		F8F44E942D59038E0075D79C /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				HOME_HELPER_CODE_SIGNING_ALLOWED = YES;
+				HELPER_CODE_SIGNING_ALLOWED = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -813,7 +813,7 @@
 		A10000000000000000000008 = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = Home/Home.entitlements;
+				CODE_SIGN_ENTITLEMENTS = Helper/Helper.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CODE_SIGNING_ALLOWED = YES;
@@ -823,9 +823,9 @@
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = Home/Info.plist;
+				INFOPLIST_FILE = Helper/Info.plist;
 				INFOPLIST_KEY_NSHomeKitUsageDescription = "iMCP uses HomeKit to inspect and organize your homes, accessories, scenes, and automations.";
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "iMCP connects to its Home helper on this Mac.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "iMCP connects to iMCP Helper on this Mac.";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -833,7 +833,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../Frameworks";
 				MARKETING_VERSION = 1.0;
 				CURRENT_PROJECT_VERSION = 1;
-				PRODUCT_BUNDLE_IDENTIFIER = co.dododo.iMCP.Home;
+				PRODUCT_BUNDLE_IDENTIFIER = co.dododo.iMCP.Helper;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -848,7 +848,7 @@
 		A10000000000000000000009 = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = Home/Home.entitlements;
+				CODE_SIGN_ENTITLEMENTS = Helper/Helper.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CODE_SIGNING_ALLOWED = YES;
@@ -858,9 +858,9 @@
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = Home/Info.plist;
+				INFOPLIST_FILE = Helper/Info.plist;
 				INFOPLIST_KEY_NSHomeKitUsageDescription = "iMCP uses HomeKit to inspect and organize your homes, accessories, scenes, and automations.";
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "iMCP connects to its Home helper on this Mac.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "iMCP connects to iMCP Helper on this Mac.";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -868,7 +868,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../Frameworks";
 				MARKETING_VERSION = 1.0;
 				CURRENT_PROJECT_VERSION = 1;
-				PRODUCT_BUNDLE_IDENTIFIER = co.dododo.iMCP.Home;
+				PRODUCT_BUNDLE_IDENTIFIER = co.dododo.iMCP.Helper;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";

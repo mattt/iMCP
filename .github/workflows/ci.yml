@@ -56,7 +56,7 @@ jobs:
                       -destination "platform=macOS" \
                       CODE_SIGNING_ALLOWED=NO \
                       CODE_SIGNING_REQUIRED=NO \
-                      HOME_HELPER_CODE_SIGNING_ALLOWED=NO \
+                      HELPER_CODE_SIGNING_ALLOWED=NO \
                       build
 
             # The cache action's exclude pattern has not kept the module cache out of

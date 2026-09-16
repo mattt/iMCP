@@ -16,8 +16,8 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "A10000000000000000000003"
-               BuildableName = "iMCP Home.app"
-               BlueprintName = "iMCP Home"
+               BuildableName = "iMCP Helper.app"
+               BlueprintName = "iMCP Helper"
                ReferencedContainer = "container:iMCP.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -45,8 +45,8 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "A10000000000000000000003"
-            BuildableName = "iMCP Home.app"
-            BlueprintName = "iMCP Home"
+            BuildableName = "iMCP Helper.app"
+            BlueprintName = "iMCP Helper"
             ReferencedContainer = "container:iMCP.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -62,8 +62,8 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "A10000000000000000000003"
-            BuildableName = "iMCP Home.app"
-            BlueprintName = "iMCP Home"
+            BuildableName = "iMCP Helper.app"
+            BlueprintName = "iMCP Helper"
             ReferencedContainer = "container:iMCP.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

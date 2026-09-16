@@ -34,7 +34,7 @@ final class HomeKitStore: NSObject, HMHomeManagerDelegate {
         try checkAuthorization()
         guard manager?.authorizationStatus.contains(.authorized) == true else {
             throw HomeError(
-                "HomeKit access is not authorized. Enable iMCP Home in System Settings → Privacy & Security → HomeKit."
+                "HomeKit access is not authorized. Enable iMCP Helper in System Settings → Privacy & Security → HomeKit."
             )
         }
     }
@@ -43,7 +43,7 @@ final class HomeKitStore: NSObject, HMHomeManagerDelegate {
         guard let status = manager?.authorizationStatus else { return }
         if status.contains(.restricted) || (status.contains(.determined) && !status.contains(.authorized)) {
             throw HomeError(
-                "HomeKit access is not authorized. Enable iMCP Home in System Settings → Privacy & Security → HomeKit."
+                "HomeKit access is not authorized. Enable iMCP Helper in System Settings → Privacy & Security → HomeKit."
             )
         }
     }
