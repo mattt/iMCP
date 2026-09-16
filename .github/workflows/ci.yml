@@ -49,7 +49,7 @@ jobs:
               run: swift format lint --strict --recursive .
 
             - name: Build
-              run: xcodebuild -quiet -scheme iMCP -configuration Debug -destination "platform=macOS" build
+              run: xcodebuild -quiet -scheme iMCP -configuration Debug -destination "platform=macOS" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO HOME_HELPER_CODE_SIGNING_ALLOWED=NO build
 
             # The cache action's exclude pattern has not kept the module cache out of
             # the archive, and runner images with the same Xcode build can differ in

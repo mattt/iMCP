@@ -6,6 +6,12 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXTargetDependency section */
+/* End PBXTargetDependency section */
+
+/* Begin PBXContainerItemProxy section */
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXBuildFile section */
 		76F80A6E3EDBFB02048A6ED8 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E0E66768348853754D32208C /* Cocoa.framework */; };
 		826C0834A5B647F8A918E54D /* ServiceLifecycle in Frameworks */ = {isa = PBXBuildFile; productRef = DCE061F8A68D0CD546D919E2 /* ServiceLifecycle */; };
@@ -30,6 +36,25 @@
 		F8D8C48E2DCE0E6800369E5C /* JSONSchema in Frameworks */ = {isa = PBXBuildFile; productRef = F8D8C48D2DCE0E6800369E5C /* JSONSchema */; };
 		F8F1D2F82D6F9E0C00F6323D /* MCP in Frameworks */ = {isa = PBXBuildFile; productRef = F8F44E9C2D5903F70075D79C /* MCP */; };
 		F9E9902DC72D90F6C423EFE2 /* Logging in Frameworks */ = {isa = PBXBuildFile; productRef = 48ABEE9E6903427DD79096A1 /* Logging */; };
+		A20000000000000000000020 = {isa = PBXBuildFile; productRef = A20000000000000000000010; };
+		A20000000000000000000021 = {isa = PBXBuildFile; productRef = A20000000000000000000011; };
+		A20000000000000000000022 = {isa = PBXBuildFile; productRef = A20000000000000000000012; };
+		A20000000000000000000023 = {isa = PBXBuildFile; productRef = A20000000000000000000013; };
+		A20000000000000000000030 = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF000000000001; };
+		A30000000000000000000020 = {isa = PBXBuildFile; fileRef = A30000000000000000000010; };
+		A30000000000000000000021 = {isa = PBXBuildFile; fileRef = A30000000000000000000011; };
+		A30000000000000000000022 = {isa = PBXBuildFile; fileRef = A30000000000000000000012; };
+		A30000000000000000000023 = {isa = PBXBuildFile; fileRef = A30000000000000000000013; };
+		A30000000000000000000024 = {isa = PBXBuildFile; fileRef = A30000000000000000000014; };
+		A30000000000000000000025 = {isa = PBXBuildFile; fileRef = A30000000000000000000015; };
+		A30000000000000000000026 = {isa = PBXBuildFile; fileRef = A30000000000000000000016; };
+		A30000000000000000000030 = {isa = PBXBuildFile; productRef = A20000000000000000000010; };
+		A30000000000000000000031 = {isa = PBXBuildFile; productRef = A20000000000000000000011; };
+		A30000000000000000000032 = {isa = PBXBuildFile; productRef = A20000000000000000000012; };
+		A40000000000000000000020 = {isa = PBXBuildFile; fileRef = A40000000000000000000010; };
+		A40000000000000000000021 = {isa = PBXBuildFile; fileRef = A40000000000000000000011; };
+		A40000000000000000000022 = {isa = PBXBuildFile; fileRef = A40000000000000000000012; };
+		A40000000000000000000023 = {isa = PBXBuildFile; fileRef = A40000000000000000000013; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -65,6 +90,18 @@
 		E0E66768348853754D32208C /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/System/Library/Frameworks/Cocoa.framework; sourceTree = DEVELOPER_DIR; };
 		F8F44E6D2D59038D0075D79C /* iMCP.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = iMCP.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F8F44EB62D5908D00075D79C /* imcp-server */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "imcp-server"; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10000000000000000000001 /* iMCP Home.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; path = "iMCP Home.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		A30000000000000000000010 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "HomeToolsTests.swift"; sourceTree = "<group>"; };
+		A30000000000000000000011 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Shared/Home/HomeBackend.swift"; sourceTree = "<group>"; };
+		A30000000000000000000012 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Shared/Home/HomeError.swift"; sourceTree = "<group>"; };
+		A30000000000000000000013 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Shared/Home/HomeInput.swift"; sourceTree = "<group>"; };
+		A30000000000000000000014 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Shared/Home/HomeTools.swift"; sourceTree = "<group>"; };
+		A30000000000000000000015 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Shared/Models/Tool.swift"; sourceTree = "<group>"; };
+		A30000000000000000000016 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Shared/Models/Value.swift"; sourceTree = "<group>"; };
+		A40000000000000000000010 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "HomeProxyTests.swift"; sourceTree = "<group>"; };
+		A40000000000000000000011 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../App/Services/HomeProxyBackend.swift"; sourceTree = "<group>"; };
+		A40000000000000000000012 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Shared/Extensions/Logger+Extensions.swift"; sourceTree = "<group>"; };
+		A40000000000000000000013 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Shared/Extensions/Bundle+Extensions.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -75,6 +112,7 @@
 			);
 			target = F8F44E6C2D59038D0075D79C /* iMCP */;
 		};
+		A1000000000000000000000B = {isa = PBXFileSystemSynchronizedBuildFileExceptionSet; membershipExceptions = (Info.plist, Home.entitlements, ); target = A10000000000000000000003; };
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -91,6 +129,8 @@
 			path = CLI;
 			sourceTree = "<group>";
 		};
+		A10000000000000000000002 /* Home */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (A1000000000000000000000B, ); path = Home; sourceTree = "<group>"; };
+		A20000000000000000000001 /* Shared */ = {isa = PBXFileSystemSynchronizedRootGroup; path = Shared; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -98,6 +138,9 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A30000000000000000000030,
+				A30000000000000000000031,
+				A30000000000000000000032,
 				76F80A6E3EDBFB02048A6ED8 /* Cocoa.framework in Frameworks */,
 				826C0834A5B647F8A918E54D /* ServiceLifecycle in Frameworks */,
 				8DFCE9E4CBCBEB93A32E8560 /* ServiceLifecycleTestKit in Frameworks */,
@@ -132,6 +175,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A10000000000000000000006 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (A20000000000000000000020, A20000000000000000000021, A20000000000000000000022, A20000000000000000000023, ); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -146,6 +190,17 @@
 		9784E568F0621136136A0EAC /* CLITests */ = {
 			isa = PBXGroup;
 			children = (
+				A40000000000000000000010,
+				A40000000000000000000011,
+				A40000000000000000000012,
+				A40000000000000000000013,
+				A30000000000000000000010,
+				A30000000000000000000011,
+				A30000000000000000000012,
+				A30000000000000000000013,
+				A30000000000000000000014,
+				A30000000000000000000015,
+				A30000000000000000000016,
 				75E148EAC5AC8B3263C5AA13 /* ServiceGroupConfigurationTests.swift */,
 				B0D1DEADBEEF000000000003 /* BonjourDiscoveryTests.swift */,
 				B0D1DEADBEEF000000000001 /* BonjourDiscovery.swift */,
@@ -167,6 +222,8 @@
 			isa = PBXGroup;
 			children = (
 				F8F44E6F2D59038D0075D79C /* App */,
+				A10000000000000000000002 /* Home */,
+				A20000000000000000000001 /* Shared */,
 				F8F44EB72D5908D00075D79C /* CLI */,
 				F8F44E6E2D59038D0075D79C /* Products */,
 				13058B0C8A894B6DB0A7D2A8 /* Frameworks */,
@@ -178,6 +235,7 @@
 			isa = PBXGroup;
 			children = (
 				F8F44E6D2D59038D0075D79C /* iMCP.app */,
+				A10000000000000000000001 /* iMCP Home.app */,
 				F8F44EB62D5908D00075D79C /* imcp-server */,
 				6A5CFBBEC66BC8CDA9D65496 /* imcp-serverTests.xctest */,
 			);
@@ -201,6 +259,9 @@
 			);
 			name = "imcp-serverTests";
 			packageProductDependencies = (
+				A20000000000000000000010,
+				A20000000000000000000011,
+				A20000000000000000000012,
 				DCE061F8A68D0CD546D919E2 /* ServiceLifecycle */,
 				1CD6B9E157EEC273F178543D /* ServiceLifecycleTestKit */,
 				48ABEE9E6903427DD79096A1 /* Logging */,
@@ -217,12 +278,14 @@
 				F8F44E6A2D59038D0075D79C /* Frameworks */,
 				F8F44E6B2D59038D0075D79C /* Resources */,
 				F84900952D63C74F0044AA81 /* Copy Executables */,
+				A20000000000000000000035 /* Build and Embed Home Helper */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
+				A20000000000000000000001 /* Shared */,
 				F8F44E6F2D59038D0075D79C /* App */,
 			);
 			name = iMCP;
@@ -267,6 +330,19 @@
 			productReference = F8F44EB62D5908D00075D79C /* imcp-server */;
 			productType = "com.apple.product-type.tool";
 		};
+		A10000000000000000000003 /* iMCP Home */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A10000000000000000000004;
+			buildPhases = (A10000000000000000000005, A10000000000000000000006, A10000000000000000000007, );
+			buildRules = ();
+			dependencies = ();
+			fileSystemSynchronizedGroups = (A10000000000000000000002, A20000000000000000000001, );
+			name = "iMCP Home";
+			packageProductDependencies = (A20000000000000000000010, A20000000000000000000011, A20000000000000000000012, A20000000000000000000013, );
+			productName = "iMCP Home";
+			productReference = A10000000000000000000001;
+			productType = "com.apple.product-type.application";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -277,6 +353,12 @@
 				LastSwiftUpdateCheck = 1620;
 				LastUpgradeCheck = 2620;
 				TargetAttributes = {
+					A10000000000000000000003 = {
+						CreatedOnToolsVersion = 27.0;
+						DevelopmentTeam = TTY35UM57S;
+						ProvisioningStyle = Automatic;
+						SystemCapabilities = {com.apple.HomeKit = {enabled = 1; properties = {com.apple.developer.homekit = 1; }; }; com.apple.Sandbox = {enabled = 1; }; };
+					};
 					F8F44E6C2D59038D0075D79C = {
 						CreatedOnToolsVersion = 16.2;
 					};
@@ -308,6 +390,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
+				A10000000000000000000003 /* iMCP Home */,
 				F8F44E6C2D59038D0075D79C /* iMCP */,
 				F8F44EB52D5908D00075D79C /* imcp-server */,
 				8F6A71ADC0CC6BD168A9167D /* imcp-serverTests */,
@@ -330,13 +413,40 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A10000000000000000000007 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		A20000000000000000000035 /* Build and Embed Home Helper */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = ();
+			inputPaths = ();
+			outputPaths = ();
+			name = "Build and Embed Home Helper";
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "bash \"$SRCROOT/Scripts/build-home-helper.sh\"";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		B53F67B71CE8E2EB7B5CB823 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A40000000000000000000020,
+				A40000000000000000000021,
+				A40000000000000000000022,
+				A40000000000000000000023,
+				A30000000000000000000020,
+				A30000000000000000000021,
+				A30000000000000000000022,
+				A30000000000000000000023,
+				A30000000000000000000024,
+				A30000000000000000000025,
+				A30000000000000000000026,
 				930214FCD680D7D74158F215 /* ServiceGroupConfigurationTests.swift in Sources */,
 				B0D1DEADBEEF000000000004 /* BonjourDiscoveryTests.swift in Sources */,
 				B0D1DEADBEEF000000000002 /* BonjourDiscovery.swift in Sources */,
@@ -349,6 +459,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A20000000000000000000030,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -359,6 +470,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A10000000000000000000005 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
@@ -519,6 +631,8 @@
 		F8F44E932D59038E0075D79C /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				HOME_HELPER_CODE_SIGNING_ALLOWED = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				AUTOMATION_APPLE_EVENTS = YES;
@@ -586,6 +700,8 @@
 		F8F44E942D59038E0075D79C /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				HOME_HELPER_CODE_SIGNING_ALLOWED = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				AUTOMATION_APPLE_EVENTS = YES;
@@ -686,6 +802,76 @@
 			};
 			name = Release;
 		};
+		A10000000000000000000008 = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Home/Home.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGNING_ALLOWED = YES;
+				CODE_SIGNING_REQUIRED = YES;
+				DEVELOPMENT_TEAM = TTY35UM57S;
+				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Home/Info.plist;
+				INFOPLIST_KEY_NSHomeKitUsageDescription = "iMCP uses HomeKit to inspect and organize your homes, accessories, scenes, and automations.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "iMCP connects to its Home helper on this Mac.";
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../Frameworks";
+				MARKETING_VERSION = 1.0;
+				CURRENT_PROJECT_VERSION = 1;
+				PRODUCT_BUNDLE_IDENTIFIER = co.dododo.iMCP.Home;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = YES;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_VERSION = 5.0;
+				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		A10000000000000000000009 = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Home/Home.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGNING_ALLOWED = YES;
+				CODE_SIGNING_REQUIRED = YES;
+				DEVELOPMENT_TEAM = TTY35UM57S;
+				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Home/Info.plist;
+				INFOPLIST_KEY_NSHomeKitUsageDescription = "iMCP uses HomeKit to inspect and organize your homes, accessories, scenes, and automations.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "iMCP connects to its Home helper on this Mac.";
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../Frameworks";
+				MARKETING_VERSION = 1.0;
+				CURRENT_PROJECT_VERSION = 1;
+				PRODUCT_BUNDLE_IDENTIFIER = co.dododo.iMCP.Home;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = YES;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_VERSION = 5.0;
+				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -725,6 +911,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		A10000000000000000000004 = {isa = XCConfigurationList; buildConfigurations = (A10000000000000000000008, A10000000000000000000009, ); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -863,6 +1050,10 @@
 			package = 26120478122FBFCB2B073DE5 /* XCRemoteSwiftPackageReference "Sparkle" */;
 			productName = Sparkle;
 		};
+		A20000000000000000000010 = {isa = XCSwiftPackageProductDependency; package = F8D7C3182DCBD32100A4775F; productName = MCP; };
+		A20000000000000000000011 = {isa = XCSwiftPackageProductDependency; package = F8D8C48C2DCE0E6800369E5C; productName = JSONSchema; };
+		A20000000000000000000012 = {isa = XCSwiftPackageProductDependency; package = F873F48B2D712BCF0035CD0A; productName = Ontology; };
+		A20000000000000000000013 = {isa = XCSwiftPackageProductDependency; package = F88358352D64A085000317CD; productName = Logging; };
 /* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = F8F44E652D59038D0075D79C /* Project object */;
