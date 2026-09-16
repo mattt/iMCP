@@ -279,8 +279,14 @@ final class CaptureService: NSObject, Service {
                 captureSession.startRunning()
 
                 Task { @MainActor in
-                    if delay > 0 {
-                        try await Task.sleep(for: .seconds(delay))
+                    do {
+                        if delay > 0 { try await Task.sleep(for: .seconds(delay)) }
+                    } catch {
+                        timeoutTask.cancel()
+                        captureSession.stopRunning()
+                        self.currentPhotoDelegate = nil
+                        await resumeOnce(.failure(error), nil)
+                        return
                     }
 
                     let settings = AVCapturePhotoSettings()
@@ -291,7 +297,7 @@ final class CaptureService: NSObject, Service {
                     let delegate = PhotoCaptureDelegate(
                         format: format,
                         quality: quality,
-                        completion: { [weak self] result in
+                        completion: { [weak self = self] result in
                             Task { @MainActor in
                                 timeoutTask.cancel()
                                 captureSession.stopRunning()
@@ -384,10 +390,10 @@ final class CaptureService: NSObject, Service {
 
             return try await withCheckedThrowingContinuation { continuation in
                 Task {
-                    try await Task.sleep(for: .seconds(duration + 0.5))
-                    recorder.stop()
-
+                    defer { recorder.stop() }
                     do {
+                        try await Task.sleep(for: .seconds(duration + 0.5))
+                        recorder.stop()
                         let audioData = try Data(contentsOf: tempURL)
                         try FileManager.default.removeItem(at: tempURL)
                         let audioValue = Value.data(mimeType: format.mimeType, audioData)

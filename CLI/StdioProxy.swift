@@ -46,7 +46,7 @@ actor StdioProxy {
 
         connection.start(queue: .main)
 
-        connection.stateUpdateHandler = { state in
+        connection.stateUpdateHandler = { [weak self] state in
             Task { [weak self] in
                 await self?.handleConnectionState(state, continuation: nil, connectionState: nil)
             }
@@ -55,7 +55,7 @@ actor StdioProxy {
         try await withCheckedThrowingContinuation {
             (continuation: CheckedContinuation<Void, Swift.Error>) in
             let connectionState = ConnectionState()
-            connection.stateUpdateHandler = { state in
+            connection.stateUpdateHandler = { [weak self] state in
                 Task { [weak self] in
                     await self?.handleConnectionState(
                         state,
