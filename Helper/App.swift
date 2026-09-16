@@ -2,13 +2,13 @@ import Network
 import SwiftUI
 
 @main
-struct HomeApp: App {
-    @StateObject private var runtime = HomeRuntime()
+struct HelperApp: App {
+    @StateObject private var runtime = HelperRuntime()
 
     var body: some Scene {
         WindowGroup {
             VStack(alignment: .leading, spacing: 16) {
-                Text("iMCP Home").font(.title)
+                Text("iMCP Helper").font(.title)
                 Text(runtime.status).textSelection(.enabled)
                 if runtime.canRetry {
                     Button("Retry") { Task { await runtime.start() } }
@@ -22,7 +22,7 @@ struct HomeApp: App {
 }
 
 @MainActor
-final class HomeRuntime: ObservableObject {
+final class HelperRuntime: ObservableObject {
     @Published private(set) var canRetry = false
     @Published private(set) var status = "Starting HomeKit…"
     private let backend = HomeKitBackend()
@@ -44,7 +44,7 @@ final class HomeRuntime: ObservableObject {
             try await backend.store.ensureLoaded()
             status = "HomeKit is ready. \(backend.store.homes.count) homes available."
         } catch {
-            status = "Home helper failed: \(homeErrorMessage(error))"
+            status = "iMCP Helper failed: \(homeErrorMessage(error))"
             started = false
             canRetry = true
         }

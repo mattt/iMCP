@@ -4,8 +4,8 @@ import XCTest
 final class HomeProxyTests: XCTestCase {
     @MainActor
     func testLiveLaunchAndRecovery() async throws {
-        guard let path = ProcessInfo.processInfo.environment["IMCP_HOME_HELPER_PATH"] else {
-            throw XCTSkip("Set IMCP_HOME_HELPER_PATH to run the signed helper integration test.")
+        guard let path = ProcessInfo.processInfo.environment["IMCP_HELPER_PATH"] else {
+            throw XCTSkip("Set IMCP_HELPER_PATH to run the signed helper integration test.")
         }
         let backend = HomeService(helperURL: URL(fileURLWithPath: path))
         let initial = await backend.isActivated
@@ -23,7 +23,7 @@ final class HomeProxyTests: XCTestCase {
         }
         let helper = try XCTUnwrap(
             NSWorkspace.shared.runningApplications.first {
-                $0.bundleIdentifier == "co.dododo.iMCP.Home"
+                $0.bundleIdentifier == "co.dododo.iMCP.Helper"
             }
         )
         XCTAssertTrue(helper.forceTerminate())

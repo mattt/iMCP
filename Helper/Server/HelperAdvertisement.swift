@@ -4,14 +4,14 @@ import dnssd
 
 /// Publishes the helper only to processes on this Mac, without multicast discovery.
 @MainActor
-final class HomeAdvertisement {
+final class HelperAdvertisement {
     private var reference: DNSServiceRef?
     private var permissionBrowser: NWBrowser?
     private var continuation: CheckedContinuation<Void, Error>?
 
     func start(port: UInt16) async throws {
         // Browsing also lets macOS present its local network permission prompt.
-        let browser = NWBrowser(for: .bonjour(type: "_imcp-home._tcp", domain: "local."), using: .tcp)
+        let browser = NWBrowser(for: .bonjour(type: "_imcp-helper._tcp", domain: "local."), using: .tcp)
         permissionBrowser = browser
         browser.start(queue: .main)
         let timeout = Task { [weak self] in
@@ -25,8 +25,8 @@ final class HomeAdvertisement {
                 &reference,
                 0,
                 kDNSServiceInterfaceIndexLocalOnly,
-                "iMCP Home",
-                "_imcp-home._tcp",
+                "iMCP Helper",
+                "_imcp-helper._tcp",
                 "local.",
                 "localhost.",
                 port.bigEndian,
@@ -35,7 +35,7 @@ final class HomeAdvertisement {
                 { _, _, error, _, _, _, context in
                     guard let context else { return }
                     MainActor.assumeIsolated {
-                        let advertiser = Unmanaged<HomeAdvertisement>.fromOpaque(context).takeUnretainedValue()
+                        let advertiser = Unmanaged<HelperAdvertisement>.fromOpaque(context).takeUnretainedValue()
                         advertiser.finish(error)
                     }
                 },
@@ -60,7 +60,7 @@ final class HomeAdvertisement {
             stop()
             continuation?.resume(
                 throwing: HomeError(
-                    "Home helper Bonjour registration failed (\(error)). Allow iMCP Home in System Settings → Privacy & Security → Local Network, then retry."
+                    "iMCP Helper Bonjour registration failed (\(error)). Allow iMCP Helper in System Settings → Privacy & Security → Local Network, then retry."
                 )
             )
         }
