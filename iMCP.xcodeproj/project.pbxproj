@@ -56,6 +56,7 @@
 		A40000000000000000000021 = {isa = PBXBuildFile; fileRef = A40000000000000000000011; };
 		A40000000000000000000022 = {isa = PBXBuildFile; fileRef = A40000000000000000000012; };
 		A40000000000000000000023 = {isa = PBXBuildFile; fileRef = A40000000000000000000013; };
+		A40000000000000000000024 = {isa = PBXBuildFile; fileRef = A40000000000000000000014; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -100,9 +101,10 @@
 		A30000000000000000000015 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Shared/Models/Tool.swift"; sourceTree = "<group>"; };
 		A30000000000000000000016 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Shared/Models/Value.swift"; sourceTree = "<group>"; };
 		A40000000000000000000010 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "HomeProxyTests.swift"; sourceTree = "<group>"; };
-		A40000000000000000000011 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../App/Services/HomeProxyBackend.swift"; sourceTree = "<group>"; };
+		A40000000000000000000011 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../App/Services/Home.swift"; sourceTree = "<group>"; };
 		A40000000000000000000012 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Shared/Extensions/Logger+Extensions.swift"; sourceTree = "<group>"; };
 		A40000000000000000000013 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Shared/Extensions/Bundle+Extensions.swift"; sourceTree = "<group>"; };
+		A40000000000000000000014 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Shared/Models/Service.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -196,6 +198,7 @@
 				A40000000000000000000011,
 				A40000000000000000000012,
 				A40000000000000000000013,
+				A40000000000000000000014,
 				A30000000000000000000010,
 				A30000000000000000000011,
 				A30000000000000000000012,
@@ -444,6 +447,7 @@
 				A40000000000000000000021,
 				A40000000000000000000022,
 				A40000000000000000000023,
+				A40000000000000000000024,
 				A30000000000000000000020,
 				A30000000000000000000021,
 				A30000000000000000000022,

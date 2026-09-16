@@ -36,12 +36,6 @@ final class HomeRuntime: ObservableObject {
         canRetry = false
         do {
             try monitorParent()
-            if CommandLine.arguments.contains("--spike") || CommandLine.arguments.contains("--rename-accessory") {
-                let spike = HomeKitSpike()
-                await spike.run()
-                status = spike.status
-                return
-            }
             let server = try self.server ?? HelperServer(backend: backend, port: requestedPort())
             self.server = server
             status = "Starting the local connection…"
