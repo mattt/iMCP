@@ -131,11 +131,21 @@ final class CalendarService: Service {
             var startIsDateOnly = false
             var endIsDateOnly = false
 
-            if case .string(let start) = arguments["start"],
-                let parsedStart = ISO8601DateFormatter.parsedLenientISO8601Date(
-                    fromISO8601String: start
-                )
-            {
+            if case .string(let start) = arguments["start"] {
+                guard
+                    let parsedStart = ISO8601DateFormatter.parsedLenientISO8601Date(
+                        fromISO8601String: start
+                    )
+                else {
+                    throw NSError(
+                        domain: "CalendarError",
+                        code: 2,
+                        userInfo: [
+                            NSLocalizedDescriptionKey:
+                                "Invalid start date format. Expected ISO 8601 format."
+                        ]
+                    )
+                }
                 hasStart = true
                 startDate = parsedStart.date
                 startIsDateOnly = parsedStart.isDateOnly
