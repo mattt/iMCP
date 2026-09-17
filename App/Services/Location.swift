@@ -180,11 +180,15 @@ final class LocationService: NSObject, Service, CLLocationManagerDelegate {
 
         Tool(
             name: "location_geocode",
-            description: "Convert an address to geographic coordinates",
+            description: """
+                Convert a postal address to geographic coordinates.
+                Place names can resolve to unrelated street addresses.
+                Use maps_search for place names, businesses, and landmarks.
+                """,
             inputSchema: .object(
                 properties: [
                     "address": .string(
-                        description: "Address to geocode"
+                        description: "Postal address to geocode"
                     )
                 ],
                 required: ["address"],
