@@ -1,7 +1,7 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="Assets/hero-dark.svg">
   <source media="(prefers-color-scheme: light)" srcset="Assets/hero-light.svg">
-  <img alt="iMCP">
+  <img src="Assets/hero-light.svg" alt="iMCP">
 </picture>
 
 iMCP is a macOS app for connecting your digital life with AI.
@@ -49,10 +49,24 @@ and a [growing list of clients][mcp-clients] that support the
   </tr>
   <tr>
     <th>
+      <img src="Assets/phone.svg" width="48" height="48" alt="" role="presentation"/>
+    </th>
+    <td><strong>Phone</strong></td>
+    <td>View call history synced from your iPhone, filter calls by participant, date, or call type, and start calls with system confirmation.</td>
+  </tr>
+  <tr>
+    <th>
       <img src="Assets/reminders.svg" width="48" height="48" alt="" role="presentation"/>
     </th>
     <td><strong>Reminders</strong></td>
     <td>View and create reminders with customizable due dates, priorities, and alerts across different reminder lists.</td>
+  </tr>
+  <tr>
+    <th>
+      <img src="Assets/shortcuts.svg" width="48" height="48" alt="" role="presentation"/>
+    </th>
+    <td><strong>Shortcuts</strong></td>
+    <td>List and run shortcuts on your Mac, with optional text input.</td>
   </tr>
   <tr>
     <th>
