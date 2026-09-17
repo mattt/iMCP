@@ -300,6 +300,14 @@ It includes a Swift implementation for decoding Apple's `typedstream` format,
 adapted from Christopher Sardegna's [imessage-exporter] project
 and [blog post about reverse-engineering `typedstream`][typedstream-blog-post].
 
+### Call History Database Access
+
+Call history synced from your iPhone lives in a SQLite database at
+`~/Library/Application Support/CallHistoryDB/CallHistory.storedata`.
+Recent calls sit in its write-ahead log next to the store file,
+so the Phone service asks you to open the `CallHistoryDB` folder
+rather than the file alone.
+
 ### JSON-LD for Tool Results
 
 The tools provided by iMCP return results as
