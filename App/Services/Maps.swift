@@ -127,7 +127,10 @@ final class MapsService: NSObject, Service {
 
         Tool(
             name: "maps_directions",
-            description: "Get directions between two locations with optional transport type",
+            description: """
+                Get automobile or walking directions between two locations.
+                Use maps_eta for a transit travel-time estimate.
+                """,
             inputSchema: .object(
                 properties: [
                     "originAddress": .string(
@@ -155,9 +158,9 @@ final class MapsService: NSObject, Service {
                         additionalProperties: false
                     ),
                     "transportType": .string(
-                        description: "Transport type",
+                        description: "Transport type for the route",
                         default: "automobile",
-                        enum: ["automobile", "walking", "transit", "any"]
+                        enum: ["automobile", "walking", "any"]
                     ),
                 ],
                 additionalProperties: false
@@ -199,6 +202,25 @@ final class MapsService: NSObject, Service {
                 )
             }
 
+            let transportType: MKDirectionsTransportType
+            switch arguments["transportType"]?.stringValue {
+            case "automobile":
+                transportType = .automobile
+            case "walking":
+                transportType = .walking
+            case "transit":
+                throw NSError(
+                    domain: "MapsServiceError",
+                    code: 16,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Transit directions are unavailable. Use maps_eta for a travel-time estimate."
+                    ]
+                )
+            default:
+                transportType = .any
+            }
+
             // Get origin and destination
             let originItem = try await self.getMapItem(
                 address: arguments["originAddress"]?.stringValue,
@@ -214,18 +236,7 @@ final class MapsService: NSObject, Service {
             let directionsRequest = MKDirections.Request()
             directionsRequest.source = originItem
             directionsRequest.destination = destinationItem
-
-            // Set transport type
-            switch arguments["transportType"]?.stringValue {
-            case "automobile":
-                directionsRequest.transportType = .automobile
-            case "walking":
-                directionsRequest.transportType = .walking
-            case "transit":
-                directionsRequest.transportType = .transit
-            default:
-                directionsRequest.transportType = .any
-            }
+            directionsRequest.transportType = transportType
 
             return try await withCheckedThrowingContinuation {
                 (continuation: CheckedContinuation<Trip, Error>) in
