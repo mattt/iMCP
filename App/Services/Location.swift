@@ -26,8 +26,7 @@ final class LocationService: NSObject, Service, CLLocationManagerDelegate {
         locationManager.delegate = self
 
         // Check authorization status first to avoid any permission prompts
-        let status = locationManager.authorizationStatus
-        if (status == .authorizedAlways) && CLLocationManager.locationServicesEnabled() {
+        if isAuthorized && CLLocationManager.locationServicesEnabled() {
             log.debug("Starting location updates with existing authorization...")
             locationManager.startUpdatingLocation()
         }
@@ -40,7 +39,16 @@ final class LocationService: NSObject, Service, CLLocationManagerDelegate {
 
     var isActivated: Bool {
         get async {
-            return locationManager.authorizationStatus == .authorizedAlways
+            return isAuthorized
+        }
+    }
+
+    private var isAuthorized: Bool {
+        switch locationManager.authorizationStatus {
+        case .authorizedWhenInUse, .authorizedAlways:
+            return true
+        default:
+            return false
         }
     }
 
@@ -102,25 +110,11 @@ final class LocationService: NSObject, Service, CLLocationManagerDelegate {
                 openWorldHint: false
             )
         ) { _ in
+            try await self.activate()
+
             return try await withCheckedThrowingContinuation {
                 (continuation: CheckedContinuation<GeoCoordinates, Error>) in
                 Task {
-                    let status = self.locationManager.authorizationStatus
-
-                    guard status == .authorizedAlways else {
-                        log.error("Location access not authorized")
-                        continuation.resume(
-                            throwing: NSError(
-                                domain: "LocationServiceError",
-                                code: 1,
-                                userInfo: [
-                                    NSLocalizedDescriptionKey: "Location access not authorized"
-                                ]
-                            )
-                        )
-                        return
-                    }
-
                     // If we already have a recent location, use it
                     if let location = self.latestLocation {
                         continuation.resume(

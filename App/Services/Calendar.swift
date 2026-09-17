@@ -36,7 +36,7 @@ final class CalendarService: Service {
                 openWorldHint: false
             )
         ) { arguments in
-            guard EKEventStore.authorizationStatus(for: .event) == .fullAccess else {
+            guard try await self.eventStore.requestFullAccessToEvents() else {
                 log.error("Calendar access not authorized")
                 throw NSError(
                     domain: "CalendarError",
@@ -103,7 +103,7 @@ final class CalendarService: Service {
                 openWorldHint: false
             )
         ) { arguments in
-            guard EKEventStore.authorizationStatus(for: .event) == .fullAccess else {
+            guard try await self.eventStore.requestFullAccessToEvents() else {
                 log.error("Calendar access not authorized")
                 throw NSError(
                     domain: "CalendarError",
@@ -355,9 +355,7 @@ final class CalendarService: Service {
                 openWorldHint: false
             )
         ) { arguments in
-            try await self.activate()
-
-            guard EKEventStore.authorizationStatus(for: .event) == .fullAccess else {
+            guard try await self.eventStore.requestFullAccessToEvents() else {
                 log.error("Calendar access not authorized")
                 throw NSError(
                     domain: "CalendarError",
@@ -581,7 +579,7 @@ final class CalendarService: Service {
                 openWorldHint: false
             )
         ) { arguments in
-            guard EKEventStore.authorizationStatus(for: .event) == .fullAccess else {
+            guard try await self.eventStore.requestFullAccessToEvents() else {
                 log.error("Calendar access not authorized")
                 throw NSError(
                     domain: "CalendarError",
