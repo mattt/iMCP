@@ -1,5 +1,6 @@
 import AppKit
 import OSLog
+import os
 import SQLite3
 import iMessage
 
@@ -12,8 +13,9 @@ private let defaultLimit = 30
 final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
     static let shared = MessageService()
 
-    /// Logged once per launch when the stored grant covers `chat.db` alone.
-    private var warnedAboutFileGrant = false
+    /// Whether the once-per-launch warning about a grant on `chat.db` alone has been logged.
+    /// Tool calls run concurrently, so the check-and-set is guarded.
+    private let fileGrantWarningLogged = OSAllocatedUnfairLock(initialState: false)
 
     func activate() async throws {
         try await activate(offeringUpgrade: true)
@@ -49,8 +51,11 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
         }
 
         if upgrading, !offeringUpgrade {
-            if !warnedAboutFileGrant {
-                warnedAboutFileGrant = true
+            let isFirstWarning = fileGrantWarningLogged.withLock { logged in
+                defer { logged = true }
+                return !logged
+            }
+            if isFirstWarning {
                 log.warning(
                     "The Messages grant covers chat.db alone, so messages since its last checkpoint are not visible. Switch Messages off and on in the iMCP menu to grant the Messages folder."
                 )
@@ -65,7 +70,11 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
             throw DatabaseAccessError.userDeclinedAccess
         }
 
-        let selectedURL = try await showFolderPicker()
+        guard let selectedURL = try await showFolderPicker() else {
+            // Dismissing the picker is the same answer as Cancel on the alert.
+            if upgrading { return }
+            throw DatabaseAccessError.userDeclinedAccess
+        }
 
         guard FileManager.default.isReadableFile(atPath: databaseURL(in: selectedURL).path) else {
             throw DatabaseAccessError.fileNotReadable
@@ -407,8 +416,9 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
         return alert.runModal() == .alertFirstButtonReturn
     }
 
+    /// Returns the selected folder, or nil when the user dismisses the panel.
     @MainActor
-    private func showFolderPicker() async throws -> URL {
+    private func showFolderPicker() async throws -> URL? {
         let openPanel = NSOpenPanel()
         openPanel.delegate = self
         openPanel.message = "Please select your Messages folder (~/Library/Messages)"
@@ -420,10 +430,10 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
         openPanel.canChooseFiles = false
         openPanel.showsHiddenFiles = true
 
-        guard openPanel.runModal() == .OK,
-            let url = openPanel.url,
-            isMessagesDirectory(url)
-        else {
+        guard openPanel.runModal() == .OK, let url = openPanel.url else {
+            return nil
+        }
+        guard isMessagesDirectory(url) else {
             throw DatabaseAccessError.invalidFileSelected
         }
 

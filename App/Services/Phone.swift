@@ -196,7 +196,10 @@ final class PhoneService: NSObject, Service, NSOpenSavePanelDelegate {
             throw DatabaseAccessError.userDeclinedAccess
         }
 
-        let selectedURL = try await showFolderPicker()
+        guard let selectedURL = try await showFolderPicker() else {
+            // Dismissing the picker is the same answer as Cancel on the alert.
+            throw DatabaseAccessError.userDeclinedAccess
+        }
 
         guard FileManager.default.isReadableFile(atPath: databaseURL(in: selectedURL).path) else {
             throw DatabaseAccessError.fileNotReadable
@@ -407,8 +410,9 @@ final class PhoneService: NSObject, Service, NSOpenSavePanelDelegate {
         return alert.runModal() == .alertFirstButtonReturn
     }
 
+    /// Returns the selected folder, or nil when the user dismisses the panel.
     @MainActor
-    private func showFolderPicker() async throws -> URL {
+    private func showFolderPicker() async throws -> URL? {
         let openPanel = NSOpenPanel()
         openPanel.delegate = self
         openPanel.message =
@@ -421,10 +425,10 @@ final class PhoneService: NSObject, Service, NSOpenSavePanelDelegate {
         openPanel.canChooseFiles = false
         openPanel.showsHiddenFiles = true
 
-        guard openPanel.runModal() == .OK,
-            let url = openPanel.url,
-            isCallHistoryDirectory(url)
-        else {
+        guard openPanel.runModal() == .OK, let url = openPanel.url else {
+            return nil
+        }
+        guard isCallHistoryDirectory(url) else {
             throw DatabaseAccessError.invalidFileSelected
         }
 
