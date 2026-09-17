@@ -163,12 +163,12 @@ enum ServiceRegistry {
 @MainActor
 final class ServerController: ObservableObject {
     @Published var serverStatus: String = "Starting..."
-    @Published var pendingConnectionID: String?
-    @Published var pendingClientName: String = ""
 
+    /// Clients with an approval window on screen.
+    /// Keyed by client name so that concurrent requests
+    /// from different clients each keep their own state.
     private var activeApprovalDialogs: Set<String> = []
     private var pendingApprovals: [(String, () -> Void, () -> Void)] = []
-    private var currentApprovalHandlers: (approve: () -> Void, deny: () -> Void)?
     private let approvalWindowController = ConnectionApprovalWindowController()
 
     private let networkManager = ServerNetworkManager()
@@ -298,14 +298,8 @@ final class ServerController: ObservableObject {
     }
 
     // MARK: - Connection Approval Methods
-    private func cleanupApprovalState() {
-        pendingClientName = ""
-        currentApprovalHandlers = nil
-
-        if let clientID = pendingConnectionID {
-            activeApprovalDialogs.remove(clientID)
-            pendingConnectionID = nil
-        }
+    private func cleanupApprovalState(for clientID: String) {
+        activeApprovalDialogs.remove(clientID)
     }
 
     private func handlePendingApprovals(for clientID: String, approved: Bool) {
@@ -429,8 +423,6 @@ final class ServerController: ObservableObject {
             return
         }
 
-        self.pendingConnectionID = clientID
-
         // Coalesce concurrent approvals for the same client.
         guard !activeApprovalDialogs.contains(clientID) else {
             log.info("Adding to pending approvals for client: \(clientID)")
@@ -441,9 +433,6 @@ final class ServerController: ObservableObject {
         activeApprovalDialogs.insert(clientID)
 
         // Present the approval window and wire callbacks.
-        pendingClientName = clientID
-        currentApprovalHandlers = (approve: approve, deny: deny)
-
         approvalWindowController.showApprovalWindow(
             clientName: clientID,
             enabledServiceNames:
@@ -469,12 +458,12 @@ final class ServerController: ObservableObject {
                 }
 
                 approve()
-                self.cleanupApprovalState()
+                self.cleanupApprovalState(for: clientID)
                 self.handlePendingApprovals(for: clientID, approved: true)
             },
             onDeny: {
                 deny()
-                self.cleanupApprovalState()
+                self.cleanupApprovalState(for: clientID)
                 self.handlePendingApprovals(for: clientID, approved: false)
             }
         )

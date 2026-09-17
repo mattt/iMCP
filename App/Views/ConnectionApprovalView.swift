@@ -93,9 +93,14 @@ struct CheckboxToggleStyle: ToggleStyle {
 }
 
 @MainActor
-class ConnectionApprovalWindowController: NSObject {
-    private var window: NSWindow?
-    private var approvalView: ConnectionApprovalView?
+class ConnectionApprovalWindowController: NSObject, NSWindowDelegate {
+    /// Open approval windows, keyed by client name.
+    /// Several clients can ask for approval at once,
+    /// so each one gets its own window and its own close path.
+    private var windows: [String: NSWindow] = [:]
+    /// Deny handlers for windows the user closes with the title bar button
+    /// instead of answering. Removed once a window has been answered.
+    private var denyHandlers: [String: () -> Void] = [:]
 
     func showApprovalWindow(
         clientName: String,
@@ -103,17 +108,22 @@ class ConnectionApprovalWindowController: NSObject {
         onApprove: @escaping (Bool) -> Void,
         onDeny: @escaping () -> Void
     ) {
+        // Replace any stale window for the same client.
+        closeWindow(for: clientName)
+
         // Create the SwiftUI view
         let approvalView = ConnectionApprovalView(
             clientName: clientName,
             enabledServiceNames: enabledServiceNames,
-            onApprove: { alwaysTrust in
+            onApprove: { [weak self] alwaysTrust in
+                self?.denyHandlers.removeValue(forKey: clientName)
                 onApprove(alwaysTrust)
-                self.closeWindow()
+                self?.closeWindow(for: clientName)
             },
-            onDeny: {
+            onDeny: { [weak self] in
+                self?.denyHandlers.removeValue(forKey: clientName)
                 onDeny()
-                self.closeWindow()
+                self?.closeWindow(for: clientName)
             }
         )
 
@@ -134,13 +144,15 @@ class ConnectionApprovalWindowController: NSObject {
         window.level = .floating
         window.isMovableByWindowBackground = false
         window.titlebarAppearsTransparent = false
+        window.delegate = self
 
         // Initial centering
         window.center()
 
         // Store references
-        self.window = window
-        self.approvalView = approvalView
+        let cascadeIndex = windows.count
+        windows[clientName] = window
+        denyHandlers[clientName] = onDeny
 
         // Activate the app first
         NSApp.activate(ignoringOtherApps: true)
@@ -148,22 +160,37 @@ class ConnectionApprovalWindowController: NSObject {
         // Show the window
         window.makeKeyAndOrderFront(nil)
 
-        // Center again after showing to ensure proper positioning
+        // Center again after showing to ensure proper positioning.
+        // Offset each additional window so concurrent requests
+        // do not hide each other.
         Task { @MainActor in
             if let screen = NSScreen.main {
                 let screenRect = screen.visibleFrame
                 let windowRect = window.frame
-                let x = (screenRect.width - windowRect.width) / 2 + screenRect.origin.x
-                let y = (screenRect.height - windowRect.height) / 2 + screenRect.origin.y
+                let offset = CGFloat(cascadeIndex) * 24
+                let x = (screenRect.width - windowRect.width) / 2 + screenRect.origin.x + offset
+                let y = (screenRect.height - windowRect.height) / 2 + screenRect.origin.y - offset
                 window.setFrameOrigin(NSPoint(x: x, y: y))
             }
         }
     }
 
-    private func closeWindow() {
-        window?.close()
-        window = nil
-        approvalView = nil
+    private func closeWindow(for clientName: String) {
+        guard let window = windows.removeValue(forKey: clientName) else { return }
+        window.delegate = nil
+        window.close()
+    }
+
+    /// Treat closing a window with the title bar button as a denial,
+    /// so the waiting connection is released instead of hanging forever.
+    func windowWillClose(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow,
+            let clientName = windows.first(where: { $0.value === window })?.key
+        else { return }
+
+        windows.removeValue(forKey: clientName)
+        window.delegate = nil
+        denyHandlers.removeValue(forKey: clientName)?()
     }
 }
 
