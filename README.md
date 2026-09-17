@@ -292,6 +292,23 @@ It includes a Swift implementation for decoding Apple's `typedstream` format,
 adapted from Christopher Sardegna's [imessage-exporter] project
 and [blog post about reverse-engineering `typedstream`][typedstream-blog-post].
 
+### Call History Database Access
+
+The Phone app on macOS keeps call history synced from your iPhone
+in a SQLite database at
+`~/Library/Application Support/CallHistoryDB/CallHistory.storedata`.
+It is a WAL-mode database:
+new calls are written to `CallHistory.storedata-wal` first
+and folded into the main file only at a checkpoint.
+SQLite opens that log and its `-shm` companion when it reads,
+so a sandbox grant on the store file alone is not enough;
+every read fails with "authorization denied".
+When you first fetch call history,
+iMCP asks you to open the `CallHistoryDB` folder instead,
+which covers the store and its companions.
+Earlier versions asked for the file alone,
+and iMCP asks for the folder again when it finds one of those grants.
+
 ### JSON-LD for Tool Results
 
 The tools provided by iMCP return results as

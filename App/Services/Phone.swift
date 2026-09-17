@@ -4,8 +4,10 @@ import Ontology
 import SQLite3
 
 private let log = Logger.service("phone")
-private let callHistoryDatabasePath =
-    "/Users/\(NSUserName())/Library/Application Support/CallHistoryDB/CallHistory.storedata"
+private let callHistoryDirectoryPath =
+    "/Users/\(NSUserName())/Library/Application Support/CallHistoryDB"
+private let callHistoryDatabaseName = "CallHistory.storedata"
+private let callHistoryDatabasePath = callHistoryDirectoryPath + "/" + callHistoryDatabaseName
 private let callHistoryDatabaseBookmarkKey: String = "me.mattt.iMCP.callHistoryDatabaseBookmark"
 private let defaultLimit = 30
 
@@ -166,25 +168,37 @@ final class PhoneService: NSObject, Service, NSOpenSavePanelDelegate {
     // MARK: - Database Access
 
     /// Ensures the call history database is readable, asking the user to grant access if needed.
+    ///
+    /// The grant has to cover the `CallHistoryDB` folder, not just the store file.
+    /// The store is a WAL-mode SQLite database, so SQLite also opens the `-wal` and `-shm`
+    /// files next to it. A bookmark on the file alone, as earlier versions stored,
+    /// leaves those unreadable and every read fails with "authorization denied".
     private func requestDatabaseAccess() async throws {
         if canAccessDatabaseAtDefaultPath {
             log.debug("Using call history database at default path")
             return
         }
 
-        if canAccessDatabaseUsingBookmark {
+        switch try? resolveBookmarkedGrant() {
+        case .directory where canAccessDatabaseUsingBookmark:
             log.debug("Using call history database from stored bookmark")
             return
+        case .file:
+            log.warning(
+                "The stored grant covers \(callHistoryDatabaseName) alone and cannot reach its write-ahead log; asking for the CallHistoryDB folder instead"
+            )
+        default:
+            break
         }
 
-        log.debug("Opening file picker for manual database selection")
+        log.debug("Opening folder picker for manual database selection")
         guard try await showDatabaseAccessAlert() else {
             throw DatabaseAccessError.userDeclinedAccess
         }
 
-        let selectedURL = try await showFilePicker()
+        let selectedURL = try await showFolderPicker()
 
-        guard FileManager.default.isReadableFile(atPath: selectedURL.path) else {
+        guard FileManager.default.isReadableFile(atPath: databaseURL(in: selectedURL).path) else {
             throw DatabaseAccessError.fileNotReadable
         }
 
@@ -211,9 +225,9 @@ final class PhoneService: NSObject, Service, NSOpenSavePanelDelegate {
 
     private var canAccessDatabaseUsingBookmark: Bool {
         do {
-            let url = try resolveBookmarkURL()
-            return try withSecurityScopedAccess(url) { url in
-                FileManager.default.isReadableFile(atPath: url.path)
+            let grant = try resolveBookmarkedGrant()
+            return try withSecurityScopedAccess(grant.url) { _ in
+                FileManager.default.isReadableFile(atPath: grant.databaseURL.path)
             }
         } catch {
             log.error("Error accessing database with bookmark: \(error.localizedDescription)")
@@ -221,11 +235,41 @@ final class PhoneService: NSObject, Service, NSOpenSavePanelDelegate {
         }
     }
 
-    private func resolveDatabaseURL() throws -> URL {
-        if canAccessDatabaseAtDefaultPath {
-            return URL(fileURLWithPath: callHistoryDatabasePath)
+    /// What the stored bookmark grants access to.
+    private enum BookmarkedGrant {
+        /// The `CallHistoryDB` folder: the store together with its write-ahead log.
+        case directory(URL)
+        /// The store file alone, as stored by earlier versions.
+        /// The log next to it is unreadable, so reads through this grant fail.
+        case file(URL)
+
+        var url: URL {
+            switch self {
+            case .directory(let url), .file(let url):
+                return url
+            }
         }
-        return try resolveBookmarkURL()
+
+        var databaseURL: URL {
+            switch self {
+            case .directory(let url):
+                return url.appendingPathComponent(callHistoryDatabaseName)
+            case .file(let url):
+                return url
+            }
+        }
+    }
+
+    private func databaseURL(in directory: URL) -> URL {
+        return directory.appendingPathComponent(callHistoryDatabaseName)
+    }
+
+    private func resolveBookmarkedGrant() throws -> BookmarkedGrant {
+        let url = try resolveBookmarkURL()
+        let isDirectory = try withSecurityScopedAccess(url) { url in
+            (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? url.hasDirectoryPath
+        }
+        return isDirectory ? .directory(url) : .file(url)
     }
 
     private func resolveBookmarkURL() throws -> URL {
@@ -254,12 +298,34 @@ final class PhoneService: NSObject, Service, NSOpenSavePanelDelegate {
     }
 
     private func withDatabase<T>(_ operation: (CallHistoryDatabase) throws -> T) throws -> T {
-        let url = try resolveDatabaseURL()
         if canAccessDatabaseAtDefaultPath {
-            return try operation(CallHistoryDatabase(path: url.path))
+            return try read(at: callHistoryDatabasePath, operation)
         }
-        return try withSecurityScopedAccess(url) { url in
-            try operation(CallHistoryDatabase(path: url.path))
+
+        let grant = try resolveBookmarkedGrant()
+        guard case .directory = grant else {
+            throw DatabaseAccessError.insufficientGrant
+        }
+
+        // The grant must stay open until the last read:
+        // SQLite opens the write-ahead log lazily on the first statement.
+        return try withSecurityScopedAccess(grant.url) { _ in
+            try read(at: grant.databaseURL.path, operation)
+        }
+    }
+
+    /// Reads the store live, honoring its write-ahead log.
+    /// If SQLite cannot open the log's companion files, for example because they are absent
+    /// and the folder is read-only, it reads the main file alone instead.
+    /// Nothing is lost then: without a log, every record is already in the main file.
+    private func read<T>(at path: String, _ operation: (CallHistoryDatabase) throws -> T) throws -> T {
+        do {
+            return try operation(CallHistoryDatabase(path: path, immutable: false))
+        } catch let error as SQLiteError {
+            log.warning(
+                "Live read of the call history database failed (\(error.message)); retrying without its write-ahead log"
+            )
+            return try operation(CallHistoryDatabase(path: path, immutable: true))
         }
     }
 
@@ -268,6 +334,7 @@ final class PhoneService: NSObject, Service, NSOpenSavePanelDelegate {
     private enum DatabaseAccessError: LocalizedError {
         case noBookmarkFound
         case securityScopeAccessFailed
+        case insufficientGrant
         case userDeclinedAccess
         case invalidFileSelected
         case fileNotReadable
@@ -278,12 +345,16 @@ final class PhoneService: NSObject, Service, NSOpenSavePanelDelegate {
                 return "No stored bookmark found for call history database access"
             case .securityScopeAccessFailed:
                 return "Failed to access security-scoped resource"
+            case .insufficientGrant:
+                return
+                    "The stored grant covers the call history database file alone; grant the CallHistoryDB folder instead"
             case .userDeclinedAccess:
                 return "User declined to grant access to the call history database"
             case .invalidFileSelected:
-                return "Call history database access denied or invalid file selected"
+                return
+                    "Call history database access denied or the selection is not the CallHistoryDB folder"
             case .fileNotReadable:
-                return "Selected database file is not readable"
+                return "The selected folder has no readable \(callHistoryDatabaseName)"
             }
         }
     }
@@ -324,9 +395,10 @@ final class PhoneService: NSObject, Service, NSOpenSavePanelDelegate {
         let alert = NSAlert()
         alert.messageText = "Call History Database Access Required"
         alert.informativeText = """
-            To read your phone call history, we need to open your database file.
+            To read your phone call history, we need access to your CallHistoryDB folder: \
+            the database and the log new calls are written to first.
 
-            In the next screen, please select the file `CallHistory.storedata` and click "Grant Access".
+            In the next screen, please select the `CallHistoryDB` folder and click "Grant Access".
             """
         alert.alertStyle = .informational
         alert.addButton(withTitle: "Continue")
@@ -336,23 +408,22 @@ final class PhoneService: NSObject, Service, NSOpenSavePanelDelegate {
     }
 
     @MainActor
-    private func showFilePicker() async throws -> URL {
+    private func showFolderPicker() async throws -> URL {
         let openPanel = NSOpenPanel()
         openPanel.delegate = self
         openPanel.message =
-            "Please select the Call History database file (CallHistory.storedata)"
+            "Please select your call history folder (~/Library/Application Support/CallHistoryDB)"
         openPanel.prompt = "Grant Access"
-        openPanel.allowedContentTypes = [.item]
-        openPanel.directoryURL = URL(fileURLWithPath: callHistoryDatabasePath)
+        openPanel.directoryURL = URL(fileURLWithPath: callHistoryDirectoryPath)
             .deletingLastPathComponent()
         openPanel.allowsMultipleSelection = false
-        openPanel.canChooseDirectories = false
-        openPanel.canChooseFiles = true
+        openPanel.canChooseDirectories = true
+        openPanel.canChooseFiles = false
         openPanel.showsHiddenFiles = true
 
         guard openPanel.runModal() == .OK,
             let url = openPanel.url,
-            url.lastPathComponent == "CallHistory.storedata"
+            isCallHistoryDirectory(url)
         else {
             throw DatabaseAccessError.invalidFileSelected
         }
@@ -370,8 +441,13 @@ final class PhoneService: NSObject, Service, NSOpenSavePanelDelegate {
         log.debug("Successfully created and stored bookmark")
     }
 
+    private func isCallHistoryDirectory(_ url: URL) -> Bool {
+        return url.lastPathComponent == "CallHistoryDB"
+    }
+
+    // NSOpenSavePanelDelegate method to constrain the selection to the CallHistoryDB folder
     func panel(_ sender: Any, shouldEnable url: URL) -> Bool {
-        let shouldEnable = url.lastPathComponent == "CallHistory.storedata"
+        let shouldEnable = isCallHistoryDirectory(url)
         log.debug(
             "File selection panel: \(shouldEnable ? "enabling" : "disabling") URL: \(url.path)"
         )
@@ -385,9 +461,26 @@ final class PhoneService: NSObject, Service, NSOpenSavePanelDelegate {
 private final class CallHistoryDatabase {
     private let connection: OpaquePointer
 
-    init(path: String) throws {
+    /// Opens the store read-only.
+    /// With `immutable`, SQLite ignores the write-ahead log and never touches the `-wal`
+    /// and `-shm` files, so records since the last checkpoint are not visible.
+    init(path: String, immutable: Bool) throws {
+        var filename = path
+        var flags = SQLITE_OPEN_READONLY
+        if immutable {
+            var components = URLComponents()
+            components.scheme = "file"
+            components.path = path
+            components.queryItems = [URLQueryItem(name: "immutable", value: "1")]
+            guard let uri = components.string else {
+                throw SQLiteError(message: "cannot build a URI for \(path)")
+            }
+            filename = uri
+            flags |= SQLITE_OPEN_URI
+        }
+
         var connection: OpaquePointer?
-        guard sqlite3_open_v2(path, &connection, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
+        guard sqlite3_open_v2(filename, &connection, flags, nil) == SQLITE_OK else {
             defer { sqlite3_close(connection) }
             throw SQLiteError(message: String(cString: sqlite3_errmsg(connection)))
         }
