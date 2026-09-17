@@ -481,6 +481,7 @@ actor MCPConnectionManager {
     private let server: MCP.Server
     private var transport: NetworkTransport
     private let parentManager: ServerNetworkManager
+    private var isStopping = false
 
     init(connectionID: UUID, connection: NWConnection, parentManager: ServerNetworkManager) {
         self.connectionID = connectionID
@@ -532,6 +533,14 @@ actor MCPConnectionManager {
 
             // Monitor connection health for early disconnects.
             await startHealthMonitoring()
+
+            // The SDK ends the message loop when the client disconnects,
+            // but leaves the socket open. Close it without waiting for the health poll.
+            Task { [weak self] in
+                guard let self else { return }
+                await self.server.waitUntilCompleted()
+                await self.parentManager.removeConnection(self.connectionID)
+            }
         } catch {
             log.error("Failed to start MCP server: \(error.localizedDescription)")
             throw error
@@ -586,6 +595,9 @@ actor MCPConnectionManager {
     }
 
     func stop() async {
+        // App shutdown and message-loop completion can both stop this connection.
+        guard !isStopping else { return }
+        isStopping = true
         await server.stop()
         connection.cancel()
     }
