@@ -87,7 +87,8 @@ Environment:
 EOF
 }
 
-# If APP_BUNDLE isn't explicit, derive the built app path from Xcode settings.
+# If APP_BUNDLE isn't explicit,
+# derive the built app path from Xcode settings.
 resolve_app_bundle() {
   resolve_exported_app || true
   if [[ -d "${APP_BUNDLE}" ]]; then
@@ -302,9 +303,11 @@ build_check() {
   resolve_app_bundle
 }
 
-# The project's Release configuration signs the app with an Apple Development identity,
+# The project's Release configuration signs the app
+# with an Apple Development identity,
 # which a release machine may not have.
-# When a Developer ID certificate is configured, archive with it directly;
+# When a Developer ID certificate is configured,
+# archive with it directly;
 # export re-signs with the provisioning profile afterwards.
 archive_signing_args() {
   if [[ -z "${TEAM_ID}" ]]; then
@@ -314,7 +317,8 @@ archive_signing_args() {
     "CODE_SIGN_STYLE=Manual" \
     "CODE_SIGN_IDENTITY=${SIGNING_CERTIFICATE}" \
     "DEVELOPMENT_TEAM=${TEAM_ID}"
-  # The app's WeatherKit entitlement needs its provisioning profile at archive time,
+  # The app's WeatherKit entitlement needs its provisioning profile
+  # at archive time,
   # but a command-line override applies to every target,
   # and the embedded CLI has a different bundle identifier.
   # Route the profile through a setting keyed by product name
@@ -472,7 +476,8 @@ push_tags() {
     echo "Tag push cancelled."
     exit 1
   fi
-  # Push only this release's tag: every pushed version tag starts a release.
+  # Push only this release's tag:
+  # every pushed version tag starts a release.
   git push origin "refs/tags/${VERSION}"
 }
 
@@ -491,7 +496,8 @@ require_release_tag() {
     echo "Tag ${VERSION} points at ${tag_commit}, but HEAD is ${head_commit}." >&2
     exit 1
   fi
-  # The remote tag is what the release records, so it must exist and match too.
+  # The remote tag is what the release records,
+  # so it must exist and match too.
   local remote_commit
   remote_commit="$(git ls-remote --tags origin "refs/tags/${VERSION}^{}" "refs/tags/${VERSION}" 2>/dev/null | awk '{print $1}' | tail -n 1 || true)"
   if [[ -z "${remote_commit}" ]]; then
@@ -504,8 +510,9 @@ require_release_tag() {
   fi
 }
 
-# The release starts as a draft so a failure partway through
-# never leaves a half-populated release as the latest one.
+# The release starts as a draft
+# so a failure partway through never leaves a half-populated release
+# as the latest one.
 create_release() {
   require_version
   if [[ -n "${DRY_RUN}" ]]; then
@@ -541,6 +548,31 @@ publish_release() {
   fi
 }
 
+# An upload can reach GitHub
+# even if gh times out and its retry fails with "already exists".
+# Accept that failure only if the asset matches.
+upload_release_file() {
+  local upload_path="$1"
+  local upload_status
+  if gh release upload "${VERSION}" "${upload_path}" --clobber; then
+    return 0
+  else
+    upload_status=$?
+  fi
+
+  local verify_dir
+  verify_dir="$(mktemp -d)"
+  if gh release download "${VERSION}" --pattern "${upload_path##*/}" \
+    --output "${verify_dir}/asset" && cmp -s "${upload_path}" "${verify_dir}/asset"; then
+    rm -rf "${verify_dir}"
+    echo "Release asset already matches ${upload_path}"
+    return 0
+  fi
+  rm -rf "${verify_dir}"
+  echo "Could not verify release asset after upload failed: ${upload_path}" >&2
+  return "${upload_status}"
+}
+
 upload_asset() {
   require_version
   local release_zip_path
@@ -558,7 +590,7 @@ upload_asset() {
     return 0
   fi
   echo "Uploading release asset ${upload_path}"
-  gh release upload "${VERSION}" "${upload_path}" --clobber
+  upload_release_file "${upload_path}"
 }
 
 # Sparkle ships generate_appcast inside its SwiftPM artifact,
@@ -627,7 +659,8 @@ build_appcast() {
     key_args=(--ed-key-file "${SPARKLE_PRIVATE_KEY_FILE}")
   fi
   echo "Generating appcast in ${APPCAST_DIR}"
-  # macOS ships bash 3.2, where an empty array trips set -u.
+  # macOS ships bash 3.2,
+  # where an empty array trips set -u.
   "${SPARKLE_BIN}/generate_appcast" \
     ${key_args[@]+"${key_args[@]}"} \
     --download-url-prefix "${RELEASE_DOWNLOAD_BASE}/${VERSION}/" \
@@ -659,7 +692,7 @@ upload_appcast() {
     return 0
   fi
   echo "Uploading appcast to release ${VERSION}"
-  gh release upload "${VERSION}" "${appcast_path}" --clobber
+  upload_release_file "${appcast_path}"
 }
 
 all() {
