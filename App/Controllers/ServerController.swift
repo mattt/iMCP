@@ -609,6 +609,7 @@ actor NetworkDiscoveryManager {
     private let serviceDomain: String
     var listener: NWListener
     private let browser: NWBrowser
+    private var listenerStateHandler: (@Sendable (NWListener.State) -> Void)?
 
     init(serviceType: String, serviceDomain: String) throws {
         self.serviceType = serviceType
@@ -625,9 +626,8 @@ actor NetworkDiscoveryManager {
             tcpOptions.version = .v4
         }
 
-        // Listen and advertise via Bonjour.
+        // Advertise once the listener has an assigned port.
         self.listener = try NWListener(using: parameters)
-        self.listener.service = NWListener.Service(name: "iMCP", type: serviceType, domain: serviceDomain)
 
         // Browser is used for monitoring and diagnostics.
         self.browser = NWBrowser(
@@ -642,7 +642,8 @@ actor NetworkDiscoveryManager {
         stateHandler: @escaping @Sendable (NWListener.State) -> Void,
         connectionHandler: @escaping @Sendable (NWConnection) -> Void
     ) {
-        listener.stateUpdateHandler = stateHandler
+        listenerStateHandler = stateHandler
+        configureStateHandler(for: listener)
 
         listener.newConnectionHandler = connectionHandler
 
@@ -650,6 +651,24 @@ actor NetworkDiscoveryManager {
         browser.start(queue: .main)
 
         log.info("Started network discovery and advertisement")
+    }
+
+    private func configureStateHandler(for listener: NWListener) {
+        let serviceType = self.serviceType
+        let serviceDomain = self.serviceDomain
+        let stateHandler = listenerStateHandler
+        listener.stateUpdateHandler = { [weak listener] state in
+            if case .ready = state, let listener, let port = listener.port {
+                // Publish the assigned port before clients can discover the service.
+                listener.service = NWListener.Service(
+                    name: "iMCP",
+                    type: serviceType,
+                    domain: serviceDomain,
+                    txtRecord: NWTXTRecord(["port": String(port.rawValue)])
+                )
+            }
+            stateHandler?(state)
+        }
     }
 
     func stop() {
@@ -673,12 +692,7 @@ actor NetworkDiscoveryManager {
         }
 
         let newListener: NWListener = try NWListener(using: parameters)
-        let service = NWListener.Service(name: "iMCP", type: self.serviceType, domain: self.serviceDomain)
-        newListener.service = service
-
-        if let currentStateHandler = listener.stateUpdateHandler {
-            newListener.stateUpdateHandler = currentStateHandler
-        }
+        configureStateHandler(for: newListener)
 
         if let currentConnectionHandler = listener.newConnectionHandler {
             newListener.newConnectionHandler = currentConnectionHandler
