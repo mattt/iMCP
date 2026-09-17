@@ -627,7 +627,7 @@ actor NetworkDiscoveryManager {
 
         // Listen and advertise via Bonjour.
         self.listener = try NWListener(using: parameters)
-        self.listener.service = NWListener.Service(type: serviceType, domain: serviceDomain)
+        self.listener.service = NWListener.Service(name: "iMCP", type: serviceType, domain: serviceDomain)
 
         // Browser is used for monitoring and diagnostics.
         self.browser = NWBrowser(
@@ -673,7 +673,7 @@ actor NetworkDiscoveryManager {
         }
 
         let newListener: NWListener = try NWListener(using: parameters)
-        let service = NWListener.Service(type: self.serviceType, domain: self.serviceDomain)
+        let service = NWListener.Service(name: "iMCP", type: self.serviceType, domain: self.serviceDomain)
         newListener.service = service
 
         if let currentStateHandler = listener.stateUpdateHandler {
