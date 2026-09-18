@@ -156,13 +156,7 @@ final class CaptureService: NSObject, Service {
                 openWorldHint: false
             )
         ) { arguments in
-            guard await self.isActivated else {
-                throw NSError(
-                    domain: "CaptureServiceError",
-                    code: 1,
-                    userInfo: [NSLocalizedDescriptionKey: "Camera access not authorized"]
-                )
-            }
+            try await self.requestPermission(for: .video)
 
             let format =
                 ImageFormat(
@@ -342,10 +336,7 @@ final class CaptureService: NSObject, Service {
                 openWorldHint: false
             )
         ) { arguments in
-            if AVCaptureDevice.authorizationStatus(for: .audio) != .authorized {
-                // Try to request permission if not authorized
-                try await self.requestPermission(for: .audio)
-            }
+            try await self.requestPermission(for: .audio)
 
             let format =
                 AudioFormat(
@@ -448,10 +439,7 @@ final class CaptureService: NSObject, Service {
                 openWorldHint: false
             )
         ) { arguments in
-            if !CGPreflightScreenCaptureAccess() {
-                // Try to request permission if not authorized
-                try await self.requestScreenRecordingPermission()
-            }
+            try await self.requestScreenRecordingPermission()
 
             let contentType =
                 ScreenCaptureContentType(

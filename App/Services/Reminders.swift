@@ -34,7 +34,7 @@ final class RemindersService: Service {
                 openWorldHint: false
             )
         ) { arguments in
-            guard EKEventStore.authorizationStatus(for: .reminder) == .fullAccess else {
+            guard try await self.eventStore.requestFullAccessToReminders() else {
                 log.error("Reminders access not authorized")
                 throw NSError(
                     domain: "RemindersError",
@@ -92,9 +92,7 @@ final class RemindersService: Service {
                 openWorldHint: false
             )
         ) { arguments in
-            try await self.activate()
-
-            guard EKEventStore.authorizationStatus(for: .reminder) == .fullAccess else {
+            guard try await self.eventStore.requestFullAccessToReminders() else {
                 log.error("Reminders access not authorized")
                 throw NSError(
                     domain: "RemindersError",
@@ -226,9 +224,7 @@ final class RemindersService: Service {
                 openWorldHint: false
             )
         ) { arguments in
-            try await self.activate()
-
-            guard EKEventStore.authorizationStatus(for: .reminder) == .fullAccess else {
+            guard try await self.eventStore.requestFullAccessToReminders() else {
                 log.error("Reminders access not authorized")
                 throw NSError(
                     domain: "RemindersError",
