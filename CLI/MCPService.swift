@@ -27,7 +27,7 @@ actor MCPService: Service {
                 await log.info("Starting Bonjour service discovery...")
 
                 let browser = NWBrowser(
-                    for: .bonjour(type: serviceType, domain: nil),
+                    for: .bonjourWithTXTRecord(type: serviceType, domain: nil),
                     using: parameters
                 )
 

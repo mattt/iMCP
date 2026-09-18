@@ -62,12 +62,31 @@ enum BonjourDiscovery {
                 Task {
                     if await state.checkAndSetResumed() {
                         timeoutTask.cancel()
-                        continuation.resume(returning: selected.endpoint)
+                        continuation.resume(
+                            returning: connectionEndpoint(for: selected.endpoint, metadata: selected.metadata)
+                        )
                     }
                 }
             }
 
             browser.start(queue: .main)
         }
+    }
+
+    static func connectionEndpoint(
+        for serviceEndpoint: NWEndpoint,
+        metadata: NWBrowser.Result.Metadata
+    ) -> NWEndpoint {
+        guard case .bonjour(let record) = metadata,
+            let value = record["port"],
+            let number = UInt16(value),
+            number > 0,
+            let port = NWEndpoint.Port(rawValue: number)
+        else {
+            return serviceEndpoint
+        }
+
+        // Avoid service resolution selecting a Docker bridge address (#142).
+        return .hostPort(host: .ipv4(.loopback), port: port)
     }
 }

@@ -9,6 +9,45 @@ import XCTest
 /// Leaking one per attempt eventually exhausts the daemon's descriptors
 /// and breaks DNS for every process on the machine (#192).
 final class BonjourDiscoveryTests: XCTestCase {
+    private let serviceEndpoint = NWEndpoint.service(
+        name: "iMCP",
+        type: "_mcp._tcp",
+        domain: "local.",
+        interface: nil
+    )
+
+    func testAdvertisedPortUsesIPv4Loopback() {
+        for number: UInt16 in [1, 54321, 65535] {
+            let endpoint = BonjourDiscovery.connectionEndpoint(
+                for: serviceEndpoint,
+                metadata: .bonjour(NWTXTRecord(["port": String(number)]))
+            )
+
+            XCTAssertEqual(endpoint, .hostPort(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: number)!))
+        }
+    }
+
+    func testMissingPortUsesServiceEndpoint() {
+        for metadata: NWBrowser.Result.Metadata in [.none, .bonjour(NWTXTRecord(["version": "1"]))] {
+            XCTAssertEqual(
+                BonjourDiscovery.connectionEndpoint(for: serviceEndpoint, metadata: metadata),
+                serviceEndpoint
+            )
+        }
+    }
+
+    func testInvalidPortUsesServiceEndpoint() {
+        for value in ["", "0", "-1", "65536", "abc", "http", "12.5"] {
+            XCTAssertEqual(
+                BonjourDiscovery.connectionEndpoint(
+                    for: serviceEndpoint,
+                    metadata: .bonjour(NWTXTRecord(["port": value]))
+                ),
+                serviceEndpoint,
+                "Expected fallback for port value: \(value)"
+            )
+        }
+    }
 
     /// A browser that times out without finding anything must be cancelled,
     /// not left running.
