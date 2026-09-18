@@ -79,13 +79,16 @@ private let contactProperties: OrderedDictionary<String, JSONSchema> = [
 
 final class ContactsService: Service {
     private let contactStore = CNContactStore()
+    private let contactStoreQueue = DispatchQueue(label: "iMCP.contacts", qos: .utility)
 
     static let shared = ContactsService()
 
     private func runContactStore<T>(_ operation: @escaping () throws -> T) async throws -> T {
-        try await Task(priority: .utility) {
-            try operation()
-        }.value
+        try await withCheckedThrowingContinuation { continuation in
+            contactStoreQueue.async {
+                continuation.resume(with: Result { try operation() })
+            }
+        }
     }
 
     var isActivated: Bool {
@@ -189,7 +192,6 @@ final class ContactsService: Service {
             }
 
             if case let .string(email) = arguments["email"] {
-                // Normalize email to lowercase
                 let normalizedEmail = email.trimmingCharacters(in: .whitespaces).lowercased()
                 if !normalizedEmail.isEmpty {
                     predicates.append(
@@ -208,7 +210,6 @@ final class ContactsService: Service {
                 )
             }
 
-            // Combine predicates with AND if multiple criteria are provided
             let finalPredicate =
                 predicates.count == 1
                 ? predicates[0]
@@ -268,10 +269,7 @@ final class ContactsService: Service {
                 return results
             }
 
-            // Map then page. `Person(CNContact)` is nil for `.organization` cards,
-            // so paging the raw store and compactMapping afterward can return fewer
-            // than `limit` items for a full page — callers treat that as EOF and
-            // never request the next offset.
+            // Filter before paging so skipped organizations do not shorten pages.
             let people = contacts.compactMap { listedPerson(from: $0) }
             return Array(people.dropFirst(offset).prefix(limit))
         }
@@ -279,7 +277,7 @@ final class ContactsService: Service {
         Tool(
             name: "contacts_update",
             description:
-                "Update an existing contact's information. Only provide values for properties that need to be changed; omit any properties that should remain unchanged.",
+                "Update an existing contact's information. Only provide values for properties that need to be changed; omit any properties that should remain unchanged. Reading or changing contact notes is not supported.",
             inputSchema: .object(
                 properties: ([
                     "identifier": .string(
@@ -306,39 +304,40 @@ final class ContactsService: Service {
                 )
             }
 
-            // Fetch the mutable copy of the contact
-            let predicate = CNContact.predicateForContacts(withIdentifiers: [identifier])
-            let contact =
-                try await self.runContactStore {
-                    try self.contactStore.unifiedContacts(matching: predicate, keysToFetch: contactKeys)
+            // Serialize the fetch, edit, and save together
+            // so later updates use the latest contact.
+            return try await self.runContactStore {
+                // Preserve the stored identity and leave unfetched fields untouched.
+                let request = CNContactFetchRequest(keysToFetch: contactKeys)
+                request.predicate = CNContact.predicateForContacts(withIdentifiers: [identifier])
+                request.mutableObjects = true
+                request.unifyResults = true
+
+                var contact: CNMutableContact?
+                try self.contactStore.enumerateContacts(with: request) { fetchedContact, stop in
+                    contact = fetchedContact as? CNMutableContact
+                    stop.pointee = true
                 }
-                .first?
-                .mutableCopy() as? CNMutableContact
 
-            guard let updatedContact = contact else {
-                throw NSError(
-                    domain: "ContactsService",
-                    code: 2,
-                    userInfo: [
-                        NSLocalizedDescriptionKey:
-                            "Contact not found with identifier: \(identifier)"
-                    ]
-                )
-            }
+                guard let updatedContact = contact else {
+                    throw NSError(
+                        domain: "ContactsService",
+                        code: 2,
+                        userInfo: [
+                            NSLocalizedDescriptionKey:
+                                "Contact not found with identifier: \(identifier)"
+                        ]
+                    )
+                }
 
-            // Update all properties
-            updatedContact.populate(from: arguments)
+                updatedContact.populate(from: arguments)
 
-            // Create a save request
-            let saveRequest = CNSaveRequest()
-            saveRequest.update(updatedContact)
+                let saveRequest = CNSaveRequest()
+                saveRequest.update(updatedContact)
 
-            // Save the changes
-            try await self.runContactStore {
                 try self.contactStore.execute(saveRequest)
+                return Person(updatedContact)
             }
-
-            return Person(updatedContact)
         }
 
         Tool(
@@ -355,38 +354,30 @@ final class ContactsService: Service {
                 openWorldHint: false
             )
         ) { arguments in
-            // Create and populate a new contact
-            let newContact = CNMutableContact()
-            newContact.populate(from: arguments)
+            return try await self.runContactStore {
+                let newContact = CNMutableContact()
+                newContact.populate(from: arguments)
 
-            // Validate that given name is provided and not empty
-            if newContact.givenName.isEmpty {
-                throw NSError(
-                    domain: "ContactsService",
-                    code: 1,
-                    userInfo: [NSLocalizedDescriptionKey: "Given name is required"]
-                )
-            }
+                if newContact.givenName.isEmpty {
+                    throw NSError(
+                        domain: "ContactsService",
+                        code: 1,
+                        userInfo: [NSLocalizedDescriptionKey: "Given name is required"]
+                    )
+                }
 
-            // Create a save request
-            let saveRequest = CNSaveRequest()
-            saveRequest.add(newContact, toContainerWithIdentifier: nil)
+                let saveRequest = CNSaveRequest()
+                saveRequest.add(newContact, toContainerWithIdentifier: nil)
 
-            // Execute the save request
-            try await self.runContactStore {
                 try self.contactStore.execute(saveRequest)
+                return Person(newContact)
             }
-
-            return Person(newContact)
         }
     }
 }
 
-/// `Person(CNContact)` returns nil when `contactType == .organization`.
-/// Contacts.app still stores people that way (the "Company" toggle)
-/// with given and family names filled in.
-/// Treat those cards as people so search and list don't omit them;
-/// cards that carry only an organization name stay excluded.
+/// Includes people marked as companies in Contacts.
+/// Excludes organization cards without a given or family name.
 private func listedPerson(from contact: CNContact) -> Person? {
     if let person = Person(contact) {
         return person
