@@ -15,7 +15,8 @@ final class LocationService: NSObject, Service, CLLocationManagerDelegate {
         return manager
     }()
     private var latestLocation: CLLocation?
-    private var authorizationContinuation: CheckedContinuation<Void, Error>?
+    @MainActor private var authorizationTask: Task<Void, Error>?
+    @MainActor private var authorizationContinuation: CheckedContinuation<Void, Error>?
 
     static let shared = LocationService()
 
@@ -52,7 +53,20 @@ final class LocationService: NSObject, Service, CLLocationManagerDelegate {
         }
     }
 
+    @MainActor
     func activate() async throws {
+        if let authorizationTask {
+            return try await authorizationTask.value
+        }
+
+        let task = Task { try await self.requestAuthorization() }
+        authorizationTask = task
+        defer { authorizationTask = nil }
+        try await task.value
+    }
+
+    @MainActor
+    private func requestAuthorization() async throws {
         try await withCheckedThrowingContinuation {
             (continuation: CheckedContinuation<Void, Error>) in
             self.authorizationContinuation = continuation
@@ -391,6 +405,13 @@ final class LocationService: NSObject, Service, CLLocationManagerDelegate {
         _ manager: CLLocationManager,
         didChangeAuthorization status: CLAuthorizationStatus
     ) {
+        Task { @MainActor in
+            self.completeAuthorization(status)
+        }
+    }
+
+    @MainActor
+    private func completeAuthorization(_ status: CLAuthorizationStatus) {
         switch status {
         case .authorizedWhenInUse, .authorizedAlways:
             log.debug("Location access authorized")
@@ -412,7 +433,14 @@ final class LocationService: NSObject, Service, CLLocationManagerDelegate {
             break
         @unknown default:
             log.error("Unknown location authorization status")
-            break
+            authorizationContinuation?.resume(
+                throwing: NSError(
+                    domain: "LocationServiceError",
+                    code: 8,
+                    userInfo: [NSLocalizedDescriptionKey: "Unknown authorization status"]
+                )
+            )
+            authorizationContinuation = nil
         }
     }
 }
