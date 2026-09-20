@@ -9,10 +9,12 @@ struct App: SwiftUI.App {
     @AppStorage("isEnabled") private var isEnabled = true
     @AppStorage("showMenuBarExtra") private var showMenuBarExtra = true
 
-    // `startingUpdater: true` makes this the sole owner of update checking for
-    // the app's lifetime. Without it (or without ever constructing an updater
-    // at all), the SUFeedURL / SUPublicEDKey keys in Info.plist are inert and
-    // installs never learn about newer releases, no matter how long they run.
+    // `startingUpdater: true` makes this the sole owner of update checking
+    // for the app's lifetime.
+    // Without it (or without ever constructing an updater at all),
+    // the SUFeedURL / SUPublicEDKey keys in Info.plist are inert
+    // and installs never learn about newer releases,
+    // no matter how long they run.
     private let updaterController = SPUStandardUpdaterController(
         startingUpdater: true,
         updaterDelegate: nil,
