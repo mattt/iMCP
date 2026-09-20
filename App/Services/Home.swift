@@ -133,11 +133,18 @@ actor HomeService: Service, HomeBackend {
         }
         let deadline = Date().addingTimeInterval(15)
         repeat {
+            if let launchedHelper { try await checkHelperIsRunning(launchedHelper) }
             do {
                 try await connect(to: endpoint, parameters: parameters)
                 return
             } catch let error as HomeError { throw error } catch {
-                guard launchedHelper != nil, Date() < deadline else { throw error }
+                guard let launchedHelper else { throw error }
+                try await checkHelperIsRunning(launchedHelper)
+                guard Date() < deadline else {
+                    throw HomeError(
+                        "iMCP Helper did not accept a local connection within 15 seconds. Check its status window, then retry."
+                    )
+                }
                 try await Task.sleep(for: .milliseconds(250))
             }
         } while true
@@ -183,6 +190,18 @@ actor HomeService: Service, HomeBackend {
     // MARK: - Helper Launch
 
     @MainActor
+    private func checkHelperIsRunning(_ helper: LaunchedHelper) throws {
+        guard helper.pid > 0,
+            let application = NSRunningApplication(processIdentifier: helper.pid),
+            !application.isTerminated
+        else {
+            throw HomeError(
+                "iMCP Helper exited before the connection was ready. Check its crash report in Console, then retry."
+            )
+        }
+    }
+
+    @MainActor
     private func launchHelper(previous: LaunchedHelper?, overrideURL: URL?) async throws -> LaunchedHelper? {
         if let running = NSWorkspace.shared.runningApplications.first(where: {
             $0.bundleIdentifier == "co.dododo.iMCP.Helper" && !$0.isTerminated
@@ -198,6 +217,13 @@ actor HomeService: Service, HomeBackend {
         let port = try availableLoopbackPort()
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = false
+        // Xcode's native macOS debugger libraries cannot load in a Catalyst app.
+        // Empty values override the launch environment; omitting the keys does not.
+        configuration.environment = [
+            "DYLD_INSERT_LIBRARIES": "",
+            "DYLD_LIBRARY_PATH": "",
+            "DYLD_FRAMEWORK_PATH": "",
+        ]
         configuration.arguments = ["--parent-pid", String(getpid()), "--port", String(port)]
         let application = try await NSWorkspace.shared.openApplication(at: url, configuration: configuration)
         return LaunchedHelper(
