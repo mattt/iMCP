@@ -79,11 +79,11 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Divider()
 
-                MenuButton("Configure Claude Desktop", dismiss: menuPanel.dismiss) {
+                MenuButton("Configure Claude Desktop") {
                     ClaudeDesktop.showConfigurationPanel()
                 }
 
-                MenuButton("Copy server command to clipboard", dismiss: menuPanel.dismiss) {
+                MenuButton("Copy server command to clipboard") {
                     let command = Bundle.main.bundleURL
                         .appendingPathComponent("Contents/MacOS/imcp-server")
                         .path
@@ -102,23 +102,23 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Divider()
 
-                MenuButton("Settings...", dismiss: menuPanel.dismiss) {
+                MenuButton("Settings...") {
                     // openSettings() alone is unreliable for this accessory (LSUIElement) app.
                     NSApp.activate(ignoringOtherApps: true)
                     openSettings()
                 }
 
-                MenuButton("Check for Updates...", dismiss: menuPanel.dismiss) {
+                MenuButton("Check for Updates...") {
                     updater.checkForUpdates()
                 }
                 .disabled(!updater.canCheckForUpdates)
 
-                MenuButton("About iMCP", dismiss: menuPanel.dismiss) {
+                MenuButton("About iMCP") {
                     aboutWindowController.showWindow(nil)
                     NSApp.activate(ignoringOtherApps: true)
                 }
 
-                MenuButton("Quit", dismiss: menuPanel.dismiss) {
+                MenuButton("Quit") {
                     NSApplication.shared.terminate(nil)
                 }
             }
@@ -138,7 +138,7 @@ struct ContentView: View {
     }
 }
 
-/// Dismisses and resizes the `MenuBarExtra` panel that shows ``ContentView``.
+/// Resizes the `MenuBarExtra` panel that shows ``ContentView`` to fit its content.
 @MainActor
 final class MenuPanelController {
     var contentHeight: CGFloat = 0
@@ -167,10 +167,6 @@ final class MenuPanelController {
             }
         }
         resizeToFitContent()
-    }
-
-    func dismiss() {
-        window?.orderOut(nil)
     }
 
     // MenuBarExtra's window keeps a stale taller frame when its content shrinks,
@@ -228,17 +224,15 @@ private struct MenuButton: View {
 
     private let title: String
     private let action: () -> Void
-    private let dismiss: @MainActor () -> Void
+    @Environment(\.dismiss) private var dismiss
     @State private var isHighlighted: Bool = false
     @State private var isPressed: Bool = false
 
     init<S>(
         _ title: S,
-        dismiss: @escaping @MainActor () -> Void,
         action: @escaping () -> Void
     ) where S: StringProtocol {
         self.title = String(title)
-        self.dismiss = dismiss
         self.action = action
     }
 
@@ -269,6 +263,10 @@ private struct MenuButton: View {
                 }
 
                 action()
+
+                // SwiftUI's dismiss action ends the panel's presentation through
+                // MenuBarExtra itself. Hiding the window directly leaves the status
+                // item presented, and the next click on it does nothing.
                 dismiss()
             }
         }
