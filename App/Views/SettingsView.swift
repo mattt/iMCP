@@ -71,6 +71,7 @@ struct SettingsView: View {
 }
 
 struct GeneralSettingsView: View {
+    @AppStorage("showMenuBarExtra") private var showMenuBarExtra = true
     @ObservedObject var serverController: ServerController
     @State private var showingResetAlert = false
     @State private var selectedClients = Set<String>()
@@ -83,6 +84,14 @@ struct GeneralSettingsView: View {
     var body: some View {
         Form {
             Section {
+                VStack(alignment: .leading, spacing: 4) {
+                    Toggle("Show in Menu Bar", isOn: $showMenuBarExtra)
+
+                    Text("If the icon is hidden, open iMCP again to return to Settings.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 VStack(alignment: .leading, spacing: 4) {
                     Toggle("Launch at Login", isOn: $launchAtLogin)
                         .onChange(of: launchAtLogin) { _, enabled in
