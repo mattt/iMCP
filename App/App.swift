@@ -1,4 +1,3 @@
-import MenuBarExtraAccess
 import Sparkle
 import SwiftUI
 
@@ -6,7 +5,6 @@ import SwiftUI
 struct App: SwiftUI.App {
     @StateObject private var serverController = ServerController()
     @AppStorage("isEnabled") private var isEnabled = true
-    @State private var isMenuPresented = false
 
     // `startingUpdater: true` makes this the sole owner of update checking for
     // the app's lifetime. Without it (or without ever constructing an updater
@@ -23,12 +21,10 @@ struct App: SwiftUI.App {
             ContentView(
                 serverManager: serverController,
                 isEnabled: $isEnabled,
-                isMenuPresented: $isMenuPresented,
                 updater: updaterController.updater
             )
         }
         .menuBarExtraStyle(.window)
-        .menuBarExtraAccess(isPresented: $isMenuPresented)
 
         Settings {
             SettingsView(serverController: serverController)
