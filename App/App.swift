@@ -35,7 +35,7 @@ struct App: SwiftUI.App {
             )
         }
         .menuBarExtraStyle(.window)
-        .onChange(of: appDelegate.shouldOpenSettings) { _, shouldOpenSettings in
+        .onChange(of: appDelegate.shouldOpenSettings, initial: true) { _, shouldOpenSettings in
             guard shouldOpenSettings else { return }
             appDelegate.shouldOpenSettings = false
             NSApp.activate(ignoringOtherApps: true)
@@ -60,6 +60,13 @@ struct App: SwiftUI.App {
 @Observable
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var shouldOpenSettings = false
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // An unset preference defaults to showing the menu bar item.
+        if UserDefaults.standard.object(forKey: "showMenuBarExtra") as? Bool == false {
+            shouldOpenSettings = true
+        }
+    }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
         // Reopening the app must work even when the menu bar item is absent.
