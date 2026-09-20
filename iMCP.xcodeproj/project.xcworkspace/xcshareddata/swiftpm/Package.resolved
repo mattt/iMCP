@@ -29,15 +29,6 @@
       }
     },
     {
-      "identity" : "menubarextraaccess",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/orchetect/MenuBarExtraAccess",
-      "state" : {
-        "revision" : "e911e6454f8cbfe34a52136fc48e1ceb989a60e7",
-        "version" : "1.2.1"
-      }
-    },
-    {
       "identity" : "ontology",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/loopwork-ai/Ontology",
