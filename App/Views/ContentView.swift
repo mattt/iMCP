@@ -264,9 +264,8 @@ private struct MenuButton: View {
 
                 action()
 
-                // SwiftUI's dismiss action ends the panel's presentation through
-                // MenuBarExtra itself. Hiding the window directly leaves the status
-                // item presented, and the next click on it does nothing.
+                // Hiding the panel window directly leaves the status item presented,
+                // so the next click on it does nothing.
                 dismiss()
             }
         }
