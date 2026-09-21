@@ -51,6 +51,155 @@ final class MailTests: XCTestCase {
         return Data("\(payload.count)\n".utf8) + payload + Data("\n<plist>ignored trailer</plist>".utf8)
     }
 
+    private func checkpoint() -> Int32 {
+        sqlite3_wal_checkpoint_v2(writer, nil, SQLITE_CHECKPOINT_TRUNCATE, nil, nil)
+    }
+
+    func testWALWriterCanCommitDuringReadAndCheckpointAfterward() throws {
+        let database = try MailDatabase(root: root)
+        var wroteDuringRead = false
+        let ids = try database.query("SELECT ROWID FROM messages ORDER BY ROWID") { row in
+            if !wroteDuringRead {
+                try execute("INSERT INTO messages VALUES(4,1,1,1,400,0,'four@example.com')")
+                wroteDuringRead = true
+                // A reader still delays WAL reset, even with SQLITE_OPEN_READONLY.
+                XCTAssertEqual(checkpoint(), SQLITE_BUSY)
+            }
+            return row.integer(0)
+        }
+        XCTAssertEqual(ids, [1, 2, 3])
+        // Finalizing the statement releases its read lock, before connection close.
+        XCTAssertEqual(checkpoint(), SQLITE_OK)
+        XCTAssertEqual(try database.fetch(.init()).first?.id, 4)
+    }
+
+    func testSeparateWriterProcessCanCommitAndThenResetWAL() throws {
+        func runWriter(_ sql: String) throws -> String {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/sqlite3")
+            process.arguments = ["-batch", version.appendingPathComponent("MailData/Envelope Index").path, sql]
+            let output = Pipe()
+            process.standardOutput = output
+            process.standardError = output
+            try process.run()
+            let data = output.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            let text = String(decoding: data, as: UTF8.self)
+            XCTAssertEqual(process.terminationStatus, 0, text)
+            return text
+        }
+
+        // Allow for process startup in this synthetic contention test.
+        // The separate deadline test exercises the production 100 ms budget.
+        let database = try MailDatabase(root: root, queryTimeLimit: .seconds(2))
+        var wroteDuringRead = false
+        try database.query("SELECT ROWID FROM messages ORDER BY ROWID") { _ in
+            if !wroteDuringRead {
+                let result = try runWriter(
+                    """
+                    INSERT INTO messages VALUES(4,1,1,1,400,0,'four@example.com');
+                    PRAGMA wal_checkpoint(TRUNCATE);
+                    """
+                )
+                XCTAssertTrue(result.hasPrefix("1|"), result)
+                wroteDuringRead = true
+            }
+        }
+        XCTAssertTrue(wroteDuringRead)
+        XCTAssertEqual(try runWriter("PRAGMA wal_checkpoint(TRUNCATE); SELECT count(*) FROM messages;"), "0|0|0\n4\n")
+    }
+
+    func testQueryDeadlineReleasesReadLock() throws {
+        let database = try MailDatabase(root: root)
+        let start = ContinuousClock.now
+        XCTAssertThrowsError(
+            try database.query(
+                """
+                WITH RECURSIVE counter(n) AS (
+                    SELECT ROWID FROM messages
+                    UNION ALL SELECT n + 1 FROM counter WHERE n < 1000000000
+                ) SELECT sum(n) FROM counter
+                """
+            ) { $0.integer(0) }
+        ) { error in
+            XCTAssertEqual(error as? MailError, .queryTimedOut)
+        }
+        XCTAssertLessThan(start.duration(to: .now), .seconds(2))
+        XCTAssertEqual(checkpoint(), SQLITE_OK)
+        // An interrupted statement must not poison the next request.
+        XCTAssertEqual(try database.fetch(.init()).count, 3)
+    }
+
+    func testThrownTransformReleasesReadLock() throws {
+        let database = try MailDatabase(root: root)
+        XCTAssertThrowsError(
+            try database.query("SELECT ROWID FROM messages") { _ -> Int in
+                throw MailError.messageMismatch
+            }
+        ) { error in
+            XCTAssertEqual(error as? MailError, .messageMismatch)
+        }
+        XCTAssertEqual(checkpoint(), SQLITE_OK)
+    }
+
+    func testCancellationReleasesReadLockAndConnectionAdmission() async throws {
+        let root = try XCTUnwrap(root)
+        let task = Task {
+            let database = try MailDatabase(root: root)
+            return try database.query("SELECT ROWID FROM messages") { row in
+                withUnsafeCurrentTask { $0?.cancel() }
+                return row.integer(0)
+            }
+        }
+        do {
+            _ = try await task.value
+            XCTFail("Expected task cancellation")
+        } catch is CancellationError {
+            // Expected; no partial results are returned.
+        }
+        XCTAssertEqual(checkpoint(), SQLITE_OK)
+        XCTAssertEqual(try MailDatabase(root: root).fetch(.init()).count, 3)
+    }
+
+    func testRejectsOverlappingConnectionsAndAllowsReopen() throws {
+        let database = try MailDatabase(root: root)
+        XCTAssertThrowsError(try MailDatabase(root: root)) { error in
+            XCTAssertEqual(error as? MailError, .databaseBusy)
+        }
+        database.close()
+        database.close()
+        let reopened = try MailDatabase(root: root)
+        XCTAssertEqual(try reopened.fetch(.init()).count, 3)
+        XCTAssertThrowsError(try database.fetch(.init())) { error in
+            XCTAssertEqual(error as? MailError, .indexNotReadable)
+        }
+    }
+
+    func testBusyIndexFailsWithoutWaitingAndAllowsReopen() throws {
+        try execute("PRAGMA locking_mode=EXCLUSIVE; BEGIN EXCLUSIVE; UPDATE messages SET read=1;")
+        defer { try? execute("ROLLBACK; PRAGMA locking_mode=NORMAL;") }
+        let start = ContinuousClock.now
+        XCTAssertThrowsError(try MailDatabase(root: root)) { error in
+            XCTAssertEqual(error as? MailError, .databaseBusy)
+        }
+        XCTAssertLessThan(start.duration(to: .now), .milliseconds(500))
+        try execute("ROLLBACK; PRAGMA locking_mode=NORMAL; SELECT * FROM messages;")
+        XCTAssertEqual(try MailDatabase(root: root).fetch(.init()).count, 3)
+    }
+
+    func testRejectsRollbackJournalWithoutChangingIt() throws {
+        try execute("PRAGMA journal_mode=DELETE;")
+        XCTAssertThrowsError(try MailDatabase(root: root)) { error in
+            XCTAssertEqual(error as? MailError, .unsupportedJournalMode)
+        }
+        var statement: OpaquePointer?
+        XCTAssertEqual(sqlite3_prepare_v2(writer, "PRAGMA journal_mode", -1, &statement, nil), SQLITE_OK)
+        defer { sqlite3_finalize(statement) }
+        XCTAssertEqual(sqlite3_step(statement), SQLITE_ROW)
+        XCTAssertEqual(String(cString: sqlite3_column_text(statement, 0)), "delete")
+        try execute("INSERT INTO messages VALUES(4,1,1,1,400,0,'four@example.com')")
+    }
+
     func testSearchFiltersPaginationAndLiveWAL() throws {
         let database = try MailDatabase(root: root)
         XCTAssertEqual(try database.fetch(.init()).map(\.id), [3, 2, 1])

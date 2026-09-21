@@ -189,9 +189,10 @@ final class MailService: NSObject, Service, NSOpenSavePanelDelegate {
                 throw MailError.invalidArgument("id must be an identifier from mail_messages_search")
             }
 
-            // The grant must stay open until the message file is read.
+            // Keep the folder grant, but release SQLite before scanning message files.
             return try self.withDatabase { database in
                 let record = try database.record(for: identifier)
+                database.close()
                 let content = try self.files.read(record, version: database.versionURL)
                 return content.value(for: identifier)
             }
@@ -260,7 +261,17 @@ final class MailService: NSObject, Service, NSOpenSavePanelDelegate {
     // MARK: - Database Access
 
     private var canAccessDatabase: Bool {
-        return (try? withDatabase { _ in true }) ?? false
+        // Status checks must not join Mail's SQLite locking protocol.
+        // Schema and journal checks belong to explicit read requests.
+        do {
+            let root = try resolveBookmarkURL() ?? mailDirectoryURL
+            return try withSecurityScopedAccess(root) { root in
+                let location = try MailDatabase.location(in: root)
+                return FileManager.default.isReadableFile(atPath: location.index.path)
+            }
+        } catch {
+            return false
+        }
     }
 
     /// Opens the index in the bookmarked folder, or at the default path when nothing is bookmarked.
@@ -377,6 +388,9 @@ enum MailError: LocalizedError, Equatable {
     case indexNotFound
     case indexNotReadable
     case unsupportedSchema
+    case unsupportedJournalMode
+    case databaseBusy
+    case queryTimedOut
     case queryFailed(String)
     /// A file resolved to a location outside the folder that has to contain it.
     case notContained(String)
@@ -412,6 +426,15 @@ enum MailError: LocalizedError, Equatable {
                 "Mail access is unavailable. The index and its live WAL files must be readable. Switch Mail off and on to retry folder access."
         case .unsupportedSchema:
             return "Unsupported Mail Envelope Index schema."
+        case .unsupportedJournalMode:
+            return
+                "Mail reading is unavailable because the index is not in WAL mode. iMCP will not change Mail's database settings."
+        case .databaseBusy:
+            return
+                "Mail reading is busy. Try again later; iMCP does not wait for database locks or queue concurrent reads."
+        case .queryTimedOut:
+            return
+                "Mail reading stopped to limit interference with Mail. Use a narrower date range or more specific filters."
         case .queryFailed(let message):
             return "Could not read the live Mail index: \(message)"
         case .notContained(let item):
@@ -447,11 +470,18 @@ enum MailError: LocalizedError, Equatable {
 /// A read-only connection to the Envelope Index of the newest Mail store in a folder.
 /// The index is read live, without a copy and with its write-ahead log.
 final class MailDatabase {
+    // Overlapping readers can prevent WAL checkpoints from completing.
+    // Only hold this lock to reserve/release a connection, never during SQLite work.
+    private static let admission = OSAllocatedUnfairLock(initialState: false)
+
     /// The versioned store directory, such as `~/Library/Mail/V10`.
     let versionURL: URL
     private var connection: OpaquePointer?
+    private var hasAdmission = false
+    private let queryTimeLimit: Duration
 
-    init(root: URL) throws {
+    /// Finds the index without opening a SQLite connection.
+    static func location(in root: URL) throws -> (version: URL, index: URL) {
         let entries: [URL]
         do {
             entries = try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
@@ -470,7 +500,7 @@ final class MailDatabase {
             throw MailError.indexNotFound
         }
 
-        versionURL = version.resolvingSymlinksInPath()
+        let versionURL = version.resolvingSymlinksInPath()
         guard versionURL.isContained(in: root) else {
             throw MailError.notContained("The Mail store")
         }
@@ -478,16 +508,37 @@ final class MailDatabase {
         guard databaseURL.isContained(in: versionURL) else {
             throw MailError.notContained("The Mail index")
         }
+        return (versionURL, databaseURL)
+    }
 
-        let flags = SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX
-        guard sqlite3_open_v2(databaseURL.path, &connection, flags, nil) == SQLITE_OK else {
+    init(root: URL, queryTimeLimit: Duration = .milliseconds(100)) throws {
+        let location = try Self.location(in: root)
+        versionURL = location.version
+        self.queryTimeLimit = queryTimeLimit
+        try Task.checkCancellation()
+
+        hasAdmission = Self.admission.withLock { occupied in
+            guard !occupied else { return false }
+            occupied = true
+            return true
+        }
+        guard hasAdmission else { throw MailError.databaseBusy }
+
+        let flags = SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX | SQLITE_OPEN_PRIVATECACHE
+        guard sqlite3_open_v2(location.index.path, &connection, flags, nil) == SQLITE_OK else {
             log.error("Failed to open the Mail index: \(String(cString: sqlite3_errmsg(self.connection)))")
             close()
             throw MailError.indexNotReadable
         }
-        sqlite3_busy_timeout(connection, 1000)
+        // Yield immediately to Mail rather than waiting or retrying.
+        sqlite3_busy_timeout(connection, 0)
 
         do {
+            // Rollback-journal readers can block commits. Refuse that mode;
+            // never change the owner's journal settings or bypass its locks.
+            guard try query("PRAGMA journal_mode", transform: { $0.text(0) }).first == "wal" else {
+                throw MailError.unsupportedJournalMode
+            }
             for (table, columns) in [
                 "messages": ["ROWID", "mailbox", "subject", "sender", "date_received", "read", "message_id"],
                 "mailboxes": ["ROWID", "url"],
@@ -498,7 +549,10 @@ final class MailDatabase {
             }
         } catch {
             close()
-            throw MailError.unsupportedSchema
+            if case MailError.queryFailed = error {
+                throw MailError.unsupportedSchema
+            }
+            throw error
         }
     }
 
@@ -510,6 +564,10 @@ final class MailDatabase {
     func close() {
         sqlite3_close(connection)
         connection = nil
+        if hasAdmission {
+            Self.admission.withLock { $0 = false }
+            hasAdmission = false
+        }
     }
 
     func mailboxes() throws -> [MailboxRecord] {
@@ -588,28 +646,73 @@ final class MailDatabase {
         _ bindings: [Binding] = [],
         transform: (Row) throws -> T
     ) throws -> [T] {
-        var statement: OpaquePointer?
-        guard sqlite3_prepare_v2(connection, sql, -1, &statement, nil) == SQLITE_OK else {
-            throw MailError.queryFailed(String(cString: sqlite3_errmsg(connection)))
+        guard let connection else { throw MailError.indexNotReadable }
+        let budget = QueryBudget(timeLimit: queryTimeLimit)
+        try budget.check()
+        sqlite3_progress_handler(
+            connection,
+            1000,
+            { context in
+                guard let context else { return 1 }
+                let budget = Unmanaged<QueryBudget>.fromOpaque(context).takeUnretainedValue()
+                return budget.shouldStop ? 1 : 0
+            },
+            Unmanaged.passUnretained(budget).toOpaque()
+        )
+        defer {
+            sqlite3_progress_handler(connection, 0, nil, nil)
+            withExtendedLifetime(budget) {}
         }
+
+        var statement: OpaquePointer?
         defer { sqlite3_finalize(statement) }
+        try checkResult(sqlite3_prepare_v2(connection, sql, -1, &statement, nil), budget: budget)
 
         for (offset, binding) in bindings.enumerated() {
-            guard binding.bind(to: statement, at: Int32(offset + 1)) == SQLITE_OK else {
-                throw MailError.queryFailed(String(cString: sqlite3_errmsg(connection)))
-            }
+            try checkResult(binding.bind(to: statement, at: Int32(offset + 1)), budget: budget)
         }
 
         var results: [T] = []
         var result = sqlite3_step(statement)
         while result == SQLITE_ROW {
+            try budget.check()
             results.append(try transform(Row(statement: statement)))
+            try budget.check()
             result = sqlite3_step(statement)
         }
-        guard result == SQLITE_DONE else {
+        try checkResult(result, budget: budget)
+        return results
+    }
+
+    private func checkResult(_ result: Int32, budget: QueryBudget) throws {
+        try budget.check()
+        switch result & 0xff {
+        case SQLITE_OK, SQLITE_DONE:
+            return
+        case SQLITE_BUSY, SQLITE_LOCKED:
+            throw MailError.databaseBusy
+        default:
             throw MailError.queryFailed(String(cString: sqlite3_errmsg(connection)))
         }
-        return results
+    }
+
+    /// A cooperative deadline, including cancellation of the calling task.
+    /// SQLite cannot call the progress handler while blocked in filesystem I/O.
+    private final class QueryBudget {
+        let deadline: ContinuousClock.Instant
+
+        init(timeLimit: Duration) {
+            deadline = ContinuousClock.now.advanced(by: timeLimit)
+        }
+
+        var shouldStop: Bool {
+            Task.isCancelled || ContinuousClock.now >= deadline
+        }
+
+        func check() throws {
+            try Task.checkCancellation()
+            guard ContinuousClock.now < deadline else { throw MailError.queryTimedOut }
+        }
     }
 }
 
