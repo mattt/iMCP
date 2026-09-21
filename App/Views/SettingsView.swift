@@ -3,6 +3,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject var serverController: ServerController
+    var isMenuBarExtraInserted: Bool
     @State private var selectedSection: SettingsSection? = .general
 
     enum SettingsSection: String, CaseIterable, Identifiable {
@@ -40,9 +41,12 @@ struct SettingsView: View {
             if let selectedSection {
                 switch selectedSection {
                 case .general:
-                    GeneralSettingsView(serverController: serverController)
-                        .navigationTitle("General")
-                        .formStyle(.grouped)
+                    GeneralSettingsView(
+                        serverController: serverController,
+                        isMenuBarExtraInserted: isMenuBarExtraInserted
+                    )
+                    .navigationTitle("General")
+                    .formStyle(.grouped)
                 case .services:
                     ServicesSettingsView(serverController: serverController)
                         .navigationTitle("Services")
@@ -73,6 +77,7 @@ struct SettingsView: View {
 struct GeneralSettingsView: View {
     @AppStorage("showMenuBarExtra") private var showMenuBarExtra = true
     @ObservedObject var serverController: ServerController
+    var isMenuBarExtraInserted: Bool
     @State private var showingResetAlert = false
     @State private var selectedClients = Set<String>()
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
@@ -86,6 +91,17 @@ struct GeneralSettingsView: View {
             Section {
                 VStack(alignment: .leading, spacing: 4) {
                     Toggle("Show in Menu Bar", isOn: $showMenuBarExtra)
+
+                    if showMenuBarExtra && !isMenuBarExtraInserted {
+                        Group {
+                            Text("macOS hid the menu bar icon.")
+                            if #available(macOS 26.0, *) {
+                                Text("Check System Settings > Menu Bar.")
+                            }
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
 
                     Text("If the icon is hidden, open iMCP again to return to Settings.")
                         .font(.caption)

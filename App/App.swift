@@ -22,11 +22,13 @@ struct App: SwiftUI.App {
     )
 
     var body: some Scene {
+        @Bindable var appDelegate = appDelegate
+
         // The binding lets removal hide the item without terminating the server.
         MenuBarExtra(
             "iMCP",
             image: #"MenuIcon-\#(isEnabled ? "On" : "Off")"#,
-            isInserted: $showMenuBarExtra
+            isInserted: $appDelegate.isMenuBarExtraInserted
         ) {
             ContentView(
                 serverManager: serverController,
@@ -35,6 +37,9 @@ struct App: SwiftUI.App {
             )
         }
         .menuBarExtraStyle(.window)
+        .onChange(of: showMenuBarExtra) { _, showMenuBarExtra in
+            appDelegate.isMenuBarExtraInserted = showMenuBarExtra
+        }
         .onChange(of: appDelegate.shouldOpenSettings, initial: true) { _, shouldOpenSettings in
             guard shouldOpenSettings else { return }
             appDelegate.shouldOpenSettings = false
@@ -43,7 +48,10 @@ struct App: SwiftUI.App {
         }
 
         Settings {
-            SettingsView(serverController: serverController)
+            SettingsView(
+                serverController: serverController,
+                isMenuBarExtraInserted: appDelegate.isMenuBarExtraInserted
+            )
         }
 
         .commands {
@@ -60,6 +68,9 @@ struct App: SwiftUI.App {
 @Observable
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var shouldOpenSettings = false
+    // System removal must not overwrite the user's saved preference.
+    var isMenuBarExtraInserted =
+        UserDefaults.standard.object(forKey: "showMenuBarExtra") as? Bool ?? true
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // An unset preference defaults to showing the menu bar item.
