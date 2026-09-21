@@ -619,6 +619,8 @@ actor NetworkDiscoveryManager {
         let parameters = NWParameters.tcp
         parameters.acceptLocalOnly = true
         parameters.includePeerToPeer = false
+        // Match the IPv4 protocol below to avoid NECP errors for an IPv6 wildcard.
+        parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.any), port: .any)
 
         if let tcpOptions = parameters.defaultProtocolStack.internetProtocol
             as? NWProtocolIP.Options
@@ -684,6 +686,8 @@ actor NetworkDiscoveryManager {
         let parameters: NWParameters = NWParameters.tcp  // Explicit type
         parameters.acceptLocalOnly = true
         parameters.includePeerToPeer = false
+        // Match the IPv4 protocol below to avoid NECP errors for an IPv6 wildcard.
+        parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.any), port: .any)
 
         if let tcpOptions = parameters.defaultProtocolStack.internetProtocol
             as? NWProtocolIP.Options
