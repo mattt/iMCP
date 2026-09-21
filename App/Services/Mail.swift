@@ -60,7 +60,8 @@ final class MailService: NSObject, Service, NSOpenSavePanelDelegate {
     var tools: [Tool] {
         Tool(
             name: "mail_mailboxes_list",
-            description: "List mailboxes in the local Mail index. Requires folder access.",
+            description:
+                "List mailboxes in the local Mail index. Use each @id as the mailbox search filter. Account email is included when available. Requires folder access.",
             inputSchema: .object(
                 properties: [:],
                 additionalProperties: false
@@ -84,7 +85,7 @@ final class MailService: NSObject, Service, NSOpenSavePanelDelegate {
         Tool(
             name: "mail_messages_search",
             description:
-                "Search local sender and subject metadata. Filters combine with AND; newest first. Does not search bodies or download messages.",
+                "Search local sender and subject metadata. Filters combine with AND; newest first. Does not search bodies or download messages. Sync status is unknown; empty results do not prove the server mailbox is empty.",
             inputSchema: .object(
                 properties: [
                     "sender": .string(
@@ -94,7 +95,8 @@ final class MailService: NSObject, Service, NSOpenSavePanelDelegate {
                         description: "Subject substring"
                     ),
                     "mailbox": .string(
-                        description: "Mailbox identifier from mail_mailboxes_list"
+                        description:
+                            "The numeric @id string from mail_mailboxes_list, for example \"12\". Do not use the url field."
                     ),
                     "start": .string(
                         description:
@@ -134,11 +136,8 @@ final class MailService: NSObject, Service, NSOpenSavePanelDelegate {
             var request = MailRecord.FetchRequest()
             request.sender = try self.argument("sender", in: arguments, as: \.stringValue)
             request.subject = try self.argument("subject", in: arguments, as: \.stringValue)
-            if let mailbox = try self.argument("mailbox", in: arguments, as: \.stringValue) {
-                guard let id = Int64(mailbox), id > 0 else {
-                    throw MailError.invalidArgument("mailbox must be an identifier from mail_mailboxes_list")
-                }
-                request.mailbox = id
+            if let mailbox = arguments["mailbox"], !mailbox.isNull {
+                request.mailbox = try MailboxRecord.parseIdentifier(mailbox)
             }
             if let start = try self.argument("start", in: arguments, as: \.stringValue) {
                 guard let parsed = ISO8601DateFormatter.parsedLenientISO8601Date(fromISO8601String: start) else {
@@ -162,14 +161,7 @@ final class MailService: NSObject, Service, NSOpenSavePanelDelegate {
             request.limit = try self.argument("limit", in: arguments, as: \.intValue) ?? defaultLimit
             request.offset = try self.argument("offset", in: arguments, as: \.intValue) ?? 0
 
-            let records = try self.withDatabase { try $0.fetch(request) }
-
-            log.debug("Successfully fetched \(records.count) messages")
-            return [
-                "@context": "https://schema.org",
-                "@type": "ItemList",
-                "itemListElement": Value.array(records.map(\.value)),
-            ]
+            return try self.withDatabase { try $0.search(request) }
         }
 
         Tool(
@@ -521,11 +513,44 @@ final class MailDatabase {
     }
 
     func mailboxes() throws -> [MailboxRecord] {
-        try query("SELECT ROWID, url FROM mailboxes ORDER BY url, ROWID", transform: MailboxRecord.init)
+        let accounts = MailAccount.load(in: versionURL)
+        return try query("SELECT ROWID, url FROM mailboxes ORDER BY url, ROWID") {
+            try MailboxRecord($0, version: versionURL, accounts: accounts)
+        }
+    }
+
+    func search(_ request: MailRecord.FetchRequest) throws -> Value {
+        let records = try fetch(request)
+        // Count the selected local scope without the search filters or pagination.
+        let scope = MailRecord.FetchRequest(mailbox: request.mailbox)
+        let (sql, bindings) = scope.statement(matchesLabels: try hasLabels, countOnly: true)
+        let count = try query(sql, bindings) { $0.integer(0) ?? 0 }.first ?? 0
+        return [
+            "@context": "https://schema.org",
+            "@type": "ItemList",
+            "itemListElement": .array(records.map(\.value)),
+            "localIndex": [
+                "indexedMessageCount": .int(Int(count)),
+                "syncStatus": "unknown",
+                "description": .string(
+                    count == 0
+                        ? "No messages are indexed locally in the selected scope. The mailbox may be empty or Mail may not have indexed it yet. Open Mail to check account sync."
+                        : "The count covers locally indexed messages in the selected scope before search filters and pagination. Sync status and server message counts are unavailable."
+                ),
+            ],
+        ]
     }
 
     func fetch(_ request: MailRecord.FetchRequest) throws -> [MailRecord] {
         try request.validate()
+        if let mailbox = request.mailbox {
+            let exists = try query("SELECT 1 FROM mailboxes WHERE ROWID = ?", [.integer(mailbox)]) { _ in true }
+            guard !exists.isEmpty else {
+                throw MailError.invalidArgument(
+                    "mailbox does not exist in the local index. Use a current numeric @id string from mail_mailboxes_list, for example \"12\"; do not use the url field."
+                )
+            }
+        }
         let (sql, bindings) = request.statement(matchesLabels: try hasLabels)
         return try query(sql, bindings) { try MailRecord($0, store: versionURL.lastPathComponent) }
     }
@@ -631,21 +656,80 @@ extension MailDatabase {
 
 private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
+/// Optional account labels stored inside the granted Mail folder.
+struct MailAccount {
+    let id: String
+    let email: String?
+
+    static func load(in version: URL) -> [String: MailAccount] {
+        let url = version.appendingPathComponent("MailData/Signatures/AccountsMap.plist")
+        guard url.isContained(in: version),
+            let data = try? Data(contentsOf: url),
+            let entries = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
+        else { return [:] }
+
+        var accounts: [String: MailAccount] = [:]
+        for (id, entry) in entries {
+            guard let uuid = UUID(uuidString: id),
+                let entry = entry as? [String: Any],
+                let value = entry["AccountURL"] as? String,
+                let components = URLComponents(string: value),
+                let user = components.user, user.contains("@")
+            else { continue }
+            accounts[uuid.uuidString] = MailAccount(id: id, email: user)
+        }
+        return accounts
+    }
+
+    var value: Value {
+        [
+            "@id": .string(id),
+            "email": email.map(Value.string) ?? .null,
+        ]
+    }
+}
+
 /// A row of the `mailboxes` table.
 struct MailboxRecord {
     let id: Int64
     let url: String
+    let account: MailAccount?
 
     var name: String {
         URL(string: url)?.lastPathComponent ?? url
     }
 
-    fileprivate init(_ row: MailDatabase.Row) throws {
+    static func parseIdentifier(_ value: Value) throws -> Int64 {
+        guard let value = value.stringValue,
+            !value.isEmpty, value.utf8.allSatisfy({ (48 ... 57).contains($0) }),
+            let id = Int64(value), id > 0
+        else {
+            throw MailError.invalidArgument(
+                "mailbox must be a positive numeric @id string from mail_mailboxes_list, for example \"12\"; do not use the url field."
+            )
+        }
+        return id
+    }
+
+    fileprivate init(_ row: MailDatabase.Row, version: URL, accounts: [String: MailAccount]) throws {
         guard let id = row.integer(0) else {
             throw MailError.unsupportedSchema
         }
         self.id = id
         self.url = row.text(1) ?? ""
+        let mailboxURL = URL(string: url)
+        let accountID: String?
+        if let mailboxURL, mailboxURL.isFileURL, mailboxURL.isContained(in: version) {
+            accountID =
+                mailboxURL.standardizedFileURL.pathComponents.dropFirst(
+                    version.standardizedFileURL.pathComponents.count
+                ).first
+        } else {
+            accountID = mailboxURL?.host
+        }
+        account = accountID.map {
+            accounts[UUID(uuidString: $0)?.uuidString ?? $0] ?? MailAccount(id: $0, email: nil)
+        }
     }
 
     /// The mailbox as a JSON object for tool output.
@@ -655,6 +739,7 @@ struct MailboxRecord {
             "@type": "Collection",
             "name": .string(name),
             "url": .string(url),
+            "account": account?.value ?? .null,
         ]
     }
 }
@@ -755,7 +840,9 @@ extension MailRecord {
         }
 
         /// The SQL and its bound values, in placeholder order.
-        fileprivate func statement(matchesLabels: Bool) -> (sql: String, bindings: [MailDatabase.Binding]) {
+        fileprivate func statement(matchesLabels: Bool, countOnly: Bool = false) -> (
+            sql: String, bindings: [MailDatabase.Binding]
+        ) {
             var conditions: [String] = []
             var bindings: [MailDatabase.Binding] = []
 
@@ -798,19 +885,24 @@ extension MailRecord {
                 conditions.append("m.ROWID = ?")
                 bindings.append(.integer(id))
             }
-            bindings += [.integer(Int64(limit)), .integer(Int64(offset))]
+            if !countOnly {
+                bindings += [.integer(Int64(limit)), .integer(Int64(offset))]
+            }
 
             let whereClause =
                 conditions.isEmpty ? "" : "WHERE " + conditions.joined(separator: " AND ")
+            let columns =
+                countOnly
+                ? "COUNT(*)" : "m.ROWID, m.mailbox, b.url, s.subject, a.address, m.date_received, m.read, m.message_id"
+            let pagination = countOnly ? "" : "ORDER BY m.date_received DESC, m.ROWID DESC LIMIT ? OFFSET ?"
             let sql = """
-                SELECT m.ROWID, m.mailbox, b.url, s.subject, a.address, m.date_received, m.read, m.message_id
+                SELECT \(columns)
                 FROM messages m
                 JOIN mailboxes b ON b.ROWID = m.mailbox
                 LEFT JOIN subjects s ON s.ROWID = m.subject
                 LEFT JOIN addresses a ON a.ROWID = m.sender
                 \(whereClause)
-                ORDER BY m.date_received DESC, m.ROWID DESC
-                LIMIT ? OFFSET ?
+                \(pagination)
                 """
             return (sql, bindings)
         }

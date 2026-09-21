@@ -140,6 +140,32 @@ giving you complete control over what information iMCP can access.
 
 <br clear="all">
 
+### Mail access and search
+
+Mail reading requires access to `~/Library/Mail`.
+If folder access is unavailable, `mail_compose` can still open a compose window
+in the default email app.
+It does not save or send a message.
+
+Use the numeric `@id` string from `mail_mailboxes_list` as the `mailbox` filter
+in `mail_messages_search`, for example `{"mailbox": "12"}`.
+The `url` field describes storage and is not a search identifier.
+Each mailbox includes an account identifier when available.
+The account's `email` field comes from Mail's local account map;
+it is `null` when that map is missing or does not contain an email address.
+
+Search results include `localIndex.indexedMessageCount` for the selected mailbox,
+or all mailboxes when no mailbox is selected, before filters and pagination.
+This count includes label membership without counting a message twice.
+Sync status is reported as `unknown`.
+A count of zero can mean an empty mailbox or missing local indexing;
+it cannot show whether Mail has ever indexed the account.
+Open Mail to check account sync.
+
+Search matches sender and subject metadata only.
+`mail_messages_read` can read the local content of a returned message.
+Body search is not available, and these tools do not download messages.
+
 ### Connect to Claude Desktop
 
 If you don't have Claude Desktop installed,

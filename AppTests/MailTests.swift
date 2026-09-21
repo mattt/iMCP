@@ -97,6 +97,101 @@ final class MailTests: XCTestCase {
         XCTAssertEqual(try database.mailboxes().count, 2)
     }
 
+    func testListedMailboxIdentifierWorksAsSearchFilter() throws {
+        let database = try MailDatabase(root: root)
+        let listed = try XCTUnwrap(database.mailboxes().first { $0.id == 1 })
+        let identifier = try XCTUnwrap(listed.value.objectValue?["@id"]?.stringValue)
+        let request = MailRecord.FetchRequest(mailbox: try MailboxRecord.parseIdentifier(.string(identifier)))
+        XCTAssertEqual(try database.fetch(request).map(\.id), [3, 2, 1])
+        XCTAssertThrowsError(try MailboxRecord.parseIdentifier(.string(listed.url))) { error in
+            XCTAssertTrue(error.localizedDescription.contains("@id"))
+            XCTAssertTrue(error.localizedDescription.contains("\"12\""))
+            XCTAssertTrue(error.localizedDescription.contains("url field"))
+        }
+        for invalid in ["", "0", "-1", "+1", " 1", "1.0", "INBOX", "9223372036854775808"] {
+            XCTAssertThrowsError(try MailboxRecord.parseIdentifier(.string(invalid)), invalid)
+        }
+        XCTAssertThrowsError(try MailboxRecord.parseIdentifier(.int(1)))
+        XCTAssertThrowsError(try database.search(.init(mailbox: 999))) { error in
+            XCTAssertTrue(error.localizedDescription.contains("does not exist"))
+        }
+    }
+
+    func testSearchExplainsLocalIndexCoverage() throws {
+        let database = try MailDatabase(root: root)
+        // A label and home membership must count the message only once.
+        try execute("INSERT INTO labels VALUES (1,1), (2,1)")
+        var request = MailRecord.FetchRequest(subject: "No match", mailbox: 1)
+        var result = try XCTUnwrap(database.search(request).objectValue)
+        XCTAssertEqual(result["itemListElement"]?.arrayValue?.count, 0)
+        XCTAssertEqual(result["localIndex"]?.objectValue?["indexedMessageCount"]?.intValue, 3)
+        XCTAssertEqual(result["localIndex"]?.objectValue?["syncStatus"]?.stringValue, "unknown")
+
+        request.subject = nil
+        request.offset = 100
+        result = try XCTUnwrap(database.search(request).objectValue)
+        XCTAssertEqual(result["itemListElement"]?.arrayValue?.count, 0)
+        XCTAssertEqual(result["localIndex"]?.objectValue?["indexedMessageCount"]?.intValue, 3)
+
+        try execute("INSERT INTO mailboxes VALUES (3, 'imap://account/Empty')")
+        result = try XCTUnwrap(database.search(.init(mailbox: 3)).objectValue)
+        let coverage = try XCTUnwrap(result["localIndex"]?.objectValue)
+        XCTAssertEqual(coverage["indexedMessageCount"]?.intValue, 0)
+        XCTAssertEqual(coverage["syncStatus"]?.stringValue, "unknown")
+        XCTAssertTrue(coverage["description"]?.stringValue?.contains("may not have indexed it yet") == true)
+
+        try execute("DROP TABLE labels")
+        result = try XCTUnwrap(database.search(.init(mailbox: 1)).objectValue)
+        XCTAssertEqual(result["localIndex"]?.objectValue?["indexedMessageCount"]?.intValue, 2)
+        result = try XCTUnwrap(database.search(.init()).objectValue)
+        XCTAssertEqual(result["localIndex"]?.objectValue?["indexedMessageCount"]?.intValue, 3)
+    }
+
+    func testAccountLabelsAndMissingMetadata() throws {
+        let first = "11111111-1111-4111-8111-111111111111"
+        let second = "22222222-2222-4222-8222-222222222222"
+        let third = "33333333-3333-4333-8333-333333333333"
+        try execute(
+            """
+            UPDATE mailboxes SET url = 'imap://\(first)/INBOX' WHERE ROWID = 1;
+            UPDATE mailboxes SET url = 'imap://\(second)/INBOX' WHERE ROWID = 2;
+            INSERT INTO mailboxes VALUES (3, 'imap://\(third)/INBOX');
+            INSERT INTO mailboxes VALUES (4, '\(version.appendingPathComponent(first + "/Archive.mbox").absoluteString)');
+            """
+        )
+        let database = try MailDatabase(root: root)
+        XCTAssertTrue(try database.mailboxes().allSatisfy { $0.account?.email == nil })
+        let metadata = version.appendingPathComponent("MailData/Signatures/AccountsMap.plist")
+        try FileManager.default.createDirectory(
+            at: metadata.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let entries: [String: Any] = [
+            first: ["AccountURL": "imap://personal%2Bmail%40example.com@imap.example.com/"],
+            second: ["AccountURL": "imap://work%40example.com@imap.example.com/"],
+            third: ["AccountURL": "imap://username@imap.example.com/"],
+            "invalid-entry": "not an account",
+        ]
+        try PropertyListSerialization.data(fromPropertyList: entries, format: .binary, options: 0).write(to: metadata)
+        let mailboxes = try database.mailboxes()
+        let personal = try XCTUnwrap(mailboxes.first { $0.id == 1 })
+        let work = try XCTUnwrap(mailboxes.first { $0.id == 2 })
+        XCTAssertEqual(personal.name, work.name)
+        XCTAssertEqual(personal.account?.email, "personal+mail@example.com")
+        XCTAssertEqual(work.value.objectValue?["account"]?.objectValue?["email"]?.stringValue, "work@example.com")
+        XCTAssertEqual(mailboxes.first { $0.id == 3 }?.account?.id, third)
+        XCTAssertNil(mailboxes.first { $0.id == 3 }?.account?.email)
+        XCTAssertEqual(mailboxes.first { $0.id == 4 }?.account?.email, "personal+mail@example.com")
+
+        try Data("invalid plist".utf8).write(to: metadata)
+        XCTAssertTrue(try database.mailboxes().allSatisfy { $0.account?.email == nil })
+        try FileManager.default.removeItem(at: metadata)
+        let outside = root.appendingPathComponent("Outside.plist")
+        try PropertyListSerialization.data(fromPropertyList: entries, format: .xml, options: 0).write(to: outside)
+        try FileManager.default.createSymbolicLink(at: metadata, withDestinationURL: outside)
+        XCTAssertTrue(try database.mailboxes().allSatisfy { $0.account?.email == nil })
+    }
+
     func testDiscoveryAndUnsupportedSchema() throws {
         try FileManager.default.createDirectory(
             at: root.appendingPathComponent("V99"),
