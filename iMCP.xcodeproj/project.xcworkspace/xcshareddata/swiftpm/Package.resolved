@@ -1,5 +1,5 @@
 {
-  "originHash" : "ef84066429fbd998da047140f11ad84f410b82811512bb502cfd69ad588f22d1",
+  "originHash" : "04853f53da3772f59984475040a720e65e6758f81593f61b0ae4bbb04d5cbaad",
   "pins" : [
     {
       "identity" : "eventsource",
@@ -33,8 +33,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/loopwork-ai/Ontology",
       "state" : {
-        "revision" : "3d1d2545b826909a3f6499f2ef661429bf9c10d5",
-        "version" : "0.8.0"
+        "revision" : "8c57a9162cbe0a27d84d63428fcb697e2fa22a3a",
+        "version" : "0.10.0"
       }
     },
     {
