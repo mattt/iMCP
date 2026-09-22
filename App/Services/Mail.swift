@@ -15,10 +15,11 @@ private let defaultLimit = 30
 private let maximumLimit = 100
 private let maximumMessageSize = 32 * 1024 * 1024
 
-final class MailService: NSObject, Service, NSOpenSavePanelDelegate {
+final class MailService: NSObject, Service, NSOpenSavePanelDelegate, Sendable {
     static let shared = MailService()
 
     private let files = MailFiles()
+    private let worker = MailWorker()
 
     var isActivated: Bool {
         get async {
@@ -34,6 +35,7 @@ final class MailService: NSObject, Service, NSOpenSavePanelDelegate {
     /// `mail_compose` needs no folder access,
     /// so a canceled or denied grant must leave the service on.
     func activate() async throws {
+        guard !Task.isCancelled else { return }
         if canAccessDatabase {
             log.debug("Using the Mail index with the current grant")
             return
@@ -41,13 +43,20 @@ final class MailService: NSObject, Service, NSOpenSavePanelDelegate {
 
         log.debug("Opening folder picker for the Mail folder")
         guard let selectedURL = await showFolderPicker() else { return }
+        guard !Task.isCancelled else { return }
 
         do {
-            try withSecurityScopedAccess(selectedURL) { url in
-                _ = try MailDatabase(root: url)
-                try storeBookmark(for: url)
+            try await worker.run { cancellation in
+                try self.withSecurityScopedAccess(selectedURL) { url in
+                    let database = try MailDatabase(root: url, cancellation: cancellation)
+                    defer { database.close() }
+                    try cancellation.check()
+                    try self.storeBookmark(for: url)
+                }
             }
             log.debug("Granted access to the Mail folder")
+        } catch is CancellationError {
+            return
         } catch {
             log.error("Mail folder access failed: \(error.localizedDescription)")
             await showAlert(
@@ -72,7 +81,7 @@ final class MailService: NSObject, Service, NSOpenSavePanelDelegate {
                 openWorldHint: false
             )
         ) { _ in
-            let mailboxes = try self.withDatabase { try $0.mailboxes() }
+            let mailboxes = try await self.withDatabase { database, _ in try database.mailboxes() }
 
             log.debug("Successfully listed \(mailboxes.count) mailboxes")
             return [
@@ -161,7 +170,8 @@ final class MailService: NSObject, Service, NSOpenSavePanelDelegate {
             request.limit = try self.argument("limit", in: arguments, as: \.intValue) ?? defaultLimit
             request.offset = try self.argument("offset", in: arguments, as: \.intValue) ?? 0
 
-            return try self.withDatabase { try $0.search(request) }
+            let fetchRequest = request
+            return try await self.withDatabase { database, _ in try database.search(fetchRequest) }
         }
 
         Tool(
@@ -190,10 +200,10 @@ final class MailService: NSObject, Service, NSOpenSavePanelDelegate {
             }
 
             // Keep the folder grant, but release SQLite before scanning message files.
-            return try self.withDatabase { database in
+            return try await self.withDatabase { database, cancellation in
                 let record = try database.record(for: identifier)
                 database.close()
-                let content = try self.files.read(record, version: database.versionURL)
+                let content = try self.files.read(record, version: database.versionURL, cancellation: cancellation)
                 return content.value(for: identifier)
             }
         }
@@ -275,15 +285,19 @@ final class MailService: NSObject, Service, NSOpenSavePanelDelegate {
     }
 
     /// Opens the index in the bookmarked folder, or at the default path when nothing is bookmarked.
-    private func withDatabase<T>(_ operation: (MailDatabase) throws -> T) throws -> T {
-        let root = try resolveBookmarkURL() ?? mailDirectoryURL
+    private func withDatabase<T: Sendable>(
+        _ operation: @Sendable @escaping (MailDatabase, MailCancellation) throws -> T
+    ) async throws -> T {
+        try await worker.run { cancellation in
+            let root = try self.resolveBookmarkURL() ?? mailDirectoryURL
 
-        // The grant must stay open until the last read:
-        // SQLite opens the write-ahead log lazily on the first statement.
-        return try withSecurityScopedAccess(root) { root in
-            let database = try MailDatabase(root: root)
-            defer { database.close() }
-            return try operation(database)
+            // The grant must stay open until the last read:
+            // SQLite opens the write-ahead log lazily on the first statement.
+            return try self.withSecurityScopedAccess(root) { root in
+                let database = try MailDatabase(root: root, cancellation: cancellation)
+                defer { database.close() }
+                return try operation(database, cancellation)
+            }
         }
     }
 
@@ -467,6 +481,63 @@ enum MailError: LocalizedError, Equatable {
 
 // MARK: -
 
+/// Carries task cancellation into synchronous work on a dispatch queue.
+struct MailCancellation: Sendable {
+    private let cancelled = OSAllocatedUnfairLock(initialState: false)
+
+    var isCancelled: Bool {
+        Task.isCancelled || cancelled.withLock { $0 }
+    }
+
+    func cancel() {
+        cancelled.withLock { $0 = true }
+    }
+
+    func check() throws {
+        if isCancelled { throw CancellationError() }
+    }
+}
+
+/// Runs one blocking Mail operation at a time outside the cooperative executor.
+/// Overlapping requests fail immediately, including while message files are read.
+final class MailWorker: Sendable {
+    private let queue = DispatchQueue(label: "me.mattt.iMCP.mail", qos: .utility)
+    private let occupied = OSAllocatedUnfairLock(initialState: false)
+
+    func run<T: Sendable>(
+        _ operation: @Sendable @escaping (MailCancellation) throws -> T
+    ) async throws -> T {
+        try Task.checkCancellation()
+        let admitted = occupied.withLock { occupied in
+            guard !occupied else { return false }
+            occupied = true
+            return true
+        }
+        guard admitted else { throw MailError.databaseBusy }
+
+        let cancellation = MailCancellation()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                queue.async {
+                    let result = Result {
+                        try cancellation.check()
+                        let value = try operation(cancellation)
+                        try cancellation.check()
+                        return value
+                    }
+                    // Release admission before resuming the caller, even on failure.
+                    self.occupied.withLock { $0 = false }
+                    continuation.resume(with: result)
+                }
+            }
+        } onCancel: {
+            cancellation.cancel()
+        }
+    }
+}
+
+// MARK: -
+
 /// A read-only connection to the Envelope Index of the newest Mail store in a folder.
 /// The index is read live, without a copy and with its write-ahead log.
 final class MailDatabase {
@@ -479,6 +550,7 @@ final class MailDatabase {
     private var connection: OpaquePointer?
     private var hasAdmission = false
     private let queryTimeLimit: Duration
+    private let cancellation: MailCancellation
 
     /// Finds the index without opening a SQLite connection.
     static func location(in root: URL) throws -> (version: URL, index: URL) {
@@ -511,11 +583,17 @@ final class MailDatabase {
         return (versionURL, databaseURL)
     }
 
-    init(root: URL, queryTimeLimit: Duration = .milliseconds(100)) throws {
+    init(
+        root: URL,
+        queryTimeLimit: Duration = .milliseconds(100),
+        cancellation: MailCancellation = MailCancellation()
+    ) throws {
+        try cancellation.check()
         let location = try Self.location(in: root)
         versionURL = location.version
         self.queryTimeLimit = queryTimeLimit
-        try Task.checkCancellation()
+        self.cancellation = cancellation
+        try cancellation.check()
 
         hasAdmission = Self.admission.withLock { occupied in
             guard !occupied else { return false }
@@ -647,7 +725,7 @@ final class MailDatabase {
         transform: (Row) throws -> T
     ) throws -> [T] {
         guard let connection else { throw MailError.indexNotReadable }
-        let budget = QueryBudget(timeLimit: queryTimeLimit)
+        let budget = QueryBudget(timeLimit: queryTimeLimit, cancellation: cancellation)
         try budget.check()
         sqlite3_progress_handler(
             connection,
@@ -700,17 +778,19 @@ final class MailDatabase {
     /// SQLite cannot call the progress handler while blocked in filesystem I/O.
     private final class QueryBudget {
         let deadline: ContinuousClock.Instant
+        let cancellation: MailCancellation
 
-        init(timeLimit: Duration) {
+        init(timeLimit: Duration, cancellation: MailCancellation) {
             deadline = ContinuousClock.now.advanced(by: timeLimit)
+            self.cancellation = cancellation
         }
 
         var shouldStop: Bool {
-            Task.isCancelled || ContinuousClock.now >= deadline
+            cancellation.isCancelled || ContinuousClock.now >= deadline
         }
 
         func check() throws {
-            try Task.checkCancellation()
+            try cancellation.check()
             guard ContinuousClock.now < deadline else { throw MailError.queryTimedOut }
         }
     }
@@ -1044,8 +1124,10 @@ struct MailContent {
     let attachments: [String]
     let messageID: String?
 
-    init(emlx data: Data) throws {
+    init(emlx data: Data, cancellation: MailCancellation = MailCancellation()) throws {
+        try cancellation.check()
         let payload = try Self.payload(of: data)
+        try cancellation.check()
 
         let message: MimeMessage
         do {
@@ -1053,11 +1135,12 @@ struct MailContent {
         } catch {
             throw MailError.malformedMessage(error.localizedDescription)
         }
+        try cancellation.check()
         guard !message.headers.isEmpty else {
             throw MailError.malformedMessage("no MIME headers")
         }
         if let body = message.body {
-            try Self.validate(body, in: payload)
+            try Self.validate(body, in: payload, cancellation: cancellation)
         }
 
         let plain = message.textBody
@@ -1070,6 +1153,7 @@ struct MailContent {
         mediaType = plain != nil ? "text/plain" : "text/html"
         attachments = message.attachments.compactMap { ($0 as? MimePart)?.fileName }
         messageID = message.messageId
+        try cancellation.check()
     }
 
     /// Returns the MIME payload of an `.emlx` file:
@@ -1101,7 +1185,13 @@ struct MailContent {
     }
 
     /// Rejects content that the parser accepts but cannot return as complete text.
-    private static func validate(_ entity: MimeEntity, in payload: Data, depth: Int = 0) throws {
+    private static func validate(
+        _ entity: MimeEntity,
+        in payload: Data,
+        depth: Int = 0,
+        cancellation: MailCancellation
+    ) throws {
+        try cancellation.check()
         guard depth < 64 else {
             throw MailError.unsupportedMessage("MIME nesting is too deep")
         }
@@ -1145,7 +1235,7 @@ struct MailContent {
                 throw MailError.partialMessage
             }
             for child in multipart {
-                try validate(child, in: payload, depth: depth + 1)
+                try validate(child, in: payload, depth: depth + 1, cancellation: cancellation)
             }
         }
     }
@@ -1166,22 +1256,29 @@ struct MailContent {
 
 /// Finds and reads the `.emlx` files of indexed messages.
 /// Cache entries are hints only. Every read checks containment and identity again.
-final class MailFiles {
+final class MailFiles: Sendable {
     private let cache = OSAllocatedUnfairLock(initialState: [MailRecord.Identifier: URL]())
 
-    func read(_ record: MailRecord, version: URL) throws -> MailContent {
+    func read(
+        _ record: MailRecord,
+        version: URL,
+        cancellation: MailCancellation = MailCancellation()
+    ) throws -> MailContent {
+        try cancellation.check()
         let mailbox = try mailboxDirectory(record.mailboxURL, version: version)
 
         if let cached = cache.withLock({ $0[record.identifier] }) {
             do {
-                return try load(cached, for: record, in: mailbox, version: version)
+                return try load(cached, for: record, in: mailbox, version: version, cancellation: cancellation)
+            } catch let error as CancellationError {
+                throw error
             } catch {
                 cache.withLock { _ = $0.removeValue(forKey: record.identifier) }
             }
         }
 
-        let url = try locate(record, in: mailbox)
-        let content = try load(url, for: record, in: mailbox, version: version)
+        let url = try locate(record, in: mailbox, cancellation: cancellation)
+        let content = try load(url, for: record, in: mailbox, version: version, cancellation: cancellation)
         cache.withLock {
             if $0.count >= 1000 { $0.removeAll() }
             $0[record.identifier] = url
@@ -1218,7 +1315,8 @@ final class MailFiles {
     }
 
     /// Searches a mailbox for the one file that holds a message.
-    private func locate(_ record: MailRecord, in mailbox: URL) throws -> URL {
+    private func locate(_ record: MailRecord, in mailbox: URL, cancellation: MailCancellation) throws -> URL {
+        try cancellation.check()
         guard
             let entries = FileManager.default.enumerator(
                 at: mailbox,
@@ -1232,6 +1330,7 @@ final class MailFiles {
         var candidates: [URL] = []
         var isPartial = false
         for case let url as URL in entries {
+            try cancellation.check()
             let isSymbolicLink = (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true
             // Nested mailboxes have separate membership.
             if isSymbolicLink || url.pathExtension == "mbox" {
@@ -1249,13 +1348,21 @@ final class MailFiles {
             }
         }
 
+        try cancellation.check()
         guard candidates.count == 1, let url = candidates.first else {
             throw isPartial ? MailError.partialMessage : MailError.messageFileNotFound
         }
         return url
     }
 
-    private func load(_ url: URL, for record: MailRecord, in mailbox: URL, version: URL) throws -> MailContent {
+    private func load(
+        _ url: URL,
+        for record: MailRecord,
+        in mailbox: URL,
+        version: URL,
+        cancellation: MailCancellation
+    ) throws -> MailContent {
+        try cancellation.check()
         guard url.isContained(in: mailbox), url.isContained(in: version) else {
             throw MailError.notContained("The message file")
         }
@@ -1264,7 +1371,8 @@ final class MailFiles {
             throw MailError.messageFileTooLarge
         }
 
-        let content = try MailContent(emlx: Data(contentsOf: url))
+        try cancellation.check()
+        let content = try MailContent(emlx: Data(contentsOf: url), cancellation: cancellation)
         if record.messageID.contains("@") {
             let brackets = CharacterSet(charactersIn: "<>")
             guard

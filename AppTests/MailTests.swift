@@ -175,6 +175,99 @@ final class MailTests: XCTestCase {
         }
     }
 
+    @MainActor
+    func testWorkerRejectsOverlapAndReleasesAdmissionAfterCancellation() async throws {
+        let worker = MailWorker()
+        let entered = expectation(description: "Worker started")
+        // Only the dispatch worker waits on this semaphore, never an async task.
+        let release = DispatchSemaphore(value: 0)
+        defer { release.signal() }
+        let task = Task {
+            try await worker.run { _ in
+                XCTAssertFalse(Thread.isMainThread)
+                entered.fulfill()
+                guard release.wait(timeout: .now() + 5) == .success else {
+                    throw MailError.queryTimedOut
+                }
+                return 1
+            }
+        }
+        await fulfillment(of: [entered], timeout: 2)
+        do {
+            _ = try await worker.run { _ in 2 }
+            XCTFail("Expected the overlapping operation to be rejected")
+        } catch {
+            XCTAssertEqual(error as? MailError, .databaseBusy)
+        }
+
+        task.cancel()
+        release.signal()
+        do {
+            _ = try await task.value
+            XCTFail("Expected cancellation instead of the worker's result")
+        } catch is CancellationError {
+            // The worker must release admission before returning cancellation.
+        }
+        let result = try await worker.run { _ in 3 }
+        XCTAssertEqual(result, 3)
+    }
+
+    func testWorkerCancellationInterruptsQueryAndReleasesReadLock() async throws {
+        let root = try XCTUnwrap(root)
+        let worker = MailWorker()
+        let entered = expectation(description: "Query returned its first row")
+        let task = Task {
+            try await worker.run { cancellation in
+                let database = try MailDatabase(root: root, queryTimeLimit: .seconds(5), cancellation: cancellation)
+                defer { database.close() }
+                return try database.query(
+                    """
+                    WITH RECURSIVE counter(n) AS (
+                        SELECT ROWID FROM messages WHERE ROWID = 1
+                        UNION ALL SELECT n + 1 FROM counter WHERE n < 1000000000
+                    ) SELECT n FROM counter
+                    """
+                ) { row in
+                    let n = row.integer(0)
+                    if n == 1 { entered.fulfill() }
+                    return n
+                }
+            }
+        }
+        await fulfillment(of: [entered], timeout: 2)
+        task.cancel()
+        do {
+            _ = try await task.value
+            XCTFail("Expected cancellation of the query on the dispatch worker")
+        } catch is CancellationError {
+            // Cancellation must reach SQLite without the caller's task context.
+        }
+        XCTAssertEqual(checkpoint(), SQLITE_OK)
+        let count = try await worker.run { cancellation in
+            let database = try MailDatabase(root: root, cancellation: cancellation)
+            defer { database.close() }
+            return try database.fetch(.init()).count
+        }
+        XCTAssertEqual(count, 3)
+    }
+
+    func testWorkerDoesNotStartAlreadyCancelledOperation() async throws {
+        let worker = MailWorker()
+        let task = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await worker.run { _ in
+                XCTFail("A canceled task must not start file or database work")
+                return 1
+            }
+        }
+        do {
+            _ = try await task.value
+            XCTFail("Expected cancellation")
+        } catch is CancellationError {}
+        let result = try await worker.run { _ in 2 }
+        XCTAssertEqual(result, 2)
+    }
+
     func testBusyIndexFailsWithoutWaitingAndAllowsReopen() throws {
         try execute("PRAGMA locking_mode=EXCLUSIVE; BEGIN EXCLUSIVE; UPDATE messages SET read=1;")
         defer { try? execute("ROLLBACK; PRAGMA locking_mode=NORMAL;") }
@@ -464,6 +557,30 @@ final class MailTests: XCTestCase {
         try FileManager.default.createSymbolicLink(at: url, withDestinationURL: other.appendingPathComponent("1.emlx"))
         XCTAssertThrowsError(try files.read(record, version: version))
         XCTAssertThrowsError(try files.mailboxDirectory("file:///tmp/Outside.mbox", version: version))
+    }
+
+    func testFileReadsAndMIMEParsingRespectCancellation() throws {
+        let database = try MailDatabase(root: root)
+        let record = try XCTUnwrap(database.fetch(.init()).last)
+        database.close()
+        let files = MailFiles()
+        let cancellation = MailCancellation()
+        cancellation.cancel()
+        // A canceled cold lookup must stop before reporting a missing file.
+        XCTAssertThrowsError(try files.read(record, version: version, cancellation: cancellation)) { error in
+            XCTAssertTrue(error is CancellationError)
+        }
+
+        let data = emlx("Message-ID: <one@example.com>\nSubject: One\n\nCorrect")
+        try data.write(to: mailbox.appendingPathComponent("1.emlx"))
+        XCTAssertEqual(try files.read(record, version: version).body, "Correct")
+        XCTAssertThrowsError(try files.read(record, version: version, cancellation: cancellation)) { error in
+            XCTAssertTrue(error is CancellationError)
+        }
+        XCTAssertThrowsError(try MailContent(emlx: data, cancellation: cancellation)) { error in
+            XCTAssertTrue(error is CancellationError)
+        }
+        XCTAssertEqual(try files.read(record, version: version).body, "Correct")
     }
 
     func testIdentifierRoundTripAndLookup() throws {
