@@ -323,6 +323,37 @@ final class MailTests: XCTestCase {
         XCTAssertTrue(try database.fetch(query).isEmpty)
     }
 
+    func testReceivedDateAndRangeUseUnixEpoch() throws {
+        // Use literal timestamps and independently parsed calendar dates so the
+        // fixture cannot hide an epoch change in both decoding and filtering.
+        try execute(
+            """
+            INSERT INTO messages VALUES
+                (4,1,1,1,1704067199,0,'before@example.com'),
+                (5,1,1,1,1704067200,0,'start@example.com'),
+                (6,1,1,1,1704153599,0,'last@example.com'),
+                (7,1,1,1,1704153600,0,'end@example.com');
+            """
+        )
+        let formatter = ISO8601DateFormatter()
+        let start = try XCTUnwrap(formatter.date(from: "2024-01-01T00:00:00Z"))
+        let end = try XCTUnwrap(formatter.date(from: "2024-01-02T00:00:00Z"))
+        let database = try MailDatabase(root: root)
+        let record = try XCTUnwrap(database.fetch(.init(id: 5)).first)
+        XCTAssertEqual(record.date, start)
+        XCTAssertEqual(record.value.objectValue?["dateReceived"]?.stringValue, "2024-01-01T00:00:00Z")
+
+        var request = MailRecord.FetchRequest()
+        request.startDate = start
+        request.endDate = end
+        XCTAssertEqual(try database.fetch(request).map(\.id), [6, 5])
+        request.endDate = nil
+        XCTAssertEqual(try database.fetch(request).map(\.id), [7, 6, 5])
+        request.startDate = nil
+        request.endDate = end
+        XCTAssertEqual(try database.fetch(request).map(\.id), [6, 5, 4, 3, 2, 1])
+    }
+
     func testDefaultAndMaximumLimits() throws {
         try execute(
             """
