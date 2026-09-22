@@ -142,6 +142,11 @@ giving you complete control over what information iMCP can access.
 
 ### Mail access and search
 
+Mail store access uses [Envelope](https://github.com/mattt/Envelope).
+Its `Mail` module reads the local index and message files;
+its `Emlx` module selects readable content from Envelope's internal MIME reader.
+iMCP manages folder access, tool arguments, JSON output, and composition.
+
 Mail reading requires access to `~/Library/Mail`.
 If folder access is unavailable, `mail_compose` can still open a compose window
 in the default email app.
