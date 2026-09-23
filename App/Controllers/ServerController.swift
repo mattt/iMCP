@@ -619,8 +619,9 @@ actor NetworkDiscoveryManager {
         let parameters = NWParameters.tcp
         parameters.acceptLocalOnly = true
         parameters.includePeerToPeer = false
-        // Match the IPv4 protocol below to avoid NECP errors for an IPv6 wildcard.
-        parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.any), port: .any)
+        // Accept connections from this Mac only; the CLI connects over loopback (#229).
+        // IPv4 matches the protocol below and avoids NECP errors for an IPv6 wildcard.
+        parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)
 
         if let tcpOptions = parameters.defaultProtocolStack.internetProtocol
             as? NWProtocolIP.Options
@@ -686,8 +687,9 @@ actor NetworkDiscoveryManager {
         let parameters: NWParameters = NWParameters.tcp  // Explicit type
         parameters.acceptLocalOnly = true
         parameters.includePeerToPeer = false
-        // Match the IPv4 protocol below to avoid NECP errors for an IPv6 wildcard.
-        parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.any), port: .any)
+        // Accept connections from this Mac only; the CLI connects over loopback (#229).
+        // IPv4 matches the protocol below and avoids NECP errors for an IPv6 wildcard.
+        parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)
 
         if let tcpOptions = parameters.defaultProtocolStack.internetProtocol
             as? NWProtocolIP.Options
