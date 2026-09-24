@@ -594,8 +594,11 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
     private func openDatabase() throws -> DatabaseAccess {
         if canAccessDatabaseAtDefaultPath {
             return DatabaseAccess(
-                database: try iMessage.Database(), path: messagesDatabasePath, immutable: false,
-                scopedURL: nil)
+                database: try iMessage.Database(),
+                path: messagesDatabasePath,
+                immutable: false,
+                scopedURL: nil
+            )
         }
 
         let grant = try resolveBookmarkedGrant()
@@ -617,8 +620,11 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                 immutable = true
             }
             return DatabaseAccess(
-                database: database, path: grant.databaseURL.path, immutable: immutable,
-                scopedURL: grant.url)
+                database: database,
+                path: grant.databaseURL.path,
+                immutable: immutable,
+                scopedURL: grant.url
+            )
         } catch {
             grant.url.stopAccessingSecurityScopedResource()
             throw error
