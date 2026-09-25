@@ -32,13 +32,17 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
     private func activate(offeringUpgrade: Bool) async throws {
         log.debug("Starting message service activation")
 
-        if canAccessDatabaseAtDefaultPath {
+        // chat.db can be readable at its default path while the attachments next to it are not,
+        // for example through a permission left over from an earlier grant on chat.db alone.
+        // The toggle then offers the folder; tool calls keep working with what is readable.
+        let canReadDefaultPath = canAccessDatabaseAtDefaultPath
+        if canReadDefaultPath, !offeringUpgrade || canAccessAttachmentsAtDefaultPath {
             log.debug("Successfully activated using default database path")
             return
         }
 
         let grant = try? resolveBookmarkedGrant()
-        var upgrading = false
+        var upgrading = canReadDefaultPath
         if canAccessDatabaseUsingBookmark {
             switch grant {
             case .directory:
@@ -522,6 +526,13 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
         return FileManager.default.isReadableFile(atPath: messagesDatabasePath)
     }
 
+    /// Whether the attachments folder can be listed without a grant, as with Full Disk Access.
+    private var canAccessAttachmentsAtDefaultPath: Bool {
+        let path = messagesDirectoryPath + "/Attachments"
+        guard FileManager.default.fileExists(atPath: path) else { return true }
+        return (try? FileManager.default.contentsOfDirectory(atPath: path)) != nil
+    }
+
     private enum DatabaseAccessError: LocalizedError {
         case noBookmarkFound
         case securityScopeAccessFailed
@@ -633,7 +644,16 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
     }
 
     private func openDatabase() throws -> DatabaseAccess {
-        if canAccessDatabaseAtDefaultPath {
+        // A granted Messages folder comes first: only its security scope is sure to reach
+        // the attachments, even when chat.db is also readable at its default path.
+        let bookmarkedGrant = try? resolveBookmarkedGrant()
+        let hasFolderGrant: Bool
+        if case .directory = bookmarkedGrant {
+            hasFolderGrant = true
+        } else {
+            hasFolderGrant = false
+        }
+        if !hasFolderGrant, canAccessDatabaseAtDefaultPath {
             return DatabaseAccess(
                 database: try iMessage.Database(),
                 path: messagesDatabasePath,
@@ -641,7 +661,7 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
             )
         }
 
-        let grant = try resolveBookmarkedGrant()
+        guard let grant = bookmarkedGrant else { throw DatabaseAccessError.noBookmarkFound }
         guard grant.url.startAccessingSecurityScopedResource() else {
             log.error("Failed to start accessing security-scoped resource")
             throw DatabaseAccessError.securityScopeAccessFailed
