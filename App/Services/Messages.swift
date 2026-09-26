@@ -443,8 +443,8 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
     }
 
     /// A second, read-only SQLite connection on the same grant, for the tables the iMessage
-    /// package does not model (attachments). `.file` grants cannot reach the write-ahead log,
-    /// hence `immutable=1` there, as the package itself does.
+    /// package does not model (attachments). It uses `immutable=1` whenever the package does:
+    /// a `.file` grant, or a default path whose write-ahead log is unreadable.
     private final class RawDatabase {
         private var handle: OpaquePointer?
         private static let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
@@ -615,10 +615,16 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
     /// An open connection and the security scope it reads through.
     private struct DatabaseAccess {
         let database: iMessage.Database
-        /// Where `database` was opened, and whether without its write-ahead log.
+        /// Where `database` was opened.
         let path: String
-        let immutable: Bool
         fileprivate let scopedURL: URL?
+
+        /// Whether `database` was opened without its write-ahead log.
+        /// Other connections on the same file must open it the same way,
+        /// or the sandbox and privacy checks that made Madrid fall back refuse them.
+        var immutable: Bool {
+            database.accessMode == .immutable
+        }
 
         /// Ends the security scope. Call it after the last read on `database`.
         func stop() {
@@ -631,7 +637,6 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
             return DatabaseAccess(
                 database: try iMessage.Database(),
                 path: messagesDatabasePath,
-                immutable: false,
                 scopedURL: nil
             )
         }
@@ -644,20 +649,16 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
 
         do {
             let database: iMessage.Database
-            let immutable: Bool
             switch grant {
             case .directory:
                 database = try iMessage.Database(path: grant.databaseURL.path, mode: .live)
-                immutable = false
             case .file:
                 // Warned about once, in activate(offeringUpgrade:).
                 database = try iMessage.Database(path: grant.databaseURL.path, mode: .immutable)
-                immutable = true
             }
             return DatabaseAccess(
                 database: database,
                 path: grant.databaseURL.path,
-                immutable: immutable,
                 scopedURL: grant.url
             )
         } catch {
