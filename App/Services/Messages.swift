@@ -116,7 +116,7 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                     ),
                     "end": .string(
                         description:
-                            "End of the date range (exclusive). If timezone is omitted, local time is assumed. Date-only uses local midnight.",
+                            "End of the date range (exclusive). If timezone is omitted, local time is assumed. A date-only value includes that whole day.",
                         format: .dateTime
                     ),
                     "query": .string(
@@ -151,27 +151,22 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                     $0.stringValue
                 }) ?? []
 
+            // Either bound may be given alone; the other stays open.
+            // chat.db stores dates as Int64 nanoseconds since 2001, so the open ends
+            // use dates that fit, rather than Date.distantPast and Date.distantFuture.
+            let calendar = Calendar.current
+            let start = arguments["start"]?.stringValue
+                .flatMap { ISO8601DateFormatter.parsedLenientISO8601Date(fromISO8601String: $0) }
+                .map { calendar.normalizedStartDate(from: $0.date, isDateOnly: $0.isDateOnly) }
+            let end = arguments["end"]?.stringValue
+                .flatMap { ISO8601DateFormatter.parsedLenientISO8601Date(fromISO8601String: $0) }
+                .map { calendar.normalizedEndDate(from: $0.date, isDateOnly: $0.isDateOnly) }
             var dateRange: Range<Date>?
-            if let startDateStr = arguments["start"]?.stringValue,
-                let endDateStr = arguments["end"]?.stringValue,
-                let parsedStart = ISO8601DateFormatter.parsedLenientISO8601Date(
-                    fromISO8601String: startDateStr
-                ),
-                let parsedEnd = ISO8601DateFormatter.parsedLenientISO8601Date(
-                    fromISO8601String: endDateStr
-                )
-            {
-                let calendar = Calendar.current
-                let normalizedStart = calendar.normalizedStartDate(
-                    from: parsedStart.date,
-                    isDateOnly: parsedStart.isDateOnly
-                )
-                let normalizedEnd = calendar.normalizedEndDate(
-                    from: parsedEnd.date,
-                    isDateOnly: parsedEnd.isDateOnly
-                )
-
-                dateRange = normalizedStart ..< normalizedEnd
+            if start != nil || end != nil {
+                let lowerBound = start ?? Date(timeIntervalSinceReferenceDate: -9_000_000_000)
+                let upperBound = end ?? Date(timeIntervalSinceReferenceDate: 9_000_000_000)
+                // An end before the start matches nothing.
+                dateRange = lowerBound ..< max(lowerBound, upperBound)
             }
 
             let searchTerm = arguments["query"]?.stringValue

@@ -72,7 +72,7 @@ final class RemindersService: Service {
                     ),
                     "end": .string(
                         description:
-                            "End date/time range for fetching reminders. If timezone is omitted, local time is assumed. Date-only uses local midnight.",
+                            "End date/time range for fetching reminders. If timezone is omitted, local time is assumed. A date-only value includes that whole day.",
                         format: .dateTime
                     ),
                     "lists": .array(

@@ -26,12 +26,12 @@ final class PhoneService: NSObject, Service, NSOpenSavePanelDelegate {
                     ),
                     "start": .string(
                         description:
-                            "Start of the date range (inclusive). ISO 8601 format. If timezone is omitted, local time is assumed.",
+                            "Start of the date range (inclusive). ISO 8601 format. If timezone is omitted, local time is assumed. Date-only uses local midnight.",
                         format: .dateTime
                     ),
                     "end": .string(
                         description:
-                            "End of the date range (exclusive). ISO 8601 format. If timezone is omitted, local time is assumed.",
+                            "End of the date range (exclusive). ISO 8601 format. If timezone is omitted, local time is assumed. A date-only value includes that whole day.",
                         format: .dateTime
                     ),
                     "call_type": .string(
@@ -76,7 +76,10 @@ final class PhoneService: NSObject, Service, NSOpenSavePanelDelegate {
                 else {
                     throw ArgumentError.invalid("start must be an ISO 8601 date")
                 }
-                request.startDate = parsed.date
+                request.startDate = Calendar.current.normalizedStartDate(
+                    from: parsed.date,
+                    isDateOnly: parsed.isDateOnly
+                )
             }
             if let end = try self.argument("end", in: arguments, as: \.stringValue) {
                 guard
@@ -86,7 +89,10 @@ final class PhoneService: NSObject, Service, NSOpenSavePanelDelegate {
                 else {
                     throw ArgumentError.invalid("end must be an ISO 8601 date")
                 }
-                request.endDate = parsed.date
+                request.endDate = Calendar.current.normalizedEndDate(
+                    from: parsed.date,
+                    isDateOnly: parsed.isDateOnly
+                )
             }
 
             try await self.requestDatabaseAccess()
