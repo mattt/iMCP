@@ -70,7 +70,7 @@ final class CalendarService: Service {
                     ),
                     "end": .string(
                         description:
-                            "End date/time (defaults to one week from start; one day if start is date-only). If timezone is omitted, local time is assumed.",
+                            "End date/time (defaults to one week from start; one day if start is date-only). If timezone is omitted, local time is assumed. A date-only value includes that whole day.",
                         format: .dateTime
                     ),
                     "calendars": .array(
