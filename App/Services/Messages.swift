@@ -93,8 +93,7 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
         get async {
             // A grant on chat.db alone still serves tool calls, but the service is only fully set
             // up once the Messages folder is granted; until then the toggle offers the upgrade.
-            // The same goes for chat.db readable at its default path without the attachments.
-            var isActivated = canAccessDatabaseAtDefaultPath && canAccessAttachmentsAtDefaultPath
+            var isActivated = canAccessDatabaseAtDefaultPath
             if case .directory = try? resolveBookmarkedGrant() {
                 isActivated = isActivated || canAccessDatabaseUsingBookmark
             }
