@@ -9,7 +9,6 @@ private let messagesDirectoryPath = "/Users/\(NSUserName())/Library/Messages"
 private let messagesDatabasePath = messagesDirectoryPath + "/chat.db"
 private let messagesDatabaseBookmarkKey: String = "me.mattt.iMCP.messagesDatabaseBookmark"
 private let defaultLimit = 30
-private let defaultAttachmentMaxBytes = 25 * 1024 * 1024
 
 final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
     static let shared = MessageService()
@@ -132,7 +131,7 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                     ),
                     "attachments": .boolean(
                         description:
-                            "List each message's attachments (attachment: name, encodingFormat, contentSize, @id for messages_attachment_read) and include messages that carry attachments but no text",
+                            "List each message's attachments (attachment: name, encodingFormat, contentSize, @id) and include messages that carry attachments but no text",
                         default: false
                     ),
                 ],
@@ -294,35 +293,6 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                 "hasPart": Value.array(messages.map({ .object($0) })),
             ]
         }
-
-        Tool(
-            name: "messages_attachment_read",
-            description:
-                "Read one attachment of a message, by the @id messages_fetch lists with attachments=true: the file, base64-encoded, with its name, type and size",
-            inputSchema: .object(
-                properties: [
-                    "id": .string(description: "The attachment @id"),
-                    "maxBytes": .integer(
-                        description: "Refuse files larger than this",
-                        default: .int(defaultAttachmentMaxBytes)
-                    ),
-                ],
-                required: ["id"],
-                additionalProperties: false
-            ),
-            annotations: .init(
-                title: "Read Message Attachment",
-                readOnlyHint: true,
-                openWorldHint: false
-            )
-        ) { arguments in
-            try await self.activate(offeringUpgrade: false)
-            guard let id = arguments["id"]?.stringValue, !id.isEmpty else {
-                throw AttachmentError.missingID
-            }
-            let maxBytes = arguments["maxBytes"]?.intValue ?? defaultAttachmentMaxBytes
-            return try self.readAttachment(id: id, maxBytes: max(maxBytes, 1))
-        }
     }
 
     /// The attachments of the given messages (by guid), keyed by message guid, in chat.db
@@ -373,73 +343,6 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
             }
         }
         return result
-    }
-
-    /// Reads one attachment file through the Messages folder grant and returns it base64-encoded.
-    private func readAttachment(id: String, maxBytes: Int) throws -> [String: Value] {
-        let access = try openDatabase()
-        defer { access.stop() }
-        let raw = try RawDatabase(access)
-        defer { raw.close() }
-        var found: (filename: String?, name: String?, mime: String?)?
-        try raw.query(
-            "SELECT filename, transfer_name, mime_type FROM attachment WHERE guid = ? LIMIT 1",
-            bindings: [id]
-        ) { stmt in
-            found = (RawDatabase.text(stmt, 0), RawDatabase.text(stmt, 1), RawDatabase.text(stmt, 2))
-        }
-        guard let found else { throw AttachmentError.notFound(id) }
-        guard var path = found.filename, !path.isEmpty else { throw AttachmentError.noFile(id) }
-        if path.hasPrefix("~/") {
-            path = "/Users/\(NSUserName())" + path.dropFirst(1)
-        }
-        // Only what sits in the Messages folder is served: that is what the grant covers, and
-        // an arbitrary path in chat.db must not turn this tool into a file reader.
-        let url = URL(fileURLWithPath: path).standardizedFileURL
-        guard url.path.hasPrefix(messagesDirectoryPath + "/") else {
-            throw AttachmentError.outsideMessagesFolder(id)
-        }
-        guard FileManager.default.isReadableFile(atPath: url.path) else {
-            throw AttachmentError.fileMissing(id)
-        }
-        let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
-        guard size <= maxBytes else { throw AttachmentError.tooLarge(id, size, maxBytes) }
-        let data = try Data(contentsOf: url)
-        var part: [String: Value] = [
-            "@type": "MediaObject",
-            "@id": .string(id),
-            "contentSize": .int(data.count),
-            "encoding": "base64",
-            "content": .string(data.base64EncodedString()),
-        ]
-        if let name = found.name ?? Optional(url.lastPathComponent), !name.isEmpty {
-            part["name"] = .string(name)
-        }
-        if let mime = found.mime, !mime.isEmpty {
-            part["encodingFormat"] = .string(mime)
-        }
-        return part
-    }
-
-    private enum AttachmentError: LocalizedError {
-        case missingID
-        case notFound(String)
-        case noFile(String)
-        case outsideMessagesFolder(String)
-        case fileMissing(String)
-        case tooLarge(String, Int, Int)
-
-        var errorDescription: String? {
-            switch self {
-            case .missingID: return "attachment id is required"
-            case .notFound(let id): return "no attachment \(id) in the Messages database"
-            case .noFile(let id): return "attachment \(id) has no file (not downloaded on this Mac)"
-            case .outsideMessagesFolder(let id): return "attachment \(id) is not stored in the Messages folder"
-            case .fileMissing(let id): return "the file of attachment \(id) is missing or unreadable"
-            case .tooLarge(let id, let size, let max):
-                return "attachment \(id) is \(size) bytes, more than the \(max) allowed"
-            }
-        }
     }
 
     /// A second, read-only SQLite connection on the same grant, for the tables the iMessage
