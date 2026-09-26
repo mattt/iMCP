@@ -156,7 +156,10 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
             // use dates that fit, rather than Date.distantPast and Date.distantFuture.
             let calendar = Calendar.current
             func parsedDate(_ name: String) throws -> (date: Date, isDateOnly: Bool)? {
-                guard let string = arguments[name]?.stringValue else { return nil }
+                guard let value = arguments[name], !value.isNull else { return nil }
+                guard let string = value.stringValue else {
+                    throw ArgumentError.invalid("\(name) has the wrong type")
+                }
                 guard let parsed = ISO8601DateFormatter.parsedLenientISO8601Date(fromISO8601String: string)
                 else {
                     throw ArgumentError.invalid("\(name) must be an ISO 8601 date")
