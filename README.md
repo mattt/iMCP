@@ -56,6 +56,13 @@ and a [growing list of clients][mcp-clients] that support the
   </tr>
   <tr>
     <th>
+      <img src="Assets/voicemail.svg" width="48" height="48" alt="" role="presentation"/>
+    </th>
+    <td><strong>Voicemail</strong></td>
+    <td>Fetch voicemails synced from your iPhone, with transcripts and audio, filtering by sender, date, or message type.</td>
+  </tr>
+  <tr>
+    <th>
       <img src="Assets/reminders.svg" width="48" height="48" alt="" role="presentation"/>
     </th>
     <td><strong>Reminders</strong></td>
@@ -320,6 +327,15 @@ Call history synced from your iPhone lives in a SQLite database at
 `~/Library/Application Support/CallHistoryDB/CallHistory.storedata`.
 Recent calls sit in its write-ahead log next to the store file,
 so the Phone service asks you to open the `CallHistoryDB` folder
+rather than the file alone.
+
+### Visual Voicemail Database Access
+
+Voicemails synced from your iPhone by the Phone app (on macOS 26 and later)
+live in a SQLite database at
+`~/Library/Group Containers/group.com.apple.FaceTime/com.apple.facetimemessagestored/Data Store/FaceTimeMessageStore-local.sqlitedb`.
+The store is a write-ahead log database, and the message audio sits in an `Assets`
+tree beside it, so the Voicemail service asks you to open the `Data Store` folder
 rather than the file alone.
 
 ### JSON-LD for Tool Results

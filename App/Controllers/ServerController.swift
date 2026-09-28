@@ -61,6 +61,9 @@ enum ServiceRegistry {
             ShortcutsService.shared,
             UtilitiesService.shared,
         ]
+        if VoicemailService.isStorePresent {
+            services.append(VoicemailService.shared)
+        }
         #if WEATHERKIT_AVAILABLE
             services.append(WeatherService.shared)
         #endif
@@ -78,6 +81,7 @@ enum ServiceRegistry {
         remindersEnabled: Binding<Bool>,
         shortcutsEnabled: Binding<Bool>,
         utilitiesEnabled: Binding<Bool>,
+        voicemailEnabled: Binding<Bool>,
         weatherEnabled: Binding<Bool>
     ) -> [ServiceConfig] {
         var configs: [ServiceConfig] = [
@@ -145,6 +149,17 @@ enum ServiceRegistry {
                 binding: shortcutsEnabled
             ),
         ]
+        if VoicemailService.isStorePresent {
+            configs.append(
+                ServiceConfig(
+                    name: "Voicemail",
+                    iconName: "recordingtape",
+                    color: .teal,
+                    service: VoicemailService.shared,
+                    binding: voicemailEnabled
+                )
+            )
+        }
         #if WEATHERKIT_AVAILABLE
             configs.append(
                 ServiceConfig(
@@ -184,6 +199,7 @@ final class ServerController: ObservableObject {
     @AppStorage("remindersEnabled") private var remindersEnabled = false
     @AppStorage("shortcutsEnabled") private var shortcutsEnabled = false
     @AppStorage("utilitiesEnabled") private var utilitiesEnabled = true  // Default enabled
+    @AppStorage("voicemailEnabled") private var voicemailEnabled = false
     @AppStorage("weatherEnabled") private var weatherEnabled = false
 
     // MARK: - AppStorage for Trusted Clients
@@ -206,6 +222,7 @@ final class ServerController: ObservableObject {
             remindersEnabled: $remindersEnabled,
             shortcutsEnabled: $shortcutsEnabled,
             utilitiesEnabled: $utilitiesEnabled,
+            voicemailEnabled: $voicemailEnabled,
             weatherEnabled: $weatherEnabled
         )
     }
