@@ -61,7 +61,7 @@ enum ServiceRegistry {
             ShortcutsService.shared,
             UtilitiesService.shared,
         ]
-        if VoicemailService.isStorePresent {
+        if VoicemailService.isSupported {
             services.append(VoicemailService.shared)
         }
         #if WEATHERKIT_AVAILABLE
@@ -149,7 +149,7 @@ enum ServiceRegistry {
                 binding: shortcutsEnabled
             ),
         ]
-        if VoicemailService.isStorePresent {
+        if VoicemailService.isSupported {
             configs.append(
                 ServiceConfig(
                     name: "Voicemail",

@@ -249,6 +249,21 @@ final class VoicemailStoreTests: XCTestCase {
         XCTAssertEqual(voicemails.map(\.id), [1])
     }
 
+    func testFetchSenderFilterMatchesLiteralWildcards() throws {
+        try makeStore([
+            Row(id: 1, sender: "a_b@example.com", created: firstDate, fileType: "amr"),
+            Row(id: 2, sender: "axb@example.com", created: secondDate, fileType: "amr"),
+            Row(id: 3, sender: "100%.example.com", created: thirdDate, fileType: "amr"),
+        ])
+
+        var request = VoicemailMessage.FetchRequest(limit: 30)
+        request.sender = "_"
+        XCTAssertEqual(try store.fetch(request).map(\.id), [1])
+
+        request.sender = "%"
+        XCTAssertEqual(try store.fetch(request).map(\.id), [3])
+    }
+
     // MARK: - Messages and Transcripts
 
     func testMessageReturnsRowByID() throws {

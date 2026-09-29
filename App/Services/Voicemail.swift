@@ -12,14 +12,36 @@ private let defaultLimit = 30
 final class VoicemailService: NSObject, Service, NSOpenSavePanelDelegate {
     static let shared = VoicemailService()
 
-    /// Whether this Mac has a voicemail store at all. The store only exists once the
-    /// Phone app is set up, so the service stays hidden on Macs without it.
-    static var isStorePresent: Bool {
-        FileManager.default.fileExists(atPath: defaultDatabasePath)
+    /// Whether this Mac can run the Phone app that creates the voicemail store
+    /// (macOS 26 and later). The app sandbox hides the store until access is granted,
+    /// so registration cannot rely on the store being present at the default path;
+    /// activation requests the grant instead.
+    static var isSupported: Bool {
+        if #available(macOS 26.0, *) { return true }
+        return false
     }
 
     private static var defaultDatabasePath: String {
         dataStoreDirectoryPath + "/" + VoicemailStore.databaseFileName
+    }
+
+    func activate() async throws {
+        log.debug("Starting voicemail service activation")
+        try await requestDataStoreAccess()
+        log.debug("Successfully activated voicemail service")
+    }
+
+    var isActivated: Bool {
+        get async {
+            var isActivated = canAccessStoreAtDefaultPath
+            // Only probe the bookmark when one exists, so polling a Mac that has
+            // not granted access yet does not log an error every time.
+            if UserDefaults.standard.data(forKey: dataStoreBookmarkKey) != nil {
+                isActivated = isActivated || canAccessStoreUsingBookmark
+            }
+            log.debug("Voicemail service activation status: \(isActivated)")
+            return isActivated
+        }
     }
 
     var tools: [Tool] {

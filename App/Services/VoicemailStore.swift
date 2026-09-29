@@ -178,8 +178,8 @@ extension VoicemailMessage {
             var bindings: [SQLiteValue] = []
 
             if let sender {
-                conditions.append("ZFROM LIKE ?")
-                bindings.append(.text("%" + sender + "%"))
+                conditions.append("ZFROM LIKE ? ESCAPE '\\'")
+                bindings.append(.text("%" + escapingLikeWildcards(sender) + "%"))
             }
             if let startDate {
                 conditions.append("ZDATECREATED >= ?")
@@ -202,6 +202,23 @@ extension VoicemailMessage {
                 LIMIT ?
                 """
             return (sql, bindings)
+        }
+
+        /// Escapes SQL LIKE wildcards, for use with the ESCAPE clause, so the
+        /// sender filter matches literal text: a_b@example.com must not match
+        /// axb@example.com.
+        private func escapingLikeWildcards(_ text: String) -> String {
+            var escaped = ""
+            for character in text {
+                switch character {
+                case "\\", "%", "_":
+                    escaped.append("\\")
+                    escaped.append(character)
+                default:
+                    escaped.append(character)
+                }
+            }
+            return escaped
         }
     }
 }
