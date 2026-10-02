@@ -18,7 +18,7 @@ final class ServiceGroupConfigurationTests: XCTestCase {
     /// exit cleanly rather than throwing. This is the primary regression the
     /// production fix addresses.
     func testServiceReturningNormallyExitsGroupCleanly() async throws {
-        struct ImmediatelyReturningService: Service {
+        struct ImmediatelyReturningService: ServiceLifecycle.Service {
             func run() async throws {}
         }
 
@@ -43,7 +43,7 @@ final class ServiceGroupConfigurationTests: XCTestCase {
     /// to throw. If this ever stops throwing — e.g. the library changes its
     /// default — the production fix may no longer be necessary.
     func testDefaultCancelGroupThrowsWhenServiceReturns() async {
-        struct ImmediatelyReturningService: Service {
+        struct ImmediatelyReturningService: ServiceLifecycle.Service {
             func run() async throws {}
         }
 

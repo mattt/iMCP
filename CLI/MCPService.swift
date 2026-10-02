@@ -1,9 +1,10 @@
+import Foundation
 import Logging
 import MCP
 import Network
 import ServiceLifecycle
 
-private let serviceType = "_mcp._tcp"
+private let serviceType = ProcessInfo.processInfo.environment["IMCP_SERVICE_TYPE"] ?? "_mcp._tcp"
 
 private let parameters: NWParameters = {
     let parameters = NWParameters.tcp
