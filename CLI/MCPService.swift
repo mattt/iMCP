@@ -31,7 +31,7 @@ actor MCPService: Service {
                     using: parameters
                 )
 
-                // Prefer a service advertised as iMCP; fall back to any MCP service.
+                // Prefer a service advertised as iMCP; fall back to any MCP service on this Mac.
                 // The helper cancels the browser on every exit path,
                 // so a timed-out attempt doesn't leak a DNS-SD connection (#192).
                 let endpoint: NWEndpoint
