@@ -49,6 +49,44 @@ final class BonjourDiscoveryTests: XCTestCase {
         }
     }
 
+    /// A browse result reduced to what selection looks at.
+    private struct Candidate: Equatable {
+        var name: String
+        var isLocal: Bool
+    }
+
+    private func select(_ candidates: [Candidate]) -> Candidate? {
+        BonjourDiscovery.select(
+            from: candidates,
+            isLocal: \.isLocal,
+            preferring: { $0.name.contains("iMCP") }
+        )
+    }
+
+    /// With iMCP on two Macs, both advertise a service named iMCP,
+    /// and the one registered second is renamed, for example to "iMCP (2)".
+    /// Only the service on this Mac can accept the connection (#257).
+    func testSelectsServiceOnThisMacOverAnotherMac() {
+        let remote = Candidate(name: "iMCP", isLocal: false)
+        let local = Candidate(name: "iMCP (2)", isLocal: true)
+
+        XCTAssertEqual(select([remote, local]), local)
+        XCTAssertEqual(select([local, remote]), local)
+    }
+
+    func testIgnoresServicesOnOtherMacs() {
+        XCTAssertNil(select([Candidate(name: "iMCP", isLocal: false)]))
+        XCTAssertNil(select([Candidate(name: "Other", isLocal: false)]))
+    }
+
+    func testPrefersiMCPAmongServicesOnThisMac() {
+        let other = Candidate(name: "Other", isLocal: true)
+        let iMCP = Candidate(name: "iMCP", isLocal: true)
+
+        XCTAssertEqual(select([other, iMCP]), iMCP)
+        XCTAssertEqual(select([other, Candidate(name: "iMCP", isLocal: false)]), other)
+    }
+
     /// A browser that times out without finding anything must be cancelled,
     /// not left running.
     func testTimedOutBrowserIsCancelled() async throws {

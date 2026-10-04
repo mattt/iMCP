@@ -44,14 +44,8 @@ actor StdioProxy {
         let connection = NWConnection(to: endpoint, using: parameters)
         self.connection = connection
 
-        connection.start(queue: .main)
-
-        connection.stateUpdateHandler = { [weak self] state in
-            Task { [weak self] in
-                await self?.handleConnectionState(state, continuation: nil, connectionState: nil)
-            }
-        }
-
+        // Set the handler before starting the connection,
+        // so the first `.waiting` state isn't missed (#257).
         try await withCheckedThrowingContinuation {
             (continuation: CheckedContinuation<Void, Swift.Error>) in
             let connectionState = ConnectionState()
@@ -64,6 +58,7 @@ actor StdioProxy {
                     )
                 }
             }
+            connection.start(queue: .main)
         }
 
         var sessionError: (any Swift.Error)?
@@ -152,6 +147,15 @@ actor StdioProxy {
             await stop()
         case .waiting(let error):
             await log.debug("Connection waiting: \(error)")
+            // A connection that can't be established, for example because nothing
+            // listens on the port, waits and retries indefinitely.
+            // Fail instead, so that the caller reports the error and tries again (#257).
+            if let continuation = continuation,
+                await shouldResume(connectionState: connectionState)
+            {
+                continuation.resume(throwing: error)
+                await stop()
+            }
         case .preparing:
             await log.debug("Connection preparing...")
         case .setup:
