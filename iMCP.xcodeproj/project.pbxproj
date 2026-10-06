@@ -30,6 +30,8 @@
 		F8D8C48E2DCE0E6800369E5C /* JSONSchema in Frameworks */ = {isa = PBXBuildFile; productRef = F8D8C48D2DCE0E6800369E5C /* JSONSchema */; };
 		F8F1D2F82D6F9E0C00F6323D /* MCP in Frameworks */ = {isa = PBXBuildFile; productRef = F8F44E9C2D5903F70075D79C /* MCP */; };
 		F9E9902DC72D90F6C423EFE2 /* Logging in Frameworks */ = {isa = PBXBuildFile; productRef = 48ABEE9E6903427DD79096A1 /* Logging */; };
+		B0D1DEADBEEF00000000000A /* MCPInitializeCompatibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF000000000009 /* MCPInitializeCompatibility.swift */; };
+		B0D1DEADBEEF00000000000C /* MCPInitializeCompatibilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF00000000000B /* MCPInitializeCompatibilityTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -65,6 +67,8 @@
 		E0E66768348853754D32208C /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/System/Library/Frameworks/Cocoa.framework; sourceTree = DEVELOPER_DIR; };
 		F8F44E6D2D59038D0075D79C /* iMCP.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = iMCP.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F8F44EB62D5908D00075D79C /* imcp-server */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "imcp-server"; sourceTree = BUILT_PRODUCTS_DIR; };
+		B0D1DEADBEEF000000000009 /* MCPInitializeCompatibility.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MCPInitializeCompatibility.swift; path = ../CLI/MCPInitializeCompatibility.swift; sourceTree = "<group>"; };
+		B0D1DEADBEEF00000000000B /* MCPInitializeCompatibilityTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MCPInitializeCompatibilityTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -150,6 +154,8 @@
 				B0D1DEADBEEF000000000003 /* BonjourDiscoveryTests.swift */,
 				B0D1DEADBEEF000000000001 /* BonjourDiscovery.swift */,
 				B0D1DEADBEEF000000000007 /* MCPServiceLoopTests.swift */,
+				B0D1DEADBEEF000000000009 /* MCPInitializeCompatibility.swift */,
+				B0D1DEADBEEF00000000000B /* MCPInitializeCompatibilityTests.swift */,
 				B0D1DEADBEEF000000000005 /* MCPServiceLoop.swift */,
 			);
 			path = CLITests;
@@ -342,6 +348,8 @@
 				B0D1DEADBEEF000000000002 /* BonjourDiscovery.swift in Sources */,
 				B0D1DEADBEEF000000000008 /* MCPServiceLoopTests.swift in Sources */,
 				B0D1DEADBEEF000000000006 /* MCPServiceLoop.swift in Sources */,
+				B0D1DEADBEEF00000000000A /* MCPInitializeCompatibility.swift in Sources */,
+				B0D1DEADBEEF00000000000C /* MCPInitializeCompatibilityTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

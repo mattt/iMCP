@@ -23,7 +23,7 @@ enum MCPServiceLoop {
             return .terminate
         }
 
-        if error is CancellationError {
+        if error is CancellationError || error is MCPStdinFrames.Failure {
             return .terminate
         }
 
