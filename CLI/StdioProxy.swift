@@ -188,7 +188,7 @@ actor StdioProxy {
         try setNonBlocking(fileDescriptor: stdin)
 
         var buffer = [UInt8](repeating: 0, count: bufferSize)
-        var pendingData = Data()
+        var frames = MCPStdinFrames()
 
         while true {
             guard isRunning, let connection = self.connection else {
@@ -217,18 +217,11 @@ actor StdioProxy {
                 }
 
                 if bytesRead > 0 {
-                    pendingData.append(contentsOf: buffer[0 ..< bytesRead])
-
-                    let isOnlyWhitespace = pendingData.allSatisfy {
-                        let char = Character(UnicodeScalar($0))
-                        return char.isWhitespace || char.isNewline
-                    }
-
-                    if !isOnlyWhitespace && !pendingData.isEmpty {
+                    for frame in try frames.append(Data(buffer[0 ..< bytesRead])) {
                         try await withCheckedThrowingContinuation {
                             (continuation: CheckedContinuation<Void, Swift.Error>) in
                             connection.send(
-                                content: pendingData,
+                                content: frame,
                                 completion: .contentProcessed { error in
                                     if let error = error {
                                         continuation.resume(throwing: error)
@@ -239,14 +232,8 @@ actor StdioProxy {
                             )
                         }
 
-                        await log.debug("Sent \(pendingData.count) bytes to network")
-                    } else if isOnlyWhitespace && !pendingData.isEmpty {
-                        await log.trace(
-                            "Skipping send of \(pendingData.count) whitespace-only bytes"
-                        )
+                        await log.debug("Sent \(frame.count) bytes to network")
                     }
-
-                    pendingData.removeAll(keepingCapacity: true)
                 }
             } catch let error as StdioProxyError {
                 throw error
