@@ -21,6 +21,16 @@ final class MCPInitializeCompatibilityTests: XCTestCase {
         XCTAssertEqual(normalized as NSDictionary, expected as NSDictionary)
     }
 
+    func testNormalizedInitializeUsesStableSortedKeys() {
+        let expected = Data(
+            #"{"id":"request-1","jsonrpc":"2.0","method":"initialize","params":{"capabilities":{"elicitation":{"form":{}},"experimental":{"legacy":"unchanged"},"roots":{"listChanged":false}},"clientInfo":{"name":"codex-mcp-client","version":"0.160.0"},"protocolVersion":"2025-06-18"}}"#
+                .utf8
+        )
+        for _ in 0 ..< 100 {
+            XCTAssertEqual(MCPInitializeCompatibility.normalize(initialize), expected)
+        }
+    }
+
     func testRemovesEmptyExperimentalMap() throws {
         let input = Data(
             #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{"experimental":{"codex/auth-change":{}}}}}"#

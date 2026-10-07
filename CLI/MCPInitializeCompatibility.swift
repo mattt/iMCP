@@ -21,7 +21,7 @@ enum MCPInitializeCompatibility {
         }
         params["capabilities"] = capabilities
         request["params"] = params
-        return (try? JSONSerialization.data(withJSONObject: request)) ?? data
+        return (try? JSONSerialization.data(withJSONObject: request, options: [.sortedKeys])) ?? data
     }
 }
 
