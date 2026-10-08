@@ -109,6 +109,10 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                             "Participant handles (phone or email). Phone numbers should use E.164 format",
                         items: .string()
                     ),
+                    "chatId": .string(
+                        description:
+                            "Conversation @id, as reported in a message's isPartOf. Fetches only messages in that conversation"
+                    ),
                     "start": .string(
                         description:
                             "Start of the date range (inclusive). If timezone is omitted, local time is assumed. Date-only uses local midnight.",
@@ -150,6 +154,14 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                 arguments["participants"]?.arrayValue?.compactMap({
                     $0.stringValue
                 }) ?? []
+
+            var requestedChatID: Chat.ID?
+            if let value = arguments["chatId"], !value.isNull {
+                guard let string = value.stringValue else {
+                    throw ArgumentError.invalid("chatId has the wrong type")
+                }
+                requestedChatID = Chat.ID(rawValue: string)
+            }
 
             // Either bound may be given alone; the other stays open.
             // chat.db stores dates as Int64 nanoseconds since 2001, so the open ends
@@ -200,6 +212,9 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
             var predicates: [MessagePredicate] = []
             if !handles.isEmpty {
                 predicates.append(.participantHandles(Set(handles)))
+            }
+            if let requestedChatID {
+                predicates.append(.chatID(requestedChatID))
             }
             if let dateRange {
                 predicates.append(.dateRange(dateRange))

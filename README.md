@@ -368,6 +368,17 @@ such as those returned by iMCP tools.
 
 ## Debugging
 
+### Allowing local network access
+
+`imcp-server` finds the iMCP app with Bonjour,
+so it needs permission to access the local network.
+`imcp-server` has its own entry in
+System Settings > Privacy & Security > Local Network,
+separate from iMCP and from the app that runs it, such as your terminal.
+If that entry is turned off,
+`imcp-server` can't find the app
+and reports that Bonjour service discovery timed out.
+
 ### Using the MCP Inspector
 
 To debug interactions between iMCP and clients,
