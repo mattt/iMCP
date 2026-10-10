@@ -386,7 +386,8 @@ final class VoicemailService: NSObject, Service, NSOpenSavePanelDelegate {
             case .notFound(let id):
                 return "No voicemail found with identifier \(id)"
             case .notTranscribed(let id):
-                return "The voicemail with identifier \(id) has no transcript"
+                return
+                    "The voicemail with identifier \(id) has no transcript; its audio is available from voicemail_audio_fetch"
             }
         }
     }
