@@ -39,6 +39,7 @@ final class VoicemailStoreTests: XCTestCase {
     private let firstDate: Double = 700_000_000
     private let secondDate: Double = 750_000_000
     private let thirdDate: Double = 800_000_000
+    private let fourthDate: Double = 850_000_000
 
     private func makeStore(_ rows: [Row]) throws {
         var connection: OpaquePointer?
@@ -146,7 +147,7 @@ final class VoicemailStoreTests: XCTestCase {
     }
 
     /// Writes a fake audio file for the row into the store's `Assets` tree.
-    private func writeAudio(for row: Row, contents: String = "synthesized audio") throws {
+    private func writeAudio(for row: Row, contents: Data = Data("synthesized audio".utf8)) throws {
         let uuid = try XCTUnwrap(row.recordUUID)
         let fileType = try XCTUnwrap(row.fileType)
         let url =
@@ -156,7 +157,7 @@ final class VoicemailStoreTests: XCTestCase {
             at: url.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
-        try Data(contents.utf8).write(to: url)
+        try contents.write(to: url)
     }
 
     /// A transcript archive in the shape carrier voicemails use:
@@ -183,6 +184,26 @@ final class VoicemailStoreTests: XCTestCase {
             ["text": "Second sentence", "confidence": 0.6],
         ]
         return try NSKeyedArchiver.archivedData(withRootObject: segments, requiringSecureCoding: false)
+    }
+
+    /// A synthetic QuickTime movie whose single track declares an audio or a
+    /// video handler — the structure `QuickTimeMovie` reads.
+    private func movieFile(hasVideoTrack: Bool) -> Data {
+        func atom(_ type: String, payload: Data) -> Data {
+            var data = withUnsafeBytes(of: UInt32(payload.count + 8).bigEndian) { Data($0) }
+            data.append(Data(type.utf8))
+            return data + payload
+        }
+
+        var handler = Data(repeating: 0, count: 8)
+        handler.append(Data((hasVideoTrack ? "vide" : "soun").utf8))
+        handler.append(Data(repeating: 0, count: 12))
+
+        let media = atom("mdia", payload: atom("hdlr", payload: handler))
+        let track = atom("trak", payload: media)
+        var file = atom("ftyp", payload: Data("qt  ".utf8))
+        file.append(atom("moov", payload: track))
+        return file
     }
 
     // MARK: - Fetching
@@ -323,7 +344,7 @@ final class VoicemailStoreTests: XCTestCase {
     func testAudioResolvesByRecordUUID() throws {
         let row = Row(id: 1, sender: "+15550101", created: firstDate, fileType: "amr", recordUUID: testUUID(1))
         try makeStore([row])
-        try writeAudio(for: row, contents: "carrier audio")
+        try writeAudio(for: row, contents: Data("carrier audio".utf8))
 
         let message = try XCTUnwrap(store.message(id: 1))
         XCTAssertEqual(message.hasAudio, true)
@@ -358,6 +379,70 @@ final class VoicemailStoreTests: XCTestCase {
         let missingMessage = try XCTUnwrap(store.message(id: 3))
         XCTAssertEqual(missingMessage.hasAudio, false)
         XCTAssertNil(try store.audioData(for: missingMessage))
+    }
+
+    func testFetchClassifiesMoviesByAsset() throws {
+        let carrier = Row(id: 1, sender: "+15550101", created: firstDate, fileType: "amr", recordUUID: testUUID(1))
+        let audioMovie = Row(id: 2, sender: "+15550102", created: secondDate, fileType: "MOV", recordUUID: testUUID(2))
+        let videoMovie = Row(id: 3, sender: "+15550103", created: thirdDate, fileType: "MOV", recordUUID: testUUID(3))
+        let missingMovie = Row(
+            id: 4,
+            sender: "+15550104",
+            created: fourthDate,
+            fileType: "MOV",
+            recordUUID: testUUID(4)
+        )
+        try makeStore([carrier, audioMovie, videoMovie, missingMovie])
+        try writeAudio(for: carrier, contents: Data("carrier audio".utf8))
+        try writeAudio(for: audioMovie, contents: movieFile(hasVideoTrack: false))
+        try writeAudio(for: videoMovie, contents: movieFile(hasVideoTrack: true))
+
+        let voicemails = try store.fetch(VoicemailMessage.FetchRequest(limit: 30))
+
+        XCTAssertEqual(
+            voicemails.map(\.kind),
+            [.faceTimeVideo, .faceTimeVideo, .carrierVoicemail, .carrierVoicemail]
+        )
+        XCTAssertEqual(voicemails.map(\.hasAudio), [false, false, true, true])
+    }
+
+    func testKindFilterResolvesMoviesByAssetAndAppliesLimitAfter() throws {
+        let carrier = Row(id: 1, sender: "+15550101", created: firstDate, fileType: "amr", recordUUID: testUUID(1))
+        let audioMovie = Row(id: 2, sender: "+15550102", created: secondDate, fileType: "MOV", recordUUID: testUUID(2))
+        let videoMovie = Row(id: 3, sender: "+15550103", created: thirdDate, fileType: "MOV", recordUUID: testUUID(3))
+        try makeStore([carrier, audioMovie, videoMovie])
+        try writeAudio(for: audioMovie, contents: movieFile(hasVideoTrack: false))
+        try writeAudio(for: videoMovie, contents: movieFile(hasVideoTrack: true))
+
+        var request = VoicemailMessage.FetchRequest(limit: 30)
+        request.kind = .carrierVoicemail
+        XCTAssertEqual(try store.fetch(request).map(\.id), [2, 1])
+
+        request.kind = .faceTimeVideo
+        XCTAssertEqual(try store.fetch(request).map(\.id), [3])
+
+        request.kind = .carrierVoicemail
+        request.limit = 1
+        XCTAssertEqual(try store.fetch(request).map(\.id), [2])
+    }
+
+    func testAudioOnlyMovieIsPlayableCarrierAudio() throws {
+        let row = Row(id: 1, sender: "+15550101", created: firstDate, fileType: "MOV", recordUUID: testUUID(1))
+        try makeStore([row])
+        try writeAudio(for: row, contents: movieFile(hasVideoTrack: false))
+
+        let message = try XCTUnwrap(store.message(id: 1))
+        XCTAssertEqual(message.kind, .carrierVoicemail)
+        XCTAssertEqual(message.hasAudio, true)
+        XCTAssertEqual(store.audioMimeType(for: message), "audio/mp4")
+        XCTAssertEqual(try XCTUnwrap(try store.audioData(for: message)), movieFile(hasVideoTrack: false))
+    }
+
+    func testQuickTimeMovieProbeDistinguishesAudioOnlyMovies() {
+        XCTAssertTrue(QuickTimeMovie.isAudioOnlyMovie(movieFile(hasVideoTrack: false)))
+        XCTAssertFalse(QuickTimeMovie.isAudioOnlyMovie(movieFile(hasVideoTrack: true)))
+        XCTAssertFalse(QuickTimeMovie.isAudioOnlyMovie(Data("not a movie".utf8)))
+        XCTAssertFalse(QuickTimeMovie.isAudioOnlyMovie(Data()))
     }
 
     // MARK: - Helpers
