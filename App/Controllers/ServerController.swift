@@ -497,9 +497,18 @@ actor MCPConnectionManager {
         )
 
         // MCP server instance for this connection.
+        // Some clients, such as ChatGPT,
+        // describe the server to the model with only the first line of the instructions,
+        // so keep them on one line.
         self.server = MCP.Server(
             name: Bundle.main.name ?? "iMCP",
             version: Bundle.main.shortVersionString ?? "unknown",
+            instructions: """
+                Use iMCP for apps and data on the user's Mac: \
+                Calendar, Contacts, Location, Maps, Messages, Phone, Reminders, Shortcuts, Weather, \
+                and the camera, microphone, and screen. \
+                Only the services that the user turns on in iMCP have tools.
+                """,
             capabilities: MCP.Server.Capabilities(
                 tools: .init(listChanged: true)
             )
