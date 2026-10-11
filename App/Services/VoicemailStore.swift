@@ -475,7 +475,9 @@ enum QuickTimeMovie {
             } else if size == 0 {
                 size = bounds.upperBound - offset  // To end of container.
             }
-            guard size >= headerSize, offset + size <= bounds.upperBound else { break }
+            // Compare against the remaining bytes — a malformed size up to
+            // `Int.max` would overflow an `offset + size` addition and trap.
+            guard size >= headerSize, size <= bounds.upperBound - offset else { break }
             if header.suffix(4) == Data(type.utf8) {
                 payloads.append((offset + headerSize) ..< (offset + size))
             }

@@ -493,6 +493,17 @@ final class VoicemailStoreTests: XCTestCase {
         XCTAssertTrue(QuickTimeMovie.isAudioOnlyMovie(file))
     }
 
+    func testQuickTimeMovieRejectsOverflowingExtendedSizes() {
+        var malformed = withUnsafeBytes(of: UInt32(1).bigEndian) { Data($0) }
+        malformed.append(Data("mdat".utf8))
+        malformed.append(withUnsafeBytes(of: UInt64(Int.max).bigEndian) { Data($0) })
+
+        var file = atom("ftyp", payload: Data("qt  ".utf8))
+        file.append(malformed)
+
+        XCTAssertFalse(QuickTimeMovie.isAudioOnlyMovie(file))
+    }
+
     // MARK: - Helpers
 
     /// A fixed UUID synthesized for tests, distinct per index.
