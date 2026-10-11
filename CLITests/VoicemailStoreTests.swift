@@ -85,7 +85,7 @@ final class VoicemailStoreTests: XCTestCase {
         XCTAssertEqual(sqlite3_prepare_v2(connection, sql, -1, &statement, nil), SQLITE_OK)
         defer { sqlite3_finalize(statement) }
 
-        sqlite3_bind_int(statement, 1, Int32(row.id))
+        sqlite3_bind_int64(statement, 1, Int64(row.id))
         bindText(row.sender, to: statement, at: 2)
         sqlite3_bind_double(statement, 3, row.created)
         bindDouble(row.deleted, to: statement, at: 4)
@@ -186,15 +186,25 @@ final class VoicemailStoreTests: XCTestCase {
         return try NSKeyedArchiver.archivedData(withRootObject: segments, requiringSecureCoding: false)
     }
 
+    /// An atom with the standard 32-bit size header.
+    private func atom(_ type: String, payload: Data) -> Data {
+        var data = withUnsafeBytes(of: UInt32(payload.count + 8).bigEndian) { Data($0) }
+        data.append(Data(type.utf8))
+        return data + payload
+    }
+
+    /// An atom with the extended-size header QuickTime uses for 64-bit sizes,
+    /// as large `mdat` atoms carry.
+    private func extendedSizeAtom(_ type: String, payload: Data) -> Data {
+        var data = withUnsafeBytes(of: UInt32(1).bigEndian) { Data($0) }
+        data.append(Data(type.utf8))
+        data.append(withUnsafeBytes(of: UInt64(payload.count + 16).bigEndian) { Data($0) })
+        return data + payload
+    }
+
     /// A synthetic QuickTime movie whose single track declares an audio or a
     /// video handler — the structure `QuickTimeMovie` reads.
     private func movieFile(hasVideoTrack: Bool) -> Data {
-        func atom(_ type: String, payload: Data) -> Data {
-            var data = withUnsafeBytes(of: UInt32(payload.count + 8).bigEndian) { Data($0) }
-            data.append(Data(type.utf8))
-            return data + payload
-        }
-
         var handler = Data(repeating: 0, count: 8)
         handler.append(Data((hasVideoTrack ? "vide" : "soun").utf8))
         handler.append(Data(repeating: 0, count: 12))
@@ -296,6 +306,20 @@ final class VoicemailStoreTests: XCTestCase {
         XCTAssertEqual(message.sender, "+15550101")
         XCTAssertEqual(message.kind, .carrierVoicemail)
         XCTAssertNil(try store.message(id: 2))
+    }
+
+    func testMessageRoundTrips64BitIdentifiers() throws {
+        try makeStore([
+            Row(id: 5_000_000_000, sender: "+15550101", created: firstDate, fileType: "amr")
+        ])
+
+        XCTAssertEqual(
+            try store.fetch(VoicemailMessage.FetchRequest(limit: 30)).map(\.id),
+            [5_000_000_000]
+        )
+
+        let message = try XCTUnwrap(store.message(id: 5_000_000_000))
+        XCTAssertEqual(message.id, 5_000_000_000)
     }
 
     func testTranscriptDecodesCarrierShape() throws {
@@ -443,6 +467,30 @@ final class VoicemailStoreTests: XCTestCase {
         XCTAssertFalse(QuickTimeMovie.isAudioOnlyMovie(movieFile(hasVideoTrack: true)))
         XCTAssertFalse(QuickTimeMovie.isAudioOnlyMovie(Data("not a movie".utf8)))
         XCTAssertFalse(QuickTimeMovie.isAudioOnlyMovie(Data()))
+    }
+
+    func testQuickTimeMovieSkipsExtendedSizeAtoms() {
+        var audioFile = atom("ftyp", payload: Data("qt  ".utf8))
+        audioFile.append(extendedSizeAtom("mdat", payload: Data(repeating: 0, count: 65_536)))
+        audioFile.append(movieFile(hasVideoTrack: false))
+        XCTAssertTrue(QuickTimeMovie.isAudioOnlyMovie(audioFile))
+
+        var videoFile = atom("ftyp", payload: Data("qt  ".utf8))
+        videoFile.append(extendedSizeAtom("mdat", payload: Data(repeating: 0, count: 65_536)))
+        videoFile.append(movieFile(hasVideoTrack: true))
+        XCTAssertFalse(QuickTimeMovie.isAudioOnlyMovie(videoFile))
+    }
+
+    func testQuickTimeMovieEntersExtendedSizeContainers() {
+        var handler = Data(repeating: 0, count: 8)
+        handler.append(Data("soun".utf8))
+        handler.append(Data(repeating: 0, count: 12))
+        let track = atom("trak", payload: atom("mdia", payload: atom("hdlr", payload: handler)))
+
+        var file = atom("ftyp", payload: Data("qt  ".utf8))
+        file.append(extendedSizeAtom("moov", payload: track))
+
+        XCTAssertTrue(QuickTimeMovie.isAudioOnlyMovie(file))
     }
 
     // MARK: - Helpers

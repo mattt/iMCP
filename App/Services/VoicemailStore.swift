@@ -85,7 +85,7 @@ struct VoicemailStore {
     private func resolveClassification(of message: inout VoicemailMessage) {
         if message.fileType == "MOV",
             let url = audioURL(for: message),
-            let data = try? Data(contentsOf: url),
+            let data = try? Data(contentsOf: url, options: .mappedIfSafe),
             QuickTimeMovie.isAudioOnlyMovie(data)
         {
             message.kind = .carrierVoicemail
@@ -462,10 +462,22 @@ enum QuickTimeMovie {
         while offset + 8 <= bounds.upperBound {
             let header = data.subdata(in: offset ..< (offset + 8))
             var size = header.prefix(4).reduce(0) { $0 << 8 | Int($1) }
-            if size == 0 { size = bounds.upperBound - offset }  // To end of container.
-            guard size >= 8, offset + size <= bounds.upperBound else { break }
+            var headerSize = 8
+            if size == 1 {
+                // A size of 1 marks an extended header whose 64-bit size
+                // follows the atom type.
+                guard offset + 16 <= bounds.upperBound else { break }
+                let extended = data.subdata(in: (offset + 8) ..< (offset + 16))
+                    .reduce(UInt64(0)) { $0 << 8 | UInt64($1) }
+                guard let exact = Int(exactly: extended) else { break }
+                size = exact == 0 ? bounds.upperBound - offset : exact  // To end of container.
+                headerSize = 16
+            } else if size == 0 {
+                size = bounds.upperBound - offset  // To end of container.
+            }
+            guard size >= headerSize, offset + size <= bounds.upperBound else { break }
             if header.suffix(4) == Data(type.utf8) {
-                payloads.append((offset + 8) ..< (offset + size))
+                payloads.append((offset + headerSize) ..< (offset + size))
             }
             offset += size
         }
@@ -601,7 +613,7 @@ private enum SQLiteValue {
         case .double(let double):
             sqlite3_bind_double(statement, index, double)
         case .int(let int):
-            sqlite3_bind_int(statement, index, Int32(clamping: int))
+            sqlite3_bind_int64(statement, index, Int64(int))
         }
     }
 }
