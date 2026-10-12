@@ -457,7 +457,9 @@ final class CalendarService: Service {
                 event.notes = notes
             }
 
-            if case .string(let urlString) = arguments["url"] {
+            switch arguments["url"] {
+            case nil: break
+            case .string(let urlString):
                 // .uri is absolute by definition; URL(string:) alone would
                 // accept relative references like an empty string.
                 guard let url = URL(string: urlString), url.scheme != nil else {
@@ -471,6 +473,14 @@ final class CalendarService: Service {
                     )
                 }
                 event.url = url
+            default:
+                // inputSchema is advertised, not enforced: a present value
+                // of any other shape is an error, not a silently unset URL.
+                throw NSError(
+                    domain: "CalendarError",
+                    code: 2,
+                    userInfo: [NSLocalizedDescriptionKey: "URL must be a string."]
+                )
             }
 
             if case .string(let availability) = arguments["availability"] {
@@ -492,8 +502,19 @@ final class CalendarService: Service {
             }
 
             // Set alarms
-            if case .array(let alarmConfigs) = arguments["alarms"] {
+            switch arguments["alarms"] {
+            case nil: break
+            case .array(let alarmConfigs):
                 event.alarms = try alarmConfigs.map { try Self.alarm(from: $0) }
+            default:
+                throw NSError(
+                    domain: "CalendarError",
+                    code: 2,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Alarms must be an array of alarm configurations."
+                    ]
+                )
             }
 
             // Save the event
