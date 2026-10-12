@@ -9,6 +9,20 @@ import OrderedCollections
 
 private let log = Logger.service("reminders")
 
+/// Day names as the reminders tools accept and emit them: bare names for
+/// every week, ordinal-prefixed names for one weekday of the month.
+private let recurrenceDayNames = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
+private let recurrenceDayValues =
+    recurrenceDayNames
+    + ["first", "second", "third", "fourth", "fifth", "last"].flatMap { ordinal in
+        recurrenceDayNames.map { "\(ordinal) \($0)" }
+    }
+
+private let monthNames = [
+    "january", "february", "march", "april", "may", "june", "july", "august",
+    "september", "october", "november", "december",
+]
+
 /// Reminder properties accepted by both `reminders_create` and `reminders_update`.
 /// Passing `null` for an optional property in `reminders_update` clears it.
 private let reminderProperties: OrderedDictionary<String, JSONSchema> = [
@@ -59,14 +73,33 @@ private let reminderProperties: OrderedDictionary<String, JSONSchema> = [
                     minimum: 1
                 ),
                 "daysOfTheWeek": .array(
-                    description: "Days of the week the reminder repeats on (weekly frequency)",
-                    items: .string(
-                        enum: [
-                            .string("sunday"), .string("monday"), .string("tuesday"),
-                            .string("wednesday"), .string("thursday"), .string("friday"),
-                            .string("saturday"),
-                        ]
-                    )
+                    description:
+                        "Days of the week the reminder repeats on; prefix an ordinal (first through fifth, or last) to repeat on one weekday of the month, e.g. \"second tuesday\"",
+                    items: .string(enum: recurrenceDayValues.map { .string($0) })
+                ),
+                "daysOfTheMonth": .array(
+                    description:
+                        "Days of the month the reminder repeats on; negative counts from the end (-1 is the last day)",
+                    items: .integer(minimum: -31, maximum: 31)
+                ),
+                "monthsOfTheYear": .array(
+                    description: "Months the reminder repeats in",
+                    items: .string(enum: monthNames.map { .string($0) })
+                ),
+                "weeksOfTheYear": .array(
+                    description:
+                        "Weeks of the year the reminder repeats in; negative counts from the end",
+                    items: .integer(minimum: -53, maximum: 53)
+                ),
+                "daysOfTheYear": .array(
+                    description:
+                        "Days of the year the reminder repeats on; negative counts from the end",
+                    items: .integer(minimum: -366, maximum: 366)
+                ),
+                "setPositions": .array(
+                    description:
+                        "Which of the matched occurrences to keep, e.g. -1 for the last one of each period",
+                    items: .integer(minimum: -366, maximum: 366)
                 ),
                 "end": .object(
                     description:
@@ -1137,14 +1170,11 @@ final class RemindersService: Service {
         guard case .object(var fields) = base else { return base }
 
         if let completionDate = reminder.completionDate {
-            fields["completedAt"] = try JSONDecoder().decode(
-                Value.self,
-                from: try encoder.encode(DateTime(completionDate))
-            )
+            fields["completedAt"] = .string(Self.iso8601String(completionDate))
         }
 
         if let recurrenceRule = reminder.recurrenceRules?.first {
-            fields["recurrence"] = Self.value(for: recurrenceRule, encoder: encoder)
+            fields["recurrence"] = Self.value(for: recurrenceRule)
         }
 
         return .object(fields)
@@ -1177,13 +1207,14 @@ final class RemindersService: Service {
         }
 
         var interval = 1
-        if case .int(let value)? = config["interval"] {
-            guard value >= 1 else {
+        if let intervalValue = config["interval"] {
+            guard case .int(let value) = intervalValue, value >= 1 else {
                 throw NSError(
                     domain: "RemindersError",
                     code: 2,
                     userInfo: [
-                        NSLocalizedDescriptionKey: "Recurrence interval must be at least 1."
+                        NSLocalizedDescriptionKey:
+                            "Recurrence interval must be an integer of at least 1."
                     ]
                 )
             }
@@ -1201,13 +1232,38 @@ final class RemindersService: Service {
                         code: 2,
                         userInfo: [
                             NSLocalizedDescriptionKey:
-                                "Unknown day of the week. Expected sunday through saturday."
+                                "Unknown day of the week. Expected sunday through saturday, optionally prefixed with first through fifth or last."
                         ]
                     )
                 }
                 return day
             }
         }
+
+        let daysOfTheMonth = try Self.integers(config["daysOfTheMonth"], named: "days of the month")
+        let monthsOfTheYear: [NSNumber]?
+        if case .array(let monthValues)? = config["monthsOfTheYear"] {
+            monthsOfTheYear = try monthValues.map { monthValue in
+                guard case .string(let monthName) = monthValue,
+                    let index = monthNames.firstIndex(of: monthName.lowercased())
+                else {
+                    throw NSError(
+                        domain: "RemindersError",
+                        code: 2,
+                        userInfo: [
+                            NSLocalizedDescriptionKey:
+                                "Unknown month. Expected january through december."
+                        ]
+                    )
+                }
+                return NSNumber(value: index + 1)
+            }
+        } else {
+            monthsOfTheYear = nil
+        }
+        let weeksOfTheYear = try Self.integers(config["weeksOfTheYear"], named: "weeks of the year")
+        let daysOfTheYear = try Self.integers(config["daysOfTheYear"], named: "days of the year")
+        let setPositions = try Self.integers(config["setPositions"], named: "set positions")
 
         var end: EKRecurrenceEnd?
         if case .object(let endConfig)? = config["end"] {
@@ -1238,12 +1294,20 @@ final class RemindersService: Service {
                         ]
                     )
                 }
-                end = EKRecurrenceEnd(
-                    end: Calendar.current.normalizedEndDate(
-                        from: parsedDate.date,
-                        isDateOnly: parsedDate.isDateOnly
-                    )
-                )
+                // EKRecurrenceEnd's date is the last instant a recurrence may
+                // start on (inclusive, like RFC 5545 UNTIL), so a date-only
+                // value covers that whole day instead of stopping at midnight.
+                let endDate: Date
+                if parsedDate.isDateOnly {
+                    endDate =
+                        Calendar.current.date(
+                            byAdding: DateComponents(day: 1, second: -1),
+                            to: Calendar.current.startOfDay(for: parsedDate.date)
+                        ) ?? parsedDate.date
+                } else {
+                    endDate = parsedDate.date
+                }
+                end = EKRecurrenceEnd(end: endDate)
             } else {
                 guard case .int(let count)? = endConfig["count"], count >= 1 else {
                     throw NSError(
@@ -1263,30 +1327,44 @@ final class RemindersService: Service {
             recurrenceWith: frequency,
             interval: interval,
             daysOfTheWeek: daysOfTheWeek,
-            daysOfTheMonth: nil,
-            monthsOfTheYear: nil,
-            weeksOfTheYear: nil,
-            daysOfTheYear: nil,
-            setPositions: nil,
+            daysOfTheMonth: daysOfTheMonth,
+            monthsOfTheYear: monthsOfTheYear,
+            weeksOfTheYear: weeksOfTheYear,
+            daysOfTheYear: daysOfTheYear,
+            setPositions: setPositions,
             end: end
         )
     }
 
-    /// Maps a recurrence rule onto the shape accepted by the recurrence parameter.
-    private static func value(for rule: EKRecurrenceRule, encoder: JSONEncoder) -> Value {
+    /// The nonzero integers of an array parameter, rejecting anything else.
+    private static func integers(_ value: Value?, named description: String) throws -> [NSNumber]? {
+        guard case .array(let values)? = value else { return nil }
+        return try values.map { item in
+            guard case .int(let number) = item, number != 0 else {
+                throw NSError(
+                    domain: "RemindersError",
+                    code: 2,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Recurrence \(description) takes nonzero integers."
+                    ]
+                )
+            }
+            return NSNumber(value: number)
+        }
+    }
+
+    /// Maps a recurrence rule onto the shape accepted by the recurrence
+    /// parameter, so an emitted rule round-trips back into a reminder.
+    private static func value(for rule: EKRecurrenceRule) -> Value {
         var fields: [String: Value] = [
             "frequency": .string(rule.frequency.stringValue),
             "interval": .int(rule.interval),
         ]
 
         if let end = rule.recurrenceEnd {
-            if let endDate = end.endDate,
-                let encoded = try? JSONDecoder().decode(
-                    Value.self,
-                    from: try encoder.encode(DateTime(endDate))
-                )
-            {
-                fields["end"] = .object(["date": encoded])
+            if let endDate = end.endDate {
+                fields["end"] = .object(["date": .string(iso8601String(endDate))])
             } else if end.occurrenceCount > 0 {
                 fields["end"] = .object(["count": .int(end.occurrenceCount)])
             }
@@ -1294,11 +1372,37 @@ final class RemindersService: Service {
 
         if let daysOfTheWeek = rule.daysOfTheWeek, !daysOfTheWeek.isEmpty {
             fields["daysOfTheWeek"] = .array(
-                daysOfTheWeek.map { .string($0.dayName) }
+                daysOfTheWeek.map { .string($0.namedValue) }
             )
+        }
+        if let daysOfTheMonth = rule.daysOfTheMonth, !daysOfTheMonth.isEmpty {
+            fields["daysOfTheMonth"] = .array(daysOfTheMonth.map { .int($0.intValue) })
+        }
+        if let monthsOfTheYear = rule.monthsOfTheYear, !monthsOfTheYear.isEmpty {
+            fields["monthsOfTheYear"] = .array(
+                monthsOfTheYear.map { .string(monthNames[$0.intValue - 1]) }
+            )
+        }
+        if let weeksOfTheYear = rule.weeksOfTheYear, !weeksOfTheYear.isEmpty {
+            fields["weeksOfTheYear"] = .array(weeksOfTheYear.map { .int($0.intValue) })
+        }
+        if let daysOfTheYear = rule.daysOfTheYear, !daysOfTheYear.isEmpty {
+            fields["daysOfTheYear"] = .array(daysOfTheYear.map { .int($0.intValue) })
+        }
+        if let setPositions = rule.setPositions, !setPositions.isEmpty {
+            fields["setPositions"] = .array(setPositions.map { .int($0.intValue) })
         }
 
         return .object(fields)
+    }
+
+    /// A bare ISO 8601 string, as the reminders tools accept: the ontology
+    /// encoder writes a JSON-LD wrapper for root-level DateTime values.
+    private static func iso8601String(_ date: Date) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        formatter.timeZone = TimeZone.current
+        return formatter.string(from: date)
     }
 
     /// Parses an ISO 8601 date string into due/start date components,
