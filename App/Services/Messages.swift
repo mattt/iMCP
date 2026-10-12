@@ -122,6 +122,15 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
             if case .directory = try? resolveBookmarkedGrant() {
                 isActivated = isActivated || canAccessDatabaseUsingBookmark
             }
+            // The Attachments grant is optional, but while it is missing
+            // the toggle must keep calling activate(), whose directory
+            // branch offers it — otherwise the remediation the read errors
+            // and the README point at ("switch off and on") never runs.
+            if !canAccessDatabaseAtDefaultPath, isActivated,
+                UserDefaults.standard.data(forKey: messagesAttachmentsBookmarkKey) == nil
+            {
+                isActivated = false
+            }
             log.debug("Message service activation status: \(isActivated)")
             return isActivated
         }
@@ -352,7 +361,9 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                     "id": .string(description: "The attachment @id"),
                     "maxBytes": .integer(
                         description: "Refuse files larger than this",
-                        default: .int(defaultAttachmentMaxBytes)
+                        default: .int(defaultAttachmentMaxBytes),
+                        minimum: 1,
+                        maximum: maxAttachmentMaxBytes
                     ),
                 ],
                 required: ["id"],
@@ -516,16 +527,23 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
         // starting a scope of our own is always safe.
         let storedBookmark = UserDefaults.standard.data(forKey: messagesAttachmentsBookmarkKey)
         if storedBookmark == nil {
-            // The wall denies the Attachments subtree while leaving the
-            // directory entry itself stat-able (the spike's finding), so
-            // existence separates a deleted folder from the wall: a gone
-            // folder must surface as fileMissing from the per-file checks,
-            // not as grantMissing, whose remediation panel has nothing
-            // left to select.
             let attachmentsPath = messagesDirectoryPath + "/Attachments"
-            if !FileManager.default.fileExists(atPath: attachmentsPath)
-                || FileManager.default.isReadableFile(atPath: attachmentsPath)
-            {
+            if FileManager.default.isReadableFile(atPath: attachmentsPath) {
+                return try operation()
+            }
+            // Under a grant on chat.db alone the Messages folder itself is
+            // unreachable: the Attachments folder is walled off, not
+            // deleted, and the remediation that fixes it is the folder
+            // upgrade the grantMissing error points at.
+            guard FileManager.default.isReadableFile(atPath: messagesDirectoryPath) else {
+                throw AttachmentError.grantMissing
+            }
+            // The Messages folder is readable, so the sandbox is either out
+            // of the way or held to the folder grant whose wall leaves the
+            // Attachments directory entry stat-able while denying the
+            // subtree: a folder that does not exist is deleted — let the
+            // per-file checks speak — while one that exists is walled.
+            if !FileManager.default.fileExists(atPath: attachmentsPath) {
                 return try operation()
             }
         }
@@ -979,7 +997,7 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
     // subfolder when that is the one being granted.
     func panel(_ sender: Any, shouldEnable url: URL) -> Bool {
         let shouldEnable =
-            isMessagesDirectory(url)
+            (!activePanelAcceptsAttachments && isMessagesDirectory(url))
             || (activePanelAcceptsAttachments && url.lastPathComponent == "Attachments")
         log.debug(
             "File selection panel: \(shouldEnable ? "enabling" : "disabling") URL: \(url.path)"
