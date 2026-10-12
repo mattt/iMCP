@@ -1123,17 +1123,13 @@ final class RemindersService: Service {
                     ]
                 )
             }
-            guard !ISO8601DateFormatter.isDateOnlyISO8601String(datetimeString) else {
-                throw NSError(
-                    domain: "RemindersError",
-                    code: 4,
-                    userInfo: [
-                        NSLocalizedDescriptionKey:
-                            "Absolute alarm datetime must include a time component."
-                    ]
+            // Date-only values mean local midnight, like every other date
+            // parameter of these tools (due, start) and like events_create.
+            guard
+                let parsed = ISO8601DateFormatter.parsedLenientISO8601Date(
+                    fromISO8601String: datetimeString
                 )
-            }
-            guard let absoluteDate = ISO8601DateFormatter.lenientDate(fromISO8601String: datetimeString) else {
+            else {
                 throw NSError(
                     domain: "RemindersError",
                     code: 4,
@@ -1143,7 +1139,12 @@ final class RemindersService: Service {
                     ]
                 )
             }
-            alarm = EKAlarm(absoluteDate: absoluteDate)
+            alarm = EKAlarm(
+                absoluteDate: Calendar.current.normalizedStartDate(
+                    from: parsed.date,
+                    isDateOnly: parsed.isDateOnly
+                )
+            )
 
         case "proximity":
             let title: String
