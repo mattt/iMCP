@@ -308,7 +308,7 @@ final class CalendarService: Service {
                                             description: "Email address to send notification to"
                                         ),
                                     ],
-                                    required: ["datetime"],
+                                    required: ["type", "datetime"],
                                     additionalProperties: false
                                 ),
                                 // Proximity alarm (location-based)
@@ -337,7 +337,7 @@ final class CalendarService: Service {
                                             description: "Email address to send notification to"
                                         ),
                                     ],
-                                    required: ["locationTitle", "latitude", "longitude"],
+                                    required: ["type", "locationTitle", "latitude", "longitude"],
                                     additionalProperties: false
                                 ),
                             ]
@@ -720,7 +720,7 @@ final class CalendarService: Service {
                                             description: "Email address to send notification to"
                                         ),
                                     ],
-                                    required: ["datetime"],
+                                    required: ["type", "datetime"],
                                     additionalProperties: false
                                 ),
                                 // Proximity alarm (location-based)
@@ -749,7 +749,7 @@ final class CalendarService: Service {
                                             description: "Email address to send notification to"
                                         ),
                                     ],
-                                    required: ["locationTitle", "latitude", "longitude"],
+                                    required: ["type", "locationTitle", "latitude", "longitude"],
                                     additionalProperties: false
                                 ),
                             ])
@@ -1078,9 +1078,11 @@ final class CalendarService: Service {
             }
 
         case "proximity":
+            // .number() validates integers too, and whole-degree
+            // coordinates are common; bridge them instead of dropping.
             if case .string(let locationTitle) = config["locationTitle"],
-                case .double(let latitude) = config["latitude"],
-                case .double(let longitude) = config["longitude"]
+                let latitude = Self.number(config["latitude"]),
+                let longitude = Self.number(config["longitude"])
             {
                 alarm = EKAlarm()
 
@@ -1090,10 +1092,8 @@ final class CalendarService: Service {
                     longitude: longitude
                 )
 
-                if case .double(let radius) = config["radius"] {
+                if let radius = Self.number(config["radius"]) {
                     structuredLocation.radius = radius
-                } else if case .int(let radiusInt) = config["radius"] {
-                    structuredLocation.radius = Double(radiusInt)
                 }
 
                 let proximityType = config["proximity"]?.stringValue ?? "enter"
@@ -1121,6 +1121,16 @@ final class CalendarService: Service {
         }
 
         return alarm
+    }
+
+    /// The double a JSON Schema "number" accepts, whether the decoder
+    /// produced an Int (no fraction) or a Double.
+    private static func number(_ value: Value?) -> Double? {
+        switch value {
+        case .double(let double): return double
+        case .int(let int): return Double(int)
+        default: return nil
+        }
     }
 
     /// Resolves the exact occurrence of a recurring event at a start date. Detached
