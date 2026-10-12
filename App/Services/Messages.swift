@@ -379,7 +379,23 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
             guard let id = arguments["id"]?.stringValue, !id.isEmpty else {
                 throw AttachmentError.missingID
             }
-            let maxBytes = arguments["maxBytes"]?.intValue ?? defaultAttachmentMaxBytes
+            // inputSchema is advertised, not enforced: a present maxBytes
+            // of the wrong shape is an error, not a silent default.
+            let maxBytes: Int
+            switch arguments["maxBytes"] {
+            case nil:
+                maxBytes = defaultAttachmentMaxBytes
+            case .int(let value):
+                maxBytes = value
+            case .double(let value):
+                // JSON Schema counts 30.0 as a valid integer.
+                guard let asInt = Int(exactly: value), value.rounded() == value else {
+                    throw AttachmentError.maxBytesNotAnInteger
+                }
+                maxBytes = asInt
+            default:
+                throw AttachmentError.maxBytesNotAnInteger
+            }
             guard maxBytes >= 1, maxBytes <= maxAttachmentMaxBytes else {
                 throw AttachmentError.invalidMaxBytes(maxBytes, maxAttachmentMaxBytes)
             }
@@ -477,24 +493,24 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                 throw AttachmentError.fileMissing(id)
             }
             guard size <= maxBytes else { throw AttachmentError.tooLarge(id, size, maxBytes) }
-            // Read bounded by the limit, not the whole file: an attachment
-            // still downloading can grow between the size check and the read.
             let handle = try FileHandle(forReadingFrom: url)
             defer { try? handle.close() }
-            // read(upToCount:) reports end-of-file as nil, which for a
-            // readable zero-byte attachment is simply empty content.
-            let chunk = try handle.read(upToCount: maxBytes) ?? Data()
-            // A full-budget chunk means the file may have grown past the
-            // limit between the size check and the read; without this
-            // check a truncated read passes as complete content.
-            if chunk.count == maxBytes,
-                let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
-                let grown = attributes[.size] as? Int,
-                grown > maxBytes
-            {
-                throw AttachmentError.tooLarge(id, grown, maxBytes)
+            // Read to EOF or one byte past the limit: read(upToCount:) can
+            // return short before EOF, so serving a single chunk could
+            // silently truncate, and stopping at the limit alone would let
+            // a file that grew past it during the read pass as complete.
+            var data = Data()
+            while data.count <= maxBytes {
+                guard let chunk = try handle.read(upToCount: maxBytes + 1 - data.count) else {
+                    break
+                }
+                if chunk.isEmpty { break }
+                data.append(chunk)
             }
-            return chunk
+            guard data.count <= maxBytes else {
+                throw AttachmentError.tooLarge(id, data.count, maxBytes)
+            }
+            return data
         }
         var part: [String: Value] = [
             "@type": "MediaObject",
@@ -577,6 +593,17 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
             UserDefaults.standard.removeObject(forKey: messagesAttachmentsBookmarkKey)
             throw AttachmentError.grantScopeFailed
         }
+        // Starting the scope does not prove the bookmark still covers the
+        // Attachments folder: a stale bookmark can resolve and start a
+        // scope while pointing elsewhere, and the read would then fail
+        // against the fixed current path while the unusable grant stays
+        // stored, hiding the re-grant the errors point at. Drop the grant
+        // unless the folder is readable through it.
+        if !FileManager.default.isReadableFile(atPath: messagesDirectoryPath + "/Attachments") {
+            url.stopAccessingSecurityScopedResource()
+            UserDefaults.standard.removeObject(forKey: messagesAttachmentsBookmarkKey)
+            throw AttachmentError.grantScopeFailed
+        }
         defer { url.stopAccessingSecurityScopedResource() }
         return try operation()
     }
@@ -589,6 +616,7 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
         case fileMissing(String)
         case tooLarge(String, Int, Int)
         case invalidMaxBytes(Int, Int)
+        case maxBytesNotAnInteger
         case grantMissing
         case grantScopeFailed
         case wrongFolderSelected
@@ -604,6 +632,8 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                 return "attachment \(id) is \(size) bytes, more than the \(max) allowed"
             case .invalidMaxBytes(let maxBytes, let ceiling):
                 return "maxBytes \(maxBytes) is out of range; pass between 1 and \(ceiling)"
+            case .maxBytesNotAnInteger:
+                return "maxBytes must be an integer"
             case .grantMissing:
                 return
                     "the Attachments folder (~/Library/Messages/Attachments) has not been granted; switch Messages off and on in the iMCP menu and select it when asked"
