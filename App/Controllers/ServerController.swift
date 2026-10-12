@@ -154,7 +154,7 @@ enum ServiceRegistry {
                 ServiceConfig(
                     name: "Voicemail",
                     iconName: "recordingtape",
-                    color: .teal,
+                    color: .green,
                     service: VoicemailService.shared,
                     binding: voicemailEnabled
                 )
@@ -522,7 +522,7 @@ actor MCPConnectionManager {
             version: Bundle.main.shortVersionString ?? "unknown",
             instructions: """
                 Use iMCP for apps and data on the user's Mac: \
-                Calendar, Contacts, Location, Maps, Messages, Phone, Reminders, Shortcuts, Weather, \
+                Calendar, Contacts, Location, Maps, Messages, Phone, Reminders, Shortcuts, Voicemail, Weather, \
                 and the camera, microphone, and screen. \
                 Only the services that the user turns on in iMCP have tools.
                 """,

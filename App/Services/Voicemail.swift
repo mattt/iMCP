@@ -48,12 +48,12 @@ final class VoicemailService: NSObject, Service, NSOpenSavePanelDelegate {
         Tool(
             name: "voicemails_fetch",
             description:
-                "Fetch voicemails from the Mac (synced from iPhone, including FaceTime audio messages)",
+                "Fetch voicemails from the Mac (synced from iPhone, including FaceTime messages), newest first, from the inbox unless another mailbox is requested",
             inputSchema: .object(
                 properties: [
                     "sender": .string(
                         description:
-                            "Phone number or address to filter by (partial match supported)"
+                            "Phone number or address to filter by (partial match supported; phone numbers match by digits, ignoring formatting)"
                     ),
                     "start": .string(
                         description:
@@ -68,6 +68,12 @@ final class VoicemailService: NSObject, Service, NSOpenSavePanelDelegate {
                     "type": .string(
                         description: "Filter by message type, or omit for all",
                         enum: ["carrierVoicemail", "faceTimeAudio", "faceTimeVideo"]
+                    ),
+                    "mailbox": .string(
+                        description:
+                            "Voicemail mailbox to read: the inbox, blocked or deleted messages, or all of them",
+                        default: .string("inbox"),
+                        enum: ["inbox", "blocked", "deleted", "all"]
                     ),
                     "limit": .integer(
                         description: "Maximum voicemails to return",
@@ -96,6 +102,15 @@ final class VoicemailService: NSObject, Service, NSOpenSavePanelDelegate {
                     )
                 }
                 request.kind = kind
+            }
+            if let name = try self.argument("mailbox", in: arguments, as: \.stringValue) {
+                if name == "all" {
+                    request.mailbox = nil
+                } else if let mailbox = VoicemailMessage.Mailbox(name: name) {
+                    request.mailbox = mailbox
+                } else {
+                    throw ArgumentError.invalid("mailbox must be one of: inbox, blocked, deleted, all")
+                }
             }
             if let start = try self.argument("start", in: arguments, as: \.stringValue) {
                 guard
@@ -157,14 +172,14 @@ final class VoicemailService: NSObject, Service, NSOpenSavePanelDelegate {
             let id = try self.messageIdentifier(from: arguments)
             try await self.requestDataStoreAccess()
 
-            let transcript = try self.withStore { store -> VoicemailTranscript? in
-                guard try store.message(id: id) != nil else {
+            let transcript = try self.withStore { store -> VoicemailTranscript in
+                guard let message = try store.message(id: id) else {
                     throw TranscriptError.notFound(id)
                 }
-                return try store.transcript(id: id)
-            }
-            guard let transcript else {
-                throw TranscriptError.notTranscribed(id)
+                guard let transcript = try store.transcript(id: id) else {
+                    throw TranscriptError.notTranscribed(id, hasAudio: message.hasAudio)
+                }
+                return transcript
             }
 
             var object: [String: Value] = [
@@ -207,7 +222,10 @@ final class VoicemailService: NSObject, Service, NSOpenSavePanelDelegate {
                     return nil
                 }
                 guard let mimeType = store.audioMimeType(for: message) else {
-                    throw AudioError.unsupportedFileType(id)
+                    if message.kind == .faceTimeVideo {
+                        throw AudioError.videoMessage(id)
+                    }
+                    throw AudioError.unsupportedFormat(id, message.fileType)
                 }
                 guard let data = try store.audioData(for: message) else {
                     throw AudioError.audioMissing(id)
@@ -271,12 +289,18 @@ final class VoicemailService: NSObject, Service, NSOpenSavePanelDelegate {
         return result
     }
 
-    /// The numeric record identifier passed as the `id` argument.
+    /// The numeric record identifier passed as the `id` argument,
+    /// as the string that voicemails_fetch returns or as an integer.
     private func messageIdentifier(from arguments: [String: Value]) throws -> Int {
-        guard let identifier = arguments["id"]?.stringValue, let id = Int(identifier) else {
-            throw ArgumentError.invalid("id must be the identifier of a voicemail")
+        if let identifier = arguments["id"]?.stringValue,
+            let id = Int(identifier.trimmingCharacters(in: .whitespaces))
+        {
+            return id
         }
-        return id
+        if let id = arguments["id"]?.intValue {
+            return id
+        }
+        throw ArgumentError.invalid("id must be the identifier of a voicemail")
     }
 
     private var canAccessStoreAtDefaultPath: Bool {
@@ -379,31 +403,38 @@ final class VoicemailService: NSObject, Service, NSOpenSavePanelDelegate {
 
     private enum TranscriptError: LocalizedError {
         case notFound(Int)
-        case notTranscribed(Int)
+        case notTranscribed(Int, hasAudio: Bool)
 
         var errorDescription: String? {
             switch self {
             case .notFound(let id):
                 return "No voicemail found with identifier \(id)"
-            case .notTranscribed(let id):
-                return
-                    "The voicemail with identifier \(id) has no transcript; its audio is available from voicemail_audio_fetch"
+            case .notTranscribed(let id, let hasAudio):
+                if hasAudio {
+                    return
+                        "The voicemail with identifier \(id) has no transcript; its audio is available from voicemail_audio_fetch"
+                }
+                return "The voicemail with identifier \(id) has no transcript"
             }
         }
     }
 
     private enum AudioError: LocalizedError {
         case notFound(Int)
-        case unsupportedFileType(Int)
+        case videoMessage(Int)
+        case unsupportedFormat(Int, String?)
         case audioMissing(Int)
 
         var errorDescription: String? {
             switch self {
             case .notFound(let id):
                 return "No voicemail found with identifier \(id)"
-            case .unsupportedFileType(let id):
+            case .videoMessage(let id):
                 return
                     "The message with identifier \(id) is a video message, which this tool does not return; only carrier voicemails and FaceTime audio messages do"
+            case .unsupportedFormat(let id, let fileType):
+                return
+                    "The audio of the voicemail with identifier \(id) is in a format this tool does not return (\(fileType ?? "unknown"))"
             case .audioMissing(let id):
                 return
                     "The audio file of the voicemail with identifier \(id) is missing from the store"
@@ -484,22 +515,21 @@ final class VoicemailService: NSObject, Service, NSOpenSavePanelDelegate {
 extension VoicemailMessage {
     /// The record as a JSON object for tool output.
     var value: Value {
-        let minutes = Int(duration) / 60
-        let seconds = Int(duration) % 60
-        var object: [String: Value] = [
+        let totalSeconds = Int(duration.rounded())
+        let minutes = totalSeconds / 60
+        let seconds = totalSeconds % 60
+        return [
             "@id": .string(String(id)),
             "sender": .string(sender ?? "Unknown"),
             "date": .string(date.formatted(.iso8601)),
             "duration": .string(minutes > 0 ? "\(minutes)m \(seconds)s" : "\(seconds)s"),
-            "durationSeconds": .double(duration),
+            "durationSeconds": .double((duration * 10).rounded() / 10),
             "isRead": .bool(isRead),
             "transcribed": .bool(hasTranscript),
             "hasAudio": .bool(hasAudio),
+            "type": .string(kind?.rawValue ?? "unknown"),
+            "mailbox": .string(mailbox?.name ?? "unknown"),
         ]
-        if let kind {
-            object["type"] = .string(kind.rawValue)
-        }
-        return .object(object)
     }
 }
 
