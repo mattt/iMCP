@@ -113,7 +113,8 @@ private let reminderProperties: OrderedDictionary<String, JSONSchema> = [
                             ),
                             "radius": .number(
                                 description: "Radius in meters",
-                                default: .int(200)
+                                default: .int(200),
+                                minimum: 0
                             ),
                             "sound": .string(
                                 description: "Sound name to play when alarm triggers",
@@ -137,11 +138,18 @@ private let reminderProperties: OrderedDictionary<String, JSONSchema> = [
                                 enum: [.string("enter"), .string("leave")]
                             ),
                             "locationTitle": .string(),
-                            "latitude": .number(),
-                            "longitude": .number(),
+                            "latitude": .number(
+                                minimum: -90,
+                                maximum: 90
+                            ),
+                            "longitude": .number(
+                                minimum: -180,
+                                maximum: 180
+                            ),
                             "radius": .number(
                                 description: "Radius in meters",
-                                default: .int(200)
+                                default: .int(200),
+                                minimum: 0
                             ),
                             "sound": .string(
                                 description: "Sound name to play when alarm triggers",
@@ -374,7 +382,8 @@ final class RemindersService: Service {
             annotations: .init(
                 title: "Create Reminder",
                 destructiveHint: true,
-                openWorldHint: false
+                // Proximity alarms can geocode a location through Maps.
+                openWorldHint: true
             )
         ) { arguments in
             guard try await self.eventStore.requestFullAccessToReminders() else {
@@ -400,8 +409,16 @@ final class RemindersService: Service {
             // Set calendar (list), defaulting to the default list when the
             // provided name does not match an existing list.
             var calendar = self.eventStore.defaultCalendarForNewReminders()
-            if case .string(let listName) = arguments["list"] {
+            switch arguments["list"] {
+            case nil: break
+            case .string(let listName):
                 calendar = try self.listIfPresent(named: listName) ?? calendar
+            default:
+                throw NSError(
+                    domain: "RemindersError",
+                    code: 2,
+                    userInfo: [NSLocalizedDescriptionKey: "List must be a string."]
+                )
             }
             reminder.calendar = calendar
 
@@ -459,7 +476,8 @@ final class RemindersService: Service {
                 title: "Update Reminder",
                 readOnlyHint: false,
                 destructiveHint: true,
-                openWorldHint: false
+                // Proximity alarms can geocode a location through Maps.
+                openWorldHint: true
             )
         ) { arguments in
             guard try await self.eventStore.requestFullAccessToReminders() else {
@@ -497,10 +515,16 @@ final class RemindersService: Service {
             // The move happens after apply: EventKit retains unsaved
             // mutations, so a validation error must not leave it behind.
             let targetList: EKCalendar?
-            if case .string(let listName) = arguments["list"] {
+            switch arguments["list"] {
+            case nil: targetList = nil
+            case .string(let listName):
                 targetList = try self.list(named: listName)
-            } else {
-                targetList = nil
+            default:
+                throw NSError(
+                    domain: "RemindersError",
+                    code: 2,
+                    userInfo: [NSLocalizedDescriptionKey: "List must be a string."]
+                )
             }
 
             // Modifiability is checked before anything is mutated: EventKit
@@ -788,12 +812,28 @@ final class RemindersService: Service {
     /// unsaved mutations in its shared store, so an error halfway through
     /// would otherwise be committed by the next successful save.
     private func apply(_ arguments: [String: Value], to reminder: EKReminder) async throws {
-        let newNotes = Self.stringChange(arguments["notes"])
+        let newTitle: PropertyChange<String>
+        switch arguments["title"] {
+        case nil: newTitle = .absent
+        case .some(.string(let title)): newTitle = .set(title)
+        case .some:
+            throw NSError(
+                domain: "RemindersError",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "Title must be a string."]
+            )
+        }
+
+        let newNotes = try Self.stringChange(arguments["notes"], description: "notes")
         let newURL = try Self.urlChange(arguments["url"])
         let newStart = try Self.dateComponentsChange(arguments["start"], description: "start")
         let newDue = try Self.dateComponentsChange(arguments["due"], description: "due")
+        let newPriority = try Self.priorityChange(arguments["priority"])
+        let newCompleted = try Self.boolChange(arguments["completed"], description: "completed")
 
-        var newAlarms: PropertyChange<[EKAlarm]> = .absent
+        // inputSchema is advertised, not enforced: a present value with the
+        // wrong shape is an error, not a silent no-op.
+        let newAlarms: PropertyChange<[EKAlarm]>
         switch arguments["alarms"] {
         case .array(let alarmConfigs):
             var alarms: [EKAlarm] = []
@@ -803,13 +843,20 @@ final class RemindersService: Service {
             newAlarms = .set(alarms)
         case .null:
             newAlarms = .set([])
+        case nil:
+            newAlarms = .absent
         default:
-            break
+            throw NSError(
+                domain: "RemindersError",
+                code: 2,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Alarms must be an array of alarm configurations or null."
+                ]
+            )
         }
 
-        if case .string(let title) = arguments["title"] {
-            reminder.title = title
-        }
+        if case .set(let title) = newTitle { reminder.title = title }
 
         switch newNotes {
         case .set(let notes): reminder.notes = notes
@@ -835,15 +882,15 @@ final class RemindersService: Service {
         case .absent: break
         }
 
-        if case .string(let priorityString) = arguments["priority"] {
-            reminder.priority = Int(EKReminderPriority.from(string: priorityString).rawValue)
+        if case .set(let priority) = newPriority {
+            reminder.priority = Int(priority.rawValue)
         }
 
         if case .set(let alarms) = newAlarms {
             reminder.alarms = alarms
         }
 
-        if case .bool(let completed) = arguments["completed"] {
+        if case .set(let completed) = newCompleted {
             reminder.isCompleted = completed
         }
     }
@@ -855,16 +902,29 @@ final class RemindersService: Service {
         case clear
     }
 
-    private static func stringChange(_ value: Value?) -> PropertyChange<String> {
+    private static func stringChange(
+        _ value: Value?,
+        description: String
+    ) throws -> PropertyChange<String> {
         switch value {
+        case nil: return .absent
         case .string(let string): return .set(string)
         case .null: return .clear
-        default: return .absent
+        default:
+            throw NSError(
+                domain: "RemindersError",
+                code: 2,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "\(description.capitalized) must be a string or null."
+                ]
+            )
         }
     }
 
     private static func urlChange(_ value: Value?) throws -> PropertyChange<URL> {
         switch value {
+        case nil: return .absent
         case .string(let urlString):
             guard let url = URL(string: urlString) else {
                 throw NSError(
@@ -875,7 +935,12 @@ final class RemindersService: Service {
             }
             return .set(url)
         case .null: return .clear
-        default: return .absent
+        default:
+            throw NSError(
+                domain: "RemindersError",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "URL must be a string or null."]
+            )
         }
     }
 
@@ -884,12 +949,66 @@ final class RemindersService: Service {
         description: String
     ) throws -> PropertyChange<DateComponents> {
         switch value {
+        case nil: return .absent
         case .string(let dateString):
             return .set(
                 try Self.dateComponents(fromDateString: dateString, description: description)
             )
         case .null: return .clear
-        default: return .absent
+        default:
+            throw NSError(
+                domain: "RemindersError",
+                code: 2,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "\(description.capitalized) must be an ISO 8601 date string or null."
+                ]
+            )
+        }
+    }
+
+    /// The lenient `from(string:)` folds unknowns into `.none`; an update
+    /// needs a typo to report an error rather than silently clear priority.
+    private static func priorityChange(_ value: Value?) throws -> PropertyChange<EKReminderPriority> {
+        switch value {
+        case nil: return .absent
+        case .string(let string):
+            guard let priority = EKReminderPriority.from(exactString: string) else {
+                throw NSError(
+                    domain: "RemindersError",
+                    code: 2,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Priority must be one of \(EKReminderPriority.allCases.map(\.stringValue).joined(separator: ", "))."
+                    ]
+                )
+            }
+            return .set(priority)
+        default:
+            throw NSError(
+                domain: "RemindersError",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "Priority must be a string."]
+            )
+        }
+    }
+
+    private static func boolChange(
+        _ value: Value?,
+        description: String
+    ) throws -> PropertyChange<Bool> {
+        switch value {
+        case nil: return .absent
+        case .bool(let bool): return .set(bool)
+        default:
+            throw NSError(
+                domain: "RemindersError",
+                code: 2,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "\(description.capitalized) must be a boolean."
+                ]
+            )
         }
     }
 
@@ -1057,6 +1176,26 @@ final class RemindersService: Service {
                         ]
                     )
                 }
+                guard (-90.0...90.0).contains(latitude) else {
+                    throw NSError(
+                        domain: "RemindersError",
+                        code: 4,
+                        userInfo: [
+                            NSLocalizedDescriptionKey:
+                                "Latitude \(latitude) is outside the geographic range of -90 to 90 degrees."
+                        ]
+                    )
+                }
+                guard (-180.0...180.0).contains(longitude) else {
+                    throw NSError(
+                        domain: "RemindersError",
+                        code: 4,
+                        userInfo: [
+                            NSLocalizedDescriptionKey:
+                                "Longitude \(longitude) is outside the geographic range of -180 to 180 degrees."
+                        ]
+                    )
+                }
                 title = locationTitle
                 coordinate = CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
             }
@@ -1066,8 +1205,20 @@ final class RemindersService: Service {
                 longitude: coordinate.longitude
             )
             // The schema advertises a 200 m default; EKStructuredLocation
-            // alone would leave a zero-radius geofence.
-            structuredLocation.radius = Self.number(config["radius"]) ?? 200
+            // alone would leave a zero-radius geofence. Zero stays valid:
+            // EventKit reads it as a request for the system default radius.
+            let radius = Self.number(config["radius"]) ?? 200
+            guard radius >= 0 else {
+                throw NSError(
+                    domain: "RemindersError",
+                    code: 4,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Radius \(radius) is negative; a geofence radius is zero or more meters."
+                    ]
+                )
+            }
+            structuredLocation.radius = radius
 
             alarm = EKAlarm()
             alarm.proximity = config["proximity"]?.stringValue == "leave" ? .leave : .enter
