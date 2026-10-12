@@ -8,6 +8,7 @@ private let log = Logger.service("messages")
 private let messagesDirectoryPath = "/Users/\(NSUserName())/Library/Messages"
 private let messagesDatabasePath = messagesDirectoryPath + "/chat.db"
 private let messagesDatabaseBookmarkKey: String = "me.mattt.iMCP.messagesDatabaseBookmark"
+private let messagesAttachmentsBookmarkKey: String = "me.mattt.iMCP.messagesAttachmentsBookmark"
 private let defaultLimit = 30
 private let defaultAttachmentMaxBytes = 25 * 1024 * 1024
 
@@ -82,6 +83,15 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
         }
 
         storeBookmark(for: selectedURL)
+
+        // The Attachments subfolder needs a grant of its own (see withAttachmentsGrantScope);
+        // declining only leaves messages_attachment_read unable to read files.
+        if UserDefaults.standard.data(forKey: messagesAttachmentsBookmarkKey) == nil {
+            if let attachmentsURL = try? await showAttachmentsFolderPicker() {
+                storeAttachmentsBookmark(for: attachmentsURL)
+            }
+        }
+
         log.debug("Successfully activated message service")
     }
 
@@ -394,7 +404,9 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
         return result
     }
 
-    /// Reads one attachment file through the Messages folder grant and returns it base64-encoded.
+    /// Reads one attachment file and returns it base64-encoded. The file sits under
+    /// `~/Library/Messages/Attachments`, which the sandbox hides from the Messages folder
+    /// grant, so the read goes through the Attachments grant's own scope.
     private func readAttachment(id: String, maxBytes: Int) throws -> [String: Value] {
         let access = try openDatabase()
         defer { access.stop() }
@@ -418,12 +430,14 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
         guard url.path.hasPrefix(messagesDirectoryPath + "/") else {
             throw AttachmentError.outsideMessagesFolder(id)
         }
-        guard FileManager.default.isReadableFile(atPath: url.path) else {
-            throw AttachmentError.fileMissing(id)
+        let data: Data = try withAttachmentsGrantScope {
+            guard FileManager.default.isReadableFile(atPath: url.path) else {
+                throw AttachmentError.fileMissing(id)
+            }
+            let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
+            guard size <= maxBytes else { throw AttachmentError.tooLarge(id, size, maxBytes) }
+            return try Data(contentsOf: url)
         }
-        let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
-        guard size <= maxBytes else { throw AttachmentError.tooLarge(id, size, maxBytes) }
-        let data = try Data(contentsOf: url)
         var part: [String: Value] = [
             "@type": "MediaObject",
             "@id": .string(id),
@@ -440,6 +454,37 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
         return part
     }
 
+    /// `~/Library/Messages/Attachments` is walled off from a grant on the Messages folder:
+    /// with that folder's security scope active, everything else is readable (chat.db and its
+    /// log, sibling folders like StickerCache) but the Attachments subtree is denied outright,
+    /// listing included. A grant on the Attachments folder itself lifts the wall, so
+    /// attachment files are read through their own scope.
+    private func withAttachmentsGrantScope<T>(_ operation: () throws -> T) throws -> T {
+        // Without the sandbox in the way (development builds on the default path),
+        // no grant is needed.
+        if canAccessDatabaseAtDefaultPath {
+            return try operation()
+        }
+
+        guard
+            let bookmarkData = UserDefaults.standard.data(forKey: messagesAttachmentsBookmarkKey)
+        else {
+            throw AttachmentError.grantMissing
+        }
+        var isStale = false
+        let url = try URL(
+            resolvingBookmarkData: bookmarkData,
+            options: .withSecurityScope,
+            relativeTo: nil,
+            bookmarkDataIsStale: &isStale
+        )
+        guard url.startAccessingSecurityScopedResource() else {
+            throw AttachmentError.grantScopeFailed
+        }
+        defer { url.stopAccessingSecurityScopedResource() }
+        return try operation()
+    }
+
     private enum AttachmentError: LocalizedError {
         case missingID
         case notFound(String)
@@ -447,6 +492,8 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
         case outsideMessagesFolder(String)
         case fileMissing(String)
         case tooLarge(String, Int, Int)
+        case grantMissing
+        case grantScopeFailed
 
         var errorDescription: String? {
             switch self {
@@ -457,6 +504,11 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
             case .fileMissing(let id): return "the file of attachment \(id) is missing or unreadable"
             case .tooLarge(let id, let size, let max):
                 return "attachment \(id) is \(size) bytes, more than the \(max) allowed"
+            case .grantMissing:
+                return
+                    "the Attachments folder (~/Library/Messages/Attachments) has not been granted; switch Messages off and on in the iMCP menu and select it when asked"
+            case .grantScopeFailed:
+                return "could not start reading through the Attachments grant"
             }
         }
     }
@@ -759,6 +811,44 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
         return url
     }
 
+    /// Returns the selected Attachments folder, or nil when the user dismisses the panel.
+    @MainActor
+    private func showAttachmentsFolderPicker() async throws -> URL? {
+        let openPanel = NSOpenPanel()
+        openPanel.delegate = self
+        openPanel.message =
+            "Attachments are stored in a folder the Messages grant cannot reach. Please select the Attachments folder (~/Library/Messages/Attachments) to let iMCP read them"
+        openPanel.prompt = "Grant Access"
+        openPanel.directoryURL = URL(fileURLWithPath: messagesDirectoryPath)
+        openPanel.allowsMultipleSelection = false
+        openPanel.canChooseDirectories = true
+        openPanel.canChooseFiles = false
+        openPanel.showsHiddenFiles = true
+
+        guard openPanel.runModal() == .OK, let url = openPanel.url else {
+            return nil
+        }
+        guard url.lastPathComponent == "Attachments" else {
+            throw DatabaseAccessError.invalidFileSelected
+        }
+
+        return url
+    }
+
+    private func storeAttachmentsBookmark(for url: URL) {
+        do {
+            let bookmarkData = try url.bookmarkData(
+                options: [.withSecurityScope, .securityScopeAllowOnlyReadAccess],
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil
+            )
+            UserDefaults.standard.set(bookmarkData, forKey: messagesAttachmentsBookmarkKey)
+            log.debug("Successfully created and stored Attachments bookmark")
+        } catch {
+            log.error("Failed to create Attachments bookmark: \(error.localizedDescription)")
+        }
+    }
+
     private func storeBookmark(for url: URL) {
         do {
             let bookmarkData = try url.bookmarkData(
@@ -778,8 +868,9 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
     }
 
     // NSOpenSavePanelDelegate method to constrain the selection to the Messages folder
+    // (and its Attachments subfolder, which is granted separately)
     func panel(_ sender: Any, shouldEnable url: URL) -> Bool {
-        let shouldEnable = isMessagesDirectory(url)
+        let shouldEnable = isMessagesDirectory(url) || url.lastPathComponent == "Attachments"
         log.debug(
             "File selection panel: \(shouldEnable ? "enabling" : "disabling") URL: \(url.path)"
         )
