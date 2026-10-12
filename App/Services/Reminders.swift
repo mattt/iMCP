@@ -356,7 +356,18 @@ final class RemindersService: Service {
             name: "reminders_create",
             description: "Create a new reminder with specified properties",
             inputSchema: .object(
-                properties: reminderProperties,
+                properties: reminderProperties.merging(
+                    [
+                        // Create keeps its pre-existing lenient fallback; the
+                        // shared entry has to stay neutral because update is
+                        // strict about unmatched names.
+                        "list": .string(
+                            description:
+                                "Reminder list name, or the identifier of one of several lists sharing a name. An unmatched name uses the default list."
+                        )
+                    ] as OrderedDictionary,
+                    uniquingKeysWith: { _, new in new }
+                ),
                 required: ["title"],
                 additionalProperties: false
             ),
@@ -413,19 +424,24 @@ final class RemindersService: Service {
                             "Identifier of the reminder to update, as returned by reminders_fetch or reminders_create"
                     )
                 ] as OrderedDictionary)
-                .merging(reminderProperties, uniquingKeysWith: { new, _ in new })
+                .merging(reminderProperties, uniquingKeysWith: { _, new in new })
                 .merging(
                     [
-                        // The shared entry carries create's default ("none");
-                        // for an update, omission means "leave unchanged",
-                        // so advertising a default here would have clients
-                        // wipe priorities they never meant to touch.
+                        // The shared entries carry create-specific behavior;
+                        // for an update, omission means "leave unchanged", so
+                        // advertising create's priority default would have
+                        // clients wipe priorities they never meant to touch,
+                        // and create's unmatched-list fallback is an error.
                         "priority": .string(
                             description: "Priority; omit to leave unchanged",
                             enum: EKReminderPriority.allCases.map { .string($0.stringValue) }
-                        )
+                        ),
+                        "list": .string(
+                            description:
+                                "Reminder list name, or the identifier of one of several lists sharing a name. Must match an existing list."
+                        ),
                     ] as OrderedDictionary,
-                    uniquingKeysWith: { new, _ in new }
+                    uniquingKeysWith: { _, new in new }
                 )
                 .merging(
                     [
@@ -434,7 +450,7 @@ final class RemindersService: Service {
                                 "Completion state. Setting true records completion at the current time and advances recurring reminders; false clears the completion date."
                         )
                     ] as OrderedDictionary,
-                    uniquingKeysWith: { new, _ in new }
+                    uniquingKeysWith: { _, new in new }
                 ),
                 required: ["identifier"],
                 additionalProperties: false
@@ -916,7 +932,7 @@ final class RemindersService: Service {
         // JSON Schema counts 30.0 as a valid integer for the bare form too.
         switch value {
         case .int(let minutes):
-            return EKAlarm(relativeOffset: TimeInterval(-minutes * 60))
+            return EKAlarm(relativeOffset: -Double(minutes) * 60)
         case .double(let value) where value.rounded() == value:
             // Int(exactly:) instead of Int(_: an out-of-range integral
             // double is a recoverable error, not a trap.
@@ -930,7 +946,7 @@ final class RemindersService: Service {
                     ]
                 )
             }
-            return EKAlarm(relativeOffset: TimeInterval(-minutes * 60))
+            return EKAlarm(relativeOffset: -Double(minutes) * 60)
         default: break
         }
         guard case .object(let config) = value else {
@@ -975,7 +991,7 @@ final class RemindersService: Service {
                     ]
                 )
             }
-            alarm = EKAlarm(relativeOffset: TimeInterval(-minutes * 60))
+            alarm = EKAlarm(relativeOffset: -Double(minutes) * 60)
 
         case "absolute":
             guard case .string(let datetimeString) = config["datetime"] else {
