@@ -508,7 +508,13 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                 data.append(chunk)
             }
             guard data.count <= maxBytes else {
-                throw AttachmentError.tooLarge(id, data.count, maxBytes)
+                // The file grew past the limit mid-read; the pre-read size
+                // is stale and data.count is capped at the limit, so report
+                // the size as of now for a number the caller can act on.
+                let grownSize =
+                    (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? Int
+                    ?? data.count
+                throw AttachmentError.tooLarge(id, grownSize, maxBytes)
             }
             return data
         }
