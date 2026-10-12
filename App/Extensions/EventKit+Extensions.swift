@@ -80,3 +80,47 @@ extension EKReminderPriority {
         }
     }
 }
+
+extension EKRecurrenceFrequency {
+    var stringValue: String {
+        switch self {
+        case .daily: return "daily"
+        case .weekly: return "weekly"
+        case .monthly: return "monthly"
+        case .yearly: return "yearly"
+        @unknown default: return "unknown"
+        }
+    }
+}
+
+extension EKRecurrenceDayOfWeek {
+    var dayName: String {
+        switch dayOfTheWeek {
+        case .sunday: return "sunday"
+        case .monday: return "monday"
+        case .tuesday: return "tuesday"
+        case .wednesday: return "wednesday"
+        case .thursday: return "thursday"
+        case .friday: return "friday"
+        case .saturday: return "saturday"
+        @unknown default: return "unknown"
+        }
+    }
+
+    /// The day matching an English day name, as accepted and emitted by the
+    /// reminders tools.
+    static func day(named name: String) -> EKRecurrenceDayOfWeek? {
+        let weekday: EKWeekday
+        switch name.lowercased() {
+        case "sunday": weekday = .sunday
+        case "monday": weekday = .monday
+        case "tuesday": weekday = .tuesday
+        case "wednesday": weekday = .wednesday
+        case "thursday": weekday = .thursday
+        case "friday": weekday = .friday
+        case "saturday": weekday = .saturday
+        default: return nil
+        }
+        return EKRecurrenceDayOfWeek(dayOfTheWeek: weekday, weekNumber: 0)
+    }
+}
