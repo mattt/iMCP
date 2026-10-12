@@ -109,7 +109,9 @@ extension EKRecurrenceDayOfWeek {
 
     /// The day as the reminders tools emit it: a bare name when it repeats
     /// every week, an ordinal-prefixed name ("second tuesday") when it is
-    /// one weekday of the month, symmetric with `day(named:)`.
+    /// one weekday of the month, symmetric with `day(named:)`. A week
+    /// number outside this vocabulary emits "unknown", matching the other
+    /// foreign-value degrades.
     var namedValue: String {
         let ordinal: String?
         switch weekNumber {
@@ -121,7 +123,12 @@ extension EKRecurrenceDayOfWeek {
         case -1: ordinal = "last"
         default: ordinal = nil
         }
-        return ordinal.map { "\($0) \(dayName)" } ?? dayName
+        // Ordinals beyond ±5 are not representable in this vocabulary
+        // (foreign calendars can carry them). Emitting the bare day
+        // name would silently turn "second-to-last tuesday" into
+        // "every tuesday" on a round-trip; degrade instead.
+        guard let ordinal else { return "unknown" }
+        return "\(ordinal) \(dayName)"
     }
 
     /// The day matching an English day name, as accepted and emitted by the
