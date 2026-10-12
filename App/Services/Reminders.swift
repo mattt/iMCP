@@ -79,7 +79,7 @@ private let reminderProperties: OrderedDictionary<String, JSONSchema> = [
                 ),
                 "daysOfTheMonth": .array(
                     description:
-                        "Days of the month the reminder repeats on; negative counts from the end (-1 is the last day)",
+                        "Days of the month the reminder repeats on; nonzero, with negatives counting from the end (-1 is the last day)",
                     items: .integer(minimum: -31, maximum: 31)
                 ),
                 "monthsOfTheYear": .array(
@@ -88,17 +88,17 @@ private let reminderProperties: OrderedDictionary<String, JSONSchema> = [
                 ),
                 "weeksOfTheYear": .array(
                     description:
-                        "Weeks of the year the reminder repeats in; negative counts from the end",
+                        "Weeks of the year the reminder repeats in; nonzero, with negatives counting from the end",
                     items: .integer(minimum: -53, maximum: 53)
                 ),
                 "daysOfTheYear": .array(
                     description:
-                        "Days of the year the reminder repeats on; negative counts from the end",
+                        "Days of the year the reminder repeats on; nonzero, with negatives counting from the end",
                     items: .integer(minimum: -366, maximum: 366)
                 ),
                 "setPositions": .array(
                     description:
-                        "Which of the matched occurrences to keep, e.g. -1 for the last one of each period",
+                        "Which of the matched occurrences to keep; nonzero, e.g. -1 for the last one of each period",
                     items: .integer(minimum: -366, maximum: 366)
                 ),
                 "end": .object(
@@ -1208,17 +1208,16 @@ final class RemindersService: Service {
 
         var interval = 1
         if let intervalValue = config["interval"] {
-            guard case .int(let value) = intervalValue, value >= 1 else {
+            interval = try Self.integerValue(intervalValue, description: "Recurrence interval")
+            guard interval >= 1 else {
                 throw NSError(
                     domain: "RemindersError",
                     code: 2,
                     userInfo: [
-                        NSLocalizedDescriptionKey:
-                            "Recurrence interval must be an integer of at least 1."
+                        NSLocalizedDescriptionKey: "Recurrence interval must be at least 1."
                     ]
                 )
             }
-            interval = value
         }
 
         var daysOfTheWeek: [EKRecurrenceDayOfWeek]?
@@ -1275,7 +1274,7 @@ final class RemindersService: Service {
                     code: 2,
                     userInfo: [
                         NSLocalizedDescriptionKey:
-                            "Recurrence end takes either date or count, not both."
+                            "Recurrence end requires either date or count; passing both is ambiguous."
                     ]
                 )
             }
@@ -1309,7 +1308,11 @@ final class RemindersService: Service {
                 }
                 end = EKRecurrenceEnd(end: endDate)
             } else {
-                guard case .int(let count)? = endConfig["count"], count >= 1 else {
+                let count = try Self.integerValue(
+                    endConfig["count"] ?? .null,
+                    description: "Recurrence end count"
+                )
+                guard count >= 1 else {
                     throw NSError(
                         domain: "RemindersError",
                         code: 2,
@@ -1336,11 +1339,40 @@ final class RemindersService: Service {
         )
     }
 
+    /// The integer a JSON Schema "integer" accepts: an Int, or a double with
+    /// a zero fraction (2.0). Throws for anything else.
+    private static func integerValue(_ value: Value, description: String) throws -> Int {
+        switch value {
+        case .int(let int):
+            return int
+        case .double(let double) where double.rounded() == double:
+            // Int(exactly:) instead of Int(_: an out-of-range integral
+            // double is a recoverable error, not a trap.
+            guard let int = Int(exactly: double) else {
+                throw NSError(
+                    domain: "RemindersError",
+                    code: 2,
+                    userInfo: [
+                        NSLocalizedDescriptionKey: "\(description) \(double) is out of range."
+                    ]
+                )
+            }
+            return int
+        default:
+            throw NSError(
+                domain: "RemindersError",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "\(description) must be an integer."]
+            )
+        }
+    }
+
     /// The nonzero integers of an array parameter, rejecting anything else.
     private static func integers(_ value: Value?, named description: String) throws -> [NSNumber]? {
         guard case .array(let values)? = value else { return nil }
         return try values.map { item in
-            guard case .int(let number) = item, number != 0 else {
+            let number = try Self.integerValue(item, description: "Recurrence \(description)")
+            guard number != 0 else {
                 throw NSError(
                     domain: "RemindersError",
                     code: 2,
@@ -1380,7 +1412,12 @@ final class RemindersService: Service {
         }
         if let monthsOfTheYear = rule.monthsOfTheYear, !monthsOfTheYear.isEmpty {
             fields["monthsOfTheYear"] = .array(
-                monthsOfTheYear.map { .string(monthNames[$0.intValue - 1]) }
+                monthsOfTheYear.map { month in
+                    // Rules synced from foreign calendars can carry values
+                    // outside 1-12; degrade instead of trapping the service.
+                    guard (1 ... 12).contains(month.intValue) else { return .string("unknown") }
+                    return .string(monthNames[month.intValue - 1])
+                }
             )
         }
         if let weeksOfTheYear = rule.weeksOfTheYear, !weeksOfTheYear.isEmpty {
