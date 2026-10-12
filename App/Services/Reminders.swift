@@ -934,12 +934,24 @@ final class RemindersService: Service {
         let newCompleted = try Self.boolChange(arguments["completed"], description: "completed")
         let newRecurrence: PropertyChange<EKRecurrenceRule>
         switch arguments["recurrence"] {
+        case nil:
+            newRecurrence = .absent
         case .object(let recurrence):
             newRecurrence = .set(try Self.recurrenceRule(from: recurrence))
         case .null:
             newRecurrence = .clear
         default:
-            newRecurrence = .absent
+            // inputSchema is advertised, not enforced: a recurrence value
+            // of any other shape is an error, not a silently non-recurring
+            // reminder.
+            throw NSError(
+                domain: "RemindersError",
+                code: 2,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Recurrence must be an object or null."
+                ]
+            )
         }
 
         // inputSchema is advertised, not enforced: a present value with the
