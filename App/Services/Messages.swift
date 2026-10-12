@@ -470,12 +470,9 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
             // still downloading can grow between the size check and the read.
             let handle = try FileHandle(forReadingFrom: url)
             defer { try? handle.close() }
-            guard let chunk = try handle.read(upToCount: maxBytes) else {
-                throw AttachmentError.fileMissing(id)
-            }
-            guard chunk.count <= maxBytes else {
-                throw AttachmentError.tooLarge(id, max(chunk.count, size), maxBytes)
-            }
+            // read(upToCount:) reports end-of-file as nil, which for a
+            // readable zero-byte attachment is simply empty content.
+            let chunk = try handle.read(upToCount: maxBytes) ?? Data()
             return chunk
         }
         var part: [String: Value] = [
@@ -504,29 +501,43 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
         // no grant is needed. The Attachments folder itself is the probe: it stays
         // unreadable under the Messages folder grant even while that grant's scope
         // is active (tool calls open one around chat.db), so only a process the
-        // sandbox does not confine passes here.
-        if FileManager.default.isReadableFile(atPath: messagesDirectoryPath + "/Attachments") {
+        // sandbox does not confine passes here. A stored grant takes precedence
+        // over the probe — another call's scope could make the probe pass, and
+        // starting a scope of our own is always safe.
+        let storedBookmark = UserDefaults.standard.data(forKey: messagesAttachmentsBookmarkKey)
+        if storedBookmark == nil,
+            FileManager.default.isReadableFile(atPath: messagesDirectoryPath + "/Attachments")
+        {
             return try operation()
         }
 
-        guard
-            let bookmarkData = UserDefaults.standard.data(forKey: messagesAttachmentsBookmarkKey)
-        else {
+        guard let bookmarkData = storedBookmark else {
             throw AttachmentError.grantMissing
         }
-        var isStale = false
-        let url = try URL(
-            resolvingBookmarkData: bookmarkData,
-            options: .withSecurityScope,
-            relativeTo: nil,
-            bookmarkDataIsStale: &isStale
-        )
-        // A stale bookmark can still resolve and start its scope while pointing
-        // nowhere useful; re-store it from the resolved URL while it works.
-        if isStale {
-            storeAttachmentsBookmark(for: url)
+        // A grant that cannot be used is dropped rather than kept: the
+        // re-grant path the errors point at (switch Messages off and on)
+        // only offers the picker when no bookmark is stored.
+        let url: URL
+        do {
+            var isStale = false
+            url = try URL(
+                resolvingBookmarkData: bookmarkData,
+                options: .withSecurityScope,
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale
+            )
+            // A stale bookmark can still resolve and start its scope while
+            // pointing nowhere useful; re-store it from the resolved URL
+            // while it works.
+            if isStale {
+                storeAttachmentsBookmark(for: url)
+            }
+        } catch {
+            UserDefaults.standard.removeObject(forKey: messagesAttachmentsBookmarkKey)
+            throw AttachmentError.grantScopeFailed
         }
         guard url.startAccessingSecurityScopedResource() else {
+            UserDefaults.standard.removeObject(forKey: messagesAttachmentsBookmarkKey)
             throw AttachmentError.grantScopeFailed
         }
         defer { url.stopAccessingSecurityScopedResource() }
