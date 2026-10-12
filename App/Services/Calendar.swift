@@ -323,12 +323,19 @@ final class CalendarService: Service {
                                             enum: ["enter", "leave"]
                                         ),
                                         "locationTitle": .string(),
-                                        "latitude": .number(),
-                                        "longitude": .number(),
-                                        "radius": .number(
-                                            description: "Radius in meters",
-                                            default: .int(200)
-                                        ),
+                        "latitude": .number(
+                            minimum: -90,
+                            maximum: 90
+                        ),
+                        "longitude": .number(
+                            minimum: -180,
+                            maximum: 180
+                        ),
+                        "radius": .number(
+                            description: "Radius in meters",
+                            default: .int(200),
+                            minimum: 0
+                        ),
                                         "sound": .string(
                                             description: "Sound name to play when alarm triggers",
                                             enum: Sound.allCases.map { .string($0.rawValue) }
@@ -450,19 +457,43 @@ final class CalendarService: Service {
                 event.notes = notes
             }
 
-            if case .string(let urlString) = arguments["url"],
-                let url = URL(string: urlString)
-            {
+            if case .string(let urlString) = arguments["url"] {
+                // .uri is absolute by definition; URL(string:) alone would
+                // accept relative references like an empty string.
+                guard let url = URL(string: urlString), url.scheme != nil else {
+                    throw NSError(
+                        domain: "CalendarError",
+                        code: 2,
+                        userInfo: [
+                            NSLocalizedDescriptionKey:
+                                "URL \"\(urlString)\" must be absolute (carry a scheme)."
+                        ]
+                    )
+                }
                 event.url = url
             }
 
             if case .string(let availability) = arguments["availability"] {
+                guard
+                    EKEventAvailability.allCases.contains(where: {
+                        $0.stringValue == availability.lowercased()
+                    })
+                else {
+                    throw NSError(
+                        domain: "CalendarError",
+                        code: 2,
+                        userInfo: [
+                            NSLocalizedDescriptionKey:
+                                "Invalid availability \"\(availability)\". Expected one of \(EKEventAvailability.allCases.map(\.stringValue).joined(separator: ", "))."
+                        ]
+                    )
+                }
                 event.availability = EKEventAvailability(availability)
             }
 
             // Set alarms
             if case .array(let alarmConfigs) = arguments["alarms"] {
-                event.alarms = alarmConfigs.compactMap { Self.alarm(from: $0) }
+                event.alarms = try alarmConfigs.map { try Self.alarm(from: $0) }
             }
 
             // Save the event
@@ -727,12 +758,19 @@ final class CalendarService: Service {
                                             enum: ["enter", "leave"]
                                         ),
                                         "locationTitle": .string(),
-                                        "latitude": .number(),
-                                        "longitude": .number(),
-                                        "radius": .number(
-                                            description: "Radius in meters",
-                                            default: .int(200)
-                                        ),
+                        "latitude": .number(
+                            minimum: -90,
+                            maximum: 90
+                        ),
+                        "longitude": .number(
+                            minimum: -180,
+                            maximum: 180
+                        ),
+                        "radius": .number(
+                            description: "Radius in meters",
+                            default: .int(200),
+                            minimum: 0
+                        ),
                                         "sound": .string(
                                             description: "Sound name to play when alarm triggers",
                                             enum: Sound.allCases.map { .string($0.rawValue) }
@@ -783,12 +821,12 @@ final class CalendarService: Service {
             }
 
             let span: EKSpan
-            switch arguments["span"]?.stringValue {
-            case nil, "thisEvent":
+            switch arguments["span"] {
+            case nil, .string("thisEvent"):
                 span = .thisEvent
-            case "futureEvents":
+            case .string("futureEvents"):
                 span = .futureEvents
-            case let other?:
+            case .string(let other):
                 throw NSError(
                     domain: "CalendarError",
                     code: 2,
@@ -796,6 +834,12 @@ final class CalendarService: Service {
                         NSLocalizedDescriptionKey:
                             "Invalid span \"\(other)\". Expected \"thisEvent\" or \"futureEvents\"."
                     ]
+                )
+            default:
+                throw NSError(
+                    domain: "CalendarError",
+                    code: 2,
+                    userInfo: [NSLocalizedDescriptionKey: "Span must be a string."]
                 )
             }
 
@@ -822,7 +866,8 @@ final class CalendarService: Service {
             let seriesIdentifier = resolved.seriesIdentifier
 
             let event: EKEvent
-            if case .string(let occurrenceString) = arguments["occurrence"] {
+            switch arguments["occurrence"] {
+            case .string(let occurrenceString):
                 guard
                     let parsedOccurrence = ISO8601DateFormatter.parsedLenientISO8601Date(
                         fromISO8601String: occurrenceString
@@ -857,17 +902,41 @@ final class CalendarService: Service {
                     )
                 }
                 event = occurrence
-            } else if anyOccurrence.hasRecurrenceRules {
+            case nil:
+                if anyOccurrence.hasRecurrenceRules {
+                    throw NSError(
+                        domain: "CalendarError",
+                        code: 2,
+                        userInfo: [
+                            NSLocalizedDescriptionKey:
+                                "Event \(identifier) is recurring. Pass the occurrence parameter: the start date of the occurrence to update."
+                        ]
+                    )
+                }
+                event = anyOccurrence
+            default:
                 throw NSError(
                     domain: "CalendarError",
                     code: 2,
                     userInfo: [
                         NSLocalizedDescriptionKey:
-                            "Event \(identifier) is recurring. Pass the occurrence parameter: the start date of the occurrence to update."
+                            "Occurrence must be an ISO 8601 date string."
                     ]
                 )
-            } else {
-                event = anyOccurrence
+            }
+
+            // The event may already live in a read-only calendar (a
+            // subscribed one, say). EventKit would accept the mutations and
+            // only fail at save, after the shared EKEvent has changed.
+            guard event.calendar.allowsContentModifications else {
+                throw NSError(
+                    domain: "CalendarError",
+                    code: 2,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Calendar \"\(event.calendar.title)\" does not allow modifications"
+                    ]
+                )
             }
 
             // Validate everything before touching the event: EventKit keeps
@@ -875,7 +944,9 @@ final class CalendarService: Service {
             // halfway through would otherwise be committed by the next
             // successful save of anything.
             var newStartDate: Date? = nil
-            if case .string(let startDateString) = arguments["start"] {
+            switch arguments["start"] {
+            case nil: break
+            case .string(let startDateString):
                 guard
                     let parsedStart = ISO8601DateFormatter.parsedLenientISO8601Date(
                         fromISO8601String: startDateString
@@ -894,10 +965,21 @@ final class CalendarService: Service {
                     from: parsedStart.date,
                     isDateOnly: parsedStart.isDateOnly
                 )
+            default:
+                throw NSError(
+                    domain: "CalendarError",
+                    code: 2,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Start must be an ISO 8601 date string."
+                    ]
+                )
             }
 
             var newEndDate: Date? = nil
-            if case .string(let endDateString) = arguments["end"] {
+            switch arguments["end"] {
+            case nil: break
+            case .string(let endDateString):
                 guard
                     let parsedEnd = ISO8601DateFormatter.parsedLenientISO8601Date(
                         fromISO8601String: endDateString
@@ -916,12 +998,39 @@ final class CalendarService: Service {
                     from: parsedEnd.date,
                     isDateOnly: parsedEnd.isDateOnly
                 )
+            default:
+                throw NSError(
+                    domain: "CalendarError",
+                    code: 2,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "End must be an ISO 8601 date string."
+                    ]
+                )
+            }
+
+            // An inverted range only fails at save, after the shared EKEvent
+            // has been mutated; check the effective bounds first.
+            let effectiveStart = newStartDate ?? event.startDate
+            let effectiveEnd = newEndDate ?? event.endDate
+            if let effectiveStart, let effectiveEnd, effectiveEnd < effectiveStart {
+                let formatter = ISO8601DateFormatter()
+                throw NSError(
+                    domain: "CalendarError",
+                    code: 2,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "End date \(formatter.string(from: effectiveEnd)) is before start date \(formatter.string(from: effectiveStart))."
+                    ]
+                )
             }
 
             // Move to another calendar when requested; an unmatched name is an error
             // rather than a silent default.
             var targetCalendar: EKCalendar? = nil
-            if case .string(let calendarName) = arguments["calendar"] {
+            switch arguments["calendar"] {
+            case nil: break
+            case .string(let calendarName):
                 // Editability joins the match so a read-only target (a
                 // subscribed calendar, say) throws here, before any
                 // mutation: a move into it would otherwise sit unsaved in
@@ -943,20 +1052,97 @@ final class CalendarService: Service {
                     )
                 }
                 targetCalendar = matchingCalendar
+            default:
+                throw NSError(
+                    domain: "CalendarError",
+                    code: 2,
+                    userInfo: [NSLocalizedDescriptionKey: "Calendar must be a string."]
+                )
             }
 
             var newURL: URL? = nil
-            if case .string(let urlString) = arguments["url"] {
-                guard let url = URL(string: urlString) else {
+            switch arguments["url"] {
+            case nil, .null: break
+            case .string(let urlString):
+                // .uri is absolute by definition; URL(string:) alone would
+                // accept relative references like an empty string.
+                guard let url = URL(string: urlString), url.scheme != nil else {
                     throw NSError(
                         domain: "CalendarError",
                         code: 2,
                         userInfo: [
-                            NSLocalizedDescriptionKey: "Invalid URL \"\(urlString)\""
+                            NSLocalizedDescriptionKey:
+                                "URL \"\(urlString)\" must be absolute (carry a scheme)."
                         ]
                     )
                 }
                 newURL = url
+            default:
+                throw NSError(
+                    domain: "CalendarError",
+                    code: 2,
+                    userInfo: [NSLocalizedDescriptionKey: "URL must be a string or null."]
+                )
+            }
+
+            // inputSchema is advertised, not enforced: a present argument
+            // of the wrong shape is an error, never a silent no-op.
+            try Self.validateStringOrNull(arguments["title"], name: "Title")
+            try Self.validateStringOrNull(arguments["location"], name: "Location")
+            try Self.validateStringOrNull(arguments["notes"], name: "Notes")
+
+            if case .string(let availability) = arguments["availability"] {
+                guard
+                    EKEventAvailability.allCases.contains(where: {
+                        $0.stringValue == availability.lowercased()
+                    })
+                else {
+                    throw NSError(
+                        domain: "CalendarError",
+                        code: 2,
+                        userInfo: [
+                            NSLocalizedDescriptionKey:
+                                "Invalid availability \"\(availability)\". Expected one of \(EKEventAvailability.allCases.map(\.stringValue).joined(separator: ", "))."
+                        ]
+                    )
+                }
+            } else if arguments["availability"] != nil {
+                throw NSError(
+                    domain: "CalendarError",
+                    code: 2,
+                    userInfo: [NSLocalizedDescriptionKey: "Availability must be a string."]
+                )
+            }
+
+            switch arguments["isAllDay"] {
+            case nil, .bool: break
+            default:
+                throw NSError(
+                    domain: "CalendarError",
+                    code: 2,
+                    userInfo: [NSLocalizedDescriptionKey: "isAllDay must be a boolean."]
+                )
+            }
+
+            var newAlarms: [EKAlarm]?
+            var clearAlarms = false
+            switch arguments["alarms"] {
+            case nil: break
+            case .array(let alarmConfigs):
+                // Built in full before any mutation so a malformed entry
+                // cannot replace an event's alarms with a partial list.
+                newAlarms = try alarmConfigs.map { try Self.alarm(from: $0) }
+            case .null:
+                clearAlarms = true
+            default:
+                throw NSError(
+                    domain: "CalendarError",
+                    code: 2,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Alarms must be an array of alarm configurations or null."
+                    ]
+                )
             }
 
             if case .string(let title) = arguments["title"] {
@@ -1024,13 +1210,10 @@ final class CalendarService: Service {
                 event.isAllDay = isAllDay
             }
 
-            switch arguments["alarms"] {
-            case .array(let alarmConfigs):
-                event.alarms = alarmConfigs.compactMap { Self.alarm(from: $0) }
-            case .null:
+            if let newAlarms {
+                event.alarms = newAlarms
+            } else if clearAlarms {
                 event.alarms = []
-            default:
-                break
             }
 
             try self.eventStore.save(event, span: span)
@@ -1041,75 +1224,226 @@ final class CalendarService: Service {
         }
     }
 
-    private static func alarm(from value: Value) -> EKAlarm? {
-        guard case .object(let config) = value else { return nil }
+    /// inputSchema is advertised, not enforced: a present value of any
+    /// other shape is rejected rather than treated as omitted.
+    private static func validateStringOrNull(_ value: Value?, name: String) throws {
+        switch value {
+        case nil, .string, .null: return
+        default:
+            throw NSError(
+                domain: "CalendarError",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "\(name) must be a string or null."]
+            )
+        }
+    }
 
-        var alarm: EKAlarm?
+    /// The integer a JSON Schema "integer" accepts, whether the decoder
+    /// produced an Int or an integral Double (30.0).
+    private static func integer(_ value: Value?) -> Int? {
+        switch value {
+        case .int(let int): return int
+        case .double(let double) where double.rounded() == double:
+            return Int(exactly: double)
+        default: return nil
+        }
+    }
+
+    /// Builds an alarm from an alarm configuration object, throwing on any
+    /// malformed entry: a silent nil would drop out of compactMap and
+    /// replace an event's alarms with a shorter, partial list.
+    private static func alarm(from value: Value) throws -> EKAlarm {
+        guard case .object(let config) = value else {
+            throw NSError(
+                domain: "CalendarError",
+                code: 4,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Invalid alarm configuration. Expected an object with type relative, absolute, or proximity."
+                ]
+            )
+        }
+
+        var alarm: EKAlarm
 
         let alarmType = config["type"]?.stringValue ?? "relative"
         switch alarmType {
         case "relative":
-            if case .int(let minutes) = config["minutes"] {
-                alarm = EKAlarm(relativeOffset: -Double(minutes) * 60)
+            guard let minutes = Self.integer(config["minutes"]) else {
+                throw NSError(
+                    domain: "CalendarError",
+                    code: 4,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Relative alarm requires integer minutes."
+                    ]
+                )
             }
+            alarm = EKAlarm(relativeOffset: -Double(minutes) * 60)
 
         case "absolute":
-            if case .string(let datetimeString) = config["datetime"] {
-                // Date-only values mean local midnight, like every other
-                // date parameter of these tools.
-                if let parsed = ISO8601DateFormatter.parsedLenientISO8601Date(
+            guard case .string(let datetimeString) = config["datetime"] else {
+                throw NSError(
+                    domain: "CalendarError",
+                    code: 4,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Absolute alarm requires an ISO 8601 datetime string."
+                    ]
+                )
+            }
+            // Date-only values mean local midnight, like every other date
+            // parameter of these tools.
+            guard
+                let parsed = ISO8601DateFormatter.parsedLenientISO8601Date(
                     fromISO8601String: datetimeString
-                ) {
-                    alarm = EKAlarm(
-                        absoluteDate: Calendar.current.normalizedStartDate(
-                            from: parsed.date,
-                            isDateOnly: parsed.isDateOnly
-                        )
+                )
+            else {
+                throw NSError(
+                    domain: "CalendarError",
+                    code: 4,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Absolute alarm datetime is not a valid ISO 8601 datetime."
+                    ]
+                )
+            }
+            alarm = EKAlarm(
+                absoluteDate: Calendar.current.normalizedStartDate(
+                    from: parsed.date,
+                    isDateOnly: parsed.isDateOnly
+                )
+            )
+
+        case "proximity":
+            guard case .string(let locationTitle) = config["locationTitle"] else {
+                throw NSError(
+                    domain: "CalendarError",
+                    code: 4,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Proximity alarm requires a locationTitle string."
+                    ]
+                )
+            }
+            guard
+                let latitude = Self.number(config["latitude"]),
+                let longitude = Self.number(config["longitude"])
+            else {
+                throw NSError(
+                    domain: "CalendarError",
+                    code: 4,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Proximity alarm requires numeric latitude and longitude alongside locationTitle."
+                    ]
+                )
+            }
+            guard (-90.0...90.0).contains(latitude) else {
+                throw NSError(
+                    domain: "CalendarError",
+                    code: 4,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Latitude \(latitude) is outside the geographic range of -90 to 90 degrees."
+                    ]
+                )
+            }
+            guard (-180.0...180.0).contains(longitude) else {
+                throw NSError(
+                    domain: "CalendarError",
+                    code: 4,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Longitude \(longitude) is outside the geographic range of -180 to 180 degrees."
+                    ]
+                )
+            }
+            let radius = Self.number(config["radius"])
+            if let radius {
+                guard radius >= 0 else {
+                    throw NSError(
+                        domain: "CalendarError",
+                        code: 4,
+                        userInfo: [
+                            NSLocalizedDescriptionKey:
+                                "Radius \(radius) is negative; a geofence radius is zero or more meters."
+                        ]
                     )
                 }
             }
-
-        case "proximity":
-            // .number() validates integers too, and whole-degree
-            // coordinates are common; bridge them instead of dropping.
-            if case .string(let locationTitle) = config["locationTitle"],
-                let latitude = Self.number(config["latitude"]),
-                let longitude = Self.number(config["longitude"])
-            {
-                alarm = EKAlarm()
-
-                let structuredLocation = EKStructuredLocation(title: locationTitle)
-                structuredLocation.geoLocation = CLLocation(
-                    latitude: latitude,
-                    longitude: longitude
+            switch config["proximity"] {
+            case nil, .string("enter"), .string("leave"): break
+            case .string(let other):
+                throw NSError(
+                    domain: "CalendarError",
+                    code: 4,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Invalid proximity \"\(other)\". Expected \"enter\" or \"leave\"."
+                    ]
                 )
-
-                if let radius = Self.number(config["radius"]) {
-                    structuredLocation.radius = radius
-                }
-
-                let proximityType = config["proximity"]?.stringValue ?? "enter"
-                alarm?.proximity = proximityType == "enter" ? .enter : .leave
-                alarm?.structuredLocation = structuredLocation
+            default:
+                throw NSError(
+                    domain: "CalendarError",
+                    code: 4,
+                    userInfo: [NSLocalizedDescriptionKey: "Proximity must be a string."]
+                )
             }
 
-        default:
-            log.error(
-                "Unexpected alarm type encountered: \(alarmType, privacy: .public)"
+            alarm = EKAlarm()
+
+            let structuredLocation = EKStructuredLocation(title: locationTitle)
+            structuredLocation.geoLocation = CLLocation(
+                latitude: latitude,
+                longitude: longitude
             )
-            return nil
+
+            if let radius {
+                structuredLocation.radius = radius
+            }
+
+            alarm.proximity = config["proximity"]?.stringValue == "leave" ? .leave : .enter
+            alarm.structuredLocation = structuredLocation
+
+        default:
+            throw NSError(
+                domain: "CalendarError",
+                code: 4,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Unknown alarm type \(alarmType). Expected relative, absolute, or proximity."
+                ]
+            )
         }
 
-        guard let alarm = alarm else { return nil }
-
-        if case .string(let soundName) = config["sound"],
-            Sound(rawValue: soundName) != nil
-        {
+        if let soundValue = config["sound"] {
+            guard case .string(let soundName) = soundValue else {
+                throw NSError(
+                    domain: "CalendarError",
+                    code: 4,
+                    userInfo: [NSLocalizedDescriptionKey: "Alarm sound must be a string."]
+                )
+            }
+            guard Sound(rawValue: soundName) != nil else {
+                throw NSError(
+                    domain: "CalendarError",
+                    code: 4,
+                    userInfo: [NSLocalizedDescriptionKey: "Unknown alarm sound \"\(soundName)\"."]
+                )
+            }
             alarm.soundName = soundName
         }
 
-        if case .string(let email) = config["emailAddress"], !email.isEmpty {
-            alarm.emailAddress = email
+        switch config["emailAddress"] {
+        case nil: break
+        case .string(let email): alarm.emailAddress = email
+        default:
+            throw NSError(
+                domain: "CalendarError",
+                code: 4,
+                userInfo: [NSLocalizedDescriptionKey: "Alarm emailAddress must be a string."]
+            )
         }
 
         return alarm
