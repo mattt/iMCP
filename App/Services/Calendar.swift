@@ -541,7 +541,23 @@ final class CalendarService: Service {
             // When a start date is given,
             // refetch that exact occurrence so `thisEvent` removes the right one
             // and `futureEvents` starts from it rather than from the whole series.
-            guard let anyOccurrence = self.eventStore.event(withIdentifier: identifier) else {
+            // Detached-exception identifiers carry an occurrence suffix
+            // ("<series>/RID=<n>") that `event(withIdentifier:)` does not
+            // resolve, so fall back to the series prefix when the lookup
+            // fails; the start date still selects the exact occurrence.
+            var seriesIdentifier = identifier
+            guard
+                let anyOccurrence = self.eventStore.event(withIdentifier: identifier)
+                    ?? ({
+                        guard let separator = identifier.range(of: "/RID=") else { return nil }
+                        let prefix = String(identifier[..<separator.lowerBound])
+                        guard self.eventStore.event(withIdentifier: prefix) != nil else {
+                            return nil
+                        }
+                        seriesIdentifier = prefix
+                        return self.eventStore.event(withIdentifier: prefix)
+                    })()
+            else {
                 throw NSError(
                     domain: "CalendarError",
                     code: 3,
@@ -573,7 +589,7 @@ final class CalendarService: Service {
                 )
                 guard
                     let occurrence = self.occurrence(
-                        ofEventWithIdentifier: identifier,
+                        ofEventWithIdentifier: seriesIdentifier,
                         startingAt: startDate
                     )
                 else {
@@ -863,7 +879,7 @@ final class CalendarService: Service {
                     code: 2,
                     userInfo: [
                         NSLocalizedDescriptionKey:
-                            "Event \(identifier) is recurring. Pass the start date of the occurrence to update."
+                            "Event \(identifier) is recurring. Pass the occurrence parameter: the start date of the occurrence to update."
                     ]
                 )
             } else {
