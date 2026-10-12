@@ -113,6 +113,8 @@ extension EKRecurrenceDayOfWeek {
     /// number outside this vocabulary emits "unknown", matching the other
     /// foreign-value degrades.
     var namedValue: String {
+        // 0 is the every-week form; the bare name round-trips.
+        if weekNumber == 0 { return dayName }
         let ordinal: String?
         switch weekNumber {
         case 1: ordinal = "first"
