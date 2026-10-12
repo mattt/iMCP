@@ -611,11 +611,14 @@ final class CalendarService: Service {
         Tool(
             name: "events_update",
             description:
-                "Update an existing calendar event. Only provide values for properties that need to be changed; omit any properties that should remain unchanged. Pass null to clear an optional property. For a recurring event, pass the start date of the occurrence to update.",
+                "Update an existing calendar event. Only provide values for properties that need to be changed; omit any properties that should remain unchanged. Passing null clears title, location, notes, url, or alarms. For a recurring event, pass the start date of the occurrence to update.",
             inputSchema: .object(
                 properties: [
                     "identifier": .string(description: "The event identifier"),
-                    "title": .string(),
+                    "title": .anyOf([
+                        .string(),
+                        .null,
+                    ]),
                     "start": .string(
                         description:
                             "New start date/time for the event. If timezone is omitted, local time is assumed. Date-only uses local midnight.",
@@ -634,12 +637,21 @@ final class CalendarService: Service {
                     "calendar": .string(
                         description: "Calendar to move the event to, matched by title"
                     ),
-                    "location": .string(description: "Location text. Pass null to clear."),
-                    "notes": .string(description: "Event notes. Pass null to clear."),
-                    "url": .string(
-                        description: "URL attached to the event. Pass null to clear.",
-                        format: .uri
-                    ),
+                    "location": .anyOf([
+                        .string(description: "Location text. Pass null to clear."),
+                        .null,
+                    ]),
+                    "notes": .anyOf([
+                        .string(description: "Event notes. Pass null to clear."),
+                        .null,
+                    ]),
+                    "url": .anyOf([
+                        .string(
+                            description: "URL attached to the event. Pass null to clear.",
+                            format: .uri
+                        ),
+                        .null,
+                    ]),
                     "isAllDay": .boolean(
                         description: "Whether the event spans the whole day"
                     ),
@@ -647,84 +659,87 @@ final class CalendarService: Service {
                         description: "Availability status",
                         enum: EKEventAvailability.allCases.map { .string($0.stringValue) }
                     ),
-                    "alarms": .array(
-                        description:
-                            "Alarm configurations for the event, replacing any existing alarms. Pass null to remove all alarms.",
-                        items: .anyOf([
-                            // Relative alarm (minutes before event)
-                            .object(
-                                properties: [
-                                    "type": .string(
-                                        const: "relative"
-                                    ),
-                                    "minutes": .integer(
-                                        description:
-                                            "Minutes offset from event start (negative for before, positive for after)"
-                                    ),
-                                    "sound": .string(
-                                        description: "Sound name to play when alarm triggers",
-                                        enum: Sound.allCases.map { .string($0.rawValue) }
-                                    ),
-                                    "emailAddress": .string(
-                                        description: "Email address to send notification to"
-                                    ),
-                                ],
-                                required: ["minutes"],
-                                additionalProperties: false
-                            ),
-                            // Absolute alarm (specific date/time)
-                            .object(
-                                properties: [
-                                    "type": .string(
-                                        const: "absolute"
-                                    ),
-                                    "datetime": .string(
-                                        description:
-                                            "Alarm date/time. If timezone is omitted, local time is assumed. Date-only uses local midnight.",
-                                        format: .dateTime
-                                    ),
-                                    "sound": .string(
-                                        description: "Sound name to play when alarm triggers",
-                                        enum: Sound.allCases.map { .string($0.rawValue) }
-                                    ),
-                                    "emailAddress": .string(
-                                        description: "Email address to send notification to"
-                                    ),
-                                ],
-                                required: ["datetime"],
-                                additionalProperties: false
-                            ),
-                            // Proximity alarm (location-based)
-                            .object(
-                                properties: [
-                                    "type": .string(
-                                        const: "proximity"
-                                    ),
-                                    "proximity": .string(
-                                        description: "Proximity trigger type",
-                                        default: "enter",
-                                        enum: ["enter", "leave"]
-                                    ),
-                                    "locationTitle": .string(),
-                                    "latitude": .number(),
-                                    "longitude": .number(),
-                                    "radius": .number(
-                                        description: "Radius in meters",
-                                        default: .int(200)
-                                    ),
-                                    "sound": .string(
-                                        description: "Sound name to play when alarm triggers",
-                                        enum: Sound.allCases.map { .string($0.rawValue) }
-                                    ),
-                                    "emailAddress": .string(
-                                        description: "Email address to send notification to"
-                                    ),
-                                ],
-                                required: ["locationTitle", "latitude", "longitude"],
-                                additionalProperties: false
-                            ),
-                        ])
-                    ),
+                    "alarms": .anyOf([
+                        .array(
+                            description:
+                                "Alarm configurations for the event, replacing any existing alarms. Pass null to remove all alarms.",
+                            items: .anyOf([
+                                // Relative alarm (minutes before event)
+                                .object(
+                                    properties: [
+                                        "type": .string(
+                                            const: "relative"
+                                        ),
+                                        "minutes": .integer(
+                                            description:
+                                                "Minutes offset from event start (negative for before, positive for after)"
+                                        ),
+                                        "sound": .string(
+                                            description: "Sound name to play when alarm triggers",
+                                            enum: Sound.allCases.map { .string($0.rawValue) }
+                                        ),
+                                        "emailAddress": .string(
+                                            description: "Email address to send notification to"
+                                        ),
+                                    ],
+                                    required: ["minutes"],
+                                    additionalProperties: false
+                                ),
+                                // Absolute alarm (specific date/time)
+                                .object(
+                                    properties: [
+                                        "type": .string(
+                                            const: "absolute"
+                                        ),
+                                        "datetime": .string(
+                                            description:
+                                                "Alarm date/time. If timezone is omitted, local time is assumed. Date-only uses local midnight.",
+                                            format: .dateTime
+                                        ),
+                                        "sound": .string(
+                                            description: "Sound name to play when alarm triggers",
+                                            enum: Sound.allCases.map { .string($0.rawValue) }
+                                        ),
+                                        "emailAddress": .string(
+                                            description: "Email address to send notification to"
+                                        ),
+                                    ],
+                                    required: ["datetime"],
+                                    additionalProperties: false
+                                ),
+                                // Proximity alarm (location-based)
+                                .object(
+                                    properties: [
+                                        "type": .string(
+                                            const: "proximity"
+                                        ),
+                                        "proximity": .string(
+                                            description: "Proximity trigger type",
+                                            default: "enter",
+                                            enum: ["enter", "leave"]
+                                        ),
+                                        "locationTitle": .string(),
+                                        "latitude": .number(),
+                                        "longitude": .number(),
+                                        "radius": .number(
+                                            description: "Radius in meters",
+                                            default: .int(200)
+                                        ),
+                                        "sound": .string(
+                                            description: "Sound name to play when alarm triggers",
+                                            enum: Sound.allCases.map { .string($0.rawValue) }
+                                        ),
+                                        "emailAddress": .string(
+                                            description: "Email address to send notification to"
+                                        ),
+                                    ],
+                                    required: ["locationTitle", "latitude", "longitude"],
+                                    additionalProperties: false
+                                ),
+                            ])
+                        ),
+                        .null,
+                    ]),
                     "span": .string(
                         description:
                             "For recurring events: update only this occurrence, or this and all future events",
@@ -780,7 +795,23 @@ final class CalendarService: Service {
             // and `event(withIdentifier:)` always resolves it to the first occurrence.
             // When an occurrence date is given, refetch that exact occurrence so
             // `thisEvent` updates the right one and `futureEvents` starts from it.
-            guard let anyOccurrence = self.eventStore.event(withIdentifier: identifier) else {
+            // Detached-exception identifiers carry an occurrence suffix
+            // ("<series>/RID=<n>") that `event(withIdentifier:)` does not
+            // resolve, so fall back to the series prefix when the lookup
+            // fails; the occurrence date still selects the exact occurrence.
+            var seriesIdentifier = identifier
+            guard
+                let anyOccurrence = self.eventStore.event(withIdentifier: identifier)
+                    ?? ({
+                        guard let separator = identifier.range(of: "/RID=") else { return nil }
+                        let prefix = String(identifier[..<separator.lowerBound])
+                        guard self.eventStore.event(withIdentifier: prefix) != nil else {
+                            return nil
+                        }
+                        seriesIdentifier = prefix
+                        return self.eventStore.event(withIdentifier: prefix)
+                    })()
+            else {
                 throw NSError(
                     domain: "CalendarError",
                     code: 3,
@@ -812,7 +843,7 @@ final class CalendarService: Service {
                 )
                 guard
                     let occurrence = self.occurrence(
-                        ofEventWithIdentifier: identifier,
+                        ofEventWithIdentifier: seriesIdentifier,
                         startingAt: occurrenceDate
                     )
                 else {
@@ -841,6 +872,8 @@ final class CalendarService: Service {
 
             if case .string(let title) = arguments["title"] {
                 event.title = title
+            } else if case .null = arguments["title"] {
+                event.title = nil
             }
 
             var newStartDate: Date? = nil
