@@ -323,19 +323,19 @@ final class CalendarService: Service {
                                             enum: ["enter", "leave"]
                                         ),
                                         "locationTitle": .string(),
-                        "latitude": .number(
-                            minimum: -90,
-                            maximum: 90
-                        ),
-                        "longitude": .number(
-                            minimum: -180,
-                            maximum: 180
-                        ),
-                        "radius": .number(
-                            description: "Radius in meters",
-                            default: .int(200),
-                            minimum: 0
-                        ),
+                                        "latitude": .number(
+                                            minimum: -90,
+                                            maximum: 90
+                                        ),
+                                        "longitude": .number(
+                                            minimum: -180,
+                                            maximum: 180
+                                        ),
+                                        "radius": .number(
+                                            description: "Radius in meters",
+                                            default: .int(200),
+                                            minimum: 0
+                                        ),
                                         "sound": .string(
                                             description: "Sound name to play when alarm triggers",
                                             enum: Sound.allCases.map { .string($0.rawValue) }
@@ -758,19 +758,19 @@ final class CalendarService: Service {
                                             enum: ["enter", "leave"]
                                         ),
                                         "locationTitle": .string(),
-                        "latitude": .number(
-                            minimum: -90,
-                            maximum: 90
-                        ),
-                        "longitude": .number(
-                            minimum: -180,
-                            maximum: 180
-                        ),
-                        "radius": .number(
-                            description: "Radius in meters",
-                            default: .int(200),
-                            minimum: 0
-                        ),
+                                        "latitude": .number(
+                                            minimum: -90,
+                                            maximum: 90
+                                        ),
+                                        "longitude": .number(
+                                            minimum: -180,
+                                            maximum: 180
+                                        ),
+                                        "radius": .number(
+                                            description: "Radius in meters",
+                                            default: .int(200),
+                                            minimum: 0
+                                        ),
                                         "sound": .string(
                                             description: "Sound name to play when alarm triggers",
                                             enum: Sound.allCases.map { .string($0.rawValue) }
@@ -1339,7 +1339,7 @@ final class CalendarService: Service {
                     ]
                 )
             }
-            guard (-90.0...90.0).contains(latitude) else {
+            guard (-90.0 ... 90.0).contains(latitude) else {
                 throw NSError(
                     domain: "CalendarError",
                     code: 4,
@@ -1349,7 +1349,7 @@ final class CalendarService: Service {
                     ]
                 )
             }
-            guard (-180.0...180.0).contains(longitude) else {
+            guard (-180.0 ... 180.0).contains(longitude) else {
                 throw NSError(
                     domain: "CalendarError",
                     code: 4,
