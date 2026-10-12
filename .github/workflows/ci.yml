@@ -13,7 +13,7 @@ permissions:
 jobs:
     build:
         name: Build on macOS ${{ matrix.macos }} with Xcode ${{ matrix.xcode }}
-        runs-on: macos-${{ matrix.macos }}
+        runs-on: ${{ matrix.runner }}
         env:
             DEVELOPER_DIR: "/Applications/Xcode_${{ matrix.xcode }}.app/Contents/Developer"
         strategy:
@@ -22,6 +22,10 @@ jobs:
                 include:
                     - macos: "26"
                       xcode: "26.0"
+                      runner: macos-26
+                    - macos: "27"
+                      xcode: "27.0"
+                      runner: xcode-27
         timeout-minutes: 10
         steps:
             - name: Checkout code
