@@ -416,6 +416,19 @@ final class RemindersService: Service {
                 .merging(reminderProperties, uniquingKeysWith: { new, _ in new })
                 .merging(
                     [
+                        // The shared entry carries create's default ("none");
+                        // for an update, omission means "leave unchanged",
+                        // so advertising a default here would have clients
+                        // wipe priorities they never meant to touch.
+                        "priority": .string(
+                            description: "Priority; omit to leave unchanged",
+                            enum: EKReminderPriority.allCases.map { .string($0.stringValue) }
+                        )
+                    ] as OrderedDictionary,
+                    uniquingKeysWith: { new, _ in new }
+                )
+                .merging(
+                    [
                         "completed": .boolean(
                             description:
                                 "Completion state. Setting true records completion at the current time and advances recurring reminders; false clears the completion date."
@@ -474,21 +487,25 @@ final class RemindersService: Service {
                 targetList = nil
             }
 
-            try await self.apply(arguments, to: reminder)
-
-            if let targetList {
-                reminder.calendar = targetList
-            }
-
-            guard let finalList = reminder.calendar, finalList.allowsContentModifications else {
+            // Modifiability is checked before anything is mutated: EventKit
+            // retains unsaved mutations in its shared store, so throwing
+            // after apply would leave them for the next successful save.
+            let finalList = targetList ?? reminder.calendar
+            guard let finalList, finalList.allowsContentModifications else {
                 throw NSError(
                     domain: "RemindersError",
                     code: 2,
                     userInfo: [
                         NSLocalizedDescriptionKey:
-                            "Reminder list \"\(reminder.calendar?.title ?? "")\" does not allow modifications"
+                            "Reminder list \"\(finalList?.title ?? "")\" does not allow modifications"
                     ]
                 )
+            }
+
+            try await self.apply(arguments, to: reminder)
+
+            if let targetList {
+                reminder.calendar = targetList
             }
 
             try self.eventStore.save(reminder, commit: true)
@@ -896,8 +913,25 @@ final class RemindersService: Service {
     /// minutes before the due date, the shape accepted before alarms grew
     /// structured configurations.
     private static func alarm(from value: Value) async throws -> EKAlarm {
-        if case .int(let minutes) = value {
+        // JSON Schema counts 30.0 as a valid integer for the bare form too.
+        switch value {
+        case .int(let minutes):
             return EKAlarm(relativeOffset: TimeInterval(-minutes * 60))
+        case .double(let value) where value.rounded() == value:
+            // Int(exactly:) instead of Int(_: an out-of-range integral
+            // double is a recoverable error, not a trap.
+            guard let minutes = Int(exactly: value) else {
+                throw NSError(
+                    domain: "RemindersError",
+                    code: 4,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Alarm minutes \(value) is out of range."
+                    ]
+                )
+            }
+            return EKAlarm(relativeOffset: TimeInterval(-minutes * 60))
+        default: break
         }
         guard case .object(let config) = value else {
             throw NSError(
@@ -920,7 +954,17 @@ final class RemindersService: Service {
             switch config["minutes"] {
             case .some(.int(let value)): minutes = value
             case .some(.double(let value)) where value.rounded() == value:
-                minutes = Int(value)
+                guard let asInt = Int(exactly: value) else {
+                    throw NSError(
+                        domain: "RemindersError",
+                        code: 4,
+                        userInfo: [
+                            NSLocalizedDescriptionKey:
+                                "Alarm minutes \(value) is out of range."
+                        ]
+                    )
+                }
+                minutes = asInt
             default:
                 throw NSError(
                     domain: "RemindersError",
