@@ -473,6 +473,16 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
             // read(upToCount:) reports end-of-file as nil, which for a
             // readable zero-byte attachment is simply empty content.
             let chunk = try handle.read(upToCount: maxBytes) ?? Data()
+            // A full-budget chunk means the file may have grown past the
+            // limit between the size check and the read; without this
+            // check a truncated read passes as complete content.
+            if chunk.count == maxBytes,
+                let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+                let grown = attributes[.size] as? Int,
+                grown > maxBytes
+            {
+                throw AttachmentError.tooLarge(id, grown, maxBytes)
+            }
             return chunk
         }
         var part: [String: Value] = [
@@ -505,10 +515,19 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
         // over the probe — another call's scope could make the probe pass, and
         // starting a scope of our own is always safe.
         let storedBookmark = UserDefaults.standard.data(forKey: messagesAttachmentsBookmarkKey)
-        if storedBookmark == nil,
-            FileManager.default.isReadableFile(atPath: messagesDirectoryPath + "/Attachments")
-        {
-            return try operation()
+        if storedBookmark == nil {
+            // The wall denies the Attachments subtree while leaving the
+            // directory entry itself stat-able (the spike's finding), so
+            // existence separates a deleted folder from the wall: a gone
+            // folder must surface as fileMissing from the per-file checks,
+            // not as grantMissing, whose remediation panel has nothing
+            // left to select.
+            let attachmentsPath = messagesDirectoryPath + "/Attachments"
+            if !FileManager.default.fileExists(atPath: attachmentsPath)
+                || FileManager.default.isReadableFile(atPath: attachmentsPath)
+            {
+                return try operation()
+            }
         }
 
         guard let bookmarkData = storedBookmark else {
