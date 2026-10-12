@@ -870,12 +870,10 @@ final class CalendarService: Service {
                 event = anyOccurrence
             }
 
-            if case .string(let title) = arguments["title"] {
-                event.title = title
-            } else if case .null = arguments["title"] {
-                event.title = nil
-            }
-
+            // Validate everything before touching the event: EventKit keeps
+            // unsaved mutations in its shared store, so an error thrown
+            // halfway through would otherwise be committed by the next
+            // successful save of anything.
             var newStartDate: Date? = nil
             if case .string(let startDateString) = arguments["start"] {
                 guard
@@ -922,6 +920,7 @@ final class CalendarService: Service {
 
             // Move to another calendar when requested; an unmatched name is an error
             // rather than a silent default.
+            var targetCalendar: EKCalendar? = nil
             if case .string(let calendarName) = arguments["calendar"] {
                 guard
                     let matchingCalendar = self.eventStore.calendars(for: .event)
@@ -935,7 +934,31 @@ final class CalendarService: Service {
                         ]
                     )
                 }
-                event.calendar = matchingCalendar
+                targetCalendar = matchingCalendar
+            }
+
+            var newURL: URL? = nil
+            if case .string(let urlString) = arguments["url"] {
+                guard let url = URL(string: urlString) else {
+                    throw NSError(
+                        domain: "CalendarError",
+                        code: 2,
+                        userInfo: [
+                            NSLocalizedDescriptionKey: "Invalid URL \"\(urlString)\""
+                        ]
+                    )
+                }
+                newURL = url
+            }
+
+            if case .string(let title) = arguments["title"] {
+                event.title = title
+            } else if case .null = arguments["title"] {
+                event.title = nil
+            }
+
+            if let targetCalendar {
+                event.calendar = targetCalendar
             }
 
             if case .string(let location) = arguments["location"] {
@@ -950,17 +973,8 @@ final class CalendarService: Service {
                 event.notes = nil
             }
 
-            if case .string(let urlString) = arguments["url"] {
-                guard let url = URL(string: urlString) else {
-                    throw NSError(
-                        domain: "CalendarError",
-                        code: 2,
-                        userInfo: [
-                            NSLocalizedDescriptionKey: "Invalid URL \"\(urlString)\""
-                        ]
-                    )
-                }
-                event.url = url
+            if let newURL {
+                event.url = newURL
             } else if case .null = arguments["url"] {
                 event.url = nil
             }
@@ -969,10 +983,10 @@ final class CalendarService: Service {
                 event.availability = EKEventAvailability(availability)
             }
 
-            if let newStartDate = newStartDate {
+            if let newStartDate {
                 event.startDate = newStartDate
             }
-            if let newEndDate = newEndDate {
+            if let newEndDate {
                 event.endDate = newEndDate
             }
 
@@ -1033,14 +1047,17 @@ final class CalendarService: Service {
 
         case "absolute":
             if case .string(let datetimeString) = config["datetime"] {
-                if ISO8601DateFormatter.isDateOnlyISO8601String(datetimeString) {
-                    log.error(
-                        "Absolute alarm datetime must include time component: \(datetimeString, privacy: .public)"
-                    )
-                } else if let absoluteDate = ISO8601DateFormatter.lenientDate(
+                // Date-only values mean local midnight, like every other
+                // date parameter of these tools.
+                if let parsed = ISO8601DateFormatter.parsedLenientISO8601Date(
                     fromISO8601String: datetimeString
                 ) {
-                    alarm = EKAlarm(absoluteDate: absoluteDate)
+                    alarm = EKAlarm(
+                        absoluteDate: Calendar.current.normalizedStartDate(
+                            from: parsed.date,
+                            isDateOnly: parsed.isDateOnly
+                        )
+                    )
                 }
             }
 
