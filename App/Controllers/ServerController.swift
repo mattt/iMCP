@@ -154,7 +154,7 @@ enum ServiceRegistry {
                 ServiceConfig(
                     name: "Voicemail",
                     iconName: "recordingtape",
-                    color: .teal,
+                    color: .green,
                     service: VoicemailService.shared,
                     binding: voicemailEnabled
                 )
