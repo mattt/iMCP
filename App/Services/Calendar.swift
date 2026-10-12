@@ -542,21 +542,11 @@ final class CalendarService: Service {
             // refetch that exact occurrence so `thisEvent` removes the right one
             // and `futureEvents` starts from it rather than from the whole series.
             // Detached-exception identifiers carry an occurrence suffix
-            // ("<series>/RID=<n>") that `event(withIdentifier:)` does not
-            // resolve, so fall back to the series prefix when the lookup
-            // fails; the start date still selects the exact occurrence.
-            var seriesIdentifier = identifier
+            // ("<series>/RID=<n>"); the shared resolver falls back to the
+            // series prefix, and the start date still selects the exact
+            // occurrence.
             guard
-                let anyOccurrence = self.eventStore.event(withIdentifier: identifier)
-                    ?? ({
-                        guard let separator = identifier.range(of: "/RID=") else { return nil }
-                        let prefix = String(identifier[..<separator.lowerBound])
-                        guard self.eventStore.event(withIdentifier: prefix) != nil else {
-                            return nil
-                        }
-                        seriesIdentifier = prefix
-                        return self.eventStore.event(withIdentifier: prefix)
-                    })()
+                let resolved = self.eventPossiblyDetached(identifier)
             else {
                 throw NSError(
                     domain: "CalendarError",
@@ -566,6 +556,8 @@ final class CalendarService: Service {
                     ]
                 )
             }
+            let anyOccurrence = resolved.event
+            let seriesIdentifier = resolved.seriesIdentifier
 
             let event: EKEvent
             if case .string(let startString) = arguments["start"] {
@@ -812,21 +804,11 @@ final class CalendarService: Service {
             // When an occurrence date is given, refetch that exact occurrence so
             // `thisEvent` updates the right one and `futureEvents` starts from it.
             // Detached-exception identifiers carry an occurrence suffix
-            // ("<series>/RID=<n>") that `event(withIdentifier:)` does not
-            // resolve, so fall back to the series prefix when the lookup
-            // fails; the occurrence date still selects the exact occurrence.
-            var seriesIdentifier = identifier
+            // ("<series>/RID=<n>"); the shared resolver falls back to the
+            // series prefix, and the occurrence date still selects the
+            // exact occurrence.
             guard
-                let anyOccurrence = self.eventStore.event(withIdentifier: identifier)
-                    ?? ({
-                        guard let separator = identifier.range(of: "/RID=") else { return nil }
-                        let prefix = String(identifier[..<separator.lowerBound])
-                        guard self.eventStore.event(withIdentifier: prefix) != nil else {
-                            return nil
-                        }
-                        seriesIdentifier = prefix
-                        return self.eventStore.event(withIdentifier: prefix)
-                    })()
+                let resolved = self.eventPossiblyDetached(identifier)
             else {
                 throw NSError(
                     domain: "CalendarError",
@@ -836,6 +818,8 @@ final class CalendarService: Service {
                     ]
                 )
             }
+            let anyOccurrence = resolved.event
+            let seriesIdentifier = resolved.seriesIdentifier
 
             let event: EKEvent
             if case .string(let occurrenceString) = arguments["occurrence"] {
@@ -938,9 +922,17 @@ final class CalendarService: Service {
             // rather than a silent default.
             var targetCalendar: EKCalendar? = nil
             if case .string(let calendarName) = arguments["calendar"] {
+                // Editability joins the match so a read-only target (a
+                // subscribed calendar, say) throws here, before any
+                // mutation: a move into it would otherwise sit unsaved in
+                // the shared store until the next successful save of
+                // anything commits it.
                 guard
                     let matchingCalendar = self.eventStore.calendars(for: .event)
-                        .first(where: { $0.title.lowercased() == calendarName.lowercased() })
+                        .first(where: {
+                            $0.title.lowercased() == calendarName.lowercased()
+                                && $0.allowsContentModifications
+                        })
                 else {
                     throw NSError(
                         domain: "CalendarError",
@@ -1058,7 +1050,7 @@ final class CalendarService: Service {
         switch alarmType {
         case "relative":
             if case .int(let minutes) = config["minutes"] {
-                alarm = EKAlarm(relativeOffset: TimeInterval(-minutes * 60))
+                alarm = EKAlarm(relativeOffset: -Double(minutes) * 60)
             }
 
         case "absolute":
@@ -1148,5 +1140,18 @@ final class CalendarService: Service {
                 (occurrenceIdentifier == identifier || occurrenceIdentifier.hasPrefix(identifier + "/"))
                 && abs($0.startDate.timeIntervalSince(date)) < 1
         }
+    }
+    /// Resolves an event identifier that may carry a detached-exception
+    /// suffix ("<series>/RID=<n>"), which `event(withIdentifier:)` does not
+    /// resolve, returning the event and the series identifier its occurrences
+    /// are addressed by.
+    private func eventPossiblyDetached(_ identifier: String) -> (event: EKEvent, seriesIdentifier: String)? {
+        if let event = eventStore.event(withIdentifier: identifier) {
+            return (event, identifier)
+        }
+        guard let separator = identifier.range(of: "/RID=") else { return nil }
+        let prefix = String(identifier[..<separator.lowerBound])
+        guard let event = eventStore.event(withIdentifier: prefix) else { return nil }
+        return (event, prefix)
     }
 }
