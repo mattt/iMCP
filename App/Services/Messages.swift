@@ -665,7 +665,7 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
     private func storeBookmark(for url: URL) {
         do {
             let bookmarkData = try url.bookmarkData(
-                options: .securityScopeAllowOnlyReadAccess,
+                options: [.withSecurityScope, .securityScopeAllowOnlyReadAccess],
                 includingResourceValuesForKeys: nil,
                 relativeTo: nil
             )
