@@ -2,6 +2,7 @@ import CoreLocation
 import EventKit
 import Foundation
 import JSONSchema
+import MapKit
 import OSLog
 import Ontology
 import OrderedCollections
@@ -12,99 +13,149 @@ private let log = Logger.service("reminders")
 /// Passing `null` for an optional property in `reminders_update` clears it.
 private let reminderProperties: OrderedDictionary<String, JSONSchema> = [
     "title": .string(),
-    "notes": .string(description: "Notes for the reminder. Pass null to clear."),
-    "url": .string(description: "URL attached to the reminder. Pass null to clear.", format: .uri),
+    "notes": .anyOf([
+        .string(description: "Notes for the reminder. Pass null to clear."),
+        .null,
+    ]),
+    "url": .anyOf([
+        .string(description: "URL attached to the reminder. Pass null to clear.", format: .uri),
+        .null,
+    ]),
     "list": .string(description: "Reminder list name"),
-    "start": .string(
-        description:
-            "Start date/time for the reminder. If timezone is omitted, local time is assumed. Date-only uses local midnight. Pass null to clear.",
-        format: .dateTime
-    ),
-    "due": .string(
-        description:
-            "Due date/time for the reminder. If timezone is omitted, local time is assumed. Date-only uses local midnight. Pass null to clear.",
-        format: .dateTime
-    ),
+    "start": .anyOf([
+        .string(
+            description:
+                "Start date/time for the reminder. If timezone is omitted, local time is assumed. Date-only uses local midnight. Pass null to clear.",
+            format: .dateTime
+        ),
+        .null,
+    ]),
+    "due": .anyOf([
+        .string(
+            description:
+                "Due date/time for the reminder. If timezone is omitted, local time is assumed. Date-only uses local midnight. Pass null to clear.",
+            format: .dateTime
+        ),
+        .null,
+    ]),
     "priority": .string(
         default: .string(EKReminderPriority.none.stringValue),
         enum: EKReminderPriority.allCases.map { .string($0.stringValue) }
     ),
-    "alarms": .array(
-        description: "Alarm configurations for the reminder. Pass null to remove all alarms.",
-        items: .anyOf([
-            // Relative alarm (minutes before due date)
-            .object(
-                properties: [
-                    "type": .string(
-                        const: "relative"
+    "alarms": .anyOf([
+        .array(
+            description: "Alarm configurations for the reminder. Pass null to remove all alarms.",
+            items: .anyOf([
+                // Relative alarm in minutes, as accepted before alarms took
+                // structured configurations (kept for compatibility)
+                .integer(description: "Minutes before the due date"),
+                // Relative alarm (minutes before due date)
+                .object(
+                    properties: [
+                        "type": .string(
+                            const: "relative"
+                        ),
+                        "minutes": .integer(
+                            description: "Minutes offset from the due date (positive is before)"
+                        ),
+                        "sound": .string(
+                            description: "Sound name to play when alarm triggers",
+                            enum: Sound.allCases.map { .string($0.rawValue) }
+                        ),
+                        "emailAddress": .string(
+                            description: "Email address to send notification to"
+                        ),
+                    ],
+                    required: ["minutes"],
+                    additionalProperties: false
+                ),
+                // Absolute alarm (specific date/time)
+                .object(
+                    properties: [
+                        "type": .string(
+                            const: "absolute"
+                        ),
+                        "datetime": .string(
+                            description:
+                                "Alarm date/time. If timezone is omitted, local time is assumed.",
+                            format: .dateTime
+                        ),
+                        "sound": .string(
+                            description: "Sound name to play when alarm triggers",
+                            enum: Sound.allCases.map { .string($0.rawValue) }
+                        ),
+                        "emailAddress": .string(
+                            description: "Email address to send notification to"
+                        ),
+                    ],
+                    required: ["datetime"],
+                    additionalProperties: false
+                ),
+                // Proximity alarm (location-based): a free-text location that is
+                // geocoded, or explicit coordinates
+                .anyOf([
+                    .object(
+                        properties: [
+                            "type": .string(
+                                const: "proximity"
+                            ),
+                            "proximity": .string(
+                                description: "Proximity trigger type",
+                                default: .string("enter"),
+                                enum: [.string("enter"), .string("leave")]
+                            ),
+                            "location": .string(
+                                description:
+                                    "Place name or address to trigger on, resolved with Maps"
+                            ),
+                            "radius": .number(
+                                description: "Radius in meters",
+                                default: .int(200)
+                            ),
+                            "sound": .string(
+                                description: "Sound name to play when alarm triggers",
+                                enum: Sound.allCases.map { .string($0.rawValue) }
+                            ),
+                            "emailAddress": .string(
+                                description: "Email address to send notification to"
+                            ),
+                        ],
+                        required: ["location"],
+                        additionalProperties: false
                     ),
-                    "minutes": .integer(
-                        description: "Minutes offset from the due date (positive is before)"
+                    .object(
+                        properties: [
+                            "type": .string(
+                                const: "proximity"
+                            ),
+                            "proximity": .string(
+                                description: "Proximity trigger type",
+                                default: .string("enter"),
+                                enum: [.string("enter"), .string("leave")]
+                            ),
+                            "locationTitle": .string(),
+                            "latitude": .number(),
+                            "longitude": .number(),
+                            "radius": .number(
+                                description: "Radius in meters",
+                                default: .int(200)
+                            ),
+                            "sound": .string(
+                                description: "Sound name to play when alarm triggers",
+                                enum: Sound.allCases.map { .string($0.rawValue) }
+                            ),
+                            "emailAddress": .string(
+                                description: "Email address to send notification to"
+                            ),
+                        ],
+                        required: ["locationTitle", "latitude", "longitude"],
+                        additionalProperties: false
                     ),
-                    "sound": .string(
-                        description: "Sound name to play when alarm triggers",
-                        enum: Sound.allCases.map { .string($0.rawValue) }
-                    ),
-                    "emailAddress": .string(
-                        description: "Email address to send notification to"
-                    ),
-                ],
-                required: ["minutes"],
-                additionalProperties: false
-            ),
-            // Absolute alarm (specific date/time)
-            .object(
-                properties: [
-                    "type": .string(
-                        const: "absolute"
-                    ),
-                    "datetime": .string(
-                        description:
-                            "Alarm date/time. If timezone is omitted, local time is assumed.",
-                        format: .dateTime
-                    ),
-                    "sound": .string(
-                        description: "Sound name to play when alarm triggers",
-                        enum: Sound.allCases.map { .string($0.rawValue) }
-                    ),
-                    "emailAddress": .string(
-                        description: "Email address to send notification to"
-                    ),
-                ],
-                required: ["datetime"],
-                additionalProperties: false
-            ),
-            // Proximity alarm (location-based)
-            .object(
-                properties: [
-                    "type": .string(
-                        const: "proximity"
-                    ),
-                    "proximity": .string(
-                        description: "Proximity trigger type",
-                        default: .string("enter"),
-                        enum: [.string("enter"), .string("leave")]
-                    ),
-                    "locationTitle": .string(),
-                    "latitude": .number(),
-                    "longitude": .number(),
-                    "radius": .number(
-                        description: "Radius in meters",
-                        default: .int(200)
-                    ),
-                    "sound": .string(
-                        description: "Sound name to play when alarm triggers",
-                        enum: Sound.allCases.map { .string($0.rawValue) }
-                    ),
-                    "emailAddress": .string(
-                        description: "Email address to send notification to"
-                    ),
-                ],
-                required: ["locationTitle", "latitude", "longitude"],
-                additionalProperties: false
-            ),
-        ])
-    ),
+                ]),
+            ])
+        ),
+        .null,
+    ]),
 ]
 
 final class RemindersService: Service {
@@ -336,15 +387,11 @@ final class RemindersService: Service {
             // provided name does not match an existing list.
             var calendar = self.eventStore.defaultCalendarForNewReminders()
             if case .string(let listName) = arguments["list"] {
-                if let matchingCalendar = self.eventStore.calendars(for: .reminder)
-                    .first(where: { $0.title.lowercased() == listName.lowercased() })
-                {
-                    calendar = matchingCalendar
-                }
+                calendar = try self.listIfPresent(named: listName) ?? calendar
             }
             reminder.calendar = calendar
 
-            try self.apply(arguments, to: reminder)
+            try await self.apply(arguments, to: reminder)
 
             // Save the reminder
             try self.eventStore.save(reminder, commit: true)
@@ -416,19 +463,7 @@ final class RemindersService: Service {
             // Move to another list when requested; unlike reminders_create,
             // an unmatched list name is an error rather than a silent default.
             if case .string(let listName) = arguments["list"] {
-                guard
-                    let matchingCalendar = self.eventStore.calendars(for: .reminder)
-                        .first(where: { $0.title.lowercased() == listName.lowercased() })
-                else {
-                    throw NSError(
-                        domain: "RemindersError",
-                        code: 2,
-                        userInfo: [
-                            NSLocalizedDescriptionKey: "No reminder list named \"\(listName)\""
-                        ]
-                    )
-                }
-                reminder.calendar = matchingCalendar
+                reminder.calendar = try self.list(named: listName)
             }
 
             guard let targetList = reminder.calendar, targetList.allowsContentModifications else {
@@ -442,7 +477,7 @@ final class RemindersService: Service {
                 )
             }
 
-            try self.apply(arguments, to: reminder)
+            try await self.apply(arguments, to: reminder)
 
             try self.eventStore.save(reminder, commit: true)
 
@@ -704,7 +739,7 @@ final class RemindersService: Service {
 
     /// Applies optional properties from tool arguments to a reminder.
     /// A `null` value clears the corresponding property.
-    private func apply(_ arguments: [String: Value], to reminder: EKReminder) throws {
+    private func apply(_ arguments: [String: Value], to reminder: EKReminder) async throws {
         switch arguments["title"] {
         case .string(let title): reminder.title = title
         default: break
@@ -754,7 +789,11 @@ final class RemindersService: Service {
 
         switch arguments["alarms"] {
         case .array(let alarmConfigs):
-            reminder.alarms = alarmConfigs.compactMap { Self.alarm(from: $0) }
+            var alarms: [EKAlarm] = []
+            for alarmConfig in alarmConfigs {
+                alarms.append(try await Self.alarm(from: alarmConfig))
+            }
+            reminder.alarms = alarms
         case .null:
             reminder.alarms = []
         default: break
@@ -797,62 +836,131 @@ final class RemindersService: Service {
         )
     }
 
-    /// Builds an alarm from an alarm configuration object.
-    private static func alarm(from value: Value) -> EKAlarm? {
-        guard case .object(let config) = value else { return nil }
+    /// Builds an alarm from an alarm configuration object. Bare integers are
+    /// minutes before the due date, the shape accepted before alarms grew
+    /// structured configurations.
+    private static func alarm(from value: Value) async throws -> EKAlarm {
+        if case .int(let minutes) = value {
+            return EKAlarm(relativeOffset: TimeInterval(-minutes * 60))
+        }
+        guard case .object(let config) = value else {
+            throw NSError(
+                domain: "RemindersError",
+                code: 4,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Invalid alarm configuration. Pass a number of minutes or an object with type relative, absolute, or proximity."
+                ]
+            )
+        }
 
-        var alarm: EKAlarm?
-
+        var alarm: EKAlarm
         let alarmType = config["type"]?.stringValue ?? "relative"
         switch alarmType {
         case "relative":
-            if case .int(let minutes) = config["minutes"] {
-                alarm = EKAlarm(relativeOffset: TimeInterval(-minutes * 60))
+            guard case .int(let minutes) = config["minutes"] else {
+                throw NSError(
+                    domain: "RemindersError",
+                    code: 4,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Relative alarm requires integer minutes."
+                    ]
+                )
             }
+            alarm = EKAlarm(relativeOffset: TimeInterval(-minutes * 60))
 
         case "absolute":
-            if case .string(let datetimeString) = config["datetime"] {
-                if ISO8601DateFormatter.isDateOnlyISO8601String(datetimeString) {
-                    log.error(
-                        "Absolute alarm datetime must include time component: \(datetimeString, privacy: .public)"
-                    )
-                } else if let absoluteDate = ISO8601DateFormatter.lenientDate(
-                    fromISO8601String: datetimeString
-                ) {
-                    alarm = EKAlarm(absoluteDate: absoluteDate)
-                }
+            guard case .string(let datetimeString) = config["datetime"] else {
+                throw NSError(
+                    domain: "RemindersError",
+                    code: 4,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Absolute alarm requires an ISO 8601 datetime string."
+                    ]
+                )
             }
+            guard !ISO8601DateFormatter.isDateOnlyISO8601String(datetimeString) else {
+                throw NSError(
+                    domain: "RemindersError",
+                    code: 4,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Absolute alarm datetime must include a time component."
+                    ]
+                )
+            }
+            guard let absoluteDate = ISO8601DateFormatter.lenientDate(fromISO8601String: datetimeString) else {
+                throw NSError(
+                    domain: "RemindersError",
+                    code: 4,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Absolute alarm datetime is not a valid ISO 8601 datetime."
+                    ]
+                )
+            }
+            alarm = EKAlarm(absoluteDate: absoluteDate)
 
         case "proximity":
-            if case .string(let locationTitle) = config["locationTitle"],
-                case .double(let latitude) = config["latitude"],
-                case .double(let longitude) = config["longitude"]
-            {
-                let structuredLocation = EKStructuredLocation(title: locationTitle)
-                structuredLocation.geoLocation = CLLocation(
-                    latitude: latitude,
-                    longitude: longitude
-                )
-
-                switch config["radius"] {
-                case .double(let radius): structuredLocation.radius = radius
-                case .int(let radius): structuredLocation.radius = Double(radius)
-                default: break
+            let title: String
+            let coordinate: CLLocationCoordinate2D
+            if case .string(let query) = config["location"] {
+                let mapItem = try await Self.searchLocation(query)
+                title = mapItem.name ?? query
+                coordinate = mapItem.placemark.coordinate
+            } else {
+                guard case .string(let locationTitle) = config["locationTitle"] else {
+                    throw NSError(
+                        domain: "RemindersError",
+                        code: 4,
+                        userInfo: [
+                            NSLocalizedDescriptionKey:
+                                "Proximity alarm requires a location query or a locationTitle with coordinates."
+                        ]
+                    )
                 }
-
-                alarm = EKAlarm()
-                alarm?.proximity = config["proximity"]?.stringValue == "leave" ? .leave : .enter
-                alarm?.structuredLocation = structuredLocation
+                guard
+                    let latitude = Self.number(config["latitude"]),
+                    let longitude = Self.number(config["longitude"])
+                else {
+                    throw NSError(
+                        domain: "RemindersError",
+                        code: 4,
+                        userInfo: [
+                            NSLocalizedDescriptionKey:
+                                "Proximity alarm requires numeric latitude and longitude alongside locationTitle."
+                        ]
+                    )
+                }
+                title = locationTitle
+                coordinate = CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+            }
+            let structuredLocation = EKStructuredLocation(title: title)
+            structuredLocation.geoLocation = CLLocation(
+                latitude: coordinate.latitude,
+                longitude: coordinate.longitude
+            )
+            switch Self.number(config["radius"]) {
+            case .some(let radius): structuredLocation.radius = radius
+            case nil: break
             }
 
-        default:
-            log.error(
-                "Unexpected alarm type encountered: \(alarmType, privacy: .public)"
-            )
-            return nil
-        }
+            alarm = EKAlarm()
+            alarm.proximity = config["proximity"]?.stringValue == "leave" ? .leave : .enter
+            alarm.structuredLocation = structuredLocation
 
-        guard let alarm = alarm else { return nil }
+        default:
+            throw NSError(
+                domain: "RemindersError",
+                code: 4,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Unknown alarm type \(alarmType). Expected relative, absolute, or proximity."
+                ]
+            )
+        }
 
         if case .string(let soundName) = config["sound"],
             Sound(rawValue: soundName) != nil
@@ -865,6 +973,46 @@ final class RemindersService: Service {
         }
 
         return alarm
+    }
+
+    /// Resolves a free-text location query to a place, the way the Maps
+    /// service does, so callers can name a place instead of knowing its
+    /// coordinates.
+    private static func searchLocation(_ query: String) async throws -> MKMapItem {
+        let request = MKLocalSearch.Request()
+        request.naturalLanguageQuery = query
+        return try await withCheckedThrowingContinuation { continuation in
+            MKLocalSearch(request: request).start { response, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                guard let mapItem = response?.mapItems.first else {
+                    continuation.resume(
+                        throwing: NSError(
+                            domain: "RemindersError",
+                            code: 4,
+                            userInfo: [
+                                NSLocalizedDescriptionKey:
+                                    "No location found for \"\(query)\""
+                            ]
+                        )
+                    )
+                    return
+                }
+                continuation.resume(returning: mapItem)
+            }
+        }
+    }
+
+    /// JSON numbers arrive as `.int` or `.double` depending on whether they
+    /// carry a fractional part, so both spell a number here.
+    private static func number(_ value: Value?) -> Double? {
+        switch value {
+        case .int(let value): return Double(value)
+        case .double(let value): return value
+        default: return nil
+        }
     }
 
     /// Resolves a reminder list by identifier, falling back to a case-insensitive name match.
@@ -889,20 +1037,7 @@ final class RemindersService: Service {
         }
 
         if case .string(let name) = arguments["name"], !name.isEmpty {
-            guard
-                let matchingList = lists.first(where: {
-                    $0.title.lowercased() == name.lowercased()
-                })
-            else {
-                throw NSError(
-                    domain: "RemindersError",
-                    code: 3,
-                    userInfo: [
-                        NSLocalizedDescriptionKey: "No reminder list named \"\(name)\""
-                    ]
-                )
-            }
-            return matchingList
+            return try list(named: name)
         }
 
         throw NSError(
@@ -912,5 +1047,45 @@ final class RemindersService: Service {
                 NSLocalizedDescriptionKey: "Reminder list identifier or name is required"
             ]
         )
+    }
+
+    /// Resolves a reminder list by name. Case-insensitive, but ambiguous
+    /// names are an error rather than a guess, because several lists can
+    /// share a name across sources.
+    private func list(named name: String) throws -> EKCalendar {
+        guard let matchingList = try listIfPresent(named: name) else {
+            throw NSError(
+                domain: "RemindersError",
+                code: 3,
+                userInfo: [
+                    NSLocalizedDescriptionKey: "No reminder list named \"\(name)\""
+                ]
+            )
+        }
+        return matchingList
+    }
+
+    /// Resolves a reminder list by name, or nil when no list is named that,
+    /// so callers that fall back to a default can keep doing so. Ambiguous
+    /// names still throw.
+    private func listIfPresent(named name: String) throws -> EKCalendar? {
+        let matchingLists = eventStore.calendars(for: .reminder).filter {
+            $0.title.lowercased() == name.lowercased()
+        }
+        switch matchingLists.count {
+        case 0:
+            return nil
+        case 1:
+            return matchingLists[0]
+        default:
+            throw NSError(
+                domain: "RemindersError",
+                code: 5,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "\(matchingLists.count) reminder lists are named \"\(name)\". Pass the identifier of the one you mean, as returned by reminders_lists."
+                ]
+            )
+        }
     }
 }
