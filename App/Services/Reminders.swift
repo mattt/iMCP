@@ -41,6 +41,55 @@ private let reminderProperties: OrderedDictionary<String, JSONSchema> = [
         ),
         .null,
     ]),
+    "recurrence": .anyOf([
+        .object(
+            description:
+                "Recurrence rule for a repeating reminder. Pass null to stop repeating.",
+            properties: [
+                "frequency": .string(
+                    description: "How often the reminder repeats",
+                    enum: [
+                        .string("daily"), .string("weekly"), .string("monthly"),
+                        .string("yearly"),
+                    ]
+                ),
+                "interval": .integer(
+                    description: "Repeat every N units of the frequency",
+                    default: .int(1),
+                    minimum: 1
+                ),
+                "daysOfTheWeek": .array(
+                    description: "Days of the week the reminder repeats on (weekly frequency)",
+                    items: .string(
+                        enum: [
+                            .string("sunday"), .string("monday"), .string("tuesday"),
+                            .string("wednesday"), .string("thursday"), .string("friday"),
+                            .string("saturday"),
+                        ]
+                    )
+                ),
+                "end": .object(
+                    description:
+                        "End condition; omit to repeat indefinitely. Pass date or count, not both.",
+                    properties: [
+                        "date": .string(
+                            description:
+                                "Date of the last occurrence (inclusive; a date-only value includes that whole day)",
+                            format: .dateTime
+                        ),
+                        "count": .integer(
+                            description: "Total number of occurrences",
+                            minimum: 1
+                        ),
+                    ],
+                    additionalProperties: false
+                ),
+            ],
+            required: ["frequency"],
+            additionalProperties: false
+        ),
+        .null,
+    ]),
     "priority": .string(
         default: .string(EKReminderPriority.none.stringValue),
         enum: EKReminderPriority.allCases.map { .string($0.stringValue) }
@@ -355,7 +404,7 @@ final class RemindersService: Service {
                 }
             }
 
-            return filteredReminders.map { PlanAction($0) }
+            return try filteredReminders.map { try self.payload(for: $0) }
         }
 
         Tool(
@@ -430,7 +479,7 @@ final class RemindersService: Service {
             // Save the reminder
             try self.eventStore.save(reminder, commit: true)
 
-            return PlanAction(reminder)
+            return try self.payload(for: reminder)
         }
 
         Tool(
@@ -560,7 +609,7 @@ final class RemindersService: Service {
 
             try self.eventStore.save(reminder, commit: true)
 
-            return PlanAction(reminder)
+            return try self.payload(for: reminder)
         }
 
         Tool(
@@ -850,6 +899,15 @@ final class RemindersService: Service {
         let newDue = try Self.dateComponentsChange(arguments["due"], description: "due")
         let newPriority = try Self.priorityChange(arguments["priority"])
         let newCompleted = try Self.boolChange(arguments["completed"], description: "completed")
+        let newRecurrence: PropertyChange<EKRecurrenceRule>
+        switch arguments["recurrence"] {
+        case .object(let recurrence):
+            newRecurrence = .set(try Self.recurrenceRule(from: recurrence))
+        case .null:
+            newRecurrence = .clear
+        default:
+            newRecurrence = .absent
+        }
 
         // inputSchema is advertised, not enforced: a present value with the
         // wrong shape is an error, not a silent no-op.
@@ -912,6 +970,12 @@ final class RemindersService: Service {
 
         if case .set(let alarms) = newAlarms {
             reminder.alarms = alarms
+        }
+
+        switch newRecurrence {
+        case .set(let rule): reminder.recurrenceRules = [rule]
+        case .clear: reminder.recurrenceRules = nil
+        case .absent: break
         }
 
         if case .set(let completed) = newCompleted {
@@ -1057,6 +1121,184 @@ final class RemindersService: Service {
                 ]
             )
         }
+    }
+
+    /// Encodes a reminder as a PlanAction, layering on recurrence and completion
+    /// details that the schema.org representation does not carry.
+    private func payload(for reminder: EKReminder) throws -> Value {
+        let encoder = JSONEncoder()
+        encoder.userInfo[Ontology.DateTime.timeZoneOverrideKey] = TimeZone.current
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+
+        let base = try JSONDecoder().decode(
+            Value.self,
+            from: try encoder.encode(PlanAction(reminder))
+        )
+        guard case .object(var fields) = base else { return base }
+
+        if let completionDate = reminder.completionDate {
+            fields["completedAt"] = try JSONDecoder().decode(
+                Value.self,
+                from: try encoder.encode(DateTime(completionDate))
+            )
+        }
+
+        if let recurrenceRule = reminder.recurrenceRules?.first {
+            fields["recurrence"] = Self.value(for: recurrenceRule, encoder: encoder)
+        }
+
+        return .object(fields)
+    }
+
+    /// Builds a recurrence rule from a recurrence configuration object.
+    private static func recurrenceRule(from config: [String: Value]) throws -> EKRecurrenceRule {
+        guard case .string(let frequencyString)? = config["frequency"] else {
+            throw NSError(
+                domain: "RemindersError",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "Recurrence frequency is required"]
+            )
+        }
+        let frequency: EKRecurrenceFrequency
+        switch frequencyString {
+        case "daily": frequency = .daily
+        case "weekly": frequency = .weekly
+        case "monthly": frequency = .monthly
+        case "yearly": frequency = .yearly
+        default:
+            throw NSError(
+                domain: "RemindersError",
+                code: 2,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Unknown recurrence frequency \"\(frequencyString)\". Expected daily, weekly, monthly, or yearly."
+                ]
+            )
+        }
+
+        var interval = 1
+        if case .int(let value)? = config["interval"] {
+            guard value >= 1 else {
+                throw NSError(
+                    domain: "RemindersError",
+                    code: 2,
+                    userInfo: [
+                        NSLocalizedDescriptionKey: "Recurrence interval must be at least 1."
+                    ]
+                )
+            }
+            interval = value
+        }
+
+        var daysOfTheWeek: [EKRecurrenceDayOfWeek]?
+        if case .array(let dayValues)? = config["daysOfTheWeek"] {
+            daysOfTheWeek = try dayValues.map { dayValue in
+                guard case .string(let dayName) = dayValue,
+                    let day = EKRecurrenceDayOfWeek.day(named: dayName)
+                else {
+                    throw NSError(
+                        domain: "RemindersError",
+                        code: 2,
+                        userInfo: [
+                            NSLocalizedDescriptionKey:
+                                "Unknown day of the week. Expected sunday through saturday."
+                        ]
+                    )
+                }
+                return day
+            }
+        }
+
+        var end: EKRecurrenceEnd?
+        if case .object(let endConfig)? = config["end"] {
+            let hasDate = endConfig["date"] != nil
+            let hasCount = endConfig["count"] != nil
+            guard hasDate != hasCount else {
+                throw NSError(
+                    domain: "RemindersError",
+                    code: 2,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Recurrence end takes either date or count, not both."
+                    ]
+                )
+            }
+            if hasDate {
+                guard case .string(let dateString)? = endConfig["date"],
+                    let parsedDate = ISO8601DateFormatter.parsedLenientISO8601Date(
+                        fromISO8601String: dateString
+                    )
+                else {
+                    throw NSError(
+                        domain: "RemindersError",
+                        code: 2,
+                        userInfo: [
+                            NSLocalizedDescriptionKey:
+                                "Recurrence end date is not a valid ISO 8601 date."
+                        ]
+                    )
+                }
+                end = EKRecurrenceEnd(
+                    end: Calendar.current.normalizedEndDate(
+                        from: parsedDate.date,
+                        isDateOnly: parsedDate.isDateOnly
+                    )
+                )
+            } else {
+                guard case .int(let count)? = endConfig["count"], count >= 1 else {
+                    throw NSError(
+                        domain: "RemindersError",
+                        code: 2,
+                        userInfo: [
+                            NSLocalizedDescriptionKey:
+                                "Recurrence end count must be an integer of at least 1."
+                        ]
+                    )
+                }
+                end = EKRecurrenceEnd(occurrenceCount: count)
+            }
+        }
+
+        return EKRecurrenceRule(
+            recurrenceWith: frequency,
+            interval: interval,
+            daysOfTheWeek: daysOfTheWeek,
+            daysOfTheMonth: nil,
+            monthsOfTheYear: nil,
+            weeksOfTheYear: nil,
+            daysOfTheYear: nil,
+            setPositions: nil,
+            end: end
+        )
+    }
+
+    /// Maps a recurrence rule onto the shape accepted by the recurrence parameter.
+    private static func value(for rule: EKRecurrenceRule, encoder: JSONEncoder) -> Value {
+        var fields: [String: Value] = [
+            "frequency": .string(rule.frequency.stringValue),
+            "interval": .int(rule.interval),
+        ]
+
+        if let end = rule.recurrenceEnd {
+            if let endDate = end.endDate,
+                let encoded = try? JSONDecoder().decode(
+                    Value.self,
+                    from: try encoder.encode(DateTime(endDate))
+                )
+            {
+                fields["end"] = .object(["date": encoded])
+            } else if end.occurrenceCount > 0 {
+                fields["end"] = .object(["count": .int(end.occurrenceCount)])
+            }
+        }
+
+        if let daysOfTheWeek = rule.daysOfTheWeek, !daysOfTheWeek.isEmpty {
+            fields["daysOfTheWeek"] = .array(
+                daysOfTheWeek.map { .string($0.dayName) }
+            )
+        }
+
+        return .object(fields)
     }
 
     /// Parses an ISO 8601 date string into due/start date components,
