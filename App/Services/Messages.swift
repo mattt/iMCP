@@ -100,9 +100,14 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
 
         storeBookmark(for: selectedURL)
 
-        // The Attachments subfolder needs a grant of its own (see withAttachmentsGrantScope);
-        // declining only leaves messages_attachment_read unable to read files.
-        if UserDefaults.standard.data(forKey: messagesAttachmentsBookmarkKey) == nil {
+        // The Attachments subfolder needs a grant of its own (see
+        // withAttachmentsGrantScope). Offer it in the same user-initiated
+        // flow only — a tool call that just walked the Messages picker must
+        // not stack a second modal panel on top. Declining leaves only
+        // messages_attachment_read unable to read files.
+        if offeringUpgrade,
+            UserDefaults.standard.data(forKey: messagesAttachmentsBookmarkKey) == nil
+        {
             await offerAttachmentsGrant()
         }
 
@@ -461,7 +466,17 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                 throw AttachmentError.fileMissing(id)
             }
             guard size <= maxBytes else { throw AttachmentError.tooLarge(id, size, maxBytes) }
-            return try Data(contentsOf: url)
+            // Read bounded by the limit, not the whole file: an attachment
+            // still downloading can grow between the size check and the read.
+            let handle = try FileHandle(forReadingFrom: url)
+            defer { try? handle.close() }
+            guard let chunk = try handle.read(upToCount: maxBytes) else {
+                throw AttachmentError.fileMissing(id)
+            }
+            guard chunk.count <= maxBytes else {
+                throw AttachmentError.tooLarge(id, max(chunk.count, size), maxBytes)
+            }
+            return chunk
         }
         var part: [String: Value] = [
             "@type": "MediaObject",
@@ -486,8 +501,11 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
     /// attachment files are read through their own scope.
     private func withAttachmentsGrantScope<T>(_ operation: () throws -> T) throws -> T {
         // Without the sandbox in the way (development builds on the default path),
-        // no grant is needed.
-        if canAccessDatabaseAtDefaultPath {
+        // no grant is needed. The Attachments folder itself is the probe: it stays
+        // unreadable under the Messages folder grant even while that grant's scope
+        // is active (tool calls open one around chat.db), so only a process the
+        // sandbox does not confine passes here.
+        if FileManager.default.isReadableFile(atPath: messagesDirectoryPath + "/Attachments") {
             return try operation()
         }
 
@@ -503,6 +521,11 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
             relativeTo: nil,
             bookmarkDataIsStale: &isStale
         )
+        // A stale bookmark can still resolve and start its scope while pointing
+        // nowhere useful; re-store it from the resolved URL while it works.
+        if isStale {
+            storeAttachmentsBookmark(for: url)
+        }
         guard url.startAccessingSecurityScopedResource() else {
             throw AttachmentError.grantScopeFailed
         }
@@ -520,6 +543,7 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
         case invalidMaxBytes(Int, Int)
         case grantMissing
         case grantScopeFailed
+        case wrongFolderSelected
 
         var errorDescription: String? {
             switch self {
@@ -538,6 +562,9 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
             case .grantScopeFailed:
                 return
                     "could not start reading through the Attachments grant; switch Messages off and on in the iMCP menu to grant the Attachments folder again"
+            case .wrongFolderSelected:
+                return
+                    "the selected folder is not the Attachments folder (~/Library/Messages/Attachments)"
             }
         }
     }
@@ -861,7 +888,7 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
             return nil
         }
         guard url.standardizedFileURL.path == messagesDirectoryPath + "/Attachments" else {
-            throw DatabaseAccessError.invalidFileSelected
+            throw AttachmentError.wrongFolderSelected
         }
 
         return url

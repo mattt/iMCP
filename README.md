@@ -310,6 +310,17 @@ leaves that log unreadable, so the newest messages were missing until then.
 If you granted `chat.db` with an earlier version, Messages keeps working from the last checkpoint;
 switch Messages off and on in the iMCP menu to grant the folder instead.
 
+Attachment files are a separate matter.
+The sandbox walls off `~/Library/Messages/Attachments` from a grant on its parent folder,
+so reading message attachments (`messages_attachment_read`)
+asks for that subfolder through the same picker —
+a second, read-only grant of its own.
+Granting it is optional:
+declining leaves `messages_attachment_read` unable to read files,
+while everything else keeps working.
+If you granted the Messages folder before attachments were supported,
+switch Messages off and on in the iMCP menu to be asked for it.
+
 But opening the iMessage database is just half the battle.
 Over the past few years,
 Apple has moved away from storing messages in plain text
