@@ -276,7 +276,7 @@ final class CalendarService: Service {
                                         ),
                                         "minutes": .integer(
                                             description:
-                                                "Minutes offset from event start (negative for before, positive for after)"
+                                                "Minutes before the event start (negative for after the event start)"
                                         ),
                                         "sound": .string(
                                             description: "Sound name to play when alarm triggers",
@@ -680,7 +680,7 @@ final class CalendarService: Service {
                                         ),
                                         "minutes": .integer(
                                             description:
-                                                "Minutes offset from event start (negative for before, positive for after)"
+                                                "Minutes before the event start (negative for after the event start)"
                                         ),
                                         "sound": .string(
                                             description: "Sound name to play when alarm triggers",
