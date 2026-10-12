@@ -107,11 +107,30 @@ extension EKRecurrenceDayOfWeek {
         }
     }
 
+    /// The day as the reminders tools emit it: a bare name when it repeats
+    /// every week, an ordinal-prefixed name ("second tuesday") when it is
+    /// one weekday of the month, symmetric with `day(named:)`.
+    var namedValue: String {
+        let ordinal: String?
+        switch weekNumber {
+        case 1: ordinal = "first"
+        case 2: ordinal = "second"
+        case 3: ordinal = "third"
+        case 4: ordinal = "fourth"
+        case 5: ordinal = "fifth"
+        case -1: ordinal = "last"
+        default: ordinal = nil
+        }
+        return ordinal.map { "\($0) \(dayName)" } ?? dayName
+    }
+
     /// The day matching an English day name, as accepted and emitted by the
-    /// reminders tools.
+    /// reminders tools: "tuesday" for every week, "second tuesday" or
+    /// "last friday" for one weekday of the month.
     static func day(named name: String) -> EKRecurrenceDayOfWeek? {
+        let words = name.lowercased().split(separator: " ").map(String.init)
         let weekday: EKWeekday
-        switch name.lowercased() {
+        switch words.last {
         case "sunday": weekday = .sunday
         case "monday": weekday = .monday
         case "tuesday": weekday = .tuesday
@@ -121,6 +140,21 @@ extension EKRecurrenceDayOfWeek {
         case "saturday": weekday = .saturday
         default: return nil
         }
-        return EKRecurrenceDayOfWeek(dayOfTheWeek: weekday, weekNumber: 0)
+        let weekNumber: Int
+        switch words.count {
+        case 1: weekNumber = 0
+        case 2:
+            switch words.first {
+            case "first": weekNumber = 1
+            case "second": weekNumber = 2
+            case "third": weekNumber = 3
+            case "fourth": weekNumber = 4
+            case "fifth": weekNumber = 5
+            case "last": weekNumber = -1
+            default: return nil
+            }
+        default: return nil
+        }
+        return EKRecurrenceDayOfWeek(dayOfTheWeek: weekday, weekNumber: weekNumber)
     }
 }
