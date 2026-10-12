@@ -1176,7 +1176,7 @@ final class RemindersService: Service {
                         ]
                     )
                 }
-                guard (-90.0...90.0).contains(latitude) else {
+                guard (-90.0 ... 90.0).contains(latitude) else {
                     throw NSError(
                         domain: "RemindersError",
                         code: 4,
@@ -1186,7 +1186,7 @@ final class RemindersService: Service {
                         ]
                     )
                 }
-                guard (-180.0...180.0).contains(longitude) else {
+                guard (-180.0 ... 180.0).contains(longitude) else {
                     throw NSError(
                         domain: "RemindersError",
                         code: 4,
