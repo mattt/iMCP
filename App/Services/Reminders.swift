@@ -1200,11 +1200,18 @@ final class RemindersService: Service {
 
     /// Builds a recurrence rule from a recurrence configuration object.
     private static func recurrenceRule(from config: [String: Value]) throws -> EKRecurrenceRule {
-        guard case .string(let frequencyString)? = config["frequency"] else {
+        guard let frequencyValue = config["frequency"] else {
             throw NSError(
                 domain: "RemindersError",
                 code: 2,
                 userInfo: [NSLocalizedDescriptionKey: "Recurrence frequency is required"]
+            )
+        }
+        guard case .string(let frequencyString) = frequencyValue else {
+            throw NSError(
+                domain: "RemindersError",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "Recurrence frequency must be a string."]
             )
         }
         let frequency: EKRecurrenceFrequency
@@ -1239,7 +1246,7 @@ final class RemindersService: Service {
         }
 
         var daysOfTheWeek: [EKRecurrenceDayOfWeek]?
-        if case .array(let dayValues)? = config["daysOfTheWeek"] {
+        if let dayValues = try Self.arrayValue(config["daysOfTheWeek"], named: "daysOfTheWeek") {
             daysOfTheWeek = try dayValues.map { dayValue in
                 guard case .string(let dayName) = dayValue,
                     let day = EKRecurrenceDayOfWeek.day(named: dayName)
@@ -1258,8 +1265,11 @@ final class RemindersService: Service {
         }
 
         let daysOfTheMonth = try Self.integers(config["daysOfTheMonth"], named: "days of the month")
-        let monthsOfTheYear: [NSNumber]?
-        if case .array(let monthValues)? = config["monthsOfTheYear"] {
+        var monthsOfTheYear: [NSNumber]? = nil
+        if let monthValues = try Self.arrayValue(
+            config["monthsOfTheYear"],
+            named: "monthsOfTheYear"
+        ) {
             monthsOfTheYear = try monthValues.map { monthValue in
                 guard case .string(let monthName) = monthValue,
                     let index = monthNames.firstIndex(of: monthName.lowercased())
@@ -1275,15 +1285,20 @@ final class RemindersService: Service {
                 }
                 return NSNumber(value: index + 1)
             }
-        } else {
-            monthsOfTheYear = nil
         }
         let weeksOfTheYear = try Self.integers(config["weeksOfTheYear"], named: "weeks of the year")
         let daysOfTheYear = try Self.integers(config["daysOfTheYear"], named: "days of the year")
         let setPositions = try Self.integers(config["setPositions"], named: "set positions")
 
         var end: EKRecurrenceEnd?
-        if case .object(let endConfig)? = config["end"] {
+        if let endValue = config["end"] {
+            guard case .object(let endConfig) = endValue else {
+                throw NSError(
+                    domain: "RemindersError",
+                    code: 2,
+                    userInfo: [NSLocalizedDescriptionKey: "Recurrence end must be an object."]
+                )
+            }
             let hasDate = endConfig["date"] != nil
             let hasCount = endConfig["count"] != nil
             guard hasDate != hasCount else {
@@ -1387,7 +1402,8 @@ final class RemindersService: Service {
 
     /// The nonzero integers of an array parameter, rejecting anything else.
     private static func integers(_ value: Value?, named description: String) throws -> [NSNumber]? {
-        guard case .array(let values)? = value else { return nil }
+        let values = try Self.arrayValue(value, named: description)
+        guard let values else { return nil }
         return try values.map { item in
             let number = try Self.integerValue(item, description: "Recurrence \(description)")
             guard number != 0 else {
@@ -1402,6 +1418,23 @@ final class RemindersService: Service {
             }
             return NSNumber(value: number)
         }
+    }
+
+    /// The array a present recurrence parameter must carry: nil when the
+    /// parameter is absent, the values when it is an array, an error when it
+    /// is anything else.
+    private static func arrayValue(_ value: Value?, named description: String) throws -> [Value]? {
+        guard let value else { return nil }
+        guard case .array(let values) = value else {
+            throw NSError(
+                domain: "RemindersError",
+                code: 2,
+                userInfo: [
+                    NSLocalizedDescriptionKey: "Recurrence \(description) must be an array."
+                ]
+            )
+        }
+        return values
     }
 
     /// Maps a recurrence rule onto the shape accepted by the recurrence
