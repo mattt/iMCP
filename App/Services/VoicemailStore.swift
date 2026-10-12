@@ -7,7 +7,7 @@ import SQLite3
 /// daemon into a Core Data SQLite store inside the FaceTime group container. Message
 /// audio lives in an `Assets` tree next to the database, addressed by each record's
 /// UUID. The schema is private to the daemon; this store reads only the columns it
-/// needs and never writes.
+/// needs, tolerates the absence of the ones it can do without, and never writes.
 struct VoicemailStore {
     static let databaseFileName = "FaceTimeMessageStore-local.sqlitedb"
 
@@ -21,20 +21,14 @@ struct VoicemailStore {
     func fetch(_ request: VoicemailMessage.FetchRequest) throws -> [VoicemailMessage] {
         var messages = try read { try $0.fetch(request) }
         for index in messages.indices {
-            resolveClassification(of: &messages[index])
-        }
-        if let kind = request.kind, kind.requiresAssetInspection {
-            // These kinds could not take a SQL LIMIT: it would cut rows before
-            // their assets reveal which `.MOV` kind they are.
-            messages.removeAll { $0.kind != kind }
-            messages = Array(messages.prefix(request.limit))
+            resolveAsset(of: &messages[index])
         }
         return messages
     }
 
     func message(id: Int) throws -> VoicemailMessage? {
         guard var message = try read({ try $0.message(id: id) }) else { return nil }
-        resolveClassification(of: &message)
+        resolveAsset(of: &message)
         return message
     }
 
@@ -60,37 +54,33 @@ struct VoicemailStore {
     }
 
     /// The MIME type of the message's audio, when it is a format clients can play.
-    /// Audio-only `.MOV` carrier voicemails carry AAC audio in a QuickTime
-    /// container, which `audio/mp4` players handle.
+    ///
+    /// The daemon writes the extension in either case (`MOV` and `mov` both occur).
+    /// Audio-only `.mov` messages carry AAC audio in a QuickTime container,
+    /// which `audio/mp4` players handle; video messages have no audio-only form.
     func audioMimeType(for message: VoicemailMessage) -> String? {
-        switch message.fileType {
+        guard message.kind != .faceTimeVideo else { return nil }
+        switch message.fileType?.lowercased() {
         case "amr": return "audio/amr"
-        case "m4a": return "audio/mp4"
-        case "MOV": return message.kind == .carrierVoicemail ? "audio/mp4" : nil
+        case "m4a", "mov": return "audio/mp4"
         default: return nil
         }
     }
 
-    /// Whether the message's audio is available: an existing file in a playable format.
-    private func hasPlayableAudio(_ message: VoicemailMessage) -> Bool {
-        audioMimeType(for: message) != nil && audioURL(for: message) != nil
-    }
+    /// Sets whether the message's audio is playable, and fills in a missing duration
+    /// from the asset: the store records a duration of zero for some messages.
+    private func resolveAsset(of message: inout VoicemailMessage) {
+        let url = audioURL(for: message)
+        message.hasAudio = url != nil && audioMimeType(for: message) != nil
 
-    /// Sets the message's kind from its asset, then whether its audio is playable.
-    ///
-    /// Since the iCloud voicemail era the daemon stores carrier voicemails as
-    /// audio-only `.MOV` files, the same `ZFILETYPE` FaceTime video messages use;
-    /// a video track is the only thing that tells them apart. Rows whose asset
-    /// is missing or unreadable keep the conservative `faceTimeVideo` default.
-    private func resolveClassification(of message: inout VoicemailMessage) {
-        if message.fileType == "MOV",
-            let url = audioURL(for: message),
+        if message.duration <= 0,
+            let url,
+            ["m4a", "mov"].contains(message.fileType?.lowercased()),
             let data = try? Data(contentsOf: url, options: .mappedIfSafe),
-            QuickTimeMovie.isAudioOnlyMovie(data)
+            let duration = QuickTimeMovie.duration(of: data)
         {
-            message.kind = .carrierVoicemail
+            message.duration = duration
         }
-        message.hasAudio = hasPlayableAudio(message)
     }
 
     /// Reads the store live, honoring its write-ahead log.
@@ -107,37 +97,63 @@ struct VoicemailStore {
 
 // MARK: -
 
-/// A row of the `ZSTOREDMESSAGE` table: one voicemail or FaceTime audio message.
+/// A row of the `ZSTOREDMESSAGE` table: one voicemail or FaceTime message.
 struct VoicemailMessage {
+    /// Where the message came from and what it holds.
+    ///
+    /// The provider separates the two sources: carrier voicemails come from
+    /// `com.apple.coretelephony` whatever their file format (`amr`, `m4a`, or `MOV`),
+    /// and FaceTime messages from the FaceTime call provider. Among FaceTime
+    /// messages, a message type of 2 marks video.
     enum Kind: String {
         case carrierVoicemail
         case faceTimeAudio
         case faceTimeVideo
 
-        /// The SQL predicate that selects candidate rows of this kind. Both
-        /// `.MOV` kinds match the same `ZFILETYPE`; the store inspects their
-        /// assets to separate audio-only carrier voicemails from video messages.
+        /// The SQL predicate that selects rows of this kind.
         fileprivate var predicate: String {
             switch self {
-            case .carrierVoicemail: return "ZFILETYPE IN ('amr', 'MOV')"
-            case .faceTimeAudio: return "ZFILETYPE = 'm4a'"
-            case .faceTimeVideo: return "ZFILETYPE = 'MOV'"
+            case .carrierVoicemail:
+                return "ZPROVIDER = '\(carrierProvider)'"
+            case .faceTimeAudio:
+                return "ZPROVIDER LIKE '%\(faceTimeProviderSuffix)' AND ZMESSAGETYPE IS NOT 2"
+            case .faceTimeVideo:
+                return "ZPROVIDER LIKE '%\(faceTimeProviderSuffix)' AND ZMESSAGETYPE = 2"
             }
         }
 
-        /// Whether selecting rows of this kind requires inspecting their assets.
-        fileprivate var requiresAssetInspection: Bool {
-            self == .carrierVoicemail || self == .faceTimeVideo
+        /// The kind of a row, or nil when its provider is missing or unfamiliar.
+        fileprivate init?(provider: String?, messageType: Int?) {
+            guard let provider else { return nil }
+            if provider == carrierProvider {
+                self = .carrierVoicemail
+            } else if provider.lowercased().hasSuffix(faceTimeProviderSuffix.lowercased()) {
+                self = messageType == 2 ? .faceTimeVideo : .faceTimeAudio
+            } else {
+                return nil
+            }
+        }
+    }
+
+    /// The Phone app's voicemail mailbox that holds the message.
+    enum Mailbox: Int, CaseIterable {
+        case inbox = 0
+        case blocked = 1
+        case deleted = 2
+
+        var name: String {
+            switch self {
+            case .inbox: return "inbox"
+            case .blocked: return "blocked"
+            case .deleted: return "deleted"
+            }
         }
 
-        /// The kind matching a `ZFILETYPE` value, for the kinds the store defines.
-        fileprivate init?(fileType: String?) {
-            switch fileType {
-            case "amr": self = .carrierVoicemail
-            case "m4a": self = .faceTimeAudio
-            case "MOV": self = .faceTimeVideo
-            default: return nil
+        init?(name: String) {
+            guard let mailbox = Self.allCases.first(where: { $0.name == name }) else {
+                return nil
             }
+            self = mailbox
         }
     }
 
@@ -145,17 +161,18 @@ struct VoicemailMessage {
     let sender: String?
     /// When the message was left, as seconds since the Core Data reference date (2001-01-01).
     let date: Date
-    let duration: TimeInterval
+    /// Length in seconds; the store filling in a missing value from the asset.
+    var duration: TimeInterval
     let isRead: Bool
     let fileType: String?
     let recordUUID: Data
     let hasTranscript: Bool
+    /// The message's kind, or nil when the store does not say.
+    let kind: Kind?
+    /// The message's mailbox, or nil when the store does not say.
+    let mailbox: Mailbox?
     /// Whether the message's audio exists in the `Assets` tree in a format clients can play.
     var hasAudio = false
-
-    /// The message's kind, refined by the store for `.MOV` rows; see
-    /// `resolveClassification(of:)`.
-    var kind: Kind?
 
     /// Path of the audio file in the `Assets` tree, relative to the store's directory.
     var audioFileName: String? {
@@ -169,6 +186,11 @@ struct VoicemailMessage {
             guard let cString = sqlite3_column_text(statement, column) else { return nil }
             let string = String(cString: cString)
             return string.isEmpty ? nil : string
+        }
+
+        func integer(_ column: Int32) -> Int? {
+            guard sqlite3_column_type(statement, column) != SQLITE_NULL else { return nil }
+            return Int(sqlite3_column_int64(statement, column))
         }
 
         func blob(_ column: Int32) -> Data {
@@ -186,29 +208,41 @@ struct VoicemailMessage {
         fileType = text(5)
         recordUUID = blob(6)
         hasTranscript = sqlite3_column_int(statement, 7) == 1
-        kind = Kind(fileType: fileType)
+        kind = Kind(provider: text(8), messageType: integer(9))
+        mailbox = integer(10).flatMap(Mailbox.init(rawValue:))
     }
 }
 
 extension VoicemailMessage {
     struct FetchRequest {
         /// Sender (phone number or address) to match (partial, case-insensitive).
+        /// A phone number also matches by its digits alone, whatever its formatting.
         var sender: String?
         /// Start of the date range (inclusive).
         var startDate: Date?
         /// End of the date range (exclusive).
         var endDate: Date?
         var kind: Kind?
+        /// The mailbox to read, or nil for all of them.
+        var mailbox: Mailbox? = .inbox
         var limit: Int
 
-        /// The SQL and its bound values, in placeholder order.
-        fileprivate var statement: (sql: String, bindings: [SQLiteValue]) {
+        /// The SQL and its bound values, in placeholder order,
+        /// for a store with the given columns.
+        fileprivate func statement(
+            columns: Set<String>
+        ) throws -> (sql: String, bindings: [SQLiteValue]) {
             var conditions = ["ZDATEDELETED IS NULL"]
             var bindings: [SQLiteValue] = []
 
             if let sender {
-                conditions.append("ZFROM LIKE ? ESCAPE '\\'")
+                var matches = ["ZFROM LIKE ? ESCAPE '\\'"]
                 bindings.append(.text("%" + escapingLikeWildcards(sender) + "%"))
+                if let digits = phoneNumberDigits(sender) {
+                    matches.append("\(digitsOnly("ZFROM")) LIKE ?")
+                    bindings.append(.text("%" + digits + "%"))
+                }
+                conditions.append("(" + matches.joined(separator: " OR ") + ")")
             }
             if let startDate {
                 conditions.append("ZDATECREATED >= ?")
@@ -219,22 +253,25 @@ extension VoicemailMessage {
                 bindings.append(.double(endDate.timeIntervalSinceReferenceDate))
             }
             if let kind {
+                guard columns.contains("ZPROVIDER"), columns.contains("ZMESSAGETYPE") else {
+                    throw VoicemailStoreError.unsupportedFilter("type")
+                }
                 conditions.append(kind.predicate)
             }
+            // A store without mailboxes keeps every message in one place.
+            if let mailbox, columns.contains("ZMAILBOXTYPE") {
+                conditions.append("ZMAILBOXTYPE = ?")
+                bindings.append(.int(mailbox.rawValue))
+            }
 
-            var sql = """
-                SELECT \(voicemailColumns)
+            bindings.append(.int(limit))
+            let sql = """
+                SELECT \(selectedColumns(in: columns))
                 FROM ZSTOREDMESSAGE
                 WHERE \(conditions.joined(separator: " AND "))
                 ORDER BY ZDATECREATED DESC
+                LIMIT ?
                 """
-            // A SQL LIMIT would cut rows before their assets can reveal which
-            // `.MOV` kind they are, so kinds needing asset inspection fetch all
-            // candidates and `fetch` applies the limit after classifying.
-            if kind?.requiresAssetInspection != true {
-                bindings.append(.int(limit))
-                sql += "\nLIMIT ?"
-            }
             return (sql, bindings)
         }
 
@@ -253,6 +290,35 @@ extension VoicemailMessage {
                 }
             }
             return escaped
+        }
+
+        /// The digits of a sender filter that reads as a phone number:
+        /// at least three digits, and nothing but digits and phone formatting.
+        private func phoneNumberDigits(_ text: String) -> String? {
+            let digits = text.filter { $0.isASCII && $0.isNumber }
+            let formatting: Set<Character> = ["+", "-", " ", "(", ")", "."]
+            guard digits.count >= 3,
+                text.allSatisfy({ ($0.isASCII && $0.isNumber) || formatting.contains($0) })
+            else { return nil }
+            return digits
+        }
+
+        /// A SQL expression for a column's value with phone formatting removed.
+        private func digitsOnly(_ column: String) -> String {
+            ["+", "-", " ", "(", ")", "."].reduce(column) { expression, character in
+                "REPLACE(\(expression), '\(character)', '')"
+            }
+        }
+    }
+}
+
+enum VoicemailStoreError: LocalizedError {
+    case unsupportedFilter(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .unsupportedFilter(let name):
+            return "This Mac's voicemail store does not record the information the \(name) filter needs"
         }
     }
 }
@@ -413,41 +479,48 @@ fileprivate extension Data {
 
 // MARK: -
 
-/// Reads track information from QuickTime movie data.
+/// Reads the movie header of QuickTime and MPEG-4 files.
 ///
-/// The daemon writes audio-only carrier voicemails and FaceTime video messages
-/// as `.MOV` files alike; their tracks are what separate the two.
+/// The daemon writes `.mov` and `.m4a` messages; both use the same atom structure.
 enum QuickTimeMovie {
-    /// Whether the data is a QuickTime movie whose tracks are audio only: at
-    /// least one sound track, and no video track.
-    ///
-    /// Data that does not parse as a movie does not qualify, so callers can
-    /// keep a conservative default for it.
-    static func isAudioOnlyMovie(_ data: Data) -> Bool {
-        var hasSoundTrack = false
+    /// The movie's duration in seconds, from its `mvhd` atom,
+    /// or nil when the data does not parse as a movie with a duration.
+    static func duration(of data: Data) -> TimeInterval? {
         for movie in childPayloads(ofType: "moov", in: data, within: 0 ..< data.count) {
-            for track in childPayloads(ofType: "trak", in: data, within: movie) {
-                for media in childPayloads(ofType: "mdia", in: data, within: track) {
-                    for handler in childPayloads(ofType: "hdlr", in: data, within: media) {
-                        switch handlerSubtype(of: handler, in: data) {
-                        case "vide": return false
-                        case "soun": hasSoundTrack = true
-                        default: break
-                        }
-                    }
-                }
+            for header in childPayloads(ofType: "mvhd", in: data, within: movie) {
+                // Version 0 stores 32-bit times; version 1 stores 64-bit
+                // creation, modification, and duration values.
+                guard header.count >= 1 else { continue }
+                let isVersion1 = data[header.lowerBound] == 1
+                let timescaleOffset = header.lowerBound + (isVersion1 ? 20 : 12)
+                let durationLength = isVersion1 ? 8 : 4
+                guard
+                    let timescale = integer(in: data, at: timescaleOffset, length: 4, within: header),
+                    let duration = integer(
+                        in: data,
+                        at: timescaleOffset + 4,
+                        length: durationLength,
+                        within: header
+                    ),
+                    timescale > 0
+                else { continue }
+                return TimeInterval(duration) / TimeInterval(timescale)
             }
         }
-        return hasSoundTrack
+        return nil
     }
 
-    /// The handler subtype of an `hdlr` payload — `vide`, `soun`, and so on.
-    private static func handlerSubtype(of handler: Range<Int>, in data: Data) -> String? {
-        // The subtype sits 8 bytes into the `hdlr` payload, after the
-        // version/flags and the component type.
-        let subtype = handler.lowerBound + 8
-        guard subtype + 4 <= handler.upperBound else { return nil }
-        return String(data: data.subdata(in: subtype ..< (subtype + 4)), encoding: .ascii)
+    /// A big-endian unsigned integer, when it lies within the bounds.
+    private static func integer(
+        in data: Data,
+        at offset: Int,
+        length: Int,
+        within bounds: Range<Int>
+    ) -> UInt64? {
+        guard offset >= bounds.lowerBound, length <= bounds.upperBound - offset else {
+            return nil
+        }
+        return data[offset ..< (offset + length)].reduce(UInt64(0)) { $0 << 8 | UInt64($1) }
     }
 
     /// The payload ranges of the immediate child atoms of the given type,
@@ -487,13 +560,50 @@ enum QuickTimeMovie {
     }
 }
 
-/// The columns of `ZSTOREDMESSAGE` the store reads, in selection order.
-private let voicemailColumns =
-    "Z_PK, ZFROM, ZDATECREATED, ZDURATION, ZISREAD, ZFILETYPE, ZRECORDUUID, ZTRANSCRIPT IS NOT NULL"
+/// The provider of carrier voicemails.
+private let carrierProvider = "com.apple.coretelephony"
+
+/// The end of the FaceTime call provider's identifier,
+/// `com.apple.telephonyutilities.callservicesd.FaceTimeProvider`.
+private let faceTimeProviderSuffix = ".FaceTimeProvider"
+
+/// Columns the store needs, in selection order.
+private let requiredColumns = [
+    "Z_PK", "ZFROM", "ZDATECREATED", "ZDURATION", "ZISREAD", "ZFILETYPE", "ZRECORDUUID",
+    "ZTRANSCRIPT IS NOT NULL",
+]
+
+/// Columns the store reads when present, in selection order after the required ones.
+/// Without them, kinds and mailboxes read as unknown.
+private let optionalColumns = ["ZPROVIDER", "ZMESSAGETYPE", "ZMAILBOXTYPE"]
+
+/// The select list for a store with the given columns,
+/// with NULL in place of each optional column it lacks.
+private func selectedColumns(in columns: Set<String>) -> String {
+    let optional = optionalColumns.map { columns.contains($0) ? $0 : "NULL" }
+    return (requiredColumns + optional).joined(separator: ", ")
+}
 
 /// A read-only connection to the voicemail store.
 private final class VoicemailStoreDatabase {
     private let connection: OpaquePointer
+
+    /// The names of the columns of `ZSTOREDMESSAGE`.
+    private lazy var columns: Set<String> = {
+        var statement: OpaquePointer?
+        let sql = "SELECT name FROM pragma_table_info('ZSTOREDMESSAGE')"
+        guard sqlite3_prepare_v2(connection, sql, -1, &statement, nil) == SQLITE_OK else {
+            return []
+        }
+        defer { sqlite3_finalize(statement) }
+        var names: Set<String> = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            if let name = sqlite3_column_text(statement, 0) {
+                names.insert(String(cString: name))
+            }
+        }
+        return names
+    }()
 
     /// Opens the store read-only.
     /// With `immutable`, SQLite ignores the write-ahead log and never touches the `-wal`
@@ -526,7 +636,7 @@ private final class VoicemailStoreDatabase {
     }
 
     func fetch(_ request: VoicemailMessage.FetchRequest) throws -> [VoicemailMessage] {
-        let (sql, bindings) = request.statement
+        let (sql, bindings) = try request.statement(columns: columns)
 
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(connection, sql, -1, &statement, nil) == SQLITE_OK else {
@@ -552,7 +662,11 @@ private final class VoicemailStoreDatabase {
 
     func message(id: Int) throws -> VoicemailMessage? {
         var statement: OpaquePointer?
-        let sql = "SELECT \(voicemailColumns) FROM ZSTOREDMESSAGE WHERE Z_PK = ? AND ZDATEDELETED IS NULL"
+        let sql = """
+            SELECT \(selectedColumns(in: columns))
+            FROM ZSTOREDMESSAGE
+            WHERE Z_PK = ? AND ZDATEDELETED IS NULL
+            """
         guard sqlite3_prepare_v2(connection, sql, -1, &statement, nil) == SQLITE_OK else {
             throw SQLiteError(message: String(cString: sqlite3_errmsg(connection)))
         }

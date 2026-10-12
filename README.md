@@ -59,7 +59,7 @@ and a [growing list of clients][mcp-clients] that support the
       <img src="Assets/voicemail.svg" width="48" height="48" alt="" role="presentation"/>
     </th>
     <td><strong>Voicemail</strong></td>
-    <td>Fetch voicemails synced from your iPhone, with transcripts and audio, filtering by sender, date, or message type.</td>
+    <td>Fetch voicemails synced from your iPhone, with transcripts and audio, filtering by sender, date, message type, or mailbox (inbox, blocked, or deleted).</td>
   </tr>
   <tr>
     <th>
