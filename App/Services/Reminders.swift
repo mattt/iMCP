@@ -21,7 +21,10 @@ private let reminderProperties: OrderedDictionary<String, JSONSchema> = [
         .string(description: "URL attached to the reminder. Pass null to clear.", format: .uri),
         .null,
     ]),
-    "list": .string(description: "Reminder list name"),
+    "list": .string(
+        description:
+            "Reminder list name, or the identifier of one of several lists sharing a name"
+    ),
     "start": .anyOf([
         .string(
             description:
@@ -88,7 +91,7 @@ private let reminderProperties: OrderedDictionary<String, JSONSchema> = [
                             description: "Email address to send notification to"
                         ),
                     ],
-                    required: ["datetime"],
+                    required: ["type", "datetime"],
                     additionalProperties: false
                 ),
                 // Proximity alarm (location-based): a free-text location that is
@@ -120,7 +123,7 @@ private let reminderProperties: OrderedDictionary<String, JSONSchema> = [
                                 description: "Email address to send notification to"
                             ),
                         ],
-                        required: ["location"],
+                        required: ["type", "location"],
                         additionalProperties: false
                     ),
                     .object(
@@ -148,7 +151,7 @@ private let reminderProperties: OrderedDictionary<String, JSONSchema> = [
                                 description: "Email address to send notification to"
                             ),
                         ],
-                        required: ["locationTitle", "latitude", "longitude"],
+                        required: ["type", "locationTitle", "latitude", "longitude"],
                         additionalProperties: false
                     ),
                 ]),
@@ -462,11 +465,22 @@ final class RemindersService: Service {
 
             // Move to another list when requested; unlike reminders_create,
             // an unmatched list name is an error rather than a silent default.
+            // The move happens after apply: EventKit retains unsaved
+            // mutations, so a validation error must not leave it behind.
+            let targetList: EKCalendar?
             if case .string(let listName) = arguments["list"] {
-                reminder.calendar = try self.list(named: listName)
+                targetList = try self.list(named: listName)
+            } else {
+                targetList = nil
             }
 
-            guard let targetList = reminder.calendar, targetList.allowsContentModifications else {
+            try await self.apply(arguments, to: reminder)
+
+            if let targetList {
+                reminder.calendar = targetList
+            }
+
+            guard let finalList = reminder.calendar, finalList.allowsContentModifications else {
                 throw NSError(
                     domain: "RemindersError",
                     code: 2,
@@ -476,8 +490,6 @@ final class RemindersService: Service {
                     ]
                 )
             }
-
-            try await self.apply(arguments, to: reminder)
 
             try self.eventStore.save(reminder, commit: true)
 
@@ -738,20 +750,88 @@ final class RemindersService: Service {
     }
 
     /// Applies optional properties from tool arguments to a reminder.
-    /// A `null` value clears the corresponding property.
+    /// A `null` value clears the corresponding property. Everything is
+    /// parsed and validated before the reminder is touched: EventKit retains
+    /// unsaved mutations in its shared store, so an error halfway through
+    /// would otherwise be committed by the next successful save.
     private func apply(_ arguments: [String: Value], to reminder: EKReminder) async throws {
-        switch arguments["title"] {
-        case .string(let title): reminder.title = title
-        default: break
+        let newNotes = Self.stringChange(arguments["notes"])
+        let newURL = try Self.urlChange(arguments["url"])
+        let newStart = try Self.dateComponentsChange(arguments["start"], description: "start")
+        let newDue = try Self.dateComponentsChange(arguments["due"], description: "due")
+
+        var newAlarms: PropertyChange<[EKAlarm]> = .absent
+        switch arguments["alarms"] {
+        case .array(let alarmConfigs):
+            var alarms: [EKAlarm] = []
+            for alarmConfig in alarmConfigs {
+                alarms.append(try await Self.alarm(from: alarmConfig))
+            }
+            newAlarms = .set(alarms)
+        case .null:
+            newAlarms = .set([])
+        default:
+            break
         }
 
-        switch arguments["notes"] {
-        case .string(let notes): reminder.notes = notes
-        case .null: reminder.notes = nil
-        default: break
+        if case .string(let title) = arguments["title"] {
+            reminder.title = title
         }
 
-        switch arguments["url"] {
+        switch newNotes {
+        case .set(let notes): reminder.notes = notes
+        case .clear: reminder.notes = nil
+        case .absent: break
+        }
+
+        switch newURL {
+        case .set(let url): reminder.url = url
+        case .clear: reminder.url = nil
+        case .absent: break
+        }
+
+        switch newStart {
+        case .set(let components): reminder.startDateComponents = components
+        case .clear: reminder.startDateComponents = nil
+        case .absent: break
+        }
+
+        switch newDue {
+        case .set(let components): reminder.dueDateComponents = components
+        case .clear: reminder.dueDateComponents = nil
+        case .absent: break
+        }
+
+        if case .string(let priorityString) = arguments["priority"] {
+            reminder.priority = Int(EKReminderPriority.from(string: priorityString).rawValue)
+        }
+
+        if case .set(let alarms) = newAlarms {
+            reminder.alarms = alarms
+        }
+
+        if case .bool(let completed) = arguments["completed"] {
+            reminder.isCompleted = completed
+        }
+    }
+
+    /// A property as the update tools see it: untouched, changed, or cleared.
+    private enum PropertyChange<Value> {
+        case absent
+        case set(Value)
+        case clear
+    }
+
+    private static func stringChange(_ value: Value?) -> PropertyChange<String> {
+        switch value {
+        case .string(let string): return .set(string)
+        case .null: return .clear
+        default: return .absent
+        }
+    }
+
+    private static func urlChange(_ value: Value?) throws -> PropertyChange<URL> {
+        switch value {
         case .string(let urlString):
             guard let url = URL(string: urlString) else {
                 throw NSError(
@@ -760,47 +840,23 @@ final class RemindersService: Service {
                     userInfo: [NSLocalizedDescriptionKey: "Invalid URL \"\(urlString)\""]
                 )
             }
-            reminder.url = url
-        case .null: reminder.url = nil
-        default: break
+            return .set(url)
+        case .null: return .clear
+        default: return .absent
         }
+    }
 
-        if case .string(let dateString) = arguments["start"] {
-            reminder.startDateComponents = try Self.dateComponents(
-                fromDateString: dateString,
-                description: "start"
+    private static func dateComponentsChange(
+        _ value: Value?,
+        description: String
+    ) throws -> PropertyChange<DateComponents> {
+        switch value {
+        case .string(let dateString):
+            return .set(
+                try Self.dateComponents(fromDateString: dateString, description: description)
             )
-        } else if case .null = arguments["start"] {
-            reminder.startDateComponents = nil
-        }
-
-        if case .string(let dateString) = arguments["due"] {
-            reminder.dueDateComponents = try Self.dateComponents(
-                fromDateString: dateString,
-                description: "due"
-            )
-        } else if case .null = arguments["due"] {
-            reminder.dueDateComponents = nil
-        }
-
-        if case .string(let priorityString) = arguments["priority"] {
-            reminder.priority = Int(EKReminderPriority.from(string: priorityString).rawValue)
-        }
-
-        switch arguments["alarms"] {
-        case .array(let alarmConfigs):
-            var alarms: [EKAlarm] = []
-            for alarmConfig in alarmConfigs {
-                alarms.append(try await Self.alarm(from: alarmConfig))
-            }
-            reminder.alarms = alarms
-        case .null:
-            reminder.alarms = []
-        default: break
-        }
-
-        if case .bool(let completed) = arguments["completed"] {
-            reminder.isCompleted = completed
+        case .null: return .clear
+        default: return .absent
         }
     }
 
@@ -858,7 +914,14 @@ final class RemindersService: Service {
         let alarmType = config["type"]?.stringValue ?? "relative"
         switch alarmType {
         case "relative":
-            guard case .int(let minutes) = config["minutes"] else {
+            // JSON Schema counts 30.0 as a valid integer, so bridge an
+            // integral double like number() does for radius and coordinates.
+            let minutes: Int
+            switch config["minutes"] {
+            case .some(.int(let value)): minutes = value
+            case .some(.double(let value)) where value.rounded() == value:
+                minutes = Int(value)
+            default:
                 throw NSError(
                     domain: "RemindersError",
                     code: 4,
@@ -942,10 +1005,9 @@ final class RemindersService: Service {
                 latitude: coordinate.latitude,
                 longitude: coordinate.longitude
             )
-            switch Self.number(config["radius"]) {
-            case .some(let radius): structuredLocation.radius = radius
-            case nil: break
-            }
+            // The schema advertises a 200 m default; EKStructuredLocation
+            // alone would leave a zero-radius geofence.
+            structuredLocation.radius = Self.number(config["radius"]) ?? 200
 
             alarm = EKAlarm()
             alarm.proximity = config["proximity"]?.stringValue == "leave" ? .leave : .enter
@@ -962,9 +1024,17 @@ final class RemindersService: Service {
             )
         }
 
-        if case .string(let soundName) = config["sound"],
-            Sound(rawValue: soundName) != nil
-        {
+        if case .string(let soundName) = config["sound"] {
+            guard Sound(rawValue: soundName) != nil else {
+                throw NSError(
+                    domain: "RemindersError",
+                    code: 4,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Unknown alarm sound \"\(soundName)\"."
+                    ]
+                )
+            }
             alarm.soundName = soundName
         }
 
@@ -1049,9 +1119,10 @@ final class RemindersService: Service {
         )
     }
 
-    /// Resolves a reminder list by name. Case-insensitive, but ambiguous
-    /// names are an error rather than a guess, because several lists can
-    /// share a name across sources.
+    /// Resolves a reminder list by identifier or name. Case-insensitive on
+    /// names, but ambiguous names are an error rather than a guess, because
+    /// several lists can share a name across sources; an identifier from
+    /// reminders_lists names exactly one.
     private func list(named name: String) throws -> EKCalendar {
         guard let matchingList = try listIfPresent(named: name) else {
             throw NSError(
@@ -1065,10 +1136,17 @@ final class RemindersService: Service {
         return matchingList
     }
 
-    /// Resolves a reminder list by name, or nil when no list is named that,
-    /// so callers that fall back to a default can keep doing so. Ambiguous
-    /// names still throw.
+    /// Resolves a reminder list by identifier or name, or nil when nothing
+    /// matches, so callers that fall back to a default can keep doing so.
+    /// Ambiguous names still throw; the identifier resolves them.
     private func listIfPresent(named name: String) throws -> EKCalendar? {
+        // An identifier is unambiguous even where several lists share a
+        // name across sources.
+        if let byIdentifier = eventStore.calendars(for: .reminder)
+            .first(where: { $0.calendarIdentifier == name })
+        {
+            return byIdentifier
+        }
         let matchingLists = eventStore.calendars(for: .reminder).filter {
             $0.title.lowercased() == name.lowercased()
         }
