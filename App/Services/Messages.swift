@@ -8,7 +8,13 @@ private let log = Logger.service("messages")
 private let messagesDirectoryPath = "/Users/\(NSUserName())/Library/Messages"
 private let messagesDatabasePath = messagesDirectoryPath + "/chat.db"
 private let messagesDatabaseBookmarkKey: String = "me.mattt.iMCP.messagesDatabaseBookmark"
+private let messagesAttachmentsBookmarkKey: String = "me.mattt.iMCP.messagesAttachmentsBookmark"
 private let defaultLimit = 30
+private let defaultAttachmentMaxBytes = 25 * 1024 * 1024
+
+/// Files are served base64-encoded, so one read allocates several times the
+/// file's size; the ceiling keeps a single call from taking the process down.
+private let maxAttachmentMaxBytes = 100 * 1024 * 1024
 
 final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
     static let shared = MessageService()
@@ -16,6 +22,10 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
     /// Whether the once-per-launch warning about a grant on `chat.db` alone has been logged.
     /// Tool calls run concurrently, so the check-and-set is guarded.
     private let fileGrantWarningLogged = OSAllocatedUnfairLock(initialState: false)
+
+    /// Set while the Attachments folder picker is on screen, so the shared
+    /// panel delegate enables that folder for that panel alone.
+    private var activePanelAcceptsAttachments = false
 
     func activate() async throws {
         try await activate(offeringUpgrade: true)
@@ -42,6 +52,14 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
             switch grant {
             case .directory:
                 log.debug("Successfully activated using stored bookmark")
+                // Existing installs already hold the Messages folder grant;
+                // offer the Attachments grant they are missing. Dismissing
+                // keeps the service on; only attachment reads stay limited.
+                if offeringUpgrade,
+                    UserDefaults.standard.data(forKey: messagesAttachmentsBookmarkKey) == nil
+                {
+                    await offerAttachmentsGrant()
+                }
                 return
             case .file:
                 upgrading = true
@@ -81,6 +99,18 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
         }
 
         storeBookmark(for: selectedURL)
+
+        // The Attachments subfolder needs a grant of its own (see
+        // withAttachmentsGrantScope). Offer it in the same user-initiated
+        // flow only — a tool call that just walked the Messages picker must
+        // not stack a second modal panel on top. Declining leaves only
+        // messages_attachment_read unable to read files.
+        if offeringUpgrade,
+            UserDefaults.standard.data(forKey: messagesAttachmentsBookmarkKey) == nil
+        {
+            await offerAttachmentsGrant()
+        }
+
         log.debug("Successfully activated message service")
     }
 
@@ -91,6 +121,15 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
             var isActivated = canAccessDatabaseAtDefaultPath
             if case .directory = try? resolveBookmarkedGrant() {
                 isActivated = isActivated || canAccessDatabaseUsingBookmark
+            }
+            // The Attachments grant is optional, but while it is missing
+            // the toggle must keep calling activate(), whose directory
+            // branch offers it — otherwise the remediation the read errors
+            // and the README point at ("switch off and on") never runs.
+            if !canAccessDatabaseAtDefaultPath, isActivated,
+                UserDefaults.standard.data(forKey: messagesAttachmentsBookmarkKey) == nil
+            {
+                isActivated = false
             }
             log.debug("Message service activation status: \(isActivated)")
             return isActivated
@@ -135,7 +174,7 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                     ),
                     "attachments": .boolean(
                         description:
-                            "List each message's attachments (attachment: name, encodingFormat, contentSize, @id) and include messages that carry attachments but no text",
+                            "List each message's attachments (attachment: name, encodingFormat, contentSize, @id for messages_attachment_read) and include messages that carry attachments but no text",
                         default: false
                     ),
                 ],
@@ -312,6 +351,56 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                 "hasPart": Value.array(messages.map({ .object($0) })),
             ]
         }
+
+        Tool(
+            name: "messages_attachment_read",
+            description:
+                "Read one attachment of a message, by the @id messages_fetch lists with attachments=true: the file, base64-encoded, with its name, type and size",
+            inputSchema: .object(
+                properties: [
+                    "id": .string(description: "The attachment @id"),
+                    "maxBytes": .integer(
+                        description: "Refuse files larger than this",
+                        default: .int(defaultAttachmentMaxBytes),
+                        minimum: 1,
+                        maximum: maxAttachmentMaxBytes
+                    ),
+                ],
+                required: ["id"],
+                additionalProperties: false
+            ),
+            annotations: .init(
+                title: "Read Message Attachment",
+                readOnlyHint: true,
+                openWorldHint: false
+            )
+        ) { arguments in
+            try await self.activate(offeringUpgrade: false)
+            guard let id = arguments["id"]?.stringValue, !id.isEmpty else {
+                throw AttachmentError.missingID
+            }
+            // inputSchema is advertised, not enforced: a present maxBytes
+            // of the wrong shape is an error, not a silent default.
+            let maxBytes: Int
+            switch arguments["maxBytes"] {
+            case nil:
+                maxBytes = defaultAttachmentMaxBytes
+            case .int(let value):
+                maxBytes = value
+            case .double(let value):
+                // JSON Schema counts 30.0 as a valid integer.
+                guard let asInt = Int(exactly: value), value.rounded() == value else {
+                    throw AttachmentError.maxBytesNotAnInteger
+                }
+                maxBytes = asInt
+            default:
+                throw AttachmentError.maxBytesNotAnInteger
+            }
+            guard maxBytes >= 1, maxBytes <= maxAttachmentMaxBytes else {
+                throw AttachmentError.invalidMaxBytes(maxBytes, maxAttachmentMaxBytes)
+            }
+            return try self.readAttachment(id: id, maxBytes: maxBytes)
+        }
     }
 
     /// The attachments of the given messages (by guid), keyed by message guid, in chat.db
@@ -362,6 +451,229 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
             }
         }
         return result
+    }
+
+    /// Reads one attachment file and returns it base64-encoded. The file sits under
+    /// `~/Library/Messages/Attachments`, which the sandbox hides from the Messages folder
+    /// grant, so the read goes through the Attachments grant's own scope.
+    private func readAttachment(id: String, maxBytes: Int) throws -> [String: Value] {
+        let access = try openDatabase()
+        defer { access.stop() }
+        let raw = try RawDatabase(access)
+        defer { raw.close() }
+        var found: (filename: String?, name: String?, mime: String?)?
+        try raw.query(
+            "SELECT filename, transfer_name, mime_type FROM attachment WHERE guid = ? LIMIT 1",
+            bindings: [id]
+        ) { stmt in
+            found = (RawDatabase.text(stmt, 0), RawDatabase.text(stmt, 1), RawDatabase.text(stmt, 2))
+        }
+        guard let found else { throw AttachmentError.notFound(id) }
+        guard var path = found.filename, !path.isEmpty else { throw AttachmentError.noFile(id) }
+        if path.hasPrefix("~/") {
+            path = "/Users/\(NSUserName())" + path.dropFirst(1)
+        }
+        // Only what sits in the Messages folder is served: that is what the grant covers, and
+        // an arbitrary path in chat.db must not turn this tool into a file reader. Symlinks
+        // are resolved and checked inside the Attachments scope: before it starts, the
+        // sandbox hides that subtree, so resolution cannot see through a planted link and
+        // one could pass by its /Messages/Attachments/... spelling alone, with FileHandle
+        // following it anywhere readable once the scopes are active.
+        let data: Data
+        let resolvedName: String
+        (data, resolvedName) = try withAttachmentsGrantScope {
+            let url = URL(fileURLWithPath: path).resolvingSymlinksInPath()
+            guard url.path.hasPrefix(messagesDirectoryPath + "/") else {
+                throw AttachmentError.outsideMessagesFolder(id)
+            }
+            guard FileManager.default.isReadableFile(atPath: url.path) else {
+                throw AttachmentError.fileMissing(id)
+            }
+            // A file whose size cannot be read is not readable either; reporting it
+            // as zero bytes would slip past the limit instead of failing honestly.
+            guard
+                let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+                let size = attributes[.size] as? Int
+            else {
+                throw AttachmentError.fileMissing(id)
+            }
+            guard size <= maxBytes else { throw AttachmentError.tooLarge(id, size, maxBytes) }
+            let handle = try FileHandle(forReadingFrom: url)
+            defer { try? handle.close() }
+            // The checks above name a path,
+            // and the open follows whatever that path is by now:
+            // a link swapped in after them would lead out of the Messages folder.
+            // Check the file that was actually opened.
+            guard let openedPath = Self.openedPath(of: handle) else {
+                throw AttachmentError.fileMissing(id)
+            }
+            guard openedPath.hasPrefix(messagesDirectoryPath + "/") else {
+                throw AttachmentError.outsideMessagesFolder(id)
+            }
+            // Read to EOF or one byte past the limit: read(upToCount:) can
+            // return short before EOF, so serving a single chunk could
+            // silently truncate, and stopping at the limit alone would let
+            // a file that grew past it during the read pass as complete.
+            var data = Data()
+            while data.count <= maxBytes {
+                guard let chunk = try handle.read(upToCount: maxBytes + 1 - data.count) else {
+                    break
+                }
+                if chunk.isEmpty { break }
+                data.append(chunk)
+            }
+            guard data.count <= maxBytes else {
+                // The file grew past the limit mid-read; the pre-read size
+                // is stale and data.count is capped at the limit, so report
+                // the size as of now for a number the caller can act on.
+                let grownSize =
+                    (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? Int
+                    ?? data.count
+                throw AttachmentError.tooLarge(id, grownSize, maxBytes)
+            }
+            return (data, url.lastPathComponent)
+        }
+        var part: [String: Value] = [
+            "@type": "MediaObject",
+            "@id": .string(id),
+            "contentSize": .int(data.count),
+            "encoding": "base64",
+            "content": .string(data.base64EncodedString()),
+        ]
+        if let name = found.name ?? Optional(resolvedName), !name.isEmpty {
+            part["name"] = .string(name)
+        }
+        if let mime = found.mime, !mime.isEmpty {
+            part["encodingFormat"] = .string(mime)
+        }
+        return part
+    }
+
+    /// The path of the file that an open handle refers to,
+    /// as the kernel reports it after following any symbolic links.
+    private static func openedPath(of handle: FileHandle) -> String? {
+        var buffer = [CChar](repeating: 0, count: Int(MAXPATHLEN))
+        guard fcntl(handle.fileDescriptor, F_GETPATH, &buffer) != -1 else { return nil }
+        return buffer.withUnsafeBufferPointer { $0.baseAddress.map { String(cString: $0) } }
+    }
+
+    /// `~/Library/Messages/Attachments` is walled off from a grant on the Messages folder:
+    /// with that folder's security scope active, everything else is readable (chat.db and its
+    /// log, sibling folders like StickerCache) but the Attachments subtree is denied outright,
+    /// listing included. A grant on the Attachments folder itself lifts the wall, so
+    /// attachment files are read through their own scope.
+    private func withAttachmentsGrantScope<T>(_ operation: () throws -> T) throws -> T {
+        // Without the sandbox in the way (development builds on the default path),
+        // no grant is needed. The Attachments folder itself is the probe: it stays
+        // unreadable under the Messages folder grant even while that grant's scope
+        // is active (tool calls open one around chat.db), so only a process the
+        // sandbox does not confine passes here. A stored grant takes precedence
+        // over the probe — another call's scope could make the probe pass, and
+        // starting a scope of our own is always safe.
+        let storedBookmark = UserDefaults.standard.data(forKey: messagesAttachmentsBookmarkKey)
+        if storedBookmark == nil {
+            let attachmentsPath = messagesDirectoryPath + "/Attachments"
+            if FileManager.default.isReadableFile(atPath: attachmentsPath) {
+                return try operation()
+            }
+            // Under a grant on chat.db alone the Messages folder itself is
+            // unreachable: the Attachments folder is walled off, not
+            // deleted, and the remediation that fixes it is the folder
+            // upgrade the grantMissing error points at.
+            guard FileManager.default.isReadableFile(atPath: messagesDirectoryPath) else {
+                throw AttachmentError.grantMissing
+            }
+            // The Messages folder is readable, so the sandbox is either out
+            // of the way or held to the folder grant whose wall leaves the
+            // Attachments directory entry stat-able while denying the
+            // subtree: a folder that does not exist is deleted — let the
+            // per-file checks speak — while one that exists is walled.
+            if !FileManager.default.fileExists(atPath: attachmentsPath) {
+                return try operation()
+            }
+        }
+
+        guard let bookmarkData = storedBookmark else {
+            throw AttachmentError.grantMissing
+        }
+        // A grant that cannot be used is dropped rather than kept: the
+        // re-grant path the errors point at (switch Messages off and on)
+        // only offers the picker when no bookmark is stored.
+        let url: URL
+        do {
+            var isStale = false
+            url = try URL(
+                resolvingBookmarkData: bookmarkData,
+                options: .withSecurityScope,
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale
+            )
+            // A stale bookmark can still resolve and start its scope while
+            // pointing nowhere useful; re-store it from the resolved URL
+            // while it works.
+            if isStale {
+                storeAttachmentsBookmark(for: url)
+            }
+        } catch {
+            UserDefaults.standard.removeObject(forKey: messagesAttachmentsBookmarkKey)
+            throw AttachmentError.grantScopeFailed
+        }
+        guard url.startAccessingSecurityScopedResource() else {
+            UserDefaults.standard.removeObject(forKey: messagesAttachmentsBookmarkKey)
+            throw AttachmentError.grantScopeFailed
+        }
+        // Starting the scope does not prove the bookmark still covers the
+        // Attachments folder: a stale bookmark can resolve and start a
+        // scope while pointing elsewhere, and the read would then fail
+        // against the fixed current path while the unusable grant stays
+        // stored, hiding the re-grant the errors point at. Drop the grant
+        // unless the folder is readable through it.
+        if !FileManager.default.isReadableFile(atPath: messagesDirectoryPath + "/Attachments") {
+            url.stopAccessingSecurityScopedResource()
+            UserDefaults.standard.removeObject(forKey: messagesAttachmentsBookmarkKey)
+            throw AttachmentError.grantScopeFailed
+        }
+        defer { url.stopAccessingSecurityScopedResource() }
+        return try operation()
+    }
+
+    private enum AttachmentError: LocalizedError {
+        case missingID
+        case notFound(String)
+        case noFile(String)
+        case outsideMessagesFolder(String)
+        case fileMissing(String)
+        case tooLarge(String, Int, Int)
+        case invalidMaxBytes(Int, Int)
+        case maxBytesNotAnInteger
+        case grantMissing
+        case grantScopeFailed
+        case wrongFolderSelected
+
+        var errorDescription: String? {
+            switch self {
+            case .missingID: return "attachment id is required"
+            case .notFound(let id): return "no attachment \(id) in the Messages database"
+            case .noFile(let id): return "attachment \(id) has no file (not downloaded on this Mac)"
+            case .outsideMessagesFolder(let id): return "attachment \(id) is not stored in the Messages folder"
+            case .fileMissing(let id): return "the file of attachment \(id) is missing or unreadable"
+            case .tooLarge(let id, let size, let max):
+                return "attachment \(id) is \(size) bytes, more than the \(max) allowed"
+            case .invalidMaxBytes(let maxBytes, let ceiling):
+                return "maxBytes \(maxBytes) is out of range; pass between 1 and \(ceiling)"
+            case .maxBytesNotAnInteger:
+                return "maxBytes must be an integer"
+            case .grantMissing:
+                return
+                    "the Attachments folder (~/Library/Messages/Attachments) has not been granted; switch Messages off and on in the iMCP menu and select it when asked"
+            case .grantScopeFailed:
+                return
+                    "could not start reading through the Attachments grant; switch Messages off and on in the iMCP menu to grant the Attachments folder again"
+            case .wrongFolderSelected:
+                return
+                    "the selected folder is not the Attachments folder (~/Library/Messages/Attachments)"
+            }
+        }
     }
 
     /// A second, read-only SQLite connection on the same grant, for the tables the iMessage
@@ -662,6 +974,65 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
         return url
     }
 
+    /// Returns the selected Attachments folder, or nil when the user dismisses
+    /// the panel. Selecting any other folder is an error, not a silent no-op.
+    @MainActor
+    private func showAttachmentsFolderPicker() async throws -> URL? {
+        let openPanel = NSOpenPanel()
+        openPanel.delegate = self
+        openPanel.message =
+            "Attachments are stored in a folder the Messages grant cannot reach. Please select the Attachments folder (~/Library/Messages/Attachments) to let iMCP read them"
+        openPanel.prompt = "Grant Access"
+        openPanel.directoryURL = URL(fileURLWithPath: messagesDirectoryPath)
+        openPanel.allowsMultipleSelection = false
+        openPanel.canChooseDirectories = true
+        openPanel.canChooseFiles = false
+        openPanel.showsHiddenFiles = true
+        activePanelAcceptsAttachments = true
+        defer { activePanelAcceptsAttachments = false }
+
+        guard openPanel.runModal() == .OK, let url = openPanel.url else {
+            return nil
+        }
+        guard url.standardizedFileURL.path == messagesDirectoryPath + "/Attachments" else {
+            throw AttachmentError.wrongFolderSelected
+        }
+
+        return url
+    }
+
+    /// Asks for the Attachments folder and stores the grant when it is
+    /// granted. Dismissing or selecting the wrong folder keeps the service
+    /// running — only attachment reads stay limited — but a wrong selection
+    /// is logged rather than passed off as granted.
+    private func offerAttachmentsGrant() async {
+        do {
+            if let attachmentsURL = try await showAttachmentsFolderPicker() {
+                storeAttachmentsBookmark(for: attachmentsURL)
+            } else {
+                log.info("Attachments folder not granted; attachment reads stay unavailable")
+            }
+        } catch {
+            log.error(
+                "Attachments folder not granted: \(error.localizedDescription, privacy: .public)"
+            )
+        }
+    }
+
+    private func storeAttachmentsBookmark(for url: URL) {
+        do {
+            let bookmarkData = try url.bookmarkData(
+                options: [.withSecurityScope, .securityScopeAllowOnlyReadAccess],
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil
+            )
+            UserDefaults.standard.set(bookmarkData, forKey: messagesAttachmentsBookmarkKey)
+            log.debug("Successfully created and stored Attachments bookmark")
+        } catch {
+            log.error("Failed to create Attachments bookmark: \(error.localizedDescription)")
+        }
+    }
+
     private func storeBookmark(for url: URL) {
         do {
             let bookmarkData = try url.bookmarkData(
@@ -680,9 +1051,13 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
         return url.lastPathComponent == "Messages"
     }
 
-    // NSOpenSavePanelDelegate method to constrain the selection to the Messages folder
+    // NSOpenSavePanelDelegate method constraining the selection to the folder
+    // the active panel asks for: the Messages folder, or its Attachments
+    // subfolder when that is the one being granted.
     func panel(_ sender: Any, shouldEnable url: URL) -> Bool {
-        let shouldEnable = isMessagesDirectory(url)
+        let shouldEnable =
+            (!activePanelAcceptsAttachments && isMessagesDirectory(url))
+            || (activePanelAcceptsAttachments && url.lastPathComponent == "Attachments")
         log.debug(
             "File selection panel: \(shouldEnable ? "enabling" : "disabling") URL: \(url.path)"
         )
