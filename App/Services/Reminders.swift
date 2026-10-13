@@ -600,6 +600,8 @@ final class RemindersService: Service {
                 )
             }
 
+            try Self.rejectUnknownKeys(arguments, allowed: ["identifier"])
+
             guard
                 let reminder = self.eventStore.calendarItem(withIdentifier: identifier)
                     as? EKReminder
@@ -664,6 +666,7 @@ final class RemindersService: Service {
                     userInfo: [NSLocalizedDescriptionKey: "List title is required"]
                 )
             }
+            try Self.rejectUnknownKeys(arguments, allowed: ["title"])
 
             // Prefer the source of the default list (usually iCloud), falling back
             // to the local source so the list is always creatable.
@@ -733,6 +736,7 @@ final class RemindersService: Service {
                 )
             }
 
+            try Self.rejectUnknownKeys(arguments, allowed: ["identifier", "name", "title"])
             let list = try self.list(arguments)
 
             guard list.allowsContentModifications, !list.isImmutable else {
@@ -799,6 +803,7 @@ final class RemindersService: Service {
                 )
             }
 
+            try Self.rejectUnknownKeys(arguments, allowed: ["identifier", "name"])
             let list = try self.list(arguments)
 
             guard list.allowsContentModifications, !list.isImmutable, !list.isSubscribed else {
