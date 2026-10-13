@@ -262,11 +262,13 @@ bump_version() {
   local resolved_build_number="${BUILD_NUMBER}"
   if [[ -z "${resolved_build_number}" ]]; then
     # Find the current build number and increment it if not provided.
+    # Use the highest one, so the order of targets in the project file
+    # can't lower the build number that Sparkle compares.
     resolved_build_number="0"
     while IFS= read -r line; do
-      if [[ "${line}" =~ CURRENT_PROJECT_VERSION\ =\ ([0-9]+)\; ]]; then
+      if [[ "${line}" =~ CURRENT_PROJECT_VERSION\ =\ ([0-9]+)\; ]] &&
+        ((BASH_REMATCH[1] > resolved_build_number)); then
         resolved_build_number="${BASH_REMATCH[1]}"
-        break
       fi
     done < "${PROJECT_FILE}"
     resolved_build_number="$((resolved_build_number + 1))"
