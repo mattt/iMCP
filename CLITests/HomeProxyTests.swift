@@ -21,9 +21,10 @@ final class HomeProxyTests: XCTestCase {
         } catch let error as HomeError {
             XCTAssertFalse(error.localizedDescription.isEmpty)
         }
+        // Terminate only the helper this test launched, not another helper build.
         let helper = try XCTUnwrap(
             NSWorkspace.shared.runningApplications.first {
-                $0.bundleURL.map(HomeHelperLocator.isHelper(at:)) ?? false
+                $0.bundleURL?.standardizedFileURL.path == URL(fileURLWithPath: path).standardizedFileURL.path
             }
         )
         XCTAssertTrue(helper.forceTerminate())

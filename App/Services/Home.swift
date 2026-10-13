@@ -51,11 +51,29 @@ actor HomeService: Service, HomeBackend {
     /// which launches the chosen one.
     func useChosenHelper() async throws {
         guard isActivated else { return }
-        if let pid = launchedHelper?.pid {
-            await MainActor.run { _ = NSRunningApplication(processIdentifier: pid)?.terminate() }
-        }
+        if let pid = launchedHelper?.pid { try await quitHelper(pid: pid) }
         launchedHelper = nil
         try await connect()
+    }
+
+    /// Quits a helper and waits until it has exited,
+    /// so a reconnect doesn't reuse it without the new port.
+    @MainActor
+    private func quitHelper(pid: pid_t) async throws {
+        guard let application = NSRunningApplication(processIdentifier: pid), !application.isTerminated else {
+            return
+        }
+        application.terminate()
+        for _ in 0 ..< 50 {
+            if application.isTerminated { return }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        application.forceTerminate()
+        for _ in 0 ..< 20 {
+            if application.isTerminated { return }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        throw HomeError("The previous iMCP Helper didn't quit. Quit it, then turn Home off and on again.")
     }
 
     // MARK: - HomeBackend
