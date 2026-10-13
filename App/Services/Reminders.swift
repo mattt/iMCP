@@ -851,9 +851,13 @@ final class RemindersService: Service {
         let newAlarms: PropertyChange<[EKAlarm]>
         switch arguments["alarms"] {
         case .array(let alarmConfigs):
+            // Parse every alarm before building any,
+            // so that an invalid alarm fails
+            // before a Maps search runs for another.
+            let parsedAlarms = try alarmConfigs.map(Self.parsedAlarm(from:))
             var alarms: [EKAlarm] = []
-            for alarmConfig in alarmConfigs {
-                alarms.append(try await Self.alarm(from: alarmConfig))
+            for parsedAlarm in parsedAlarms {
+                alarms.append(try await Self.makeAlarm(from: parsedAlarm))
             }
             newAlarms = .set(alarms)
         case .null:
@@ -1082,14 +1086,35 @@ final class RemindersService: Service {
         )
     }
 
-    /// Builds an alarm from an alarm configuration object. Bare integers are
-    /// minutes before the due date, the shape accepted before alarms grew
-    /// structured configurations.
-    private static func alarm(from value: Value) async throws -> EKAlarm {
+    /// An alarm configuration that has passed validation.
+    /// Parsing and building are separate steps
+    /// so that every check runs before a proximity alarm's location
+    /// goes to Maps.
+    private struct ParsedAlarm {
+        enum Trigger {
+            case relative(minutes: Int)
+            case absolute(Date)
+            case proximity(Place, EKAlarmProximity, radius: Double)
+        }
+
+        enum Place {
+            case query(String)
+            case coordinate(title: String, CLLocationCoordinate2D)
+        }
+
+        var trigger: Trigger
+        var soundName: String?
+        var emailAddress: String?
+    }
+
+    /// Parses and validates an alarm configuration object without I/O.
+    /// Bare integers are minutes before the due date,
+    /// the shape accepted before alarms grew structured configurations.
+    private static func parsedAlarm(from value: Value) throws -> ParsedAlarm {
         // JSON Schema counts 30.0 as a valid integer for the bare form too.
         switch value {
         case .int(let minutes):
-            return EKAlarm(relativeOffset: -Double(minutes) * 60)
+            return ParsedAlarm(trigger: .relative(minutes: minutes))
         case .double(let value) where value.rounded() == value:
             // Int(exactly:) instead of Int(_: an out-of-range integral
             // double is a recoverable error, not a trap.
@@ -1103,7 +1128,7 @@ final class RemindersService: Service {
                     ]
                 )
             }
-            return EKAlarm(relativeOffset: -Double(minutes) * 60)
+            return ParsedAlarm(trigger: .relative(minutes: minutes))
         default: break
         }
         guard case .object(let config) = value else {
@@ -1168,7 +1193,7 @@ final class RemindersService: Service {
             )
         }
 
-        var alarm: EKAlarm
+        let trigger: ParsedAlarm.Trigger
         switch alarmType {
         case "relative":
             // JSON Schema counts 30.0 as a valid integer, so bridge an
@@ -1198,7 +1223,7 @@ final class RemindersService: Service {
                     ]
                 )
             }
-            alarm = EKAlarm(relativeOffset: -Double(minutes) * 60)
+            trigger = .relative(minutes: minutes)
 
         case "absolute":
             guard case .string(let datetimeString) = config["datetime"] else {
@@ -1227,16 +1252,15 @@ final class RemindersService: Service {
                     ]
                 )
             }
-            alarm = EKAlarm(
-                absoluteDate: Calendar.current.normalizedStartDate(
+            trigger = .absolute(
+                Calendar.current.normalizedStartDate(
                     from: parsed.date,
                     isDateOnly: parsed.isDateOnly
                 )
             )
 
         case "proximity":
-            let title: String
-            let coordinate: CLLocationCoordinate2D
+            let place: ParsedAlarm.Place
             switch config["location"] {
             case .some(.string(let query)):
                 // The two advertised object shapes are alternatives: a
@@ -1253,9 +1277,9 @@ final class RemindersService: Service {
                         ]
                     )
                 }
-                let mapItem = try await Self.searchLocation(query)
-                title = mapItem.name ?? query
-                coordinate = mapItem.placemark.coordinate
+                // The query is only recorded here;
+                // makeAlarm(from:) runs its Maps search.
+                place = .query(query)
             case nil:
                 guard case .string(let locationTitle) = config["locationTitle"] else {
                     throw NSError(
@@ -1300,8 +1324,10 @@ final class RemindersService: Service {
                         ]
                     )
                 }
-                title = locationTitle
-                coordinate = CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+                place = .coordinate(
+                    title: locationTitle,
+                    CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+                )
             default:
                 throw NSError(
                     domain: "RemindersError",
@@ -1312,11 +1338,6 @@ final class RemindersService: Service {
                     ]
                 )
             }
-            let structuredLocation = EKStructuredLocation(title: title)
-            structuredLocation.geoLocation = CLLocation(
-                latitude: coordinate.latitude,
-                longitude: coordinate.longitude
-            )
             // EventKit reads a radius of 0 as a request for the system default,
             // so an absent radius stays 0.
             let radius: Double
@@ -1344,15 +1365,14 @@ final class RemindersService: Service {
                     ]
                 )
             }
-            structuredLocation.radius = radius
 
-            alarm = EKAlarm()
             // An unsupported proximity string must not fold into .enter;
             // the geofence would trigger on the wrong side.
+            let alarmProximity: EKAlarmProximity
             switch config["proximity"] {
-            case nil: alarm.proximity = .enter
-            case .string("enter"): alarm.proximity = .enter
-            case .string("leave"): alarm.proximity = .leave
+            case nil: alarmProximity = .enter
+            case .string("enter"): alarmProximity = .enter
+            case .string("leave"): alarmProximity = .leave
             case .string(let proximity):
                 throw NSError(
                     domain: "RemindersError",
@@ -1372,7 +1392,7 @@ final class RemindersService: Service {
                     ]
                 )
             }
-            alarm.structuredLocation = structuredLocation
+            trigger = .proximity(place, alarmProximity, radius: radius)
 
         default:
             throw NSError(
@@ -1384,6 +1404,8 @@ final class RemindersService: Service {
                 ]
             )
         }
+
+        var parsedAlarm = ParsedAlarm(trigger: trigger)
 
         switch config["sound"] {
         case nil: break
@@ -1398,7 +1420,7 @@ final class RemindersService: Service {
                     ]
                 )
             }
-            alarm.soundName = soundName
+            parsedAlarm.soundName = soundName
         default:
             throw NSError(
                 domain: "RemindersError",
@@ -1413,7 +1435,7 @@ final class RemindersService: Service {
         switch config["emailAddress"] {
         case nil: break
         case .string(let email) where !email.isEmpty:
-            alarm.emailAddress = email
+            parsedAlarm.emailAddress = email
         case .string:
             throw NSError(
                 domain: "RemindersError",
@@ -1432,6 +1454,53 @@ final class RemindersService: Service {
                         "Alarm emailAddress must be a string."
                 ]
             )
+        }
+
+        return parsedAlarm
+    }
+
+    /// Builds an alarm from a parsed configuration.
+    /// A proximity alarm with a location query
+    /// resolves it here with a Maps search.
+    private static func makeAlarm(from parsedAlarm: ParsedAlarm) async throws -> EKAlarm {
+        let alarm: EKAlarm
+        switch parsedAlarm.trigger {
+        case .relative(let minutes):
+            alarm = EKAlarm(relativeOffset: -Double(minutes) * 60)
+
+        case .absolute(let date):
+            alarm = EKAlarm(absoluteDate: date)
+
+        case .proximity(let place, let proximity, let radius):
+            let title: String
+            let coordinate: CLLocationCoordinate2D
+            switch place {
+            case .query(let query):
+                let mapItem = try await Self.searchLocation(query)
+                title = mapItem.name ?? query
+                coordinate = mapItem.placemark.coordinate
+            case .coordinate(let locationTitle, let locationCoordinate):
+                title = locationTitle
+                coordinate = locationCoordinate
+            }
+            let structuredLocation = EKStructuredLocation(title: title)
+            structuredLocation.geoLocation = CLLocation(
+                latitude: coordinate.latitude,
+                longitude: coordinate.longitude
+            )
+            structuredLocation.radius = radius
+
+            alarm = EKAlarm()
+            alarm.proximity = proximity
+            alarm.structuredLocation = structuredLocation
+        }
+
+        if let soundName = parsedAlarm.soundName {
+            alarm.soundName = soundName
+        }
+
+        if let emailAddress = parsedAlarm.emailAddress {
+            alarm.emailAddress = emailAddress
         }
 
         return alarm
