@@ -400,9 +400,10 @@ Xcode must be signed in to your account (Xcode > Settings > Accounts),
 and the helper runs only on Macs registered to your team.
 Whether free personal teams can use HomeKit isn't verified.
 Then turn on Home in iMCP.
-iMCP looks for the helper in `/Applications` and `~/Applications`;
-if you installed it somewhere else,
-choose it in Settings > Services > Home.
+iMCP finds the helper in `/Applications`.
+If you installed it somewhere else,
+iMCP asks you to choose it when you turn on Home,
+or you can choose it in Settings > Services > Home.
 When you enable Home,
 iMCP launches the helper and the helper asks for HomeKit access.
 The helper exits when iMCP exits,

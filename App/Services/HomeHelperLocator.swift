@@ -12,13 +12,11 @@ enum HomeHelperLocator {
     static let markerKey = "iMCPHelper"
     static let defaultBundleIdentifier = "co.dododo.iMCP.Helper"
 
-    /// The places where `Scripts/install-helper.sh` installs the helper, in order.
-    static func installLocations(home: URL) -> [URL] {
-        [
-            URL(fileURLWithPath: "/Applications/iMCP Helper.app"),
-            home.appendingPathComponent("Applications/iMCP Helper.app"),
-        ]
-    }
+    /// Where iMCP looks for the helper without asking.
+    /// `Scripts/install-helper.sh` installs it in `/Applications` by default.
+    /// The sandbox can't read other folders, such as `~/Applications`,
+    /// until the user chooses the helper in an open panel.
+    static let installLocations = [URL(fileURLWithPath: "/Applications/iMCP Helper.app")]
 
     /// Whether the app at `url` declares itself as iMCP Helper.
     static func isHelper(at url: URL) -> Bool {
@@ -27,6 +25,24 @@ enum HomeHelperLocator {
             let info = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
         else { return false }
         return info[markerKey] as? Bool == true
+    }
+
+    /// Whether a running app is iMCP Helper.
+    /// An app at the resolved helper's path matches without reading its Info.plist,
+    /// which the sandbox may deny outside `/Applications`.
+    /// Otherwise only an app named iMCP Helper is checked for the marker,
+    /// so other running apps' Info.plist files aren't read.
+    static func isRunningHelper(
+        bundleURL: URL?,
+        localizedName: String?,
+        helper: URL?,
+        isHelper: (URL) -> Bool
+    ) -> Bool {
+        guard let bundleURL else { return false }
+        if let helper, bundleURL.standardizedFileURL.path == helper.standardizedFileURL.path {
+            return true
+        }
+        return localizedName == "iMCP Helper" && isHelper(bundleURL)
     }
 
     /// The first candidate that is a helper:

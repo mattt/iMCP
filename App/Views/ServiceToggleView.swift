@@ -20,6 +20,10 @@ struct ServiceToggleView: View {
                 if config.binding.wrappedValue && !isServiceActivated {
                     Task {
                         do {
+                            if config.service is HomeService, try !HomeService.shared.promptForHelperIfMissing() {
+                                config.binding.wrappedValue = false
+                                return
+                            }
                             try await config.service.activate()
                         } catch {
                             config.binding.wrappedValue = false

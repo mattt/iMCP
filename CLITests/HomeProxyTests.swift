@@ -121,10 +121,61 @@ final class HomeHelperLocatorTests: XCTestCase {
     }
 
     func testInstallLocations() {
-        let home = URL(fileURLWithPath: "/Users/x", isDirectory: true)
+        // The sandbox can't read ~/Applications without a user selection,
+        // so only /Applications is searched automatically.
         XCTAssertEqual(
-            HomeHelperLocator.installLocations(home: home).map(\.path),
-            ["/Applications/iMCP Helper.app", "/Users/x/Applications/iMCP Helper.app"]
+            HomeHelperLocator.installLocations.map(\.path),
+            ["/Applications/iMCP Helper.app"]
+        )
+    }
+
+    func testRunningHelperMatchesTheResolvedPathWithoutReadingInfoPlist() {
+        var reads = 0
+        let isHelper: (URL) -> Bool = { _ in
+            reads += 1
+            return false
+        }
+        XCTAssertTrue(
+            HomeHelperLocator.isRunningHelper(
+                bundleURL: URL(fileURLWithPath: "/Users/x/Build/./iMCP Helper.app"),
+                localizedName: "iMCP Helper",
+                helper: chosen,
+                isHelper: isHelper
+            )
+        )
+        XCTAssertEqual(reads, 0)
+    }
+
+    func testRunningHelperChecksTheMarkerOnlyForAppsNamediMCPHelper() {
+        var reads = 0
+        let isHelper: (URL) -> Bool = { _ in
+            reads += 1
+            return true
+        }
+        XCTAssertFalse(
+            HomeHelperLocator.isRunningHelper(
+                bundleURL: URL(fileURLWithPath: "/Applications/Safari.app"),
+                localizedName: "Safari",
+                helper: system,
+                isHelper: isHelper
+            )
+        )
+        XCTAssertEqual(reads, 0)
+        XCTAssertTrue(
+            HomeHelperLocator.isRunningHelper(
+                bundleURL: registered,
+                localizedName: "iMCP Helper",
+                helper: system,
+                isHelper: isHelper
+            )
+        )
+        XCTAssertFalse(
+            HomeHelperLocator.isRunningHelper(
+                bundleURL: nil,
+                localizedName: "iMCP Helper",
+                helper: system,
+                isHelper: isHelper
+            )
         )
     }
 }

@@ -226,7 +226,7 @@ actor HomeService: Service, HomeBackend {
         defer { if accessing { chosen?.stopAccessingSecurityScopedResource() } }
         return HomeHelperLocator.resolve(
             chosen: chosen,
-            installed: HomeHelperLocator.installLocations(home: FileManager.default.homeDirectoryForCurrentUser),
+            installed: HomeHelperLocator.installLocations,
             registered: NSWorkspace.shared.urlForApplication(
                 withBundleIdentifier: HomeHelperLocator.defaultBundleIdentifier
             ),
@@ -262,16 +262,29 @@ actor HomeService: Service, HomeBackend {
         return url
     }
 
+    /// Asks for the helper when the user turns Home on and none is installed.
+    /// Tool calls and reconnects never show the panel.
+    /// Returns false when the user cancels.
+    @MainActor
+    func promptForHelperIfMissing() throws -> Bool {
+        if helperLocation() != nil { return true }
+        return try chooseHelper() != nil
+    }
+
     @MainActor
     private func launchHelper(previous: LaunchedHelper?, overrideURL: URL?) async throws -> LaunchedHelper? {
+        let url = overrideURL ?? helperLocation()
         if let running = NSWorkspace.shared.runningApplications.first(where: { application in
-            guard !application.isTerminated, let url = application.bundleURL else { return false }
-            return HomeHelperLocator.isHelper(at: url)
+            !application.isTerminated
+                && HomeHelperLocator.isRunningHelper(
+                    bundleURL: application.bundleURL,
+                    localizedName: application.localizedName,
+                    helper: url,
+                    isHelper: HomeHelperLocator.isHelper(at:)
+                )
         }) {
             return previous?.pid == running.processIdentifier ? previous : nil
         }
-        var url = overrideURL ?? helperLocation()
-        if url == nil { url = try chooseHelper() }
         guard let url else {
             throw HomeError(
                 "iMCP Helper isn't installed. Build it with Scripts/install-helper.sh, then turn Home on again."
@@ -291,6 +304,9 @@ actor HomeService: Service, HomeBackend {
         ]
         configuration.arguments = ["--parent-pid", String(getpid()), "--port", String(port)]
         let application = try await NSWorkspace.shared.openApplication(at: url, configuration: configuration)
+        // LaunchServices returns the running helper without the new arguments,
+        // so keep the port it was launched with.
+        if let previous, previous.pid == application.processIdentifier { return previous }
         return LaunchedHelper(
             pid: application.processIdentifier,
             endpoint: .hostPort(host: .ipv4(.loopback), port: NWEndpoint.Port(rawValue: port)!)
