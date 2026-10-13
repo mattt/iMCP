@@ -475,12 +475,17 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
         }
         // Only what sits in the Messages folder is served: that is what the grant covers, and
         // an arbitrary path in chat.db must not turn this tool into a file reader. Symlinks
-        // are resolved first so a link planted inside the tree cannot point out of it.
-        let url = URL(fileURLWithPath: path).resolvingSymlinksInPath()
-        guard url.path.hasPrefix(messagesDirectoryPath + "/") else {
-            throw AttachmentError.outsideMessagesFolder(id)
-        }
-        let data: Data = try withAttachmentsGrantScope {
+        // are resolved and checked inside the Attachments scope: before it starts, the
+        // sandbox hides that subtree, so resolution cannot see through a planted link and
+        // one could pass by its /Messages/Attachments/... spelling alone, with FileHandle
+        // following it anywhere readable once the scopes are active.
+        let data: Data
+        let resolvedName: String
+        (data, resolvedName) = try withAttachmentsGrantScope {
+            let url = URL(fileURLWithPath: path).resolvingSymlinksInPath()
+            guard url.path.hasPrefix(messagesDirectoryPath + "/") else {
+                throw AttachmentError.outsideMessagesFolder(id)
+            }
             guard FileManager.default.isReadableFile(atPath: url.path) else {
                 throw AttachmentError.fileMissing(id)
             }
@@ -516,7 +521,7 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                     ?? data.count
                 throw AttachmentError.tooLarge(id, grownSize, maxBytes)
             }
-            return data
+            return (data, url.lastPathComponent)
         }
         var part: [String: Value] = [
             "@type": "MediaObject",
@@ -525,7 +530,7 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
             "encoding": "base64",
             "content": .string(data.base64EncodedString()),
         ]
-        if let name = found.name ?? Optional(url.lastPathComponent), !name.isEmpty {
+        if let name = found.name ?? Optional(resolvedName), !name.isEmpty {
             part["name"] = .string(name)
         }
         if let mime = found.mime, !mime.isEmpty {
