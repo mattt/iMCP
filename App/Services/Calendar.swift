@@ -332,8 +332,7 @@ final class CalendarService: Service {
                                             maximum: 180
                                         ),
                                         "radius": .number(
-                                            description: "Radius in meters",
-                                            default: .int(200),
+                                            description: "Radius in meters. Omit to use the system default.",
                                             minimum: 0
                                         ),
                                         "sound": .string(
@@ -788,8 +787,7 @@ final class CalendarService: Service {
                                             maximum: 180
                                         ),
                                         "radius": .number(
-                                            description: "Radius in meters",
-                                            default: .int(200),
+                                            description: "Radius in meters. Omit to use the system default.",
                                             minimum: 0
                                         ),
                                         "sound": .string(
@@ -1406,12 +1404,13 @@ final class CalendarService: Service {
                     ]
                 )
             }
-            // The schema advertises a 200 m default; EKStructuredLocation
-            // alone would leave a zero-radius geofence, and a non-numeric
-            // radius must not silently take that default either.
+            // EKStructuredLocation uses the system default radius
+            // when its radius is 0,
+            // so an absent radius stays at 0.
+            // A present radius must be a number of meters that is not negative.
             let radius: Double
             switch config["radius"] {
-            case nil: radius = 200
+            case nil: radius = 0
             case .int(let value): radius = Double(value)
             case .double(let value): radius = value
             default:
