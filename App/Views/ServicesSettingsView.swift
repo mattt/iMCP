@@ -2,11 +2,14 @@ import SwiftUI
 
 struct ServicesSettingsView: View {
     @ObservedObject var serverController: ServerController
+    @State private var homeHelperPath: String?
+    @State private var homeHelperError: String?
 
     var body: some View {
         Form {
             ForEach(serverController.computedServiceConfigs) { config in
                 Section {
+                    if config.service is HomeService { homeHelperRow() }
                     ForEach(config.service.tools, id: \.name) { tool in
                         toolRow(tool)
                     }
@@ -38,6 +41,36 @@ struct ServicesSettingsView: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    @ViewBuilder
+    private func homeHelperRow() -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Text("Helper")
+                Spacer()
+                Text(homeHelperPath ?? "Not installed")
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Button("Choose…") {
+                    do {
+                        if let url = try HomeService.shared.chooseHelper() { homeHelperPath = url.path }
+                        homeHelperError = nil
+                    } catch {
+                        homeHelperError = error.localizedDescription
+                    }
+                }
+            }
+            if let homeHelperError {
+                Text(homeHelperError).font(.caption).foregroundStyle(.red)
+            } else if homeHelperPath == nil {
+                Text("Build it with Scripts/install-helper.sh from the iMCP repository.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .task { homeHelperPath = HomeService.shared.helperLocation()?.path }
     }
 
     @ViewBuilder
