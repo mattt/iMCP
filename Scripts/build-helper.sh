@@ -8,6 +8,14 @@ set -euo pipefail
 : "${CONFIGURATION:?Missing Xcode configuration.}"
 : "${PROJECT_TEMP_DIR:?Missing Xcode intermediates directory.}"
 
+# Developer ID builds can't carry the HomeKit entitlement,
+# so release builds leave the helper out;
+# developers build and sign it with Scripts/install-helper.sh.
+if [[ "${EMBED_HOME_HELPER:-YES}" != YES ]]; then
+    echo "Skipping iMCP Helper (EMBED_HOME_HELPER=${EMBED_HOME_HELPER})."
+    exit 0
+fi
+
 helper_derived_data="$PROJECT_TEMP_DIR/HelperDerivedData"
 helper_signing="${HELPER_CODE_SIGNING_ALLOWED:-YES}"
 
