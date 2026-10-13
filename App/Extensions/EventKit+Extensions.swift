@@ -60,6 +60,12 @@ extension EKReminderPriority {
         }
     }
 
+    /// Strict parse for tool arguments: nil unless the string names one of
+    /// `allCases`, unlike `from(string:)`, which folds unknowns into `.none`.
+    static func from(exactString string: String) -> EKReminderPriority? {
+        allCases.first { $0.stringValue == string.lowercased() }
+    }
+
     static var allCases: [EKReminderPriority] {
         return [.none, .low, .medium, .high]
     }

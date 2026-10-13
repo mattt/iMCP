@@ -66,7 +66,7 @@ and a [growing list of clients][mcp-clients] that support the
       <img src="Assets/reminders.svg" width="48" height="48" alt="" role="presentation"/>
     </th>
     <td><strong>Reminders</strong></td>
-    <td>View and create reminders with customizable due dates, priorities, and alerts across different reminder lists.</td>
+    <td>View, create, edit, and delete reminders with customizable due dates, priorities, and alerts across different reminder lists, and manage the lists themselves.</td>
   </tr>
   <tr>
     <th>
