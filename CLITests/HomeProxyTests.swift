@@ -38,3 +38,93 @@ final class HomeProxyTests: XCTestCase {
         XCTAssertTrue(reactivated)
     }
 }
+
+final class HomeHelperLocatorTests: XCTestCase {
+    private let chosen = URL(fileURLWithPath: "/Users/x/Build/iMCP Helper.app")
+    private let system = URL(fileURLWithPath: "/Applications/iMCP Helper.app")
+    private let user = URL(fileURLWithPath: "/Users/x/Applications/iMCP Helper.app")
+    private let registered = URL(fileURLWithPath: "/Users/x/Dev/iMCP Helper.app")
+    private let embedded = URL(fileURLWithPath: "/Applications/iMCP.app/Contents/Helpers/iMCP Helper.app")
+
+    func testChosenHelperWins() {
+        let url = HomeHelperLocator.resolve(
+            chosen: chosen,
+            installed: [system, user],
+            registered: registered,
+            embedded: embedded,
+            isHelper: { _ in true }
+        )
+        XCTAssertEqual(url, chosen)
+    }
+
+    func testFallsBackInOrderWhenChosenIsGone() {
+        let url = HomeHelperLocator.resolve(
+            chosen: chosen,
+            installed: [system, user],
+            registered: registered,
+            embedded: embedded,
+            isHelper: { $0 != self.chosen && $0 != self.system }
+        )
+        XCTAssertEqual(url, user)
+    }
+
+    func testRegisteredThenEmbedded() {
+        XCTAssertEqual(
+            HomeHelperLocator.resolve(
+                chosen: nil,
+                installed: [system, user],
+                registered: registered,
+                embedded: embedded,
+                isHelper: { $0 == self.registered || $0 == self.embedded }
+            ),
+            registered
+        )
+        XCTAssertEqual(
+            HomeHelperLocator.resolve(
+                chosen: nil,
+                installed: [system, user],
+                registered: nil,
+                embedded: embedded,
+                isHelper: { $0 == self.embedded }
+            ),
+            embedded
+        )
+    }
+
+    func testRejectsAppsWithoutTheMarker() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        func app(_ name: String, marker: Bool?) throws -> URL {
+            let url = directory.appendingPathComponent("\(name).app")
+            let contents = url.appendingPathComponent("Contents", isDirectory: true)
+            try FileManager.default.createDirectory(at: contents, withIntermediateDirectories: true)
+            var info: [String: Any] = ["CFBundleIdentifier": "test.\(name)", "CFBundlePackageType": "APPL"]
+            if let marker { info[HomeHelperLocator.markerKey] = marker }
+            let data = try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
+            try data.write(to: contents.appendingPathComponent("Info.plist"))
+            return url
+        }
+        XCTAssertTrue(HomeHelperLocator.isHelper(at: try app("Helper", marker: true)))
+        XCTAssertFalse(HomeHelperLocator.isHelper(at: try app("Other", marker: nil)))
+        XCTAssertFalse(HomeHelperLocator.isHelper(at: try app("Off", marker: false)))
+        XCTAssertFalse(HomeHelperLocator.isHelper(at: directory.appendingPathComponent("Missing.app")))
+        XCTAssertNil(
+            HomeHelperLocator.resolve(
+                chosen: try app("Chosen", marker: nil),
+                installed: [],
+                registered: nil,
+                embedded: nil,
+                isHelper: HomeHelperLocator.isHelper(at:)
+            )
+        )
+    }
+
+    func testInstallLocations() {
+        let home = URL(fileURLWithPath: "/Users/x", isDirectory: true)
+        XCTAssertEqual(
+            HomeHelperLocator.installLocations(home: home).map(\.path),
+            ["/Applications/iMCP Helper.app", "/Users/x/Applications/iMCP Helper.app"]
+        )
+    }
+}

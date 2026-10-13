@@ -29,6 +29,7 @@
 		A30000000000000000000032 /* Ontology in Frameworks */ = {isa = PBXBuildFile; productRef = A20000000000000000000012 /* Ontology */; };
 		A40000000000000000000020 /* HomeProxyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000010 /* HomeProxyTests.swift */; };
 		A40000000000000000000021 /* ../App/Services/Home.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000011 /* ../App/Services/Home.swift */; };
+		A40000000000000000000029 /* ../App/Services/HomeHelperLocator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000019 /* ../App/Services/HomeHelperLocator.swift */; };
 		A40000000000000000000022 /* ../Shared/Extensions/Logger+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000012 /* ../Shared/Extensions/Logger+Extensions.swift */; };
 		A40000000000000000000023 /* ../Shared/Extensions/Bundle+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000013 /* ../Shared/Extensions/Bundle+Extensions.swift */; };
 		A40000000000000000000024 /* ../Shared/Models/Service.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000014 /* ../Shared/Models/Service.swift */; };
@@ -90,6 +91,7 @@
 		A30000000000000000000016 /* ../Shared/Models/Value.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Models/Value.swift; sourceTree = "<group>"; };
 		A40000000000000000000010 /* HomeProxyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeProxyTests.swift; sourceTree = "<group>"; };
 		A40000000000000000000011 /* ../App/Services/Home.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../App/Services/Home.swift; sourceTree = "<group>"; };
+		A40000000000000000000019 /* ../App/Services/HomeHelperLocator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../App/Services/HomeHelperLocator.swift; sourceTree = "<group>"; };
 		A40000000000000000000012 /* ../Shared/Extensions/Logger+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Shared/Extensions/Logger+Extensions.swift"; sourceTree = "<group>"; };
 		A40000000000000000000013 /* ../Shared/Extensions/Bundle+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Shared/Extensions/Bundle+Extensions.swift"; sourceTree = "<group>"; };
 		A40000000000000000000014 /* ../Shared/Models/Service.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Models/Service.swift; sourceTree = "<group>"; };
@@ -219,6 +221,7 @@
 			children = (
 				A40000000000000000000010 /* HomeProxyTests.swift */,
 				A40000000000000000000011 /* ../App/Services/Home.swift */,
+				A40000000000000000000019 /* ../App/Services/HomeHelperLocator.swift */,
 				A40000000000000000000012 /* ../Shared/Extensions/Logger+Extensions.swift */,
 				A40000000000000000000013 /* ../Shared/Extensions/Bundle+Extensions.swift */,
 				A40000000000000000000014 /* ../Shared/Models/Service.swift */,
@@ -506,6 +509,7 @@
 			files = (
 				A40000000000000000000020 /* HomeProxyTests.swift in Sources */,
 				A40000000000000000000021 /* ../App/Services/Home.swift in Sources */,
+				A40000000000000000000029 /* ../App/Services/HomeHelperLocator.swift in Sources */,
 				A40000000000000000000022 /* ../Shared/Extensions/Logger+Extensions.swift in Sources */,
 				A40000000000000000000023 /* ../Shared/Extensions/Bundle+Extensions.swift in Sources */,
 				A40000000000000000000024 /* ../Shared/Models/Service.swift in Sources */,
