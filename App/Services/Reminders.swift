@@ -1489,8 +1489,12 @@ final class RemindersService: Service {
         return values
     }
 
-    /// Maps a recurrence rule onto the shape accepted by the recurrence
-    /// parameter, so an emitted rule round-trips back into a reminder.
+    /// Maps a recurrence rule onto the shape accepted by the recurrence parameter.
+    /// The result round-trips back into a reminder unchanged
+    /// when the parameter can represent every value in the rule.
+    /// A value outside the parameter's vocabulary,
+    /// such as a month outside 1-12 or a weekday ordinal beyond ±5,
+    /// comes out as "unknown", which `recurrenceRule(from:)` rejects.
     private static func value(for rule: EKRecurrenceRule) -> Value {
         var fields: [String: Value] = [
             "frequency": .string(rule.frequency.stringValue),
