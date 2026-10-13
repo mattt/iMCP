@@ -112,8 +112,7 @@ private let reminderProperties: OrderedDictionary<String, JSONSchema> = [
                                     "Place name or address to trigger on, resolved with Maps"
                             ),
                             "radius": .number(
-                                description: "Radius in meters",
-                                default: .int(200),
+                                description: "Radius in meters. Omit to use the system default.",
                                 minimum: 0
                             ),
                             "sound": .string(
@@ -147,8 +146,7 @@ private let reminderProperties: OrderedDictionary<String, JSONSchema> = [
                                 maximum: 180
                             ),
                             "radius": .number(
-                                description: "Radius in meters",
-                                default: .int(200),
+                                description: "Radius in meters. Omit to use the system default.",
                                 minimum: 0
                             ),
                             "sound": .string(
@@ -1332,12 +1330,11 @@ final class RemindersService: Service {
                 latitude: coordinate.latitude,
                 longitude: coordinate.longitude
             )
-            // The schema advertises a 200 m default; EKStructuredLocation
-            // alone would leave a zero-radius geofence. Zero stays valid:
-            // EventKit reads it as a request for the system default radius.
+            // EventKit reads a radius of 0 as a request for the system default,
+            // so an absent radius stays 0.
             let radius: Double
             switch config["radius"] {
-            case nil: radius = 200
+            case nil: radius = 0
             case .int(let value): radius = Double(value)
             case .double(let value): radius = value
             default:
