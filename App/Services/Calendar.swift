@@ -1205,29 +1205,39 @@ final class CalendarService: Service {
                 event.endDate = newEndDate
             }
 
-            // For all-day events, ensure whole-day boundaries, mirroring events_create
+            // Whole-day boundaries follow the event's effective all-day
+            // state — a supplied isAllDay, else the unchanged one — so an
+            // already-all-day event that moves one bound without resending
+            // isAllDay still snaps instead of gaining a local-midnight end.
+            // Mirrors events_create.
+            let effectiveIsAllDay: Bool
             if case .bool(let isAllDay) = arguments["isAllDay"] {
-                if isAllDay {
-                    let calendar = Calendar.current
-                    var startComponents = calendar.dateComponents(
-                        [.year, .month, .day],
-                        from: event.startDate
-                    )
-                    startComponents.hour = 0
-                    startComponents.minute = 0
-                    startComponents.second = 0
+                effectiveIsAllDay = isAllDay
+            } else {
+                effectiveIsAllDay = event.isAllDay
+            }
+            if effectiveIsAllDay {
+                let calendar = Calendar.current
+                var startComponents = calendar.dateComponents(
+                    [.year, .month, .day],
+                    from: event.startDate
+                )
+                startComponents.hour = 0
+                startComponents.minute = 0
+                startComponents.second = 0
 
-                    var endComponents = calendar.dateComponents(
-                        [.year, .month, .day],
-                        from: event.endDate
-                    )
-                    endComponents.hour = 23
-                    endComponents.minute = 59
-                    endComponents.second = 59
+                var endComponents = calendar.dateComponents(
+                    [.year, .month, .day],
+                    from: event.endDate
+                )
+                endComponents.hour = 23
+                endComponents.minute = 59
+                endComponents.second = 59
 
-                    event.startDate = calendar.date(from: startComponents)!
-                    event.endDate = calendar.date(from: endComponents)!
-                }
+                event.startDate = calendar.date(from: startComponents)!
+                event.endDate = calendar.date(from: endComponents)!
+            }
+            if case .bool(let isAllDay) = arguments["isAllDay"] {
                 event.isAllDay = isAllDay
             }
 
@@ -1277,7 +1287,7 @@ final class CalendarService: Service {
         guard case .object(let config) = value else {
             throw NSError(
                 domain: "CalendarError",
-                code: 4,
+                code: 2,
                 userInfo: [
                     NSLocalizedDescriptionKey:
                         "Invalid alarm configuration. Expected an object with type relative, absolute, or proximity."
@@ -1287,13 +1297,29 @@ final class CalendarService: Service {
 
         var alarm: EKAlarm
 
-        let alarmType = config["type"]?.stringValue ?? "relative"
+        // inputSchema is advertised, not enforced: a present type of the
+        // wrong shape is the caller's choice failing, not the relative
+        // default.
+        let alarmType: String
+        switch config["type"] {
+        case nil: alarmType = "relative"
+        case .string(let type): alarmType = type
+        default:
+            throw NSError(
+                domain: "CalendarError",
+                code: 2,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Alarm type must be a string; expected relative, absolute, or proximity."
+                ]
+            )
+        }
         switch alarmType {
         case "relative":
             guard let minutes = Self.integer(config["minutes"]) else {
                 throw NSError(
                     domain: "CalendarError",
-                    code: 4,
+                    code: 2,
                     userInfo: [
                         NSLocalizedDescriptionKey:
                             "Relative alarm requires integer minutes."
@@ -1306,7 +1332,7 @@ final class CalendarService: Service {
             guard case .string(let datetimeString) = config["datetime"] else {
                 throw NSError(
                     domain: "CalendarError",
-                    code: 4,
+                    code: 2,
                     userInfo: [
                         NSLocalizedDescriptionKey:
                             "Absolute alarm requires an ISO 8601 datetime string."
@@ -1322,7 +1348,7 @@ final class CalendarService: Service {
             else {
                 throw NSError(
                     domain: "CalendarError",
-                    code: 4,
+                    code: 2,
                     userInfo: [
                         NSLocalizedDescriptionKey:
                             "Absolute alarm datetime is not a valid ISO 8601 datetime."
@@ -1340,7 +1366,7 @@ final class CalendarService: Service {
             guard case .string(let locationTitle) = config["locationTitle"] else {
                 throw NSError(
                     domain: "CalendarError",
-                    code: 4,
+                    code: 2,
                     userInfo: [
                         NSLocalizedDescriptionKey:
                             "Proximity alarm requires a locationTitle string."
@@ -1353,7 +1379,7 @@ final class CalendarService: Service {
             else {
                 throw NSError(
                     domain: "CalendarError",
-                    code: 4,
+                    code: 2,
                     userInfo: [
                         NSLocalizedDescriptionKey:
                             "Proximity alarm requires numeric latitude and longitude alongside locationTitle."
@@ -1363,7 +1389,7 @@ final class CalendarService: Service {
             guard (-90.0 ... 90.0).contains(latitude) else {
                 throw NSError(
                     domain: "CalendarError",
-                    code: 4,
+                    code: 2,
                     userInfo: [
                         NSLocalizedDescriptionKey:
                             "Latitude \(latitude) is outside the geographic range of -90 to 90 degrees."
@@ -1373,32 +1399,47 @@ final class CalendarService: Service {
             guard (-180.0 ... 180.0).contains(longitude) else {
                 throw NSError(
                     domain: "CalendarError",
-                    code: 4,
+                    code: 2,
                     userInfo: [
                         NSLocalizedDescriptionKey:
                             "Longitude \(longitude) is outside the geographic range of -180 to 180 degrees."
                     ]
                 )
             }
-            let radius = Self.number(config["radius"])
-            if let radius {
-                guard radius >= 0 else {
-                    throw NSError(
-                        domain: "CalendarError",
-                        code: 4,
-                        userInfo: [
-                            NSLocalizedDescriptionKey:
-                                "Radius \(radius) is negative; a geofence radius is zero or more meters."
-                        ]
-                    )
-                }
+            // The schema advertises a 200 m default; EKStructuredLocation
+            // alone would leave a zero-radius geofence, and a non-numeric
+            // radius must not silently take that default either.
+            let radius: Double
+            switch config["radius"] {
+            case nil: radius = 200
+            case .int(let value): radius = Double(value)
+            case .double(let value): radius = value
+            default:
+                throw NSError(
+                    domain: "CalendarError",
+                    code: 2,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Proximity alarm radius must be a number of meters."
+                    ]
+                )
+            }
+            guard radius >= 0 else {
+                throw NSError(
+                    domain: "CalendarError",
+                    code: 2,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Radius \(radius) is negative; a geofence radius is zero or more meters."
+                    ]
+                )
             }
             switch config["proximity"] {
             case nil, .string("enter"), .string("leave"): break
             case .string(let other):
                 throw NSError(
                     domain: "CalendarError",
-                    code: 4,
+                    code: 2,
                     userInfo: [
                         NSLocalizedDescriptionKey:
                             "Invalid proximity \"\(other)\". Expected \"enter\" or \"leave\"."
@@ -1407,7 +1448,7 @@ final class CalendarService: Service {
             default:
                 throw NSError(
                     domain: "CalendarError",
-                    code: 4,
+                    code: 2,
                     userInfo: [NSLocalizedDescriptionKey: "Proximity must be a string."]
                 )
             }
@@ -1419,10 +1460,7 @@ final class CalendarService: Service {
                 latitude: latitude,
                 longitude: longitude
             )
-
-            if let radius {
-                structuredLocation.radius = radius
-            }
+            structuredLocation.radius = radius
 
             alarm.proximity = config["proximity"]?.stringValue == "leave" ? .leave : .enter
             alarm.structuredLocation = structuredLocation
@@ -1430,7 +1468,7 @@ final class CalendarService: Service {
         default:
             throw NSError(
                 domain: "CalendarError",
-                code: 4,
+                code: 2,
                 userInfo: [
                     NSLocalizedDescriptionKey:
                         "Unknown alarm type \(alarmType). Expected relative, absolute, or proximity."
@@ -1442,14 +1480,14 @@ final class CalendarService: Service {
             guard case .string(let soundName) = soundValue else {
                 throw NSError(
                     domain: "CalendarError",
-                    code: 4,
+                    code: 2,
                     userInfo: [NSLocalizedDescriptionKey: "Alarm sound must be a string."]
                 )
             }
             guard Sound(rawValue: soundName) != nil else {
                 throw NSError(
                     domain: "CalendarError",
-                    code: 4,
+                    code: 2,
                     userInfo: [NSLocalizedDescriptionKey: "Unknown alarm sound \"\(soundName)\"."]
                 )
             }
@@ -1462,7 +1500,7 @@ final class CalendarService: Service {
         default:
             throw NSError(
                 domain: "CalendarError",
-                code: 4,
+                code: 2,
                 userInfo: [NSLocalizedDescriptionKey: "Alarm emailAddress must be a string."]
             )
         }
