@@ -643,7 +643,16 @@ final class RemindersService: Service {
                 reminder.calendar = targetList
             }
 
-            try self.eventStore.save(reminder, commit: true)
+            // EventKit can still reject the changed reminder when it saves,
+            // and its own checks can't all run before apply.
+            // Roll back the local changes on failure
+            // so that the shared store doesn't keep them for a later save.
+            do {
+                try self.eventStore.save(reminder, commit: true)
+            } catch {
+                reminder.rollback()
+                throw error
+            }
 
             return try self.payload(for: reminder)
         }
