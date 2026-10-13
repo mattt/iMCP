@@ -12,7 +12,8 @@ Builds iMCP Helper for Mac Catalyst, signs it with your team's
 development certificate, and installs it so iMCP can enable Home.
 
   --team TEAM_ID     Apple Developer team ID.
-                     Default: the team of your first Apple Development certificate.
+                     Default: your team, if your keychain has Apple Development
+                     identities for exactly one team; otherwise required.
   --bundle-id ID     Helper bundle ID. Default: local.imcp.helper.<team ID>.
   --destination DIR  Install directory. Default: /Applications.
 
