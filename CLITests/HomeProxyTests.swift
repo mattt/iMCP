@@ -23,7 +23,7 @@ final class HomeProxyTests: XCTestCase {
         }
         let helper = try XCTUnwrap(
             NSWorkspace.shared.runningApplications.first {
-                $0.bundleIdentifier == "co.dododo.iMCP.Helper"
+                $0.bundleURL.map(HomeHelperLocator.isHelper(at:)) ?? false
             }
         )
         XCTAssertTrue(helper.forceTerminate())

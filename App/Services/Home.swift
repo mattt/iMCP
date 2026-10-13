@@ -3,11 +3,13 @@ import Darwin
 import MCP
 import Network
 import OSLog
+import UniformTypeIdentifiers
 
 /// Serves the Home tools by proxying to the Catalyst helper that holds HomeKit access.
 ///
 /// HomeKit is not available to native macOS apps,
-/// so the helper runs as a separate app in `Contents/Helpers`
+/// so the helper runs as a separate Catalyst app,
+/// which developers build and sign with `Scripts/install-helper.sh`,
 /// and implements the same tool definitions from `HomeTools`.
 /// This service launches the helper, connects to it over the loopback interface,
 /// and forwards each call as an MCP `tools/call` request.
@@ -201,19 +203,82 @@ actor HomeService: Service, HomeBackend {
         }
     }
 
+    private static let bookmarkKey = "homeHelperBookmark"
+
+    /// The helper chosen in the open panel, if its bookmark still resolves.
+    @MainActor
+    private func chosenHelperURL() -> URL? {
+        guard let data = UserDefaults.standard.data(forKey: Self.bookmarkKey) else { return nil }
+        var isStale = false
+        return try? URL(
+            resolvingBookmarkData: data,
+            options: .withSecurityScope,
+            relativeTo: nil,
+            bookmarkDataIsStale: &isStale
+        )
+    }
+
+    /// The helper that iMCP would launch now, or nil if none is installed.
+    @MainActor
+    func helperLocation() -> URL? {
+        let chosen = chosenHelperURL()
+        let accessing = chosen?.startAccessingSecurityScopedResource() ?? false
+        defer { if accessing { chosen?.stopAccessingSecurityScopedResource() } }
+        return HomeHelperLocator.resolve(
+            chosen: chosen,
+            installed: HomeHelperLocator.installLocations(home: FileManager.default.homeDirectoryForCurrentUser),
+            registered: NSWorkspace.shared.urlForApplication(
+                withBundleIdentifier: HomeHelperLocator.defaultBundleIdentifier
+            ),
+            embedded: Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/iMCP Helper.app"),
+            isHelper: HomeHelperLocator.isHelper(at:)
+        )
+    }
+
+    /// Asks the user to choose iMCP Helper.app and remembers the choice.
+    /// Returns nil when the user cancels.
+    @MainActor
+    func chooseHelper() throws -> URL? {
+        let panel = NSOpenPanel()
+        panel.message =
+            "Choose iMCP Helper.app. To build it, run Scripts/install-helper.sh from the iMCP repository."
+        panel.prompt = "Use Helper"
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.allowedContentTypes = [.application]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        guard panel.runModal() == .OK, let url = panel.url else { return nil }
+        guard HomeHelperLocator.isHelper(at: url) else {
+            throw HomeError(
+                "\(url.lastPathComponent) isn't iMCP Helper. Build the helper with Scripts/install-helper.sh, then choose it."
+            )
+        }
+        let bookmark = try url.bookmarkData(
+            options: [.withSecurityScope, .securityScopeAllowOnlyReadAccess],
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil
+        )
+        UserDefaults.standard.set(bookmark, forKey: Self.bookmarkKey)
+        return url
+    }
+
     @MainActor
     private func launchHelper(previous: LaunchedHelper?, overrideURL: URL?) async throws -> LaunchedHelper? {
-        if let running = NSWorkspace.shared.runningApplications.first(where: {
-            $0.bundleIdentifier == "co.dododo.iMCP.Helper" && !$0.isTerminated
+        if let running = NSWorkspace.shared.runningApplications.first(where: { application in
+            guard !application.isTerminated, let url = application.bundleURL else { return false }
+            return HomeHelperLocator.isHelper(at: url)
         }) {
             return previous?.pid == running.processIdentifier ? previous : nil
         }
-        let embedded = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/iMCP Helper.app")
-        let url =
-            overrideURL
-            ?? (FileManager.default.fileExists(atPath: embedded.path)
-                ? embedded : NSWorkspace.shared.urlForApplication(withBundleIdentifier: "co.dododo.iMCP.Helper"))
-        guard let url else { return nil }
+        var url = overrideURL ?? helperLocation()
+        if url == nil { url = try chooseHelper() }
+        guard let url else {
+            throw HomeError(
+                "iMCP Helper isn't installed. Build it with Scripts/install-helper.sh, then turn Home on again."
+            )
+        }
+        let accessing = url.startAccessingSecurityScopedResource()
+        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
         let port = try availableLoopbackPort()
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = false
