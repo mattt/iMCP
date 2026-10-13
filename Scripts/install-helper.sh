@@ -51,19 +51,46 @@ done
 
 repo="$(cd "$(dirname "$0")/.." && pwd)"
 
+# Prints "TEAM_ID<tab>organization" for each team
+# with a valid Apple Development signing identity.
+development_teams() {
+    local hashes pem="" line
+    hashes="$(security find-identity -v -p codesigning | awk '/"Apple Development/ { printf "%s ", $2 }')"
+    [[ -n "$hashes" ]] || return 0
+    security find-certificate -a -Z -c "Apple Development" -p 2>/dev/null |
+        awk -v hashes="$hashes" '
+            BEGIN { n = split(hashes, list, " "); for (i = 1; i <= n; i++) want[list[i]] = 1 }
+            /^SHA-1 hash:/ { keep = ($3 in want); next }
+            keep { print }
+        ' |
+        while IFS= read -r line; do
+            pem="$pem$line"$'\n'
+            if [[ "$line" == "-----END CERTIFICATE-----" ]]; then
+                printf '%s' "$pem" | openssl x509 -noout -subject -nameopt multiline |
+                    awk -F' = ' '
+                        /organizationalUnitName/ { team = $2 }
+                        /organizationName/ { name = $2 }
+                        END { if (team != "") print team "\t" name }
+                    '
+                pem=""
+            fi
+        done | sort -u
+}
+
 if [[ -z "$team" ]]; then
-    certificate="$(security find-certificate -c "Apple Development" -p 2>/dev/null || true)"
-    if [[ -z "$certificate" ]]; then
-        echo "error: No Apple Development certificate found." >&2
+    teams="$(development_teams)"
+    if [[ -z "$teams" ]]; then
+        echo "error: No valid Apple Development signing identity found." >&2
         echo "Add your account in Xcode > Settings > Accounts, or pass --team TEAM_ID." >&2
         exit 1
     fi
-    team="$(printf '%s\n' "$certificate" | openssl x509 -noout -subject -nameopt multiline |
-        awk -F' = ' '/organizationalUnitName/ { print $2; exit }')"
-    if [[ -z "$team" ]]; then
-        echo "error: Couldn't read a team ID from your Apple Development certificate. Pass --team TEAM_ID." >&2
+    if [[ "$(printf '%s\n' "$teams" | wc -l | tr -d ' ')" != 1 ]]; then
+        echo "error: Your keychain has Apple Development identities for more than one team:" >&2
+        printf '%s\n' "$teams" | awk -F'\t' '{ printf "  %s  %s\n", $1, $2 }' >&2
+        echo "Choose one with --team TEAM_ID." >&2
         exit 1
     fi
+    team="${teams%%$'\t'*}"
 fi
 if [[ -z "$bundle_id" ]]; then
     bundle_id="local.imcp.helper.$(printf '%s' "$team" | tr '[:upper:]' '[:lower:]')"
@@ -71,6 +98,9 @@ fi
 
 build_dir="$(mktemp -d)"
 trap 'rm -rf "$build_dir"' EXIT
+# xcodebuild handles ^C itself and exits with an error,
+# so without this trap the script would go on to the next build.
+trap 'echo "Interrupted." >&2; exit 130' INT TERM
 
 build_helper() {
     xcodebuild -quiet -project "$repo/iMCP.xcodeproj" -scheme "iMCP Helper" \
@@ -81,14 +111,19 @@ build_helper() {
 }
 
 echo "Building iMCP Helper for team $team as $bundle_id..."
-if ! build_helper 'platform=macOS,variant=Mac Catalyst'; then
+first_log="$build_dir/catalyst.log"
+if ! build_helper 'platform=macOS,variant=Mac Catalyst' >"$first_log" 2>&1; then
+    if ! grep -q "Entitlement com.apple.developer.homekit not found" "$first_log"; then
+        cat "$first_log" >&2
+        echo "error: The build failed. Check that Xcode is signed in to team $team." >&2
+        exit 1
+    fi
     # For a new bundle ID, automatic provisioning registers HomeKit
     # only for the iOS destination, so the first Catalyst build fails.
     # An iOS build registers it; then the Catalyst build can succeed.
-    echo "Registering the HomeKit capability for $bundle_id, then retrying..."
+    echo "Registering the HomeKit capability for $bundle_id (first build for this bundle ID)..."
     if ! build_helper 'generic/platform=iOS' || ! build_helper 'platform=macOS,variant=Mac Catalyst'; then
-        echo "error: The build failed. Check that Xcode is signed in to team $team," >&2
-        echo "that the team can use the HomeKit capability," >&2
+        echo "error: The build failed. Check that team $team can use the HomeKit capability" >&2
         echo "and that the iOS platform is installed (Xcode > Settings > Components)." >&2
         exit 1
     fi
@@ -111,5 +146,8 @@ rm -rf "$target"
 ditto "$app" "$target"
 
 echo "Installed $target."
-echo "Next: open iMCP and turn on Home. iMCP finds the helper here;"
-echo "if you installed it elsewhere, choose it in Settings > Services > Home."
+if [[ "$target" == "/Applications/iMCP Helper.app" ]]; then
+    echo "Next: open iMCP and turn on Home. iMCP finds the helper here."
+else
+    echo "Next: open iMCP and turn on Home, then choose $target when iMCP asks."
+fi

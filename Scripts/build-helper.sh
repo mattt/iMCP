@@ -13,6 +13,8 @@ set -euo pipefail
 # developers build and sign it with Scripts/install-helper.sh.
 if [[ "${EMBED_HOME_HELPER:-YES}" != YES ]]; then
     echo "Skipping iMCP Helper (EMBED_HOME_HELPER=${EMBED_HOME_HELPER})."
+    # Remove a helper left by an earlier build in the same directory.
+    rm -rf "$TARGET_BUILD_DIR/$WRAPPER_NAME/Contents/Helpers/iMCP Helper.app"
     exit 0
 fi
 
