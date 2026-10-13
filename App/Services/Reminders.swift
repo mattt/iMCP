@@ -1200,6 +1200,24 @@ final class RemindersService: Service {
 
     /// Builds a recurrence rule from a recurrence configuration object.
     private static func recurrenceRule(from config: [String: Value]) throws -> EKRecurrenceRule {
+        // inputSchema is advertised, not enforced, and the object declares
+        // `additionalProperties: false`: a typo like `interva` must not
+        // parse as its absent sibling and silently build a different rule.
+        let recurrenceKeys: Set<String> = [
+            "frequency", "interval", "daysOfTheWeek", "daysOfTheMonth",
+            "monthsOfTheYear", "weeksOfTheYear", "daysOfTheYear", "setPositions",
+            "end",
+        ]
+        if let unknownKey = config.keys.filter({ !recurrenceKeys.contains($0) }).sorted().first {
+            throw NSError(
+                domain: "RemindersError",
+                code: 2,
+                userInfo: [
+                    NSLocalizedDescriptionKey: "Unknown recurrence property \"\(unknownKey)\"."
+                ]
+            )
+        }
+
         guard let frequencyValue = config["frequency"] else {
             throw NSError(
                 domain: "RemindersError",
@@ -1264,7 +1282,11 @@ final class RemindersService: Service {
             }
         }
 
-        let daysOfTheMonth = try Self.integers(config["daysOfTheMonth"], named: "days of the month")
+        let daysOfTheMonth = try Self.integers(
+            config["daysOfTheMonth"],
+            named: "days of the month",
+            in: -31 ... 31
+        )
         var monthsOfTheYear: [NSNumber]? = nil
         if let monthValues = try Self.arrayValue(
             config["monthsOfTheYear"],
@@ -1286,9 +1308,21 @@ final class RemindersService: Service {
                 return NSNumber(value: index + 1)
             }
         }
-        let weeksOfTheYear = try Self.integers(config["weeksOfTheYear"], named: "weeks of the year")
-        let daysOfTheYear = try Self.integers(config["daysOfTheYear"], named: "days of the year")
-        let setPositions = try Self.integers(config["setPositions"], named: "set positions")
+        let weeksOfTheYear = try Self.integers(
+            config["weeksOfTheYear"],
+            named: "weeks of the year",
+            in: -53 ... 53
+        )
+        let daysOfTheYear = try Self.integers(
+            config["daysOfTheYear"],
+            named: "days of the year",
+            in: -366 ... 366
+        )
+        let setPositions = try Self.integers(
+            config["setPositions"],
+            named: "set positions",
+            in: -366 ... 366
+        )
 
         var end: EKRecurrenceEnd?
         if let endValue = config["end"] {
@@ -1297,6 +1331,21 @@ final class RemindersService: Service {
                     domain: "RemindersError",
                     code: 2,
                     userInfo: [NSLocalizedDescriptionKey: "Recurrence end must be an object."]
+                )
+            }
+            // The end object also declares additionalProperties: false.
+            if let unknownEndKey = endConfig.keys
+                .filter({ !["date", "count"].contains($0) })
+                .sorted()
+                .first
+            {
+                throw NSError(
+                    domain: "RemindersError",
+                    code: 2,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Unknown recurrence end property \"\(unknownEndKey)\"."
+                    ]
                 )
             }
             let hasDate = endConfig["date"] != nil
@@ -1401,18 +1450,24 @@ final class RemindersService: Service {
     }
 
     /// The nonzero integers of an array parameter, rejecting anything else.
-    private static func integers(_ value: Value?, named description: String) throws -> [NSNumber]? {
+    /// EventKit silently ignores out-of-range recurrence values, so the
+    /// bounds the schema advertises are enforced here too.
+    private static func integers(
+        _ value: Value?,
+        named description: String,
+        in bounds: ClosedRange<Int>
+    ) throws -> [NSNumber]? {
         let values = try Self.arrayValue(value, named: description)
         guard let values else { return nil }
         return try values.map { item in
             let number = try Self.integerValue(item, description: "Recurrence \(description)")
-            guard number != 0 else {
+            guard number != 0, bounds.contains(number) else {
                 throw NSError(
                     domain: "RemindersError",
                     code: 2,
                     userInfo: [
                         NSLocalizedDescriptionKey:
-                            "Recurrence \(description) takes nonzero integers."
+                            "Recurrence \(description) takes nonzero integers from \(bounds.lowerBound) to \(bounds.upperBound); \(number) is not allowed."
                     ]
                 )
             }
