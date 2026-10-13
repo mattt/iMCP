@@ -146,6 +146,19 @@ final class HomeHelperLocatorTests: XCTestCase {
         XCTAssertEqual(reads, 0)
     }
 
+    func testRunningHelperMustMatchTheResolvedPathWhenOneIsKnown() {
+        // A differently located helper, such as an older build,
+        // must not stand in for the helper the user chose.
+        XCTAssertFalse(
+            HomeHelperLocator.isRunningHelper(
+                bundleURL: registered,
+                localizedName: "iMCP Helper",
+                helper: chosen,
+                isHelper: { _ in true }
+            )
+        )
+    }
+
     func testRunningHelperChecksTheMarkerOnlyForAppsNamediMCPHelper() {
         var reads = 0
         let isHelper: (URL) -> Bool = { _ in
@@ -165,7 +178,7 @@ final class HomeHelperLocatorTests: XCTestCase {
             HomeHelperLocator.isRunningHelper(
                 bundleURL: registered,
                 localizedName: "iMCP Helper",
-                helper: system,
+                helper: nil,
                 isHelper: isHelper
             )
         )

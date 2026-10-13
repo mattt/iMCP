@@ -55,8 +55,17 @@ struct ServicesSettingsView: View {
                     .truncationMode(.middle)
                 Button("Choose…") {
                     do {
-                        if let url = try HomeService.shared.chooseHelper() { homeHelperPath = url.path }
+                        guard let url = try HomeService.shared.chooseHelper() else { return }
+                        homeHelperPath = url.path
                         homeHelperError = nil
+                        // Tool calls go to the running helper until Home reconnects.
+                        Task {
+                            do {
+                                try await HomeService.shared.useChosenHelper()
+                            } catch {
+                                homeHelperError = error.localizedDescription
+                            }
+                        }
                     } catch {
                         homeHelperError = error.localizedDescription
                     }

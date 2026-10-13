@@ -27,10 +27,11 @@ enum HomeHelperLocator {
         return info[markerKey] as? Bool == true
     }
 
-    /// Whether a running app is iMCP Helper.
-    /// An app at the resolved helper's path matches without reading its Info.plist,
-    /// which the sandbox may deny outside `/Applications`.
-    /// Otherwise only an app named iMCP Helper is checked for the marker,
+    /// Whether a running app is the helper that iMCP should use.
+    /// When a helper is resolved, only an app at its path matches,
+    /// without reading its Info.plist, which the sandbox may deny outside `/Applications`;
+    /// another build that is running elsewhere doesn't stand in for it.
+    /// With no resolved helper, an app named iMCP Helper matches if it has the marker,
     /// so other running apps' Info.plist files aren't read.
     static func isRunningHelper(
         bundleURL: URL?,
@@ -39,8 +40,8 @@ enum HomeHelperLocator {
         isHelper: (URL) -> Bool
     ) -> Bool {
         guard let bundleURL else { return false }
-        if let helper, bundleURL.standardizedFileURL.path == helper.standardizedFileURL.path {
-            return true
+        if let helper {
+            return bundleURL.standardizedFileURL.path == helper.standardizedFileURL.path
         }
         return localizedName == "iMCP Helper" && isHelper(bundleURL)
     }

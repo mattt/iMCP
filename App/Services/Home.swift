@@ -46,6 +46,18 @@ actor HomeService: Service, HomeBackend {
         try await task.value
     }
 
+    /// Switches an active Home service to a newly chosen helper.
+    /// Quits the helper that iMCP launched, then reconnects,
+    /// which launches the chosen one.
+    func useChosenHelper() async throws {
+        guard isActivated else { return }
+        if let pid = launchedHelper?.pid {
+            await MainActor.run { _ = NSRunningApplication(processIdentifier: pid)?.terminate() }
+        }
+        launchedHelper = nil
+        try await connect()
+    }
+
     // MARK: - HomeBackend
 
     func call(_ tool: String, _ input: [String: Value]) async throws -> Value {
