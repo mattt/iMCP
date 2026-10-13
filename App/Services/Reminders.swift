@@ -696,31 +696,27 @@ final class RemindersService: Service {
 
         Tool(
             name: "reminders_lists_rename",
-            description: "Rename a reminder list",
-            inputSchema: .allOf([
-                .object(
-                    properties: [
-                        "identifier": .string(
-                            description:
-                                "Identifier of the reminder list to rename, as returned by reminders_lists (preferred)"
-                        ),
-                        "name": .string(
-                            description:
-                                "Current name of the reminder list, used when identifier is omitted"
-                        ),
-                        "title": .string(description: "New title for the reminder list"),
-                    ],
-                    required: ["title"],
-                    additionalProperties: false
-                ),
-                // The handler always rejects a request carrying neither
-                // selector, so the schema requires one instead of
-                // advertising a rename that cannot run.
-                .anyOf([
-                    .object(required: ["identifier"]),
-                    .object(required: ["name"]),
-                ]),
-            ]),
+            // MCP requires `type: "object"` at the root of inputSchema,
+            // and JSONSchema cannot add anyOf to an object schema,
+            // so the descriptions of this tool and reminders_lists_delete
+            // state that one selector is required.
+            // list(_:) rejects a request that has neither.
+            description: "Rename a reminder list. Either identifier or name is required.",
+            inputSchema: .object(
+                properties: [
+                    "identifier": .string(
+                        description:
+                            "Identifier of the reminder list to rename, as returned by reminders_lists (preferred)"
+                    ),
+                    "name": .string(
+                        description:
+                            "Current name of the reminder list, used when identifier is omitted"
+                    ),
+                    "title": .string(description: "New title for the reminder list"),
+                ],
+                required: ["title"],
+                additionalProperties: false
+            ),
             annotations: .init(
                 title: "Rename Reminder List",
                 readOnlyHint: false,
@@ -772,29 +768,20 @@ final class RemindersService: Service {
         Tool(
             name: "reminders_lists_delete",
             description:
-                "Delete a reminder list and every reminder it contains. This cannot be undone.",
-            inputSchema: .allOf([
-                .object(
-                    properties: [
-                        "identifier": .string(
-                            description:
-                                "Identifier of the reminder list to delete, as returned by reminders_lists (preferred)"
-                        ),
-                        "name": .string(
-                            description:
-                                "Name of the reminder list to delete, used when identifier is omitted"
-                        ),
-                    ],
-                    additionalProperties: false
-                ),
-                // The handler always rejects a request carrying neither
-                // selector, so the schema requires one instead of
-                // advertising a deletion that cannot run.
-                .anyOf([
-                    .object(required: ["identifier"]),
-                    .object(required: ["name"]),
-                ]),
-            ]),
+                "Delete a reminder list and every reminder it contains. This cannot be undone. Either identifier or name is required.",
+            inputSchema: .object(
+                properties: [
+                    "identifier": .string(
+                        description:
+                            "Identifier of the reminder list to delete, as returned by reminders_lists (preferred)"
+                    ),
+                    "name": .string(
+                        description:
+                            "Name of the reminder list to delete, used when identifier is omitted"
+                    ),
+                ],
+                additionalProperties: false
+            ),
             annotations: .init(
                 title: "Delete Reminder List",
                 readOnlyHint: false,
