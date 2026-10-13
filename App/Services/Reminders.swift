@@ -769,7 +769,15 @@ final class RemindersService: Service {
 
             list.title = title
 
-            try self.eventStore.saveCalendar(list, commit: true)
+            // EventKit can still reject the renamed list when it saves.
+            // Roll back the title on failure
+            // so that the shared store doesn't keep it for a later save.
+            do {
+                try self.eventStore.saveCalendar(list, commit: true)
+            } catch {
+                list.rollback()
+                throw error
+            }
 
             return Value.object([
                 "identifier": .string(list.calendarIdentifier),
