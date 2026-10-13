@@ -500,6 +500,16 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
             guard size <= maxBytes else { throw AttachmentError.tooLarge(id, size, maxBytes) }
             let handle = try FileHandle(forReadingFrom: url)
             defer { try? handle.close() }
+            // The checks above name a path,
+            // and the open follows whatever that path is by now:
+            // a link swapped in after them would lead out of the Messages folder.
+            // Check the file that was actually opened.
+            guard let openedPath = Self.openedPath(of: handle) else {
+                throw AttachmentError.fileMissing(id)
+            }
+            guard openedPath.hasPrefix(messagesDirectoryPath + "/") else {
+                throw AttachmentError.outsideMessagesFolder(id)
+            }
             // Read to EOF or one byte past the limit: read(upToCount:) can
             // return short before EOF, so serving a single chunk could
             // silently truncate, and stopping at the limit alone would let
@@ -537,6 +547,14 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
             part["encodingFormat"] = .string(mime)
         }
         return part
+    }
+
+    /// The path of the file that an open handle refers to,
+    /// as the kernel reports it after following any symbolic links.
+    private static func openedPath(of handle: FileHandle) -> String? {
+        var buffer = [CChar](repeating: 0, count: Int(MAXPATHLEN))
+        guard fcntl(handle.fileDescriptor, F_GETPATH, &buffer) != -1 else { return nil }
+        return buffer.withUnsafeBufferPointer { $0.baseAddress.map { String(cString: $0) } }
     }
 
     /// `~/Library/Messages/Attachments` is walled off from a grant on the Messages folder:
