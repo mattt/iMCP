@@ -403,6 +403,11 @@ final class RemindersService: Service {
                 )
             }
 
+            // inputSchema is advertised, not enforced: `completed` belongs to
+            // the update schema only, and a create that carried it would
+            // otherwise silently create a completed reminder.
+            try Self.rejectUnknownKeys(arguments, allowed: Set(reminderProperties.keys))
+
             let reminder = EKReminder(eventStore: self.eventStore)
             reminder.title = title
 
@@ -496,6 +501,13 @@ final class RemindersService: Service {
                     userInfo: [NSLocalizedDescriptionKey: "Reminder identifier is required"]
                 )
             }
+
+            // inputSchema is advertised, not enforced: an unexpected key is
+            // an error, not a silent no-op.
+            try Self.rejectUnknownKeys(
+                arguments,
+                allowed: Set(reminderProperties.keys).union(["identifier", "completed"])
+            )
 
             guard
                 let reminder = self.eventStore.calendarItem(withIdentifier: identifier)
@@ -687,21 +699,30 @@ final class RemindersService: Service {
         Tool(
             name: "reminders_lists_rename",
             description: "Rename a reminder list",
-            inputSchema: .object(
-                properties: [
-                    "identifier": .string(
-                        description:
-                            "Identifier of the reminder list to rename, as returned by reminders_lists (preferred)"
-                    ),
-                    "name": .string(
-                        description:
-                            "Current name of the reminder list, used when identifier is omitted"
-                    ),
-                    "title": .string(description: "New title for the reminder list"),
-                ],
-                required: ["title"],
-                additionalProperties: false
-            ),
+            inputSchema: .allOf([
+                .object(
+                    properties: [
+                        "identifier": .string(
+                            description:
+                                "Identifier of the reminder list to rename, as returned by reminders_lists (preferred)"
+                        ),
+                        "name": .string(
+                            description:
+                                "Current name of the reminder list, used when identifier is omitted"
+                        ),
+                        "title": .string(description: "New title for the reminder list"),
+                    ],
+                    required: ["title"],
+                    additionalProperties: false
+                ),
+                // The handler always rejects a request carrying neither
+                // selector, so the schema requires one instead of
+                // advertising a rename that cannot run.
+                .anyOf([
+                    .object(required: ["identifier"]),
+                    .object(required: ["name"]),
+                ]),
+            ]),
             annotations: .init(
                 title: "Rename Reminder List",
                 readOnlyHint: false,
@@ -754,19 +775,28 @@ final class RemindersService: Service {
             name: "reminders_lists_delete",
             description:
                 "Delete a reminder list and every reminder it contains. This cannot be undone.",
-            inputSchema: .object(
-                properties: [
-                    "identifier": .string(
-                        description:
-                            "Identifier of the reminder list to delete, as returned by reminders_lists (preferred)"
-                    ),
-                    "name": .string(
-                        description:
-                            "Name of the reminder list to delete, used when identifier is omitted"
-                    ),
-                ],
-                additionalProperties: false
-            ),
+            inputSchema: .allOf([
+                .object(
+                    properties: [
+                        "identifier": .string(
+                            description:
+                                "Identifier of the reminder list to delete, as returned by reminders_lists (preferred)"
+                        ),
+                        "name": .string(
+                            description:
+                                "Name of the reminder list to delete, used when identifier is omitted"
+                        ),
+                    ],
+                    additionalProperties: false
+                ),
+                // The handler always rejects a request carrying neither
+                // selector, so the schema requires one instead of
+                // advertising a deletion that cannot run.
+                .anyOf([
+                    .object(required: ["identifier"]),
+                    .object(required: ["name"]),
+                ]),
+            ]),
             annotations: .init(
                 title: "Delete Reminder List",
                 readOnlyHint: false,
@@ -902,6 +932,24 @@ final class RemindersService: Service {
         case clear
     }
 
+    /// inputSchema is advertised, not enforced and the schemas declare
+    /// `additionalProperties: false`, so an unexpected key is an error rather
+    /// than an ignored one that silently narrows the requested change.
+    private static func rejectUnknownKeys(
+        _ arguments: [String: Value],
+        allowed: Set<String>
+    ) throws {
+        if let unknown = arguments.keys.filter({ !allowed.contains($0) }).sorted().first {
+            throw NSError(
+                domain: "RemindersError",
+                code: 2,
+                userInfo: [
+                    NSLocalizedDescriptionKey: "Unknown property \"\(unknown)\"."
+                ]
+            )
+        }
+    }
+
     private static func stringChange(
         _ value: Value?,
         description: String
@@ -926,11 +974,16 @@ final class RemindersService: Service {
         switch value {
         case nil: return .absent
         case .string(let urlString):
-            guard let url = URL(string: urlString) else {
+            // .uri is absolute by definition; URL(string:) alone would
+            // accept relative references like an empty string.
+            guard let url = URL(string: urlString), url.scheme != nil else {
                 throw NSError(
                     domain: "RemindersError",
                     code: 2,
-                    userInfo: [NSLocalizedDescriptionKey: "Invalid URL \"\(urlString)\""]
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "URL \"\(urlString)\" must be absolute (carry a scheme)."
+                    ]
                 )
             }
             return .set(url)
@@ -1079,8 +1132,58 @@ final class RemindersService: Service {
             )
         }
 
+        // inputSchema is advertised, not enforced: a present `type` of the
+        // wrong shape is the caller's choice failing, not the relative
+        // default, and the advertised `additionalProperties: false` means
+        // unknown keys are errors instead of silently ignored fields.
+        let alarmType: String
+        switch config["type"] {
+        case nil: alarmType = "relative"
+        case .string(let type): alarmType = type
+        default:
+            throw NSError(
+                domain: "RemindersError",
+                code: 4,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Alarm type must be a string; expected relative, absolute, or proximity."
+                ]
+            )
+        }
+
+        let allowedKeys: Set<String>
+        switch alarmType {
+        case "relative":
+            allowedKeys = ["type", "minutes", "sound", "emailAddress"]
+        case "absolute":
+            allowedKeys = ["type", "datetime", "sound", "emailAddress"]
+        case "proximity":
+            allowedKeys = [
+                "type", "proximity", "location", "locationTitle", "latitude",
+                "longitude", "radius", "sound", "emailAddress",
+            ]
+        default:
+            throw NSError(
+                domain: "RemindersError",
+                code: 4,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Unknown alarm type \(alarmType). Expected relative, absolute, or proximity."
+                ]
+            )
+        }
+        if let unknownKey = config.keys.filter({ !allowedKeys.contains($0) }).sorted().first {
+            throw NSError(
+                domain: "RemindersError",
+                code: 4,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Unknown \(alarmType) alarm property \"\(unknownKey)\"."
+                ]
+            )
+        }
+
         var alarm: EKAlarm
-        let alarmType = config["type"]?.stringValue ?? "relative"
         switch alarmType {
         case "relative":
             // JSON Schema counts 30.0 as a valid integer, so bridge an
@@ -1149,11 +1252,26 @@ final class RemindersService: Service {
         case "proximity":
             let title: String
             let coordinate: CLLocationCoordinate2D
-            if case .string(let query) = config["location"] {
+            switch config["location"] {
+            case .some(.string(let query)):
+                // The two advertised object shapes are alternatives: a
+                // query or explicit coordinates, never a mix.
+                if config["locationTitle"] != nil
+                    || config["latitude"] != nil || config["longitude"] != nil
+                {
+                    throw NSError(
+                        domain: "RemindersError",
+                        code: 4,
+                        userInfo: [
+                            NSLocalizedDescriptionKey:
+                                "Proximity alarm takes either location or locationTitle with coordinates, not both."
+                        ]
+                    )
+                }
                 let mapItem = try await Self.searchLocation(query)
                 title = mapItem.name ?? query
                 coordinate = mapItem.placemark.coordinate
-            } else {
+            case nil:
                 guard case .string(let locationTitle) = config["locationTitle"] else {
                     throw NSError(
                         domain: "RemindersError",
@@ -1199,6 +1317,15 @@ final class RemindersService: Service {
                 }
                 title = locationTitle
                 coordinate = CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+            default:
+                throw NSError(
+                    domain: "RemindersError",
+                    code: 4,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Proximity alarm location must be a string."
+                    ]
+                )
             }
             let structuredLocation = EKStructuredLocation(title: title)
             structuredLocation.geoLocation = CLLocation(
@@ -1208,7 +1335,21 @@ final class RemindersService: Service {
             // The schema advertises a 200 m default; EKStructuredLocation
             // alone would leave a zero-radius geofence. Zero stays valid:
             // EventKit reads it as a request for the system default radius.
-            let radius = Self.number(config["radius"]) ?? 200
+            let radius: Double
+            switch config["radius"] {
+            case nil: radius = 200
+            case .int(let value): radius = Double(value)
+            case .double(let value): radius = value
+            default:
+                throw NSError(
+                    domain: "RemindersError",
+                    code: 4,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Proximity alarm radius must be a number of meters."
+                    ]
+                )
+            }
             guard radius >= 0 else {
                 throw NSError(
                     domain: "RemindersError",
@@ -1222,7 +1363,31 @@ final class RemindersService: Service {
             structuredLocation.radius = radius
 
             alarm = EKAlarm()
-            alarm.proximity = config["proximity"]?.stringValue == "leave" ? .leave : .enter
+            // An unsupported proximity string must not fold into .enter;
+            // the geofence would trigger on the wrong side.
+            switch config["proximity"] {
+            case nil: alarm.proximity = .enter
+            case .string("enter"): alarm.proximity = .enter
+            case .string("leave"): alarm.proximity = .leave
+            case .string(let proximity):
+                throw NSError(
+                    domain: "RemindersError",
+                    code: 4,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Unknown proximity \"\(proximity)\". Expected enter or leave."
+                    ]
+                )
+            default:
+                throw NSError(
+                    domain: "RemindersError",
+                    code: 4,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Proximity alarm proximity must be a string: enter or leave."
+                    ]
+                )
+            }
             alarm.structuredLocation = structuredLocation
 
         default:
@@ -1236,7 +1401,9 @@ final class RemindersService: Service {
             )
         }
 
-        if case .string(let soundName) = config["sound"] {
+        switch config["sound"] {
+        case nil: break
+        case .string(let soundName):
             guard Sound(rawValue: soundName) != nil else {
                 throw NSError(
                     domain: "RemindersError",
@@ -1248,10 +1415,39 @@ final class RemindersService: Service {
                 )
             }
             alarm.soundName = soundName
+        default:
+            throw NSError(
+                domain: "RemindersError",
+                code: 4,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Alarm sound must be a string."
+                ]
+            )
         }
 
-        if case .string(let email) = config["emailAddress"], !email.isEmpty {
+        switch config["emailAddress"] {
+        case nil: break
+        case .string(let email) where !email.isEmpty:
             alarm.emailAddress = email
+        case .string:
+            throw NSError(
+                domain: "RemindersError",
+                code: 4,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Alarm emailAddress cannot be empty; omit it to use the default sound alarm."
+                ]
+            )
+        default:
+            throw NSError(
+                domain: "RemindersError",
+                code: 4,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Alarm emailAddress must be a string."
+                ]
+            )
         }
 
         return alarm
@@ -1301,7 +1497,11 @@ final class RemindersService: Service {
     private func list(_ arguments: [String: Value]) throws -> EKCalendar {
         let lists = eventStore.calendars(for: .reminder)
 
-        if case .string(let identifier) = arguments["identifier"], !identifier.isEmpty {
+        // inputSchema is advertised, not enforced: a present identifier of the
+        // wrong shape is the preferred selector failing, not permission to
+        // fall through to the name.
+        switch arguments["identifier"] {
+        case .string(let identifier) where !identifier.isEmpty:
             guard
                 let matchingList = lists.first(where: {
                     $0.calendarIdentifier == identifier
@@ -1316,19 +1516,54 @@ final class RemindersService: Service {
                 )
             }
             return matchingList
+        case .string:
+            throw NSError(
+                domain: "RemindersError",
+                code: 2,
+                userInfo: [
+                    NSLocalizedDescriptionKey: "Reminder list identifier cannot be empty."
+                ]
+            )
+        case nil:
+            break
+        default:
+            throw NSError(
+                domain: "RemindersError",
+                code: 2,
+                userInfo: [
+                    NSLocalizedDescriptionKey: "Reminder list identifier must be a string."
+                ]
+            )
         }
 
-        if case .string(let name) = arguments["name"], !name.isEmpty {
+        switch arguments["name"] {
+        case .string(let name) where !name.isEmpty:
             return try list(named: name)
+        case .string:
+            throw NSError(
+                domain: "RemindersError",
+                code: 2,
+                userInfo: [
+                    NSLocalizedDescriptionKey: "Reminder list name cannot be empty."
+                ]
+            )
+        case nil:
+            throw NSError(
+                domain: "RemindersError",
+                code: 2,
+                userInfo: [
+                    NSLocalizedDescriptionKey: "Reminder list identifier or name is required"
+                ]
+            )
+        default:
+            throw NSError(
+                domain: "RemindersError",
+                code: 2,
+                userInfo: [
+                    NSLocalizedDescriptionKey: "Reminder list name must be a string."
+                ]
+            )
         }
-
-        throw NSError(
-            domain: "RemindersError",
-            code: 2,
-            userInfo: [
-                NSLocalizedDescriptionKey: "Reminder list identifier or name is required"
-            ]
-        )
     }
 
     /// Resolves a reminder list by identifier or name. Case-insensitive on
