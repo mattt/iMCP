@@ -165,11 +165,19 @@ resolve_bundle_id() {
   if [[ ! -f "${PROJECT_FILE}" ]]; then
     return 1
   fi
+  # Match the PRODUCT_BUNDLE_IDENTIFIER key exactly,
+  # not settings that contain it, such as DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER,
+  # and skip the CLI, its tests, and values set from other build settings,
+  # such as the helper's $(HELPER_BUNDLE_IDENTIFIER).
+  local pattern='^[[:space:]]*PRODUCT_BUNDLE_IDENTIFIER = "?([^";]+)"?;'
   while IFS= read -r line; do
-    if [[ "${line}" == *"PRODUCT_BUNDLE_IDENTIFIER ="* && "${line}" != *"imcp-server"* ]]; then
-      BUNDLE_ID="${line#*PRODUCT_BUNDLE_IDENTIFIER = }"
-      BUNDLE_ID="${BUNDLE_ID%;}"
-      return 0
+    if [[ "${line}" =~ ${pattern} ]]; then
+      local value="${BASH_REMATCH[1]}"
+      # shellcheck disable=SC2016 # A literal "$(" marks a build-setting reference.
+      if [[ "${value}" != *"imcp-server"* && "${value}" != *'$('* ]]; then
+        BUNDLE_ID="${value}"
+        return 0
+      fi
     fi
   done < "${PROJECT_FILE}"
   return 1
