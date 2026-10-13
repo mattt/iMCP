@@ -72,15 +72,26 @@ fi
 build_dir="$(mktemp -d)"
 trap 'rm -rf "$build_dir"' EXIT
 
+build_helper() {
+    xcodebuild -quiet -project "$repo/iMCP.xcodeproj" -scheme "iMCP Helper" \
+        -configuration Release -destination "$1" \
+        -derivedDataPath "$build_dir" -allowProvisioningUpdates \
+        CODE_SIGN_STYLE=Automatic DEVELOPMENT_TEAM="$team" HELPER_BUNDLE_IDENTIFIER="$bundle_id" \
+        build
+}
+
 echo "Building iMCP Helper for team $team as $bundle_id..."
-if ! xcodebuild -quiet -project "$repo/iMCP.xcodeproj" -scheme "iMCP Helper" \
-    -configuration Release -destination 'platform=macOS,variant=Mac Catalyst' \
-    -derivedDataPath "$build_dir" -allowProvisioningUpdates \
-    CODE_SIGN_STYLE=Automatic DEVELOPMENT_TEAM="$team" HELPER_BUNDLE_IDENTIFIER="$bundle_id" \
-    build; then
-    echo "error: The build failed. Check that Xcode is signed in to team $team" >&2
-    echo "and that the team can use the HomeKit capability." >&2
-    exit 1
+if ! build_helper 'platform=macOS,variant=Mac Catalyst'; then
+    # For a new bundle ID, automatic provisioning registers HomeKit
+    # only for the iOS destination, so the first Catalyst build fails.
+    # An iOS build registers it; then the Catalyst build can succeed.
+    echo "Registering the HomeKit capability for $bundle_id, then retrying..."
+    if ! build_helper 'generic/platform=iOS' || ! build_helper 'platform=macOS,variant=Mac Catalyst'; then
+        echo "error: The build failed. Check that Xcode is signed in to team $team," >&2
+        echo "that the team can use the HomeKit capability," >&2
+        echo "and that the iOS platform is installed (Xcode > Settings > Components)." >&2
+        exit 1
+    fi
 fi
 
 app="$build_dir/Build/Products/Release-maccatalyst/iMCP Helper.app"

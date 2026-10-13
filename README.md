@@ -382,8 +382,27 @@ such as those returned by iMCP tools.
 Apple doesn't make the HomeKit framework available to native macOS apps,
 only to Mac Catalyst apps.
 So the Home service runs in a separate Catalyst app,
-[`iMCP Helper`](/Helper/),
-bundled at `iMCP.app/Contents/Helpers/iMCP Helper.app`.
+[`iMCP Helper`](/Helper/).
+Apple doesn't allow HomeKit in Developer ID apps,
+so iMCP's release build doesn't include the helper.
+Build and install it with your own Apple Developer account:
+
+```console
+git clone https://github.com/mattt/iMCP.git
+cd iMCP
+Scripts/install-helper.sh
+```
+
+The script signs the helper with your team's development certificate
+and installs it in `/Applications`.
+Run it with `--help` to choose another team, bundle ID, or install directory.
+Xcode must be signed in to your account (Xcode > Settings > Accounts),
+and the helper runs only on Macs registered to your team.
+Whether free personal teams can use HomeKit isn't verified.
+Then turn on Home in iMCP.
+iMCP looks for the helper in `/Applications` and `~/Applications`;
+if you installed it somewhere else,
+choose it in Settings > Services > Home.
 When you enable Home,
 iMCP launches the helper and the helper asks for HomeKit access.
 The helper exits when iMCP exits,
@@ -420,6 +439,7 @@ which builds the `iMCP Helper` scheme for Mac Catalyst in its own
 derived-data directory and copies the product into the app.
 A direct target dependency selects the iOS variant of the helper,
 so the nested build is required.
+Release builds set `EMBED_HOME_HELPER = NO` and leave the helper out.
 
 The HomeKit entitlement requires a development certificate and a
 provisioning profile with the HomeKit capability.
@@ -430,7 +450,8 @@ Signing & Capabilities tab.
 The first Mac Catalyst build for a new bundle ID can fail with
 "Entitlement com.apple.developer.homekit not found and could not be included in profile",
 because automatic provisioning registers the capability only for the iOS destination.
-Build the helper once for iOS to register it,
+`Scripts/install-helper.sh` handles this by building for iOS once and retrying.
+To do it by hand, build the helper once for iOS to register it,
 then build for Mac Catalyst:
 
 ```console
