@@ -123,11 +123,15 @@ extension EKRecurrenceDayOfWeek {
         case 4: ordinal = "fourth"
         case 5: ordinal = "fifth"
         case -1: ordinal = "last"
+        case -2: ordinal = "second-to-last"
+        case -3: ordinal = "third-to-last"
+        case -4: ordinal = "fourth-to-last"
+        case -5: ordinal = "fifth-to-last"
         default: ordinal = nil
         }
         // Ordinals beyond ±5 are not representable in this vocabulary
         // (foreign calendars can carry them). Emitting the bare day
-        // name would silently turn "second-to-last tuesday" into
+        // name would silently turn a sixth or further-out ordinal into
         // "every tuesday" on a round-trip; degrade instead.
         guard let ordinal else { return "unknown" }
         return "\(ordinal) \(dayName)"
@@ -135,7 +139,7 @@ extension EKRecurrenceDayOfWeek {
 
     /// The day matching an English day name, as accepted and emitted by the
     /// reminders tools: "tuesday" for every week, "second tuesday" or
-    /// "last friday" for one weekday of the month.
+    /// "second-to-last friday" for one weekday of the month.
     static func day(named name: String) -> EKRecurrenceDayOfWeek? {
         let words = name.lowercased().split(separator: " ").map(String.init)
         let weekday: EKWeekday
@@ -160,6 +164,10 @@ extension EKRecurrenceDayOfWeek {
             case "fourth": weekNumber = 4
             case "fifth": weekNumber = 5
             case "last": weekNumber = -1
+            case "second-to-last": weekNumber = -2
+            case "third-to-last": weekNumber = -3
+            case "fourth-to-last": weekNumber = -4
+            case "fifth-to-last": weekNumber = -5
             default: return nil
             }
         default: return nil

@@ -14,7 +14,10 @@ private let log = Logger.service("reminders")
 private let recurrenceDayNames = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
 private let recurrenceDayValues =
     recurrenceDayNames
-    + ["first", "second", "third", "fourth", "fifth", "last"].flatMap { ordinal in
+    + [
+        "first", "second", "third", "fourth", "fifth", "last",
+        "second-to-last", "third-to-last", "fourth-to-last", "fifth-to-last",
+    ].flatMap { ordinal in
         recurrenceDayNames.map { "\(ordinal) \($0)" }
     }
 
@@ -74,7 +77,7 @@ private let reminderProperties: OrderedDictionary<String, JSONSchema> = [
                 ),
                 "daysOfTheWeek": .array(
                     description:
-                        "Days of the week the reminder repeats on; prefix an ordinal (first through fifth, or last) to repeat on one weekday of the month, e.g. \"second tuesday\"",
+                        "Days of the week the reminder repeats on; prefix an ordinal (first through fifth, last, or second-to-last through fifth-to-last) to repeat on one weekday of the month, e.g. \"second tuesday\"",
                     items: .string(enum: recurrenceDayValues.map { .string($0) })
                 ),
                 "daysOfTheMonth": .array(
@@ -1268,7 +1271,7 @@ final class RemindersService: Service {
                         code: 2,
                         userInfo: [
                             NSLocalizedDescriptionKey:
-                                "Unknown day of the week. Expected sunday through saturday, optionally prefixed with first through fifth or last."
+                                "Unknown day of the week. Expected sunday through saturday, optionally prefixed with first through fifth, last, or second-to-last through fifth-to-last."
                         ]
                     )
                 }
