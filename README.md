@@ -28,6 +28,13 @@ and a [growing list of clients][mcp-clients] that support the
   </tr>
   <tr>
     <th>
+      <img src="Assets/home.svg" width="48" height="48" alt="" role="presentation"/>
+    </th>
+    <td><strong>Home</strong></td>
+    <td>Find homes, rooms, accessories, scenes, and automations, read and control accessories, and organize rooms and zones. Needs a helper app that you <a href="#imcp-helper">build with your own Apple Developer account</a>.</td>
+  </tr>
+  <tr>
+    <th>
       <img src="Assets/location.svg" width="48" height="48" alt="" role="presentation"/>
     </th>
     <td><strong>Location</strong></td>
