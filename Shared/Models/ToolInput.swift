@@ -10,7 +10,7 @@ struct ToolInputError: LocalizedError, CustomStringConvertible {
 }
 
 /// Validates the schema features used by tools that forward to another process,
-/// such as Home and the iPhone companion, before the call reaches that process.
+/// such as Home and the iOS app, before the call reaches that process.
 enum ToolInput {
     static func validate(_ input: [String: Value], schema: JSONSchema) throws {
         try validate(.object(input), schema: Value(schema), path: "arguments")
