@@ -63,12 +63,12 @@ jobs:
                       HELPER_CODE_SIGNING_ALLOWED=NO \
                       build
 
-            # The companion's entitlements need a provisioning profile,
+            # The iOS app's entitlements need a provisioning profile,
             # so CI checks that it compiles and packages without signing.
-            - name: Build iMCP Companion
+            - name: Build iMCP iOS
               run: |
                   xcodebuild -quiet \
-                      -scheme "iMCP Companion" \
+                      -scheme "iMCP iOS" \
                       -configuration Debug \
                       -destination "generic/platform=iOS" \
                       CODE_SIGNING_ALLOWED=NO \

@@ -53,28 +53,28 @@
 		F8D8C48E2DCE0E6800369E5C /* JSONSchema in Frameworks */ = {isa = PBXBuildFile; productRef = F8D8C48D2DCE0E6800369E5C /* JSONSchema */; };
 		F8F1D2F82D6F9E0C00F6323D /* MCP in Frameworks */ = {isa = PBXBuildFile; productRef = F8F44E9C2D5903F70075D79C /* MCP */; };
 		F9E9902DC72D90F6C423EFE2 /* Logging in Frameworks */ = {isa = PBXBuildFile; productRef = 48ABEE9E6903427DD79096A1 /* Logging */; };
-		2338670AAB836453A859F214 /* CompanionToolsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 273A40A00FB6B45F6E05FAC1 /* CompanionToolsTests.swift */; };
-		0C442369FEFC71CA64EFDDCD /* CompanionCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E70399C0AD0A7EF1C0755801 /* CompanionCacheTests.swift */; };
-		6BF018C12FF02CEE36315400 /* ../Shared/Companion/CompanionTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98166DE39243B5BB0D2EA812 /* ../Shared/Companion/CompanionTools.swift */; };
-		6C9F37571E84FF608EA69DFF /* ../Shared/Companion/CompanionSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09284CEAE710F67F75A9D584 /* ../Shared/Companion/CompanionSync.swift */; };
-		0EBDDCD81AB193D1DCDA3616 /* ../Shared/Companion/CompanionDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 528763F26319BDDB15541474 /* ../Shared/Companion/CompanionDatabase.swift */; };
-		A1BA6CCAD87FD4F9DABADE3F /* ../App/Services/Companion.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE3608360482D8D430F9A6FD /* ../App/Services/Companion.swift */; };
-		1A4EBB7CECB525CCC26EE438 /* ../App/Services/CompanionCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BC3F2481A2BC3DA6FCD135F /* ../App/Services/CompanionCache.swift */; };
-		C74EAB68D139846AC0C118E1 /* CompanionLinkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D623AA705C646B58688D52F0 /* CompanionLinkTests.swift */; };
-		1201B5B17FF1368F8E9CD48F /* ../Shared/Companion/CompanionTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEA9566F574C683C4FB198FB /* ../Shared/Companion/CompanionTransport.swift */; };
+		2338670AAB836453A859F214 /* MobileToolsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 273A40A00FB6B45F6E05FAC1 /* MobileToolsTests.swift */; };
+		0C442369FEFC71CA64EFDDCD /* MobileCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E70399C0AD0A7EF1C0755801 /* MobileCacheTests.swift */; };
+		6BF018C12FF02CEE36315400 /* ../Shared/Mobile/MobileTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98166DE39243B5BB0D2EA812 /* ../Shared/Mobile/MobileTools.swift */; };
+		6C9F37571E84FF608EA69DFF /* ../Shared/Mobile/MobileSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09284CEAE710F67F75A9D584 /* ../Shared/Mobile/MobileSync.swift */; };
+		0EBDDCD81AB193D1DCDA3616 /* ../Shared/Mobile/MobileDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 528763F26319BDDB15541474 /* ../Shared/Mobile/MobileDatabase.swift */; };
+		A1BA6CCAD87FD4F9DABADE3F /* ../App/Services/Mobile.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE3608360482D8D430F9A6FD /* ../App/Services/Mobile.swift */; };
+		1A4EBB7CECB525CCC26EE438 /* ../App/Services/MobileCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BC3F2481A2BC3DA6FCD135F /* ../App/Services/MobileCache.swift */; };
+		C74EAB68D139846AC0C118E1 /* MobileLinkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D623AA705C646B58688D52F0 /* MobileLinkTests.swift */; };
+		1201B5B17FF1368F8E9CD48F /* ../Shared/Mobile/MobileTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEA9566F574C683C4FB198FB /* ../Shared/Mobile/MobileTransport.swift */; };
 		A6000000000000000000001E /* MCP in Frameworks */ = {isa = PBXBuildFile; productRef = A60000000000000000000014 /* MCP */; };
 		A6000000000000000000001F /* JSONSchema in Frameworks */ = {isa = PBXBuildFile; productRef = A60000000000000000000015 /* JSONSchema */; };
 		A60000000000000000000020 /* Ontology in Frameworks */ = {isa = PBXBuildFile; productRef = A60000000000000000000016 /* Ontology */; };
 		A60000000000000000000021 /* Logging in Frameworks */ = {isa = PBXBuildFile; productRef = A60000000000000000000017 /* Logging */; };
-		7976D430435CEB5885069EDC /* CompanionOutboxTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF94985E325A869657ADEA03 /* CompanionOutboxTests.swift */; };
-		8172E39E4AC809B22EE49411 /* ../Shared/Companion/CompanionOutbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30DCD03A1950234EBB61EFEE /* ../Shared/Companion/CompanionOutbox.swift */; };
-		F26A5BE8BADF564840BB4AE9 /* ../Shared/Companion/CompanionAlarmRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59DE6C73F45F5069A5C32229 /* ../Shared/Companion/CompanionAlarmRequest.swift */; };
-		A7000000000000000000000C /* iMCP Companion Widgets.appex in Embed */ = {isa = PBXBuildFile; fileRef = A70000000000000000000001 /* iMCP Companion Widgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		7976D430435CEB5885069EDC /* MobileOutboxTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF94985E325A869657ADEA03 /* MobileOutboxTests.swift */; };
+		8172E39E4AC809B22EE49411 /* ../Shared/Mobile/MobileOutbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30DCD03A1950234EBB61EFEE /* ../Shared/Mobile/MobileOutbox.swift */; };
+		F26A5BE8BADF564840BB4AE9 /* ../Shared/Mobile/MobileAlarmRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59DE6C73F45F5069A5C32229 /* ../Shared/Mobile/MobileAlarmRequest.swift */; };
+		A7000000000000000000000C /* iMCP iOS Widgets.appex in Embed */ = {isa = PBXBuildFile; fileRef = A70000000000000000000001 /* iMCP iOS Widgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		A70000000000000000000040 /* AlarmIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000020 /* AlarmIntents.swift */; };
-		A8000000000000000000000C /* iMCP Companion Finance.appex in Embed */ = {isa = PBXBuildFile; fileRef = A80000000000000000000001 /* iMCP Companion Finance.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		A80000000000000000000040 /* CompanionSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80000000000000000000020 /* CompanionSync.swift */; };
-		A80000000000000000000041 /* CompanionOutbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80000000000000000000021 /* CompanionOutbox.swift */; };
-		A80000000000000000000042 /* CompanionDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80000000000000000000022 /* CompanionDatabase.swift */; };
+		A8000000000000000000000C /* iMCP iOS Finance.appex in Embed */ = {isa = PBXBuildFile; fileRef = A80000000000000000000001 /* iMCP iOS Finance.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		A80000000000000000000040 /* MobileSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80000000000000000000020 /* MobileSync.swift */; };
+		A80000000000000000000041 /* MobileOutbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80000000000000000000021 /* MobileOutbox.swift */; };
+		A80000000000000000000042 /* MobileDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80000000000000000000022 /* MobileDatabase.swift */; };
 		A80000000000000000000043 /* FinanceRecords.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80000000000000000000023 /* FinanceRecords.swift */; };
 /* End PBXBuildFile section */
 
@@ -84,14 +84,14 @@
 			containerPortal = F8F44E652D59038D0075D79C /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = A70000000000000000000002;
-			remoteInfo = "iMCP Companion Widgets";
+			remoteInfo = "iMCP iOS Widgets";
 		};
 		A8000000000000000000000D /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = F8F44E652D59038D0075D79C /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = A80000000000000000000002;
-			remoteInfo = "iMCP Companion Finance";
+			remoteInfo = "iMCP iOS Finance";
 		};
 /* End PBXContainerItemProxy section */
 
@@ -122,7 +122,7 @@
 			dstPath = "";
 			dstSubfolderSpec = 13;
 			files = (
-				A7000000000000000000000C /* iMCP Companion Widgets.appex in Embed */,
+				A7000000000000000000000C /* iMCP iOS Widgets.appex in Embed */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -133,7 +133,7 @@
 			dstPath = "$(EXTENSIONS_FOLDER_PATH)";
 			dstSubfolderSpec = 16;
 			files = (
-				A8000000000000000000000C /* iMCP Companion Finance.appex in Embed */,
+				A8000000000000000000000C /* iMCP iOS Finance.appex in Embed */,
 			);
 			name = "Embed ExtensionKit Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -166,26 +166,26 @@
 		E0E66768348853754D32208C /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/System/Library/Frameworks/Cocoa.framework; sourceTree = DEVELOPER_DIR; };
 		F8F44E6D2D59038D0075D79C /* iMCP.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = iMCP.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F8F44EB62D5908D00075D79C /* imcp-server */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "imcp-server"; sourceTree = BUILT_PRODUCTS_DIR; };
-		273A40A00FB6B45F6E05FAC1 /* CompanionToolsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionToolsTests.swift; sourceTree = "<group>"; };
-		E70399C0AD0A7EF1C0755801 /* CompanionCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionCacheTests.swift; sourceTree = "<group>"; };
-		98166DE39243B5BB0D2EA812 /* ../Shared/Companion/CompanionTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Companion/CompanionTools.swift; sourceTree = "<group>"; };
-		09284CEAE710F67F75A9D584 /* ../Shared/Companion/CompanionSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Companion/CompanionSync.swift; sourceTree = "<group>"; };
-		528763F26319BDDB15541474 /* ../Shared/Companion/CompanionDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Companion/CompanionDatabase.swift; sourceTree = "<group>"; };
-		DE3608360482D8D430F9A6FD /* ../App/Services/Companion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../App/Services/Companion.swift; sourceTree = "<group>"; };
-		7BC3F2481A2BC3DA6FCD135F /* ../App/Services/CompanionCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../App/Services/CompanionCache.swift; sourceTree = "<group>"; };
-		D623AA705C646B58688D52F0 /* CompanionLinkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionLinkTests.swift; sourceTree = "<group>"; };
-		AEA9566F574C683C4FB198FB /* ../Shared/Companion/CompanionTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Companion/CompanionTransport.swift; sourceTree = "<group>"; };
-		A60000000000000000000001 /* iMCP Companion.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "iMCP Companion.app"; sourceTree = BUILT_PRODUCTS_DIR; };
-		CF94985E325A869657ADEA03 /* CompanionOutboxTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionOutboxTests.swift; sourceTree = "<group>"; };
-		30DCD03A1950234EBB61EFEE /* ../Shared/Companion/CompanionOutbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Companion/CompanionOutbox.swift; sourceTree = "<group>"; };
-		59DE6C73F45F5069A5C32229 /* ../Shared/Companion/CompanionAlarmRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Companion/CompanionAlarmRequest.swift; sourceTree = "<group>"; };
-		A70000000000000000000020 /* AlarmIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AlarmIntents.swift; path = Companion/AlarmIntents.swift; sourceTree = SOURCE_ROOT; };
-		A70000000000000000000001 /* iMCP Companion Widgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "iMCP Companion Widgets.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
-		A80000000000000000000020 /* CompanionSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CompanionSync.swift; path = Shared/Companion/CompanionSync.swift; sourceTree = SOURCE_ROOT; };
-		A80000000000000000000021 /* CompanionOutbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CompanionOutbox.swift; path = Shared/Companion/CompanionOutbox.swift; sourceTree = SOURCE_ROOT; };
-		A80000000000000000000022 /* CompanionDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CompanionDatabase.swift; path = Shared/Companion/CompanionDatabase.swift; sourceTree = SOURCE_ROOT; };
-		A80000000000000000000023 /* FinanceRecords.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FinanceRecords.swift; path = Companion/FinanceRecords.swift; sourceTree = SOURCE_ROOT; };
-		A80000000000000000000001 /* iMCP Companion Finance.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.extensionkit-extension"; includeInIndex = 0; path = "iMCP Companion Finance.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
+		273A40A00FB6B45F6E05FAC1 /* MobileToolsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileToolsTests.swift; sourceTree = "<group>"; };
+		E70399C0AD0A7EF1C0755801 /* MobileCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileCacheTests.swift; sourceTree = "<group>"; };
+		98166DE39243B5BB0D2EA812 /* ../Shared/Mobile/MobileTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Mobile/MobileTools.swift; sourceTree = "<group>"; };
+		09284CEAE710F67F75A9D584 /* ../Shared/Mobile/MobileSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Mobile/MobileSync.swift; sourceTree = "<group>"; };
+		528763F26319BDDB15541474 /* ../Shared/Mobile/MobileDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Mobile/MobileDatabase.swift; sourceTree = "<group>"; };
+		DE3608360482D8D430F9A6FD /* ../App/Services/Mobile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../App/Services/Mobile.swift; sourceTree = "<group>"; };
+		7BC3F2481A2BC3DA6FCD135F /* ../App/Services/MobileCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../App/Services/MobileCache.swift; sourceTree = "<group>"; };
+		D623AA705C646B58688D52F0 /* MobileLinkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileLinkTests.swift; sourceTree = "<group>"; };
+		AEA9566F574C683C4FB198FB /* ../Shared/Mobile/MobileTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Mobile/MobileTransport.swift; sourceTree = "<group>"; };
+		A60000000000000000000001 /* iMCP iOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "iMCP iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		CF94985E325A869657ADEA03 /* MobileOutboxTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileOutboxTests.swift; sourceTree = "<group>"; };
+		30DCD03A1950234EBB61EFEE /* ../Shared/Mobile/MobileOutbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Mobile/MobileOutbox.swift; sourceTree = "<group>"; };
+		59DE6C73F45F5069A5C32229 /* ../Shared/Mobile/MobileAlarmRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Mobile/MobileAlarmRequest.swift; sourceTree = "<group>"; };
+		A70000000000000000000020 /* AlarmIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AlarmIntents.swift; path = iOS/AlarmIntents.swift; sourceTree = SOURCE_ROOT; };
+		A70000000000000000000001 /* iMCP iOS Widgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "iMCP iOS Widgets.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
+		A80000000000000000000020 /* MobileSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MobileSync.swift; path = Shared/Mobile/MobileSync.swift; sourceTree = SOURCE_ROOT; };
+		A80000000000000000000021 /* MobileOutbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MobileOutbox.swift; path = Shared/Mobile/MobileOutbox.swift; sourceTree = SOURCE_ROOT; };
+		A80000000000000000000022 /* MobileDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MobileDatabase.swift; path = Shared/Mobile/MobileDatabase.swift; sourceTree = SOURCE_ROOT; };
+		A80000000000000000000023 /* FinanceRecords.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FinanceRecords.swift; path = iOS/FinanceRecords.swift; sourceTree = SOURCE_ROOT; };
+		A80000000000000000000001 /* iMCP iOS Finance.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.extensionkit-extension"; includeInIndex = 0; path = "iMCP iOS Finance.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -206,49 +206,49 @@
 		A5000000000000000000000B /* Exceptions for "Shared" folder in "iMCP Helper" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				Companion/CompanionAlarmRequest.swift,
-				Companion/CompanionDatabase.swift,
-				Companion/CompanionOutbox.swift,
-				Companion/CompanionSync.swift,
-				Companion/CompanionTools.swift,
-				Companion/CompanionTransport.swift,
+				Mobile/MobileAlarmRequest.swift,
+				Mobile/MobileDatabase.swift,
+				Mobile/MobileOutbox.swift,
+				Mobile/MobileSync.swift,
+				Mobile/MobileTools.swift,
+				Mobile/MobileTransport.swift,
 			);
 			target = A10000000000000000000003 /* iMCP Helper */;
 		};
-		A60000000000000000000004 /* Exceptions for "Companion" folder in "iMCP Companion" target */ = {
+		A60000000000000000000004 /* Exceptions for "iOS" folder in "iMCP iOS" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				Companion.entitlements,
-				Companion.Finance.entitlements,
+				iOS.entitlements,
+				iOS.Finance.entitlements,
 				Info.plist,
 			);
-			target = A60000000000000000000002 /* iMCP Companion */;
+			target = A60000000000000000000002 /* iMCP iOS */;
 		};
-		A60000000000000000000005 /* Exceptions for "Shared" folder in "iMCP Companion" target */ = {
+		A60000000000000000000005 /* Exceptions for "Shared" folder in "iMCP iOS" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Home/HomeBackend.swift,
 				Home/HomeError.swift,
 				Home/HomeTools.swift,
 			);
-			target = A60000000000000000000002 /* iMCP Companion */;
+			target = A60000000000000000000002 /* iMCP iOS */;
 		};
-		A70000000000000000000004 /* Exceptions for "CompanionWidgets" folder in "iMCP Companion Widgets" target */ = {
+		A70000000000000000000004 /* Exceptions for "iOSWidgets" folder in "iMCP iOS Widgets" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				CompanionWidgets.entitlements,
+				iOSWidgets.entitlements,
 				Info.plist,
 			);
-			target = A70000000000000000000002 /* iMCP Companion Widgets */;
+			target = A70000000000000000000002 /* iMCP iOS Widgets */;
 		};
-		A80000000000000000000004 /* Exceptions for "CompanionFinance" folder in "iMCP Companion Finance" target */ = {
+		A80000000000000000000004 /* Exceptions for "iOSFinance" folder in "iMCP iOS Finance" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				CompanionFinance.entitlements,
-				CompanionFinance.Finance.entitlements,
+				iOSFinance.entitlements,
+				iOSFinance.Finance.entitlements,
 				Info.plist,
 			);
-			target = A80000000000000000000002 /* iMCP Companion Finance */;
+			target = A80000000000000000000002 /* iMCP iOS Finance */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -265,7 +265,7 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				A5000000000000000000000B /* Exceptions for "Shared" folder in "iMCP Helper" target */,
-				A60000000000000000000005 /* Exceptions for "Shared" folder in "iMCP Companion" target */,
+				A60000000000000000000005 /* Exceptions for "Shared" folder in "iMCP iOS" target */,
 			);
 			path = Shared;
 			sourceTree = "<group>";
@@ -283,28 +283,28 @@
 			path = CLI;
 			sourceTree = "<group>";
 		};
-		A60000000000000000000003 /* Companion */ = {
+		A60000000000000000000003 /* iOS */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				A60000000000000000000004 /* Exceptions for "Companion" folder in "iMCP Companion" target */,
+				A60000000000000000000004 /* Exceptions for "iOS" folder in "iMCP iOS" target */,
 			);
-			path = Companion;
+			path = iOS;
 			sourceTree = "<group>";
 		};
-		A70000000000000000000003 /* CompanionWidgets */ = {
+		A70000000000000000000003 /* iOSWidgets */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				A70000000000000000000004 /* Exceptions for "CompanionWidgets" folder in "iMCP Companion Widgets" target */,
+				A70000000000000000000004 /* Exceptions for "iOSWidgets" folder in "iMCP iOS Widgets" target */,
 			);
-			path = CompanionWidgets;
+			path = iOSWidgets;
 			sourceTree = "<group>";
 		};
-		A80000000000000000000003 /* CompanionFinance */ = {
+		A80000000000000000000003 /* iOSFinance */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				A80000000000000000000004 /* Exceptions for "CompanionFinance" folder in "iMCP Companion Finance" target */,
+				A80000000000000000000004 /* Exceptions for "iOSFinance" folder in "iMCP iOS Finance" target */,
 			);
-			path = CompanionFinance;
+			path = iOSFinance;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -402,18 +402,18 @@
 			isa = PBXGroup;
 			children = (
 				A40000000000000000000010 /* HomeProxyTests.swift */,
-				59DE6C73F45F5069A5C32229 /* ../Shared/Companion/CompanionAlarmRequest.swift */,
-				30DCD03A1950234EBB61EFEE /* ../Shared/Companion/CompanionOutbox.swift */,
-				CF94985E325A869657ADEA03 /* CompanionOutboxTests.swift */,
-				AEA9566F574C683C4FB198FB /* ../Shared/Companion/CompanionTransport.swift */,
-				D623AA705C646B58688D52F0 /* CompanionLinkTests.swift */,
-				7BC3F2481A2BC3DA6FCD135F /* ../App/Services/CompanionCache.swift */,
-				DE3608360482D8D430F9A6FD /* ../App/Services/Companion.swift */,
-				528763F26319BDDB15541474 /* ../Shared/Companion/CompanionDatabase.swift */,
-				09284CEAE710F67F75A9D584 /* ../Shared/Companion/CompanionSync.swift */,
-				98166DE39243B5BB0D2EA812 /* ../Shared/Companion/CompanionTools.swift */,
-				E70399C0AD0A7EF1C0755801 /* CompanionCacheTests.swift */,
-				273A40A00FB6B45F6E05FAC1 /* CompanionToolsTests.swift */,
+				59DE6C73F45F5069A5C32229 /* ../Shared/Mobile/MobileAlarmRequest.swift */,
+				30DCD03A1950234EBB61EFEE /* ../Shared/Mobile/MobileOutbox.swift */,
+				CF94985E325A869657ADEA03 /* MobileOutboxTests.swift */,
+				AEA9566F574C683C4FB198FB /* ../Shared/Mobile/MobileTransport.swift */,
+				D623AA705C646B58688D52F0 /* MobileLinkTests.swift */,
+				7BC3F2481A2BC3DA6FCD135F /* ../App/Services/MobileCache.swift */,
+				DE3608360482D8D430F9A6FD /* ../App/Services/Mobile.swift */,
+				528763F26319BDDB15541474 /* ../Shared/Mobile/MobileDatabase.swift */,
+				09284CEAE710F67F75A9D584 /* ../Shared/Mobile/MobileSync.swift */,
+				98166DE39243B5BB0D2EA812 /* ../Shared/Mobile/MobileTools.swift */,
+				E70399C0AD0A7EF1C0755801 /* MobileCacheTests.swift */,
+				273A40A00FB6B45F6E05FAC1 /* MobileToolsTests.swift */,
 				A40000000000000000000011 /* ../App/Services/Home.swift */,
 				A40000000000000000000019 /* ../App/Services/HomeHelperLocator.swift */,
 				A40000000000000000000012 /* ../Shared/Extensions/Logger+Extensions.swift */,
@@ -450,9 +450,9 @@
 			children = (
 				F8F44E6F2D59038D0075D79C /* App */,
 				A10000000000000000000002 /* Helper */,
-				A60000000000000000000003 /* Companion */,
-				A80000000000000000000003 /* CompanionFinance */,
-				A70000000000000000000003 /* CompanionWidgets */,
+				A60000000000000000000003 /* iOS */,
+				A80000000000000000000003 /* iOSFinance */,
+				A70000000000000000000003 /* iOSWidgets */,
 				A20000000000000000000001 /* Shared */,
 				F8F44EB72D5908D00075D79C /* CLI */,
 				F8F44E6E2D59038D0075D79C /* Products */,
@@ -466,9 +466,9 @@
 			children = (
 				F8F44E6D2D59038D0075D79C /* iMCP.app */,
 				A10000000000000000000001 /* iMCP Helper.app */,
-				A60000000000000000000001 /* iMCP Companion.app */,
-				A80000000000000000000001 /* iMCP Companion Finance.appex */,
-				A70000000000000000000001 /* iMCP Companion Widgets.appex */,
+				A60000000000000000000001 /* iMCP iOS.app */,
+				A80000000000000000000001 /* iMCP iOS Finance.appex */,
+				A70000000000000000000001 /* iMCP iOS Widgets.appex */,
 				F8F44EB62D5908D00075D79C /* imcp-server */,
 				6A5CFBBEC66BC8CDA9D65496 /* imcp-serverTests.xctest */,
 			);
@@ -590,9 +590,9 @@
 			productReference = F8F44EB62D5908D00075D79C /* imcp-server */;
 			productType = "com.apple.product-type.tool";
 		};
-		A60000000000000000000002 /* iMCP Companion */ = {
+		A60000000000000000000002 /* iMCP iOS */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = A60000000000000000000009 /* Build configuration list for PBXNativeTarget "iMCP Companion" */;
+			buildConfigurationList = A60000000000000000000009 /* Build configuration list for PBXNativeTarget "iMCP iOS" */;
 			buildPhases = (
 				A60000000000000000000006 /* Sources */,
 				A60000000000000000000007 /* Frameworks */,
@@ -607,23 +607,23 @@
 				A7000000000000000000000E /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				A60000000000000000000003 /* Companion */,
+				A60000000000000000000003 /* iOS */,
 				A20000000000000000000001 /* Shared */,
 			);
-			name = "iMCP Companion";
+			name = "iMCP iOS";
 			packageProductDependencies = (
 				A60000000000000000000014 /* MCP */,
 				A60000000000000000000015 /* JSONSchema */,
 				A60000000000000000000016 /* Ontology */,
 				A60000000000000000000017 /* Logging */,
 			);
-			productName = "iMCP Companion";
-			productReference = A60000000000000000000001 /* iMCP Companion.app */;
+			productName = "iMCP iOS";
+			productReference = A60000000000000000000001 /* iMCP iOS.app */;
 			productType = "com.apple.product-type.application";
 		};
-		A70000000000000000000002 /* iMCP Companion Widgets */ = {
+		A70000000000000000000002 /* iMCP iOS Widgets */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = A70000000000000000000009 /* Build configuration list for PBXNativeTarget "iMCP Companion Widgets" */;
+			buildConfigurationList = A70000000000000000000009 /* Build configuration list for PBXNativeTarget "iMCP iOS Widgets" */;
 			buildPhases = (
 				A70000000000000000000006 /* Sources */,
 				A70000000000000000000007 /* Frameworks */,
@@ -634,18 +634,18 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				A70000000000000000000003 /* CompanionWidgets */,
+				A70000000000000000000003 /* iOSWidgets */,
 			);
-			name = "iMCP Companion Widgets";
+			name = "iMCP iOS Widgets";
 			packageProductDependencies = (
 			);
-			productName = "iMCP Companion Widgets";
-			productReference = A70000000000000000000001 /* iMCP Companion Widgets.appex */;
+			productName = "iMCP iOS Widgets";
+			productReference = A70000000000000000000001 /* iMCP iOS Widgets.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
-		A80000000000000000000002 /* iMCP Companion Finance */ = {
+		A80000000000000000000002 /* iMCP iOS Finance */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = A80000000000000000000009 /* Build configuration list for PBXNativeTarget "iMCP Companion Finance" */;
+			buildConfigurationList = A80000000000000000000009 /* Build configuration list for PBXNativeTarget "iMCP iOS Finance" */;
 			buildPhases = (
 				A80000000000000000000006 /* Sources */,
 				A80000000000000000000007 /* Frameworks */,
@@ -656,13 +656,13 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				A80000000000000000000003 /* CompanionFinance */,
+				A80000000000000000000003 /* iOSFinance */,
 			);
-			name = "iMCP Companion Finance";
+			name = "iMCP iOS Finance";
 			packageProductDependencies = (
 			);
-			productName = "iMCP Companion Finance";
-			productReference = A80000000000000000000001 /* iMCP Companion Finance.appex */;
+			productName = "iMCP iOS Finance";
+			productReference = A80000000000000000000001 /* iMCP iOS Finance.appex */;
 			productType = "com.apple.product-type.extensionkit-extension";
 		};
 /* End PBXNativeTarget section */
@@ -730,9 +730,9 @@
 			projectRoot = "";
 			targets = (
 				A10000000000000000000003 /* iMCP Helper */,
-				A60000000000000000000002 /* iMCP Companion */,
-				A70000000000000000000002 /* iMCP Companion Widgets */,
-				A80000000000000000000002 /* iMCP Companion Finance */,
+				A60000000000000000000002 /* iMCP iOS */,
+				A70000000000000000000002 /* iMCP iOS Widgets */,
+				A80000000000000000000002 /* iMCP iOS Finance */,
 				F8F44E6C2D59038D0075D79C /* iMCP */,
 				F8F44EB52D5908D00075D79C /* imcp-server */,
 				8F6A71ADC0CC6BD168A9167D /* imcp-serverTests */,
@@ -816,18 +816,18 @@
 			buildActionMask = 2147483647;
 			files = (
 				A40000000000000000000020 /* HomeProxyTests.swift in Sources */,
-				F26A5BE8BADF564840BB4AE9 /* ../Shared/Companion/CompanionAlarmRequest.swift in Sources */,
-				8172E39E4AC809B22EE49411 /* ../Shared/Companion/CompanionOutbox.swift in Sources */,
-				7976D430435CEB5885069EDC /* CompanionOutboxTests.swift in Sources */,
-				1201B5B17FF1368F8E9CD48F /* ../Shared/Companion/CompanionTransport.swift in Sources */,
-				C74EAB68D139846AC0C118E1 /* CompanionLinkTests.swift in Sources */,
-				1A4EBB7CECB525CCC26EE438 /* ../App/Services/CompanionCache.swift in Sources */,
-				A1BA6CCAD87FD4F9DABADE3F /* ../App/Services/Companion.swift in Sources */,
-				0EBDDCD81AB193D1DCDA3616 /* ../Shared/Companion/CompanionDatabase.swift in Sources */,
-				6C9F37571E84FF608EA69DFF /* ../Shared/Companion/CompanionSync.swift in Sources */,
-				6BF018C12FF02CEE36315400 /* ../Shared/Companion/CompanionTools.swift in Sources */,
-				0C442369FEFC71CA64EFDDCD /* CompanionCacheTests.swift in Sources */,
-				2338670AAB836453A859F214 /* CompanionToolsTests.swift in Sources */,
+				F26A5BE8BADF564840BB4AE9 /* ../Shared/Mobile/MobileAlarmRequest.swift in Sources */,
+				8172E39E4AC809B22EE49411 /* ../Shared/Mobile/MobileOutbox.swift in Sources */,
+				7976D430435CEB5885069EDC /* MobileOutboxTests.swift in Sources */,
+				1201B5B17FF1368F8E9CD48F /* ../Shared/Mobile/MobileTransport.swift in Sources */,
+				C74EAB68D139846AC0C118E1 /* MobileLinkTests.swift in Sources */,
+				1A4EBB7CECB525CCC26EE438 /* ../App/Services/MobileCache.swift in Sources */,
+				A1BA6CCAD87FD4F9DABADE3F /* ../App/Services/Mobile.swift in Sources */,
+				0EBDDCD81AB193D1DCDA3616 /* ../Shared/Mobile/MobileDatabase.swift in Sources */,
+				6C9F37571E84FF608EA69DFF /* ../Shared/Mobile/MobileSync.swift in Sources */,
+				6BF018C12FF02CEE36315400 /* ../Shared/Mobile/MobileTools.swift in Sources */,
+				0C442369FEFC71CA64EFDDCD /* MobileCacheTests.swift in Sources */,
+				2338670AAB836453A859F214 /* MobileToolsTests.swift in Sources */,
 				A40000000000000000000021 /* ../App/Services/Home.swift in Sources */,
 				A40000000000000000000029 /* ../App/Services/HomeHelperLocator.swift in Sources */,
 				A40000000000000000000022 /* ../Shared/Extensions/Logger+Extensions.swift in Sources */,
@@ -884,9 +884,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A80000000000000000000040 /* CompanionSync.swift in Sources */,
-				A80000000000000000000041 /* CompanionOutbox.swift in Sources */,
-				A80000000000000000000042 /* CompanionDatabase.swift in Sources */,
+				A80000000000000000000040 /* MobileSync.swift in Sources */,
+				A80000000000000000000041 /* MobileOutbox.swift in Sources */,
+				A80000000000000000000042 /* MobileDatabase.swift in Sources */,
 				A80000000000000000000043 /* FinanceRecords.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -896,12 +896,12 @@
 /* Begin PBXTargetDependency section */
 		A7000000000000000000000E /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = A70000000000000000000002 /* iMCP Companion Widgets */;
+			target = A70000000000000000000002 /* iMCP iOS Widgets */;
 			targetProxy = A7000000000000000000000D /* PBXContainerItemProxy */;
 		};
 		A8000000000000000000000E /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = A80000000000000000000002 /* iMCP Companion Finance */;
+			target = A80000000000000000000002 /* iMCP iOS Finance */;
 			targetProxy = A8000000000000000000000D /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
@@ -1321,32 +1321,33 @@
 		A6000000000000000000000A /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = "Companion/Companion$(COMPANION_ENTITLEMENTS_SUFFIX_$(COMPANION_FINANCEKIT)).entitlements";
+				CODE_SIGN_ENTITLEMENTS = "iOS/iOS$(IOS_ENTITLEMENTS_SUFFIX_$(IOS_FINANCEKIT)).entitlements";
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				COMPANION_BUNDLE_IDENTIFIER = co.dododo.iMCP.Companion;
-				COMPANION_ENTITLEMENTS_SUFFIX_NO = "";
-				COMPANION_ENTITLEMENTS_SUFFIX_YES = .Finance;
-				COMPANION_FINANCEKIT = NO;
+				IOS_BUNDLE_IDENTIFIER = co.dododo.iMCP.iOS;
+				IOS_ENTITLEMENTS_SUFFIX_NO = "";
+				IOS_ENTITLEMENTS_SUFFIX_YES = .Finance;
+				IOS_FINANCEKIT = NO;
 				CURRENT_PROJECT_VERSION = 23;
 				DEVELOPMENT_TEAM = TTY35UM57S;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = Companion/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "iMCP Companion";
-				INFOPLIST_KEY_NSCameraUsageDescription = "iMCP Companion uses the camera to scan the pairing code that iMCP shows on your Mac.";
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "iMCP Companion reads the health data you choose and sends it to iMCP on your Mac, where the AI apps you connect can use it.";
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "iMCP Companion connects to iMCP on your Mac over your local network.";
+				INFOPLIST_FILE = iOS/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = iMCP;
+				INFOPLIST_KEY_NSCameraUsageDescription = "iMCP uses the camera to scan the pairing code that iMCP shows on your Mac.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "iMCP reads the health data you choose and sends it to iMCP on your Mac, where the AI apps you connect can use it.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "iMCP connects to iMCP on your Mac over your local network.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.7.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "$(COMPANION_BUNDLE_IDENTIFIER)";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(IOS_BUNDLE_IDENTIFIER)";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -1355,39 +1356,40 @@
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 1;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
 		};
 		A6000000000000000000000B /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = "Companion/Companion$(COMPANION_ENTITLEMENTS_SUFFIX_$(COMPANION_FINANCEKIT)).entitlements";
+				CODE_SIGN_ENTITLEMENTS = "iOS/iOS$(IOS_ENTITLEMENTS_SUFFIX_$(IOS_FINANCEKIT)).entitlements";
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				COMPANION_BUNDLE_IDENTIFIER = co.dododo.iMCP.Companion;
-				COMPANION_ENTITLEMENTS_SUFFIX_NO = "";
-				COMPANION_ENTITLEMENTS_SUFFIX_YES = .Finance;
-				COMPANION_FINANCEKIT = NO;
+				IOS_BUNDLE_IDENTIFIER = co.dododo.iMCP.iOS;
+				IOS_ENTITLEMENTS_SUFFIX_NO = "";
+				IOS_ENTITLEMENTS_SUFFIX_YES = .Finance;
+				IOS_FINANCEKIT = NO;
 				CURRENT_PROJECT_VERSION = 23;
 				DEVELOPMENT_TEAM = TTY35UM57S;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = Companion/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "iMCP Companion";
-				INFOPLIST_KEY_NSCameraUsageDescription = "iMCP Companion uses the camera to scan the pairing code that iMCP shows on your Mac.";
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "iMCP Companion reads the health data you choose and sends it to iMCP on your Mac, where the AI apps you connect can use it.";
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "iMCP Companion connects to iMCP on your Mac over your local network.";
+				INFOPLIST_FILE = iOS/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = iMCP;
+				INFOPLIST_KEY_NSCameraUsageDescription = "iMCP uses the camera to scan the pairing code that iMCP shows on your Mac.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "iMCP reads the health data you choose and sends it to iMCP on your Mac, where the AI apps you connect can use it.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "iMCP connects to iMCP on your Mac over your local network.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.7.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "$(COMPANION_BUNDLE_IDENTIFIER)";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(IOS_BUNDLE_IDENTIFIER)";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -1396,24 +1398,24 @@
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 1;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
 		};
 		A7000000000000000000000A /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = "CompanionWidgets/CompanionWidgets.entitlements";
+				CODE_SIGN_ENTITLEMENTS = "iOSWidgets/iOSWidgets.entitlements";
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				COMPANION_BUNDLE_IDENTIFIER = co.dododo.iMCP.Companion;
-				COMPANION_FINANCEKIT = NO;
+				IOS_BUNDLE_IDENTIFIER = co.dododo.iMCP.iOS;
+				IOS_FINANCEKIT = NO;
 				CURRENT_PROJECT_VERSION = 23;
 				DEVELOPMENT_TEAM = TTY35UM57S;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = CompanionWidgets/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "iMCP Companion Widgets";
+				INFOPLIST_FILE = iOSWidgets/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "iMCP Widgets";
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -1421,7 +1423,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.7.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "$(COMPANION_BUNDLE_IDENTIFIER).Widgets";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(IOS_BUNDLE_IDENTIFIER).Widgets";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -1429,24 +1431,24 @@
 				SUPPORTS_MACCATALYST = NO;
 				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 1;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
 		};
 		A7000000000000000000000B /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = "CompanionWidgets/CompanionWidgets.entitlements";
+				CODE_SIGN_ENTITLEMENTS = "iOSWidgets/iOSWidgets.entitlements";
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				COMPANION_BUNDLE_IDENTIFIER = co.dododo.iMCP.Companion;
-				COMPANION_FINANCEKIT = NO;
+				IOS_BUNDLE_IDENTIFIER = co.dododo.iMCP.iOS;
+				IOS_FINANCEKIT = NO;
 				CURRENT_PROJECT_VERSION = 23;
 				DEVELOPMENT_TEAM = TTY35UM57S;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = CompanionWidgets/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "iMCP Companion Widgets";
+				INFOPLIST_FILE = iOSWidgets/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "iMCP Widgets";
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -1454,7 +1456,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.7.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "$(COMPANION_BUNDLE_IDENTIFIER).Widgets";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(IOS_BUNDLE_IDENTIFIER).Widgets";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -1462,26 +1464,26 @@
 				SUPPORTS_MACCATALYST = NO;
 				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 1;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
 		};
 		A8000000000000000000000A /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = "CompanionFinance/CompanionFinance$(COMPANION_ENTITLEMENTS_SUFFIX_$(COMPANION_FINANCEKIT)).entitlements";
-				COMPANION_ENTITLEMENTS_SUFFIX_NO = "";
-				COMPANION_ENTITLEMENTS_SUFFIX_YES = .Finance;
+				CODE_SIGN_ENTITLEMENTS = "iOSFinance/iOSFinance$(IOS_ENTITLEMENTS_SUFFIX_$(IOS_FINANCEKIT)).entitlements";
+				IOS_ENTITLEMENTS_SUFFIX_NO = "";
+				IOS_ENTITLEMENTS_SUFFIX_YES = .Finance;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				COMPANION_BUNDLE_IDENTIFIER = co.dododo.iMCP.Companion;
-				COMPANION_FINANCEKIT = NO;
+				IOS_BUNDLE_IDENTIFIER = co.dododo.iMCP.iOS;
+				IOS_FINANCEKIT = NO;
 				CURRENT_PROJECT_VERSION = 23;
 				DEVELOPMENT_TEAM = TTY35UM57S;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = CompanionFinance/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "iMCP Companion Finance";
+				INFOPLIST_FILE = iOSFinance/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "iMCP Finance";
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -1489,7 +1491,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.7.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "$(COMPANION_BUNDLE_IDENTIFIER).FinanceDelivery";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(IOS_BUNDLE_IDENTIFIER).FinanceDelivery";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -1497,26 +1499,26 @@
 				SUPPORTS_MACCATALYST = NO;
 				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 1;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
 		};
 		A8000000000000000000000B /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = "CompanionFinance/CompanionFinance$(COMPANION_ENTITLEMENTS_SUFFIX_$(COMPANION_FINANCEKIT)).entitlements";
-				COMPANION_ENTITLEMENTS_SUFFIX_NO = "";
-				COMPANION_ENTITLEMENTS_SUFFIX_YES = .Finance;
+				CODE_SIGN_ENTITLEMENTS = "iOSFinance/iOSFinance$(IOS_ENTITLEMENTS_SUFFIX_$(IOS_FINANCEKIT)).entitlements";
+				IOS_ENTITLEMENTS_SUFFIX_NO = "";
+				IOS_ENTITLEMENTS_SUFFIX_YES = .Finance;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				COMPANION_BUNDLE_IDENTIFIER = co.dododo.iMCP.Companion;
-				COMPANION_FINANCEKIT = NO;
+				IOS_BUNDLE_IDENTIFIER = co.dododo.iMCP.iOS;
+				IOS_FINANCEKIT = NO;
 				CURRENT_PROJECT_VERSION = 23;
 				DEVELOPMENT_TEAM = TTY35UM57S;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = CompanionFinance/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "iMCP Companion Finance";
+				INFOPLIST_FILE = iOSFinance/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "iMCP Finance";
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -1524,7 +1526,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.7.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "$(COMPANION_BUNDLE_IDENTIFIER).FinanceDelivery";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(IOS_BUNDLE_IDENTIFIER).FinanceDelivery";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -1532,7 +1534,7 @@
 				SUPPORTS_MACCATALYST = NO;
 				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 1;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
 		};
@@ -1584,7 +1586,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		A60000000000000000000009 /* Build configuration list for PBXNativeTarget "iMCP Companion" */ = {
+		A60000000000000000000009 /* Build configuration list for PBXNativeTarget "iMCP iOS" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				A6000000000000000000000A /* Debug */,
@@ -1593,7 +1595,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		A70000000000000000000009 /* Build configuration list for PBXNativeTarget "iMCP Companion Widgets" */ = {
+		A70000000000000000000009 /* Build configuration list for PBXNativeTarget "iMCP iOS Widgets" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				A7000000000000000000000A /* Debug */,
@@ -1602,7 +1604,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		A80000000000000000000009 /* Build configuration list for PBXNativeTarget "iMCP Companion Finance" */ = {
+		A80000000000000000000009 /* Build configuration list for PBXNativeTarget "iMCP iOS Finance" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				A8000000000000000000000A /* Debug */,

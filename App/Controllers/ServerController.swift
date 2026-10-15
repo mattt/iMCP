@@ -423,9 +423,9 @@ final class ServerController: ObservableObject {
             await self.networkManager.start()
             self.updateServerStatus("Running")
 
-            // Listen for the paired iPhone so it can sync before the first tool call.
+            // Listen for the paired iPhone or iPad so it can sync before the first tool call.
             if self.alarmsEnabled || self.financeEnabled || self.healthEnabled {
-                try? await CompanionService.shared.start()
+                try? await MobileService.shared.start()
             }
         }
     }
@@ -578,7 +578,7 @@ actor MCPConnectionManager {
                 Use iMCP for apps and data on the user's Mac: \
                 Calendar, Contacts, Location, Maps, Messages, Phone, Reminders, Shortcuts, Voicemail, Weather, \
                 and the camera, microphone, and screen; \
-                and, through the iMCP Companion app on the user's iPhone, Health, Finance, and Alarms. \
+                and, through iMCP on the user's iPhone or iPad, Health, Finance, and Alarms. \
                 Only the services that the user turns on in iMCP have tools.
                 """,
             capabilities: MCP.Server.Capabilities(
@@ -1071,7 +1071,7 @@ actor ServerNetworkManager {
             log.debug("Handling ListTools request for \(connectionID)")
 
             var tools: [MCP.Tool] = []
-            // Services can share a tool, such as companion_status; list it once.
+            // Services can share a tool, such as mobile_status; list it once.
             var names = Set<String>()
             if await self.isEnabledState {
                 for service in await self.services {
