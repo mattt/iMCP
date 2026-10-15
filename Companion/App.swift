@@ -151,6 +151,8 @@ struct ServiceSection: View {
     var body: some View {
         Section {
             Toggle(domain.title, isOn: toggle)
+                // Without the entitlement, the note below says why Finance can't turn on.
+                .disabled(domain == .finance && !enabled && FinanceCapability.current.reason != nil)
             if let error {
                 Text(error).font(.footnote).foregroundStyle(.red)
             }
