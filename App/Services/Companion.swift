@@ -399,6 +399,12 @@ actor CompanionService: CompanionBackend {
             return try await send(tool, input, readOnly: readOnly, to: link)
         } catch is CompanionLinkLost {
             detach(link)
+        } catch let error as CompanionError where readOnly && error.message.contains(CompanionTools.lockedMessage) {
+            return try await cached(
+                tool,
+                CompanionArguments(input),
+                note: "The iPhone is locked, so HealthKit can't be read live."
+            )
         }
         if let next = await waitForLink() {
             do {
@@ -433,7 +439,7 @@ actor CompanionService: CompanionBackend {
 
     // MARK: - Cache
 
-    private func cached(_ tool: String, _ args: CompanionArguments) async throws -> Value {
+    private func cached(_ tool: String, _ args: CompanionArguments, note extra: String? = nil) async throws -> Value {
         guard let domain = CompanionTools.domain(of: tool) else {
             throw CompanionError("Unknown companion tool: \(tool)")
         }
@@ -538,7 +544,7 @@ actor CompanionService: CompanionBackend {
             source: .cache,
             syncedAt: await cache.syncedAt(domain),
             results: rows.map(\.payload),
-            note: note
+            note: [extra, note].compactMap { $0 }.joined(separator: " ").nilIfEmpty
         )
     }
 
@@ -747,4 +753,8 @@ struct AlarmsService: Service {
     var tools: [Tool] { return CompanionTools.tools(for: .alarms, backend: CompanionService.shared) }
     var isActivated: Bool { get async { await CompanionService.shared.isStarted } }
     func activate() async throws { try await CompanionService.shared.start() }
+}
+
+extension String {
+    fileprivate var nilIfEmpty: String? { isEmpty ? nil : self }
 }
