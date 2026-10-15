@@ -113,7 +113,7 @@ actor HelperServer {
                 guard let tool = tools.first(where: { $0.name == params.name }) else {
                     throw HomeError("Unknown Home tool: \(params.name)")
                 }
-                try HomeInput.validate(params.arguments ?? [:], schema: tool.inputSchema)
+                try ToolInput.validate(params.arguments ?? [:], schema: tool.inputSchema)
                 let value = try await tool.callAsFunction(params.arguments ?? [:])
                 let encoder = JSONEncoder()
                 encoder.userInfo[Ontology.DateTime.timeZoneOverrideKey] = TimeZone.current
