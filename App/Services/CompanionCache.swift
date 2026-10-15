@@ -1,0 +1,275 @@
+import CryptoKit
+import Foundation
+import Security
+
+/// The Mac's copy of the data that iMCP Companion sends from the iPhone.
+///
+/// Records live in a SQLite database in Application Support.
+/// Payloads are sealed with AES-GCM under a key kept in the Keychain,
+/// with each record's kind and ID as authenticated data,
+/// so the file alone doesn't reveal health or finance data
+/// and a payload can't be moved to another row.
+/// Kinds, IDs, query keys, and dates stay in plaintext so that queries can filter on them.
+actor CompanionCache {
+    struct Row: Sendable {
+        let id: String
+        let key: String?
+        let start: Date?
+        let end: Date?
+        let payload: Value
+    }
+
+    private let url: URL
+    private let key: SymmetricKey
+    private var database: CompanionDatabase?
+
+    init(url: URL, key: SymmetricKey) throws {
+        self.url = url
+        self.key = key
+        database = try Self.open(url)
+    }
+
+    /// The cache in Application Support, with its key from the Keychain.
+    static func standard() throws -> CompanionCache {
+        let directory = try FileManager.default.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        ).appendingPathComponent("Companion", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return try CompanionCache(
+            url: directory.appendingPathComponent("cache.sqlite"),
+            key: CompanionKeychain.cacheKey()
+        )
+    }
+
+    private static func open(_ url: URL) throws -> CompanionDatabase {
+        let database = try CompanionDatabase(path: url.path)
+        try database.execute(
+            """
+            CREATE TABLE IF NOT EXISTS records (
+                kind TEXT NOT NULL,
+                id TEXT NOT NULL,
+                key TEXT,
+                start REAL,
+                end REAL,
+                payload BLOB NOT NULL,
+                PRIMARY KEY (kind, id)
+            );
+            CREATE INDEX IF NOT EXISTS records_by_key ON records (kind, key, start);
+            CREATE TABLE IF NOT EXISTS sync_state (
+                domain TEXT PRIMARY KEY,
+                synced_at REAL NOT NULL
+            );
+            """
+        )
+        return database
+    }
+
+    private func db() throws -> CompanionDatabase {
+        if let database { return database }
+        let database = try Self.open(url)
+        self.database = database
+        return database
+    }
+
+    func close() {
+        database?.close()
+        database = nil
+    }
+
+    // MARK: - Writing
+
+    /// Applies a batch in one transaction.
+    /// Upserts replace earlier versions and deletions of unknown IDs do nothing,
+    /// so applying the same batch again doesn't change the cache.
+    func apply(_ batch: CompanionBatch) throws {
+        let database = try db()
+        try database.transaction {
+            for kind in batch.replacing {
+                try database.run("DELETE FROM records WHERE kind = ?", [.text(kind.rawValue)])
+            }
+            for record in batch.records {
+                if let payload = record.payload {
+                    try database.run(
+                        "INSERT OR REPLACE INTO records (kind, id, key, start, end, payload) VALUES (?, ?, ?, ?, ?, ?)",
+                        [
+                            .text(record.kind.rawValue), .text(record.id), .init(record.key), .init(record.start),
+                            .init(record.end), .blob(try seal(payload, kind: record.kind, id: record.id)),
+                        ]
+                    )
+                } else {
+                    try database.run(
+                        "DELETE FROM records WHERE kind = ? AND id = ?",
+                        [.text(record.kind.rawValue), .text(record.id)]
+                    )
+                }
+            }
+            for (domain, date) in batch.syncedAt where CompanionDomain(rawValue: domain) != nil {
+                try database.run(
+                    """
+                    INSERT INTO sync_state (domain, synced_at) VALUES (?, ?)
+                    ON CONFLICT (domain) DO UPDATE SET synced_at = max(synced_at, excluded.synced_at)
+                    """,
+                    [.text(domain), .double(date.timeIntervalSince1970)]
+                )
+            }
+        }
+    }
+
+    /// Removes every record and all sync state.
+    func deleteAll() throws {
+        let database = try db()
+        try database.transaction {
+            try database.run("DELETE FROM records")
+            try database.run("DELETE FROM sync_state")
+        }
+        try database.execute("VACUUM")
+    }
+
+    // MARK: - Reading
+
+    /// Records of one kind, newest first unless `ascending`,
+    /// that overlap the date range when one is given.
+    func records(
+        _ kind: CompanionKind,
+        key: String? = nil,
+        start: Date? = nil,
+        end: Date? = nil,
+        limit: Int? = nil,
+        ascending: Bool = false
+    ) throws -> [Row] {
+        var sql = "SELECT id, key, start, end, payload FROM records WHERE kind = ?"
+        var bindings: [CompanionDatabase.Binding] = [.text(kind.rawValue)]
+        if let key {
+            sql += " AND key = ?"
+            bindings.append(.text(key))
+        }
+        if let start {
+            sql += " AND coalesce(end, start) >= ?"
+            bindings.append(.init(start))
+        }
+        if let end {
+            sql += " AND start < ?"
+            bindings.append(.init(end))
+        }
+        sql += " ORDER BY start \(ascending ? "ASC" : "DESC"), id \(ascending ? "ASC" : "DESC")"
+        if let limit {
+            sql += " LIMIT ?"
+            bindings.append(.int(Int64(limit)))
+        }
+        var rows: [Row] = []
+        try db().run(sql, bindings) { row in
+            let id = row.text(0) ?? ""
+            let data = try self.open(row.blob(4) ?? Data(), kind: kind, id: id)
+            rows.append(
+                Row(
+                    id: id,
+                    key: row.text(1),
+                    start: row.double(2).map(Date.init(timeIntervalSince1970:)),
+                    end: row.double(3).map(Date.init(timeIntervalSince1970:)),
+                    payload: try JSONDecoder().decode(Value.self, from: data)
+                )
+            )
+        }
+        return rows
+    }
+
+    func syncedAt(_ domain: CompanionDomain) -> Date? {
+        var date: Date?
+        try? db().run("SELECT synced_at FROM sync_state WHERE domain = ?", [.text(domain.rawValue)]) { row in
+            date = row.double(0).map(Date.init(timeIntervalSince1970:))
+        }
+        return date
+    }
+
+    func count(_ kind: CompanionKind) -> Int {
+        var count = 0
+        try? db().run("SELECT count(*) FROM records WHERE kind = ?", [.text(kind.rawValue)]) { row in
+            count = Int(row.int(0) ?? 0)
+        }
+        return count
+    }
+
+    // MARK: - Encryption
+
+    private func seal(_ payload: Data, kind: CompanionKind, id: String) throws -> Data {
+        let box = try AES.GCM.seal(payload, using: key, authenticating: Data("\(kind.rawValue)|\(id)".utf8))
+        guard let combined = box.combined else { throw CompanionError("Can't encrypt a cached record.") }
+        return combined
+    }
+
+    private func open(_ sealed: Data, kind: CompanionKind, id: String) throws -> Data {
+        do {
+            return try AES.GCM.open(
+                AES.GCM.SealedBox(combined: sealed),
+                using: key,
+                authenticating: Data("\(kind.rawValue)|\(id)".utf8)
+            )
+        } catch {
+            throw CompanionError(
+                "The companion cache can't be decrypted with this Mac's key. Delete the cache in Settings > Companion, then let the iPhone sync again."
+            )
+        }
+    }
+}
+
+/// Secrets that the Mac keeps for the companion:
+/// the cache key and the key for each paired iPhone.
+enum CompanionKeychain {
+    private static let service = "co.dododo.iMCP.Companion"
+
+    static func cacheKey() throws -> SymmetricKey {
+        if let data = try read("cache-key") { return SymmetricKey(data: data) }
+        let key = SymmetricKey(size: .bits256)
+        try write("cache-key", key.withUnsafeBytes { Data($0) })
+        return key
+    }
+
+    static func read(_ account: String) throws -> Data? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+        ]
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecItemNotFound { return nil }
+        guard status == errSecSuccess else { throw keychainError(status) }
+        return result as? Data
+    }
+
+    static func write(_ account: String, _ data: Data) throws {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+        let status = SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+        if status == errSecItemNotFound {
+            var item = query
+            item[kSecValueData as String] = data
+            item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            let added = SecItemAdd(item as CFDictionary, nil)
+            guard added == errSecSuccess else { throw keychainError(added) }
+        } else if status != errSecSuccess {
+            throw keychainError(status)
+        }
+    }
+
+    static func delete(_ account: String) {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+        SecItemDelete(query as CFDictionary)
+    }
+
+    private static func keychainError(_ status: OSStatus) -> CompanionError {
+        let message = SecCopyErrorMessageString(status, nil) as String? ?? "error \(status)"
+        return CompanionError("The Keychain refused a companion secret: \(message)")
+    }
+}
