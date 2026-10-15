@@ -20,7 +20,7 @@
 		A30000000000000000000020 /* HomeToolsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000010 /* HomeToolsTests.swift */; };
 		A30000000000000000000021 /* ../Shared/Home/HomeBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000011 /* ../Shared/Home/HomeBackend.swift */; };
 		A30000000000000000000022 /* ../Shared/Home/HomeError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000012 /* ../Shared/Home/HomeError.swift */; };
-		A30000000000000000000023 /* ../Shared/Home/HomeInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000013 /* ../Shared/Home/HomeInput.swift */; };
+		A30000000000000000000023 /* ../Shared/Models/ToolInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000013 /* ../Shared/Models/ToolInput.swift */; };
 		A30000000000000000000024 /* ../Shared/Home/HomeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000014 /* ../Shared/Home/HomeTools.swift */; };
 		A30000000000000000000025 /* ../Shared/Models/Tool.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000015 /* ../Shared/Models/Tool.swift */; };
 		A30000000000000000000026 /* ../Shared/Models/Value.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000016 /* ../Shared/Models/Value.swift */; };
@@ -58,6 +58,13 @@
 		F8F1D2F82D6F9E0C00F6323D /* MCP in Frameworks */ = {isa = PBXBuildFile; productRef = F8F44E9C2D5903F70075D79C /* MCP */; };
 		F9E9902DC72D90F6C423EFE2 /* Logging in Frameworks */ = {isa = PBXBuildFile; productRef = 48ABEE9E6903427DD79096A1 /* Logging */; };
 		AA0011000000000000000001 /* Envelope in Frameworks */ = {isa = PBXBuildFile; productRef = AA0011000000000000000002 /* Envelope */; };
+		2338670AAB836453A859F214 /* CompanionToolsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 273A40A00FB6B45F6E05FAC1 /* CompanionToolsTests.swift */; };
+		0C442369FEFC71CA64EFDDCD /* CompanionCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E70399C0AD0A7EF1C0755801 /* CompanionCacheTests.swift */; };
+		6BF018C12FF02CEE36315400 /* ../Shared/Companion/CompanionTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98166DE39243B5BB0D2EA812 /* ../Shared/Companion/CompanionTools.swift */; };
+		6C9F37571E84FF608EA69DFF /* ../Shared/Companion/CompanionSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09284CEAE710F67F75A9D584 /* ../Shared/Companion/CompanionSync.swift */; };
+		0EBDDCD81AB193D1DCDA3616 /* ../Shared/Companion/CompanionDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 528763F26319BDDB15541474 /* ../Shared/Companion/CompanionDatabase.swift */; };
+		A1BA6CCAD87FD4F9DABADE3F /* ../App/Services/Companion.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE3608360482D8D430F9A6FD /* ../App/Services/Companion.swift */; };
+		1A4EBB7CECB525CCC26EE438 /* ../App/Services/CompanionCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BC3F2481A2BC3DA6FCD135F /* ../App/Services/CompanionCache.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -90,7 +97,7 @@
 		A30000000000000000000010 /* HomeToolsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeToolsTests.swift; sourceTree = "<group>"; };
 		A30000000000000000000011 /* ../Shared/Home/HomeBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Home/HomeBackend.swift; sourceTree = "<group>"; };
 		A30000000000000000000012 /* ../Shared/Home/HomeError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Home/HomeError.swift; sourceTree = "<group>"; };
-		A30000000000000000000013 /* ../Shared/Home/HomeInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Home/HomeInput.swift; sourceTree = "<group>"; };
+		A30000000000000000000013 /* ../Shared/Models/ToolInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Models/ToolInput.swift; sourceTree = "<group>"; };
 		A30000000000000000000014 /* ../Shared/Home/HomeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Home/HomeTools.swift; sourceTree = "<group>"; };
 		A30000000000000000000015 /* ../Shared/Models/Tool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Models/Tool.swift; sourceTree = "<group>"; };
 		A30000000000000000000016 /* ../Shared/Models/Value.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Models/Value.swift; sourceTree = "<group>"; };
@@ -112,6 +119,13 @@
 		E0E66768348853754D32208C /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/System/Library/Frameworks/Cocoa.framework; sourceTree = DEVELOPER_DIR; };
 		F8F44E6D2D59038D0075D79C /* iMCP.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = iMCP.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F8F44EB62D5908D00075D79C /* imcp-server */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "imcp-server"; sourceTree = BUILT_PRODUCTS_DIR; };
+		273A40A00FB6B45F6E05FAC1 /* CompanionToolsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionToolsTests.swift; sourceTree = "<group>"; };
+		E70399C0AD0A7EF1C0755801 /* CompanionCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionCacheTests.swift; sourceTree = "<group>"; };
+		98166DE39243B5BB0D2EA812 /* ../Shared/Companion/CompanionTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Companion/CompanionTools.swift; sourceTree = "<group>"; };
+		09284CEAE710F67F75A9D584 /* ../Shared/Companion/CompanionSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Companion/CompanionSync.swift; sourceTree = "<group>"; };
+		528763F26319BDDB15541474 /* ../Shared/Companion/CompanionDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Companion/CompanionDatabase.swift; sourceTree = "<group>"; };
+		DE3608360482D8D430F9A6FD /* ../App/Services/Companion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../App/Services/Companion.swift; sourceTree = "<group>"; };
+		7BC3F2481A2BC3DA6FCD135F /* ../App/Services/CompanionCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../App/Services/CompanionCache.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -129,6 +143,15 @@
 			);
 			target = F8F44E6C2D59038D0075D79C /* iMCP */;
 		};
+		C5000000000000000000000B /* Exceptions for "Shared" folder in "iMCP Helper" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Companion/CompanionDatabase.swift,
+				Companion/CompanionSync.swift,
+				Companion/CompanionTools.swift,
+			);
+			target = A10000000000000000000003 /* iMCP Helper */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -142,6 +165,9 @@
 		};
 		A20000000000000000000001 /* Shared */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				C5000000000000000000000B /* Exceptions for "Shared" folder in "iMCP Helper" target */,
+			);
 			path = Shared;
 			sourceTree = "<group>";
 		};
@@ -230,6 +256,13 @@
 			isa = PBXGroup;
 			children = (
 				A40000000000000000000010 /* HomeProxyTests.swift */,
+				7BC3F2481A2BC3DA6FCD135F /* ../App/Services/CompanionCache.swift */,
+				DE3608360482D8D430F9A6FD /* ../App/Services/Companion.swift */,
+				528763F26319BDDB15541474 /* ../Shared/Companion/CompanionDatabase.swift */,
+				09284CEAE710F67F75A9D584 /* ../Shared/Companion/CompanionSync.swift */,
+				98166DE39243B5BB0D2EA812 /* ../Shared/Companion/CompanionTools.swift */,
+				E70399C0AD0A7EF1C0755801 /* CompanionCacheTests.swift */,
+				273A40A00FB6B45F6E05FAC1 /* CompanionToolsTests.swift */,
 				A40000000000000000000011 /* ../App/Services/Home.swift */,
 				A40000000000000000000019 /* ../App/Services/HomeHelperLocator.swift */,
 				A40000000000000000000012 /* ../Shared/Extensions/Logger+Extensions.swift */,
@@ -241,7 +274,7 @@
 				A30000000000000000000010 /* HomeToolsTests.swift */,
 				A30000000000000000000011 /* ../Shared/Home/HomeBackend.swift */,
 				A30000000000000000000012 /* ../Shared/Home/HomeError.swift */,
-				A30000000000000000000013 /* ../Shared/Home/HomeInput.swift */,
+				A30000000000000000000013 /* ../Shared/Models/ToolInput.swift */,
 				A30000000000000000000014 /* ../Shared/Home/HomeTools.swift */,
 				A30000000000000000000015 /* ../Shared/Models/Tool.swift */,
 				A30000000000000000000016 /* ../Shared/Models/Value.swift */,
@@ -524,6 +557,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				A40000000000000000000020 /* HomeProxyTests.swift in Sources */,
+				1A4EBB7CECB525CCC26EE438 /* ../App/Services/CompanionCache.swift in Sources */,
+				A1BA6CCAD87FD4F9DABADE3F /* ../App/Services/Companion.swift in Sources */,
+				0EBDDCD81AB193D1DCDA3616 /* ../Shared/Companion/CompanionDatabase.swift in Sources */,
+				6C9F37571E84FF608EA69DFF /* ../Shared/Companion/CompanionSync.swift in Sources */,
+				6BF018C12FF02CEE36315400 /* ../Shared/Companion/CompanionTools.swift in Sources */,
+				0C442369FEFC71CA64EFDDCD /* CompanionCacheTests.swift in Sources */,
+				2338670AAB836453A859F214 /* CompanionToolsTests.swift in Sources */,
 				A40000000000000000000021 /* ../App/Services/Home.swift in Sources */,
 				A40000000000000000000029 /* ../App/Services/HomeHelperLocator.swift in Sources */,
 				A40000000000000000000022 /* ../Shared/Extensions/Logger+Extensions.swift in Sources */,
@@ -535,7 +575,7 @@
 				A30000000000000000000020 /* HomeToolsTests.swift in Sources */,
 				A30000000000000000000021 /* ../Shared/Home/HomeBackend.swift in Sources */,
 				A30000000000000000000022 /* ../Shared/Home/HomeError.swift in Sources */,
-				A30000000000000000000023 /* ../Shared/Home/HomeInput.swift in Sources */,
+				A30000000000000000000023 /* ../Shared/Models/ToolInput.swift in Sources */,
 				A30000000000000000000024 /* ../Shared/Home/HomeTools.swift in Sources */,
 				A30000000000000000000025 /* ../Shared/Models/Tool.swift in Sources */,
 				A30000000000000000000026 /* ../Shared/Models/Value.swift in Sources */,
