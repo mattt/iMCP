@@ -92,9 +92,14 @@ final class CompanionToolsTests: XCTestCase {
         XCTAssertThrowsError(try validate("alarms_create", ["title": "Late", "hour": 24, "minute": 0]))
         XCTAssertThrowsError(try validate("alarms_create", ["title": "Odd", "hour": 6, "minute": 0, "weekdays": []]))
         XCTAssertThrowsError(
-            try validate("alarms_create", ["title": "Twice", "hour": 6, "minute": 0, "weekdays": ["monday", "monday"]])
+            try validate(
+                "alarms_create",
+                ["title": "Twice", "hour": 6, "minute": 0, "weekdays": ["monday", "monday"]]
+            )
         )
-        XCTAssertThrowsError(try validate("alarms_create", ["title": "Day", "hour": 6, "minute": 0, "weekdays": ["mon"]]))
+        XCTAssertThrowsError(
+            try validate("alarms_create", ["title": "Day", "hour": 6, "minute": 0, "weekdays": ["mon"]])
+        )
     }
 
     func testHealthTypeNamesAcceptFrameworkIdentifiers() {

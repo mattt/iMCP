@@ -26,7 +26,9 @@ final class CompanionCacheTests: XCTestCase {
             key: "sleepAnalysis",
             start: start,
             end: start.addingTimeInterval(3_600),
-            payload: try! JSONSerialization.data(withJSONObject: ["id": id, "value": value, "marker": "PLAINTEXT-\(id)"])
+            payload: try! JSONSerialization.data(withJSONObject: [
+                "id": id, "value": value, "marker": "PLAINTEXT-\(id)",
+            ])
         )
     }
 
@@ -34,7 +36,11 @@ final class CompanionCacheTests: XCTestCase {
         let cache = try makeCache()
         let collected = Date(timeIntervalSince1970: 1_767_400_000)
         try await cache.apply(
-            CompanionBatch(sequence: 1, syncedAt: ["health": collected], records: [sleep("a", day: 0), sleep("b", day: 1)])
+            CompanionBatch(
+                sequence: 1,
+                syncedAt: ["health": collected],
+                records: [sleep("a", day: 0), sleep("b", day: 1)]
+            )
         )
         let rows = try await cache.records(.healthSample, key: "sleepAnalysis", limit: 10)
         XCTAssertEqual(rows.map(\.id), ["b", "a"])
@@ -61,7 +67,11 @@ final class CompanionCacheTests: XCTestCase {
     func testAnchoredMergeAppliesUpdatesAndDeletions() async throws {
         let cache = try makeCache()
         try await cache.apply(
-            CompanionBatch(sequence: 1, syncedAt: [:], records: [sleep("a", day: 0), sleep("b", day: 1), sleep("c", day: 2)])
+            CompanionBatch(
+                sequence: 1,
+                syncedAt: [:],
+                records: [sleep("a", day: 0), sleep("b", day: 1), sleep("c", day: 2)]
+            )
         )
         try await cache.apply(
             CompanionBatch(
