@@ -9,6 +9,7 @@ struct SettingsView: View {
     enum SettingsSection: String, CaseIterable, Identifiable {
         case general = "General"
         case services = "Services"
+        case companion = "Companion"
 
         var id: String { self.rawValue }
 
@@ -16,6 +17,7 @@ struct SettingsView: View {
             switch self {
             case .general: return "gear"
             case .services: return "square.grid.2x2"
+            case .companion: return "iphone"
             }
         }
     }
@@ -50,6 +52,9 @@ struct SettingsView: View {
                 case .services:
                     ServicesSettingsView(serverController: serverController)
                         .navigationTitle("Services")
+                case .companion:
+                    CompanionSettingsView()
+                        .navigationTitle("Companion")
                 }
             } else {
                 Text("Select a category")

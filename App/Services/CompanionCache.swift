@@ -62,6 +62,11 @@ actor CompanionCache {
                 domain TEXT PRIMARY KEY,
                 synced_at REAL NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS meta (
+                name TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+            INSERT OR IGNORE INTO meta (name, value) VALUES ('cache_id', lower(hex(randomblob(16))));
             """
         )
         return database
@@ -118,12 +123,22 @@ actor CompanionCache {
         }
     }
 
+    /// Identifies this copy of the cache.
+    /// It changes when the cache is deleted,
+    /// which tells the phone to send all of its data again.
+    func cacheID() throws -> String {
+        var id = ""
+        try db().run("SELECT value FROM meta WHERE name = 'cache_id'") { row in id = row.text(0) ?? "" }
+        return id
+    }
+
     /// Removes every record and all sync state.
     func deleteAll() throws {
         let database = try db()
         try database.transaction {
             try database.run("DELETE FROM records")
             try database.run("DELETE FROM sync_state")
+            try database.run("UPDATE meta SET value = lower(hex(randomblob(16))) WHERE name = 'cache_id'")
         }
         try database.execute("VACUUM")
     }

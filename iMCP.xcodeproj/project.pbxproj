@@ -60,6 +60,15 @@
 		0EBDDCD81AB193D1DCDA3616 /* ../Shared/Companion/CompanionDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 528763F26319BDDB15541474 /* ../Shared/Companion/CompanionDatabase.swift */; };
 		A1BA6CCAD87FD4F9DABADE3F /* ../App/Services/Companion.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE3608360482D8D430F9A6FD /* ../App/Services/Companion.swift */; };
 		1A4EBB7CECB525CCC26EE438 /* ../App/Services/CompanionCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BC3F2481A2BC3DA6FCD135F /* ../App/Services/CompanionCache.swift */; };
+		C74EAB68D139846AC0C118E1 /* CompanionLinkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D623AA705C646B58688D52F0 /* CompanionLinkTests.swift */; };
+		1201B5B17FF1368F8E9CD48F /* ../Shared/Companion/CompanionTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEA9566F574C683C4FB198FB /* ../Shared/Companion/CompanionTransport.swift */; };
+		A6000000000000000000001E /* MCP in Frameworks */ = {isa = PBXBuildFile; productRef = A60000000000000000000014 /* MCP */; };
+		A6000000000000000000001F /* JSONSchema in Frameworks */ = {isa = PBXBuildFile; productRef = A60000000000000000000015 /* JSONSchema */; };
+		A60000000000000000000020 /* Ontology in Frameworks */ = {isa = PBXBuildFile; productRef = A60000000000000000000016 /* Ontology */; };
+		A60000000000000000000021 /* Logging in Frameworks */ = {isa = PBXBuildFile; productRef = A60000000000000000000017 /* Logging */; };
+		7976D430435CEB5885069EDC /* CompanionOutboxTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF94985E325A869657ADEA03 /* CompanionOutboxTests.swift */; };
+		8172E39E4AC809B22EE49411 /* ../Shared/Companion/CompanionOutbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30DCD03A1950234EBB61EFEE /* ../Shared/Companion/CompanionOutbox.swift */; };
+		F26A5BE8BADF564840BB4AE9 /* ../Shared/Companion/CompanionAlarmRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59DE6C73F45F5069A5C32229 /* ../Shared/Companion/CompanionAlarmRequest.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -118,6 +127,12 @@
 		528763F26319BDDB15541474 /* ../Shared/Companion/CompanionDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Companion/CompanionDatabase.swift; sourceTree = "<group>"; };
 		DE3608360482D8D430F9A6FD /* ../App/Services/Companion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../App/Services/Companion.swift; sourceTree = "<group>"; };
 		7BC3F2481A2BC3DA6FCD135F /* ../App/Services/CompanionCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../App/Services/CompanionCache.swift; sourceTree = "<group>"; };
+		D623AA705C646B58688D52F0 /* CompanionLinkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionLinkTests.swift; sourceTree = "<group>"; };
+		AEA9566F574C683C4FB198FB /* ../Shared/Companion/CompanionTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Companion/CompanionTransport.swift; sourceTree = "<group>"; };
+		A60000000000000000000001 /* iMCP Companion.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "iMCP Companion.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		CF94985E325A869657ADEA03 /* CompanionOutboxTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionOutboxTests.swift; sourceTree = "<group>"; };
+		30DCD03A1950234EBB61EFEE /* ../Shared/Companion/CompanionOutbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Companion/CompanionOutbox.swift; sourceTree = "<group>"; };
+		59DE6C73F45F5069A5C32229 /* ../Shared/Companion/CompanionAlarmRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Companion/CompanionAlarmRequest.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -138,11 +153,32 @@
 		A5000000000000000000000B /* Exceptions for "Shared" folder in "iMCP Helper" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				Companion/CompanionAlarmRequest.swift,
 				Companion/CompanionDatabase.swift,
+				Companion/CompanionOutbox.swift,
 				Companion/CompanionSync.swift,
 				Companion/CompanionTools.swift,
+				Companion/CompanionTransport.swift,
 			);
 			target = A10000000000000000000003 /* iMCP Helper */;
+		};
+		A60000000000000000000004 /* Exceptions for "Companion" folder in "iMCP Companion" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Companion.entitlements,
+				Companion.Finance.entitlements,
+				Info.plist,
+			);
+			target = A60000000000000000000002 /* iMCP Companion */;
+		};
+		A60000000000000000000005 /* Exceptions for "Shared" folder in "iMCP Companion" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Home/HomeBackend.swift,
+				Home/HomeError.swift,
+				Home/HomeTools.swift,
+			);
+			target = A60000000000000000000002 /* iMCP Companion */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -159,6 +195,7 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				A5000000000000000000000B /* Exceptions for "Shared" folder in "iMCP Helper" target */,
+				A60000000000000000000005 /* Exceptions for "Shared" folder in "iMCP Companion" target */,
 			);
 			path = Shared;
 			sourceTree = "<group>";
@@ -174,6 +211,14 @@
 		F8F44EB72D5908D00075D79C /* CLI */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = CLI;
+			sourceTree = "<group>";
+		};
+		A60000000000000000000003 /* Companion */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				A60000000000000000000004 /* Exceptions for "Companion" folder in "iMCP Companion" target */,
+			);
+			path = Companion;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -231,6 +276,17 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A60000000000000000000007 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A6000000000000000000001E /* MCP in Frameworks */,
+				A6000000000000000000001F /* JSONSchema in Frameworks */,
+				A60000000000000000000020 /* Ontology in Frameworks */,
+				A60000000000000000000021 /* Logging in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -246,6 +302,11 @@
 			isa = PBXGroup;
 			children = (
 				A40000000000000000000010 /* HomeProxyTests.swift */,
+				59DE6C73F45F5069A5C32229 /* ../Shared/Companion/CompanionAlarmRequest.swift */,
+				30DCD03A1950234EBB61EFEE /* ../Shared/Companion/CompanionOutbox.swift */,
+				CF94985E325A869657ADEA03 /* CompanionOutboxTests.swift */,
+				AEA9566F574C683C4FB198FB /* ../Shared/Companion/CompanionTransport.swift */,
+				D623AA705C646B58688D52F0 /* CompanionLinkTests.swift */,
 				7BC3F2481A2BC3DA6FCD135F /* ../App/Services/CompanionCache.swift */,
 				DE3608360482D8D430F9A6FD /* ../App/Services/Companion.swift */,
 				528763F26319BDDB15541474 /* ../Shared/Companion/CompanionDatabase.swift */,
@@ -289,6 +350,7 @@
 			children = (
 				F8F44E6F2D59038D0075D79C /* App */,
 				A10000000000000000000002 /* Helper */,
+				A60000000000000000000003 /* Companion */,
 				A20000000000000000000001 /* Shared */,
 				F8F44EB72D5908D00075D79C /* CLI */,
 				F8F44E6E2D59038D0075D79C /* Products */,
@@ -302,6 +364,7 @@
 			children = (
 				F8F44E6D2D59038D0075D79C /* iMCP.app */,
 				A10000000000000000000001 /* iMCP Helper.app */,
+				A60000000000000000000001 /* iMCP Companion.app */,
 				F8F44EB62D5908D00075D79C /* imcp-server */,
 				6A5CFBBEC66BC8CDA9D65496 /* imcp-serverTests.xctest */,
 			);
@@ -423,6 +486,33 @@
 			productReference = F8F44EB62D5908D00075D79C /* imcp-server */;
 			productType = "com.apple.product-type.tool";
 		};
+		A60000000000000000000002 /* iMCP Companion */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A60000000000000000000009 /* Build configuration list for PBXNativeTarget "iMCP Companion" */;
+			buildPhases = (
+				A60000000000000000000006 /* Sources */,
+				A60000000000000000000007 /* Frameworks */,
+				A60000000000000000000008 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				A60000000000000000000003 /* Companion */,
+				A20000000000000000000001 /* Shared */,
+			);
+			name = "iMCP Companion";
+			packageProductDependencies = (
+				A60000000000000000000014 /* MCP */,
+				A60000000000000000000015 /* JSONSchema */,
+				A60000000000000000000016 /* Ontology */,
+				A60000000000000000000017 /* Logging */,
+			);
+			productName = "iMCP Companion";
+			productReference = A60000000000000000000001 /* iMCP Companion.app */;
+			productType = "com.apple.product-type.application";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -433,6 +523,9 @@
 				LastSwiftUpdateCheck = 1620;
 				LastUpgradeCheck = 2620;
 				TargetAttributes = {
+					A60000000000000000000002 = {
+						CreatedOnToolsVersion = 27.0;
+					};
 					A10000000000000000000003 = {
 						CreatedOnToolsVersion = 27.0;
 						SystemCapabilities = {
@@ -479,6 +572,7 @@
 			projectRoot = "";
 			targets = (
 				A10000000000000000000003 /* iMCP Helper */,
+				A60000000000000000000002 /* iMCP Companion */,
 				F8F44E6C2D59038D0075D79C /* iMCP */,
 				F8F44EB52D5908D00075D79C /* imcp-server */,
 				8F6A71ADC0CC6BD168A9167D /* imcp-serverTests */,
@@ -502,6 +596,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		F8F44E6B2D59038D0075D79C /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A60000000000000000000008 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -541,6 +642,11 @@
 			buildActionMask = 2147483647;
 			files = (
 				A40000000000000000000020 /* HomeProxyTests.swift in Sources */,
+				F26A5BE8BADF564840BB4AE9 /* ../Shared/Companion/CompanionAlarmRequest.swift in Sources */,
+				8172E39E4AC809B22EE49411 /* ../Shared/Companion/CompanionOutbox.swift in Sources */,
+				7976D430435CEB5885069EDC /* CompanionOutboxTests.swift in Sources */,
+				1201B5B17FF1368F8E9CD48F /* ../Shared/Companion/CompanionTransport.swift in Sources */,
+				C74EAB68D139846AC0C118E1 /* CompanionLinkTests.swift in Sources */,
 				1A4EBB7CECB525CCC26EE438 /* ../App/Services/CompanionCache.swift in Sources */,
 				A1BA6CCAD87FD4F9DABADE3F /* ../App/Services/Companion.swift in Sources */,
 				0EBDDCD81AB193D1DCDA3616 /* ../Shared/Companion/CompanionDatabase.swift in Sources */,
@@ -579,6 +685,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		F8F44EB22D5908D00075D79C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A60000000000000000000006 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -999,6 +1112,88 @@
 			};
 			name = Release;
 		};
+		A6000000000000000000000A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "Companion/Companion$(COMPANION_ENTITLEMENTS_SUFFIX_$(COMPANION_FINANCEKIT)).entitlements";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMPANION_BUNDLE_IDENTIFIER = co.dododo.iMCP.Companion;
+				COMPANION_ENTITLEMENTS_SUFFIX_NO = "";
+				COMPANION_ENTITLEMENTS_SUFFIX_YES = .Finance;
+				COMPANION_FINANCEKIT = NO;
+				CURRENT_PROJECT_VERSION = 23;
+				DEVELOPMENT_TEAM = TTY35UM57S;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Companion/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "iMCP Companion";
+				INFOPLIST_KEY_NSCameraUsageDescription = "iMCP Companion uses the camera to scan the pairing code that iMCP shows on your Mac.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "iMCP Companion reads the health data you choose and sends it to iMCP on your Mac, where the AI apps you connect can use it.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "iMCP Companion connects to iMCP on your Mac over your local network.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.7.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(COMPANION_BUNDLE_IDENTIFIER)";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		A6000000000000000000000B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "Companion/Companion$(COMPANION_ENTITLEMENTS_SUFFIX_$(COMPANION_FINANCEKIT)).entitlements";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMPANION_BUNDLE_IDENTIFIER = co.dododo.iMCP.Companion;
+				COMPANION_ENTITLEMENTS_SUFFIX_NO = "";
+				COMPANION_ENTITLEMENTS_SUFFIX_YES = .Finance;
+				COMPANION_FINANCEKIT = NO;
+				CURRENT_PROJECT_VERSION = 23;
+				DEVELOPMENT_TEAM = TTY35UM57S;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Companion/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "iMCP Companion";
+				INFOPLIST_KEY_NSCameraUsageDescription = "iMCP Companion uses the camera to scan the pairing code that iMCP shows on your Mac.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "iMCP Companion reads the health data you choose and sends it to iMCP on your Mac, where the AI apps you connect can use it.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "iMCP Companion connects to iMCP on your Mac over your local network.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.7.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(COMPANION_BUNDLE_IDENTIFIER)";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -1043,6 +1238,15 @@
 			buildConfigurations = (
 				F8F44EBB2D5908D00075D79C /* Debug */,
 				F8F44EBC2D5908D00075D79C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A60000000000000000000009 /* Build configuration list for PBXNativeTarget "iMCP Companion" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A6000000000000000000000A /* Debug */,
+				A6000000000000000000000B /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
@@ -1204,6 +1408,26 @@
 		F8F44E9C2D5903F70075D79C /* MCP */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = MCP;
+		};
+		A60000000000000000000014 /* MCP */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F8D7C3182DCBD32100A4775F /* XCRemoteSwiftPackageReference "swift-sdk" */;
+			productName = MCP;
+		};
+		A60000000000000000000015 /* JSONSchema */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F8D8C48C2DCE0E6800369E5C /* XCRemoteSwiftPackageReference "JSONSchema" */;
+			productName = JSONSchema;
+		};
+		A60000000000000000000016 /* Ontology */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F873F48B2D712BCF0035CD0A /* XCRemoteSwiftPackageReference "Ontology" */;
+			productName = Ontology;
+		};
+		A60000000000000000000017 /* Logging */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F88358352D64A085000317CD /* XCRemoteSwiftPackageReference "swift-log" */;
+			productName = Logging;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
