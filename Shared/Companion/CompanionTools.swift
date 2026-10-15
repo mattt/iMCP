@@ -21,6 +21,9 @@ struct CompanionError: LocalizedError, CustomStringConvertible {
 /// Tool definitions shared by the Mac app and the iPhone companion.
 enum CompanionTools {
     static let statusTool = "companion_status"
+    /// The phone's error when iOS protects HealthKit data because the iPhone is locked.
+    /// The Mac answers such reads from its cache.
+    static let lockedMessage = "HealthKit data is protected while the iPhone is locked."
 
     static let clinicalTypes = [
         "allergyRecord", "clinicalNoteRecord", "conditionRecord", "coverageRecord", "immunizationRecord",
