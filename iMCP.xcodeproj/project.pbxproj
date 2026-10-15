@@ -74,7 +74,19 @@
 		7976D430435CEB5885069EDC /* CompanionOutboxTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF94985E325A869657ADEA03 /* CompanionOutboxTests.swift */; };
 		8172E39E4AC809B22EE49411 /* ../Shared/Companion/CompanionOutbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30DCD03A1950234EBB61EFEE /* ../Shared/Companion/CompanionOutbox.swift */; };
 		F26A5BE8BADF564840BB4AE9 /* ../Shared/Companion/CompanionAlarmRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59DE6C73F45F5069A5C32229 /* ../Shared/Companion/CompanionAlarmRequest.swift */; };
+		A7000000000000000000000C /* iMCP Companion Widgets.appex in Embed */ = {isa = PBXBuildFile; fileRef = A70000000000000000000001 /* iMCP Companion Widgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		A70000000000000000000040 /* AlarmIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000020 /* AlarmIntents.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		A7000000000000000000000D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = F8F44E652D59038D0075D79C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A70000000000000000000002;
+			remoteInfo = "iMCP Companion Widgets";
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
 		F84900952D63C74F0044AA81 /* Copy Executables */ = {
@@ -96,6 +108,17 @@
 			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 1;
+		};
+		C6000000000000000000000C /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				A7000000000000000000000C /* iMCP Companion Widgets.appex in Embed */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
 
@@ -141,6 +164,8 @@
 		CF94985E325A869657ADEA03 /* CompanionOutboxTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionOutboxTests.swift; sourceTree = "<group>"; };
 		30DCD03A1950234EBB61EFEE /* ../Shared/Companion/CompanionOutbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Companion/CompanionOutbox.swift; sourceTree = "<group>"; };
 		59DE6C73F45F5069A5C32229 /* ../Shared/Companion/CompanionAlarmRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Companion/CompanionAlarmRequest.swift; sourceTree = "<group>"; };
+		A70000000000000000000020 /* AlarmIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AlarmIntents.swift; path = Companion/AlarmIntents.swift; sourceTree = SOURCE_ROOT; };
+		A70000000000000000000001 /* iMCP Companion Widgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "iMCP Companion Widgets.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -188,6 +213,14 @@
 			);
 			target = C60000000000000000000002 /* iMCP Companion */;
 		};
+		A70000000000000000000004 /* Exceptions for "CompanionWidgets" folder in "iMCP Companion Widgets" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				CompanionWidgets.entitlements,
+				Info.plist,
+			);
+			target = A70000000000000000000002 /* iMCP Companion Widgets */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -227,6 +260,14 @@
 				C60000000000000000000004 /* Exceptions for "Companion" folder in "iMCP Companion" target */,
 			);
 			path = Companion;
+			sourceTree = "<group>";
+		};
+		A70000000000000000000003 /* CompanionWidgets */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				A70000000000000000000004 /* Exceptions for "CompanionWidgets" folder in "iMCP Companion Widgets" target */,
+			);
+			path = CompanionWidgets;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -297,6 +338,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A70000000000000000000007 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -364,6 +412,7 @@
 				F8F44E6F2D59038D0075D79C /* App */,
 				A10000000000000000000002 /* Helper */,
 				C60000000000000000000003 /* Companion */,
+				A70000000000000000000003 /* CompanionWidgets */,
 				A20000000000000000000001 /* Shared */,
 				F8F44EB72D5908D00075D79C /* CLI */,
 				F8F44E6E2D59038D0075D79C /* Products */,
@@ -378,6 +427,7 @@
 				F8F44E6D2D59038D0075D79C /* iMCP.app */,
 				A10000000000000000000001 /* iMCP Helper.app */,
 				C60000000000000000000001 /* iMCP Companion.app */,
+				A70000000000000000000001 /* iMCP Companion Widgets.appex */,
 				F8F44EB62D5908D00075D79C /* imcp-server */,
 				6A5CFBBEC66BC8CDA9D65496 /* imcp-serverTests.xctest */,
 			);
@@ -508,10 +558,12 @@
 				C60000000000000000000006 /* Sources */,
 				C60000000000000000000007 /* Frameworks */,
 				C60000000000000000000008 /* Resources */,
+				C6000000000000000000000C /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				A7000000000000000000000E /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				C60000000000000000000003 /* Companion */,
@@ -528,6 +580,28 @@
 			productReference = C60000000000000000000001 /* iMCP Companion.app */;
 			productType = "com.apple.product-type.application";
 		};
+		A70000000000000000000002 /* iMCP Companion Widgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A70000000000000000000009 /* Build configuration list for PBXNativeTarget "iMCP Companion Widgets" */;
+			buildPhases = (
+				A70000000000000000000006 /* Sources */,
+				A70000000000000000000007 /* Frameworks */,
+				A70000000000000000000008 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				A70000000000000000000003 /* CompanionWidgets */,
+			);
+			name = "iMCP Companion Widgets";
+			packageProductDependencies = (
+			);
+			productName = "iMCP Companion Widgets";
+			productReference = A70000000000000000000001 /* iMCP Companion Widgets.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -538,6 +612,9 @@
 				LastSwiftUpdateCheck = 1620;
 				LastUpgradeCheck = 2620;
 				TargetAttributes = {
+					A70000000000000000000002 = {
+						CreatedOnToolsVersion = 27.0;
+					};
 					C60000000000000000000002 = {
 						CreatedOnToolsVersion = 27.0;
 					};
@@ -589,6 +666,7 @@
 			targets = (
 				A10000000000000000000003 /* iMCP Helper */,
 				C60000000000000000000002 /* iMCP Companion */,
+				A70000000000000000000002 /* iMCP Companion Widgets */,
 				F8F44E6C2D59038D0075D79C /* iMCP */,
 				F8F44EB52D5908D00075D79C /* imcp-server */,
 				8F6A71ADC0CC6BD168A9167D /* imcp-serverTests */,
@@ -619,6 +697,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		C60000000000000000000008 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A70000000000000000000008 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -717,7 +802,23 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A70000000000000000000006 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A70000000000000000000040 /* AlarmIntents.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A7000000000000000000000E /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A70000000000000000000002 /* iMCP Companion Widgets */;
+			targetProxy = A7000000000000000000000D /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		730CCB1C20FB35151860DD40 /* Release */ = {
@@ -1213,6 +1314,72 @@
 			};
 			name = Release;
 		};
+		A7000000000000000000000A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "CompanionWidgets/CompanionWidgets.entitlements";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMPANION_BUNDLE_IDENTIFIER = co.dododo.iMCP.Companion;
+				COMPANION_FINANCEKIT = NO;
+				CURRENT_PROJECT_VERSION = 23;
+				DEVELOPMENT_TEAM = TTY35UM57S;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = CompanionWidgets/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "iMCP Companion Widgets";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.7.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(COMPANION_BUNDLE_IDENTIFIER).Widgets";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		A7000000000000000000000B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "CompanionWidgets/CompanionWidgets.entitlements";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMPANION_BUNDLE_IDENTIFIER = co.dododo.iMCP.Companion;
+				COMPANION_FINANCEKIT = NO;
+				CURRENT_PROJECT_VERSION = 23;
+				DEVELOPMENT_TEAM = TTY35UM57S;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = CompanionWidgets/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "iMCP Companion Widgets";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.7.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(COMPANION_BUNDLE_IDENTIFIER).Widgets";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -1266,6 +1433,15 @@
 			buildConfigurations = (
 				C6000000000000000000000A /* Debug */,
 				C6000000000000000000000B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A70000000000000000000009 /* Build configuration list for PBXNativeTarget "iMCP Companion Widgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A7000000000000000000000A /* Debug */,
+				A7000000000000000000000B /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
