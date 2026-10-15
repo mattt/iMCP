@@ -286,7 +286,11 @@ actor CompanionService: CompanionBackend {
                 throw CompanionError("The connected app isn't iMCP Companion.")
             }
             let link = CompanionRemoteLink(device: device, client: client, channel: channel)
-            await channel.setCloseHandler { [weak self] in await self?.detach(link) }
+            await channel.setCloseHandler { [weak self] in
+                await self?.detach(link)
+                // Disconnecting the client fails its pending requests and stops its receive loop.
+                await link.close()
+            }
             attach(link)
             log.notice("iMCP Companion connected from \(device.name, privacy: .public)")
         } catch let refusal as Refusal {
@@ -337,7 +341,18 @@ actor CompanionService: CompanionBackend {
 
     // MARK: - Sync
 
+    /// Asks the phone for its status and remembers it for answers from the cache.
+    @discardableResult
+    private func refreshPhoneStatus(_ link: any CompanionPeerLink) async -> Value? {
+        guard let text = try? await link.call(CompanionTools.statusTool, [:]),
+            let status = try? JSONDecoder().decode(Value.self, from: Data(text.utf8))
+        else { return nil }
+        try? await openCache().setPhoneStatus(status)
+        return status
+    }
+
     private func syncLoop(_ link: any CompanionPeerLink) async {
+        await refreshPhoneStatus(link)
         while !Task.isCancelled, self.link === link {
             await drain(link)
             try? await Task.sleep(for: pollInterval)
@@ -539,12 +554,15 @@ actor CompanionService: CompanionBackend {
                 "\(tool) needs iMCP Companion to be open on the iPhone and connected to this Mac."
             )
         }
+        // The phone reports when a service can't run there, such as Finance without its entitlement.
+        let phone = await cache.phoneStatus()?.objectValue?["services"]?.objectValue?[domain.rawValue]?.objectValue
+        let unavailable = phone?["available"] == .bool(false) ? phone?["note"]?.stringValue : nil
         return CompanionEnvelope.make(
             domain: domain,
             source: .cache,
             syncedAt: await cache.syncedAt(domain),
             results: rows.map(\.payload),
-            note: [extra, note].compactMap { $0 }.joined(separator: " ").nilIfEmpty
+            note: [unavailable, extra, note].compactMap { $0 }.joined(separator: " ").nilIfEmpty
         )
     }
 
@@ -573,9 +591,7 @@ actor CompanionService: CompanionBackend {
         if let link {
             object["device"] = .string(link.device.name)
             // The phone reports its permissions and queue; an older or busy phone may not answer.
-            if let text = try? await link.call(CompanionTools.statusTool, [:]),
-                let phone = try? JSONDecoder().decode(Value.self, from: Data(text.utf8))
-            {
+            if let phone = await refreshPhoneStatus(link) {
                 object["phone"] = phone
             }
         }
@@ -680,14 +696,17 @@ final class CompanionRemoteLink: CompanionPeerLink, @unchecked Sendable {
                     throw CompanionError("iMCP Companion didn't answer: \(error.localizedDescription)")
                 }
             }
-            // The client doesn't fail pending calls when the connection closes.
+            // The client doesn't fail pending calls when the connection closes,
+            // and the group waits for the call, so disconnect the client to end it.
             group.addTask {
                 while await !channel.isClosed { try await Task.sleep(for: .milliseconds(250)) }
+                await client.disconnect()
                 throw CompanionLinkLost()
             }
             group.addTask {
                 try await Task.sleep(for: Self.timeout)
                 await channel.disconnect()
+                await client.disconnect()
                 throw CompanionLinkLost()
             }
             defer { group.cancelAll() }

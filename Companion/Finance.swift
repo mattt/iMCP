@@ -103,8 +103,8 @@ struct FinancePhoneService: PhoneService {
         }
     }
 
-    func sync(into outbox: CompanionOutbox) async throws {
-        try await FinanceSync.sync(into: outbox)
+    func sync(into outbox: CompanionOutbox, generation: Int) async throws {
+        try await FinanceSync.sync(into: outbox, generation: generation)
     }
 
     func startBackgroundDelivery() async {

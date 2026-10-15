@@ -9,6 +9,7 @@ final class CompanionLinkTests: XCTestCase {
     private var service: CompanionService!
     private var port: UInt16 = 0
     private var phoneTasks: [Task<Void, Error>] = []
+    private var phoneChannels: [CompanionChannel] = []
 
     override func setUp() async throws {
         directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -44,6 +45,7 @@ final class CompanionLinkTests: XCTestCase {
         tools: [Tool] = []
     ) async throws -> CompanionWelcome {
         let (channel, welcome) = try await CompanionDialer.connect(to: endpoint, with: credentials)
+        phoneChannels.append(channel)
         phoneTasks.append(Task { try await CompanionPeer.serve(channel, tools: tools, version: "test") })
         return welcome
     }
@@ -203,6 +205,84 @@ final class CompanionLinkTests: XCTestCase {
         XCTAssertEqual(offline.objectValue?["results"]?.arrayValue?.first?.objectValue?["title"], "Wake")
     }
 
+    func testPhoneDisconnectDuringALiveCallFallsBackToTheCache() async throws {
+        let started = Recorder<Bool>()
+        let code = try await service.beginPairing()
+        try await connectPhone(
+            CompanionDialer.pairing(code, device: "phone-1", name: "Test iPhone"),
+            tools: [
+                phoneTool("workouts_fetch") { _ in
+                    await started.append(true)
+                    try await Task.sleep(for: .seconds(600))
+                    return [:]
+                }
+            ]
+        )
+        try await waitUntilConnected()
+        let call = Task { try await service.call("workouts_fetch", [:]) }
+        for _ in 0 ..< 100 where await started.values.isEmpty {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        let clock = ContinuousClock()
+        let begin = clock.now
+        await phoneChannels.last?.disconnect()
+        let value = try await call.value
+        XCTAssertEqual(value.objectValue?["source"], "cache")
+        XCTAssertLessThan(clock.now - begin, .seconds(5))
+    }
+
+    func testSyncContinuesAfterThePhoneDropsDuringAPull() async throws {
+        let pulls = Recorder<Int>()
+        let acknowledged = Recorder<Int>()
+        let record = CompanionRecord(
+            kind: .alarm,
+            id: "alarm-1",
+            key: nil,
+            start: nil,
+            end: nil,
+            payload: Data(#"{"id":"alarm-1"}"#.utf8)
+        )
+        let tools = [
+            phoneTool(CompanionLink.pullTool) { _ in
+                await pulls.append(1)
+                if await pulls.values.count == 1 {
+                    // The first phone stops answering, as an app does when iOS suspends it.
+                    try await Task.sleep(for: .seconds(600))
+                }
+                let batch = CompanionBatch(
+                    sequence: await acknowledged.values.isEmpty ? 3 : 0,
+                    syncedAt: [:],
+                    records: [record]
+                )
+                return try JSONDecoder().decode(Value.self, from: CompanionCoding.encoder.encode(batch))
+            },
+            phoneTool(CompanionLink.ackTool) { input in
+                await acknowledged.append(input["sequence"]?.intValue ?? -1)
+                return ["ok": true]
+            },
+        ]
+        let code = try await service.beginPairing()
+        let welcome = try await connectPhone(
+            CompanionDialer.pairing(code, device: "phone-1", name: "Test iPhone"),
+            tools: tools
+        )
+        for _ in 0 ..< 100 where await pulls.values.isEmpty {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        await phoneChannels.last?.disconnect()
+        try await waitUntilConnected(false)
+        let key = SymmetricKey(data: try XCTUnwrap(welcome.deviceKey))
+        try await connectPhone(
+            CompanionDialer.paired(device: "phone-1", name: "Test iPhone", key: key),
+            tools: tools
+        )
+        for _ in 0 ..< 100 where await acknowledged.values.isEmpty {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        let acks = await acknowledged.values
+        XCTAssertEqual(acks, [3], "The second connection must drain the queue.")
+    }
+
     func testDeletingTheCacheChangesItsIdentifier() async throws {
         let before = await service.cacheID
         try await service.deleteCache()
@@ -300,6 +380,19 @@ final class CompanionRetryTests: XCTestCase {
         XCTAssertTrue(value.objectValue?["note"]?.stringValue?.contains("locked") == true)
     }
 
+    func testCachedFinanceAnswersGiveThePhonesReason() async throws {
+        let reason = "This build of iMCP Companion doesn't have the FinanceKit entitlement."
+        let link = FakeLink { tool, _ in
+            guard tool == CompanionTools.statusTool else { throw CompanionLinkLost() }
+            return #"{"services":{"finance":{"available":false,"note":"\#(reason)"}}}"#
+        }
+        await service.attach(link)
+        _ = try await service.call(CompanionTools.statusTool, [:])
+        await service.detach(link)
+        let value = try await service.call("finance_accounts_list", [:])
+        XCTAssertTrue(value.objectValue?["note"]?.stringValue?.contains(reason) == true)
+    }
+
     func testPhoneErrorsAreNotRetried() async throws {
         let link = FakeLink { _, _ in throw CompanionError("AlarmKit access is off.") }
         await service.attach(link)
@@ -372,4 +465,82 @@ private actor Recorder<T: Sendable> {
 
 private struct NoBackend: CompanionBackend {
     func call(_ tool: String, _ input: [String: Value]) async throws -> Value { .null }
+}
+
+/// Two ends of a TLS connection on the loopback interface.
+final class CompanionChannelTests: XCTestCase {
+    private var listener: NWListener?
+
+    override func tearDown() {
+        listener?.cancel()
+    }
+
+    private func pair() async throws -> (CompanionChannel, CompanionChannel) {
+        let keys = [(Data("test".utf8), SymmetricKey(size: .bits256))]
+        let listener = try NWListener(using: CompanionTLS.parameters(keys: keys), on: .any)
+        self.listener = listener
+        let accepted = AsyncStream<NWConnection> { continuation in
+            listener.newConnectionHandler = { continuation.yield($0) }
+        }
+        listener.start(queue: .main)
+        var port: NWEndpoint.Port?
+        for _ in 0 ..< 100 where port == nil {
+            try await Task.sleep(for: .milliseconds(20))
+            if case .ready = listener.state { port = listener.port }
+        }
+        let ready = try XCTUnwrap(port)
+        let client = CompanionChannel(
+            connection: NWConnection(
+                to: .hostPort(host: .ipv4(.loopback), port: ready),
+                using: CompanionTLS.parameters(keys: keys)
+            )
+        )
+        async let opened: Void = client.open()
+        var iterator = accepted.makeAsyncIterator()
+        let connection = await iterator.next()
+        let server = CompanionChannel(connection: try XCTUnwrap(connection))
+        try await server.open()
+        try await opened
+        return (client, server)
+    }
+
+    func testLinesThatArriveBeforeReceiveAreKept() async throws {
+        let (client, server) = try await pair()
+        try await server.connect()
+        try await client.writeLine(Data("one".utf8))
+        try await client.writeLine(Data("two".utf8))
+        try await Task.sleep(for: .milliseconds(300))
+        var lines: [String] = []
+        for try await line in await server.receive() {
+            lines.append(String(decoding: line, as: UTF8.self))
+            if lines.count == 2 { break }
+        }
+        XCTAssertEqual(lines, ["one", "two"])
+    }
+
+    func testAClosedChannelEndsReceivingWithAnError() async throws {
+        let (client, server) = try await pair()
+        try await server.connect()
+        let stream = await server.receive()
+        await client.disconnect()
+        do {
+            for try await _ in stream {}
+            XCTFail("A closed connection must end the stream with an error.")
+        } catch {}
+        do {
+            for try await _ in await server.receive() {}
+            XCTFail("Receiving again after the close must fail too.")
+        } catch {}
+    }
+
+    func testReadTimesOutWhenThePeerIsSilent() async throws {
+        let (_, server) = try await pair()
+        let clock = ContinuousClock()
+        let begin = clock.now
+        do {
+            _ = try await server.read(CompanionHello.self, timeout: .milliseconds(300))
+            XCTFail("A silent peer must time out.")
+        } catch {}
+        XCTAssertLessThan(clock.now - begin, .seconds(3))
+    }
 }

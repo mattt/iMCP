@@ -14,7 +14,8 @@ final class FinanceDelivery: BackgroundDeliveryExtension {
 
     func didReceiveData(for types: [FinanceStore.BackgroundDataType]) async {
         do {
-            try await FinanceSync.sync(into: CompanionOutbox.shared())
+            let outbox = try CompanionOutbox.shared()
+            try await FinanceSync.sync(into: outbox, generation: await outbox.generation)
         } catch {
             log.error("Queuing Wallet changes failed: \(error.localizedDescription, privacy: .public)")
         }

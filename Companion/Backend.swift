@@ -13,7 +13,9 @@ protocol PhoneService: Sendable {
     /// Asks for the permissions the service needs.
     func requestAuthorization() async throws
     /// Queues changes since the last sync, or everything after a reset.
-    func sync(into outbox: CompanionOutbox) async throws
+    /// Every write passes `generation`, so a sync that a reset overtakes stops
+    /// with `CompanionOutbox.Superseded` instead of queuing changes from its stale anchors.
+    func sync(into outbox: CompanionOutbox, generation: Int) async throws
     /// Registers for background delivery of changes, if the framework offers it.
     func startBackgroundDelivery() async
     /// Stops background delivery when the user turns the service off.
@@ -76,7 +78,9 @@ actor PhoneBackend: CompanionBackend {
         .alarms: AlarmsPhoneService(),
     ]
     private var outbox: CompanionOutbox?
-    private var syncing = false
+    /// Syncs in progress, and domains that changed again while one ran.
+    private var running: [CompanionDomain: Task<Void, Never>] = [:]
+    private var dirty = Set<CompanionDomain>()
 
     func openOutbox() throws -> CompanionOutbox {
         if let outbox { return outbox }
@@ -120,6 +124,10 @@ actor PhoneBackend: CompanionBackend {
         guard let domain = CompanionTools.domain(of: tool), let service = services[domain] else {
             throw CompanionError("Unknown companion tool: \(tool)")
         }
+        // Without the entitlement, Finance can't be turned on, so give the reason instead.
+        if domain == .finance, let reason = FinanceCapability.current.reason {
+            throw CompanionError(reason)
+        }
         guard PhoneSettings.isEnabled(domain) else {
             throw CompanionError(
                 "\(domain.title) is off in iMCP Companion on the iPhone. Turn it on there to use \(tool)."
@@ -146,27 +154,44 @@ actor PhoneBackend: CompanionBackend {
 
     /// Queues changes from every service that is on.
     func syncAll() async {
-        guard !syncing else { return }
-        syncing = true
-        defer { syncing = false }
-        guard let outbox = try? openOutbox() else { return }
         for domain in CompanionDomain.allCases where PhoneSettings.isEnabled(domain) {
-            await sync(domain, into: outbox)
+            await sync(domain)
         }
     }
 
+    /// Queues one service's changes.
+    /// Calls that arrive while its sync runs wait for one more run instead of starting another,
+    /// so a burst of HealthKit wakes reads each anchor once.
     func sync(_ domain: CompanionDomain) async {
-        guard PhoneSettings.isEnabled(domain), let outbox = try? openOutbox() else { return }
-        await sync(domain, into: outbox)
+        guard PhoneSettings.isEnabled(domain), let service = services[domain] else { return }
+        if let task = running[domain] {
+            dirty.insert(domain)
+            await task.value
+            return
+        }
+        let task = Task {
+            repeat {
+                dirty.remove(domain)
+                await run(service)
+            } while dirty.contains(domain)
+            running[domain] = nil
+        }
+        running[domain] = task
+        await task.value
     }
 
-    private func sync(_ domain: CompanionDomain, into outbox: CompanionOutbox) async {
-        guard let service = services[domain] else { return }
+    private func run(_ service: any PhoneService) async {
+        guard let outbox = try? openOutbox() else { return }
         do {
-            try await service.sync(into: outbox)
-            PhoneSettings.setLastSync(domain, Date())
+            try await service.sync(into: outbox, generation: await outbox.generation)
+            PhoneSettings.setLastSync(service.domain, Date())
+        } catch is CompanionOutbox.Superseded {
+            // The Mac's cache was reset during this sync; start over from no anchors.
+            dirty.insert(service.domain)
         } catch {
-            log.error("\(domain.title, privacy: .public) sync failed: \(error.localizedDescription, privacy: .public)")
+            log.error(
+                "\(service.domain.title, privacy: .public) sync failed: \(error.localizedDescription, privacy: .public)"
+            )
         }
     }
 

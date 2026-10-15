@@ -279,7 +279,7 @@ struct AlarmsPhoneService: PhoneService {
         }
     }
 
-    func sync(into outbox: CompanionOutbox) async throws {
+    func sync(into outbox: CompanionOutbox, generation: Int) async throws {
         let records = try Self.snapshot().map { value -> CompanionRecord in
             let object = value.objectValue ?? [:]
             let start =
@@ -294,7 +294,7 @@ struct AlarmsPhoneService: PhoneService {
                 payload: try JSONEncoder().encode(value)
             )
         }
-        try await outbox.enqueue(records, syncedAt: [.alarms: Date()], replacing: [.alarm])
+        try await outbox.enqueue(records, syncedAt: [.alarms: Date()], replacing: [.alarm], generation: generation)
     }
 
     func startBackgroundDelivery() async {
