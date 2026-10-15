@@ -17,13 +17,16 @@ ET.register_namespace("", SVG)
 # Arrange icons by hue, from red through green and blue to purple.
 # Each entry pairs an asset name with its dark appearance background color.
 SERVICES = (
+    ("health", "#ff375f"),
     ("calendar", "#ff453a"),
     ("contacts", "#ac8e68"),
     ("reminders", "#ff9f0a"),
     ("home", "#ff9f0a"),
+    ("alarms", "#ff9f0a"),
     ("messages", "#28d74b"),
     ("phone", "#28d74b"),
     ("voicemail", "#28d74b"),
+    ("finance", "#63e6e2"),
     ("weather", "#5ac8f5"),
     ("location", "#0a84ff"),
     ("mail", "#0a84ff"),
@@ -32,7 +35,7 @@ SERVICES = (
 )
 
 WIDTH, HEIGHT = 1012, 600
-ICON_SIZE = 86
+ICON_SIZE = 68
 RADIUS = 600
 ARC_TOP = 108
 SWEEP = math.radians(100)
