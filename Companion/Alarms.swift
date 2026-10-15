@@ -100,15 +100,12 @@ struct AlarmsPhoneService: PhoneService {
             )
         }
         let metadata = CompanionAlarmMetadata(title: request.title, isTimer: false)
-        let alert: AlarmPresentation.Alert
-        if #available(iOS 26.1, *) {
-            alert = AlarmPresentation.Alert(title: LocalizedStringResource(stringLiteral: request.title))
-        } else {
-            alert = AlarmPresentation.Alert(
-                title: LocalizedStringResource(stringLiteral: request.title),
-                stopButton: AlarmButton(text: "Stop", textColor: .white, systemImageName: "stop.circle")
-            )
-        }
+        // iOS 26.1 ignores stopButton, but the initializer without it
+        // isn't in the iOS 26.0 SDK that CI also builds with.
+        let alert = AlarmPresentation.Alert(
+            title: LocalizedStringResource(stringLiteral: request.title),
+            stopButton: AlarmButton(text: "Stop", textColor: .white, systemImageName: "stop.circle")
+        )
         let stop = StopAlarmIntent(alarmID: request.id)
         let configuration: AlarmManager.AlarmConfiguration<CompanionAlarmMetadata>
         switch request.schedule {
