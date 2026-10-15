@@ -5,7 +5,9 @@
 </picture>
 
 iMCP is a macOS app for connecting your digital life with AI.
-It works with [Claude Desktop][claude-app]
+It works with [ChatGPT Desktop][chatgpt-app],
+[Claude Desktop][claude-app],
+local models served by [llama.cpp][llama-cpp],
 and a [growing list of clients][mcp-clients] that support the
 [Model Context Protocol (MCP)][mcp].
 
@@ -93,6 +95,16 @@ and a [growing list of clients][mcp-clients] that support the
 
 ## Getting Started
 
+To use iMCP, you need two apps:
+iMCP, which gives access to the services you turn on,
+and an AI app that can connect to MCP servers.
+Install iMCP and turn on services first.
+Then follow the instructions for your AI app:
+
+- [ChatGPT Desktop](#connect-to-chatgpt-desktop)
+- [Claude Desktop](#connect-to-claude-desktop)
+- [Claude Code, Cursor, and other clients](#connect-to-other-clients)
+
 ### Download and open the app
 
 First, [download the iMCP app](https://iMCP.app/download)
@@ -105,20 +117,24 @@ you can run the following command:
 brew install --cask mattt/tap/iMCP
 ```
 
-<img align="right" width="344" src="/Assets/imcp-screenshot-first-launch.png" alt="Screenshot of iMCP on first launch" />
+<img align="right" width="344" src="/Assets/imcp-screenshot-first-launch.png" alt="Screenshot of the iMCP menu, with the Enable MCP Server switch at the top and a list of services below it" />
 
 When you open the app,
 you'll see a
 <img style="display: inline" width="20" height="16" src="/Assets/icon.svg" />
 icon in your menu bar.
 
-Clicking on this icon reveals the iMCP menu,
-which displays all available services.
-Initially, all services will appear in gray,
-indicating they're inactive.
+Clicking on this icon reveals the iMCP menu.
+The blue "Enable MCP Server" switch at the top indicates that
+the MCP server is running and ready to connect with AI apps.
+iMCP must be open for AI apps to use it.
 
-The blue toggle switch at the top indicates that the MCP server is running
-and ready to connect with MCP-compatible clients.
+Below the switch, the menu lists the available services.
+Maps is on when you first open iMCP;
+the other services are off and appear in gray.
+iMCP also includes a tool that plays a system sound.
+That tool is always available, even with every service off,
+so you can test a connection without granting any permissions.
 
 <br clear="all">
 
@@ -133,26 +149,117 @@ Click <kbd>Allow Full Access</kbd> to continue.
 
 > [!IMPORTANT]
 > iMCP **does not** collect or store any of your data.
-> Clients like Claude Desktop _do_ send
+> AI apps like ChatGPT and Claude _do_ send
 > your data off device as part of tool calls.
+> To keep your data on your Mac,
+> [use a local model with llama.cpp](#llamacpp).
+> Turn on only the services you want your AI app to use.
 
 <br clear="all">
 
 <img align="right" width="344" src="/Assets/imcp-screenshot-all-services-active.png" alt="Screenshot of iMCP with all services enabled" />
 
 Once activated,
-each service icons goes from gray to their distinctive colors —
+each service icon changes from gray to its own color:
 red for Calendar, green for Messages, blue for Location, and so on.
 
 Repeat this process for all of the capabilities you'd like to enable.
 These permissions follow Apple's standard security model,
 giving you complete control over what information iMCP can access.
-
-<!-- <br clear="all"> -->
-
-<!-- <img align="right" width="344" src="/Assets/imcp-screenshot-configure-claude-desktop.png" /> -->
+To turn off a service, click its icon again.
+To turn off individual tools within a service,
+click <img style="display: inline" width="20" height="16" src="/Assets/icon.svg" />
+\> "Settings..." and choose "Services".
 
 <br clear="all">
+
+### Approve connections
+
+<img align="right" width="372" src="/Assets/imcp-screenshot-approve-connection.png" alt="Screenshot of the iMCP Connection Request dialog with Deny and Allow buttons" />
+
+The first time an AI app connects,
+iMCP shows a "Client Connection Request" dialog
+with the name the app reports
+and the services that the app can use.
+Click "Allow" to connect.
+Check "Always trust this client" to skip this dialog next time;
+iMCP then shows a notification each time the app connects.
+You can remove trusted clients in
+<img style="display: inline" width="20" height="16" src="/Assets/icon.svg" />
+\> "Settings..." > "General".
+
+<br clear="all">
+
+### Connect to ChatGPT Desktop
+
+If you don't have ChatGPT Desktop installed,
+you can [download it here][chatgpt-app].
+
+> [!NOTE]
+> These steps use the labels in ChatGPT 26.930 for macOS
+> and haven't been tested end to end yet.
+> OpenAI documents MCP servers for
+> [Codex mode](https://learn.chatgpt.com/docs/extend/mcp),
+> so use iMCP in a Codex conversation.
+
+1. Click <img style="display: inline" width="20" height="16" src="/Assets/icon.svg" />
+   \> "Copy server command to clipboard".
+2. In ChatGPT, open Settings (<kbd>⌘</kbd><kbd>,</kbd>)
+   and choose "MCP servers" in the sidebar.
+3. Choose "Add server".
+   Enter `iMCP` for "Name", choose "STDIO" for "Type",
+   and paste the copied command into "Command to launch".
+   Leave the other fields empty.
+4. Choose "Save", and then choose "Restart".
+5. [Approve the connection](#approve-connections) in iMCP.
+   ChatGPT might identify itself as `codex-mcp-client`.
+
+To test the connection,
+start a new Codex conversation and send this message:
+
+> "Use iMCP to play a system sound."
+
+Your Mac plays a short sound.
+If your Mac is muted, open the tool call in the conversation;
+a result of `true` means that iMCP received the request.
+
+<details>
+<summary>Troubleshooting ChatGPT Desktop</summary>
+
+- **Settings doesn't show "MCP servers".**
+  Update ChatGPT and switch to Codex mode.
+  If ChatGPT shows "MCP server settings are unavailable"
+  and an organization manages your account,
+  ask your administrator whether you can add MCP servers.
+- **iMCP doesn't show an approval dialog.**
+  ChatGPT can't open iMCP for you.
+  Make sure that iMCP is open and "Enable MCP Server" is on,
+  and then choose "Restart" in ChatGPT's "MCP servers" settings.
+  The dialog can also open behind other windows.
+  If you trusted ChatGPT before,
+  iMCP shows a notification instead of a dialog.
+- **ChatGPT can't use iMCP tools.**
+  Make sure that you're in a Codex conversation
+  and that iMCP is turned on in ChatGPT's "MCP servers" settings.
+  If you clicked "Deny", choose "Restart" to see the dialog again.
+  If you turned on a service after connecting, choose "Restart"
+  so that ChatGPT loads its tools.
+- **A service doesn't turn on in iMCP.**
+  If you denied permission when macOS asked,
+  open System Settings > "Privacy & Security",
+  choose the category for the service, such as "Calendars",
+  and turn on iMCP.
+  Then click the service icon in the iMCP menu again.
+- **ChatGPT shows an error for the iMCP server.**
+  The command might point to the wrong place,
+  for example, if you moved iMCP after setting it up.
+  Copy the server command again,
+  open the iMCP server's settings in ChatGPT,
+  and replace "Command to launch" with the copied command.
+  Make sure that "Arguments" is empty,
+  and then choose "Save" and "Restart".
+
+</details>
 
 ### Connect to Claude Desktop
 
@@ -169,7 +276,8 @@ This will create a configuration file at
 
 To connect iMCP to Claude Desktop,
 click <img style="display: inline" width="20" height="16" src="/Assets/icon.svg" />
-\> "Configure Claude Desktop".
+\> "Configure Claude Desktop",
+and then click "Set Up".
 
 This will add or update the MCP server configuration to use the
 `imcp-server` executable bundled in the application.
@@ -195,17 +303,14 @@ and enter the following:
 
 </details>
 
-<img align="right" width="372" src="/Assets/imcp-screenshot-approve-connection.png" />
-
 ### Call iMCP tools from Claude Desktop
 
 Quit and reopen the Claude Desktop app.
-You'll be prompted to approve the connection.
-
-<br clear="all">
+iMCP will ask you to [approve the connection](#approve-connections).
 
 After approving the connection,
-you should now see 🔨12 in the bottom right corner of your chat box.
+you should now see a 🔨 icon with the number of available tools
+in the bottom right corner of your chat box.
 Click on that to see a list of all the tools made available to Claude
 by iMCP.
 
@@ -226,7 +331,23 @@ without requiring you to manually share this data during your conversation.
   <img width="738" src="/Assets/claude-desktop-screenshot-message.png" alt="Screenshot of Claude response to user message 'How's the weather where I am?'" />
 </p>
 
-### Connect to [Claude Code][claude-code]
+### Connect to other clients
+
+Most MCP clients can start iMCP as a local server
+that uses the STDIO transport.
+Click <img style="display: inline" width="20" height="16" src="/Assets/icon.svg" />
+\> "Copy server command to clipboard",
+and then enter the copied command
+as the command for a new STDIO server in your client.
+The copied command is the full path to the `imcp-server` executable
+in your copy of iMCP.
+
+The commands below assume that iMCP is in your Applications folder.
+If you installed iMCP somewhere else,
+replace `/Applications/iMCP.app/Contents/MacOS/imcp-server`
+with the copied command.
+
+#### [Claude Code][claude-code]
 
 To add iMCP globally after installing the app:
 
@@ -245,7 +366,7 @@ claude mcp add-from-claude-desktop
 
 </details>
 
-### Connect to [Cursor][cursor]
+#### [Cursor][cursor]
 
 Open this deep link to automatically install the iMCP server:
 
@@ -257,17 +378,68 @@ Open this deep link to automatically install the iMCP server:
   </picture>
 </a>
 
-### Connect to [Amp][amp]
+#### [llama.cpp][llama-cpp]
 
-To add iMCP globally (available in all projects):
+You can use iMCP with an open model that runs on your Mac
+through [llama.cpp][llama-cpp],
+so your conversations and tool results stay on your Mac.
+`llama-server` (or `llama serve`) starts the MCP servers
+listed in a configuration file
+and gives their tools to models in its web UI.
+This requires llama.cpp 0.1.0 or later.
 
-```console
-amp mcp add iMCP -- /Applications/iMCP.app/Contents/MacOS/imcp-server
+Create a file at `~/.config/llama/mcp.json` with the following contents:
+
+```json
+{
+  "mcpServers": {
+    "imcp": {
+      "command": "/Applications/iMCP.app/Contents/MacOS/imcp-server"
+    }
+  }
+}
 ```
 
-> [!NOTE]
-> When a client first connects, iMCP will show an approval dialog.
-> Click "Allow" and check "Always trust this client" to avoid repeated prompts.
+Then start the server with the `--mcp-servers-config` option
+and a model that supports tool calling:
+
+```console
+llama serve --mcp-servers-config ~/.config/llama/mcp.json \
+            -hf ggml-org/Qwen3-4B-GGUF
+```
+
+Open the web UI at <http://localhost:8080>.
+iMCP tools show up with an `imcp_` prefix,
+such as `imcp_weather_current`.
+The web UI asks you before it runs each tool call,
+unless you choose to always allow that tool.
+
+<details>
+<summary>Use the Llama app</summary>
+
+[Llama][llama-app] is a menu bar app that runs `llama serve` for you.
+It doesn't have a setting for MCP servers,
+so add the `--mcp-servers-config` option to its custom server arguments:
+
+```console
+defaults write app.llama.Llama extraServerArgs -string "--mcp-servers-config $HOME/.config/llama/mcp.json"
+```
+
+Llama splits this value at each space and doesn't expand `~`,
+so use the full path to the file, without spaces.
+If you already set custom server arguments,
+add the option to your existing value.
+Quit and reopen Llama,
+then open the web UI at <http://localhost:9931>.
+
+</details>
+
+> [!TIP]
+> When the server starts,
+> it waits 10 seconds for iMCP to list its tools.
+> If you don't [approve the connection](#approve-connections)
+> from "llama.cpp" in that time,
+> no iMCP tools show up until you restart the server.
 
 ## Technical Details
 
@@ -556,9 +728,9 @@ See the LICENSE file for more info.
 iMessage® is a registered trademark of Apple Inc.
 This project is not affiliated with, endorsed, or sponsored by Apple Inc.
 
-[amp]: https://ampcode.com
 [app-sandbox]: https://developer.apple.com/documentation/security/app-sandbox
 [bonjour]: https://developer.apple.com/bonjour/
+[chatgpt-app]: https://chatgpt.com/download
 [claude-app]: https://claude.ai/download
 [claude-code]: https://claude.com/product/claude-code
 [companion]: https://github.com/mattt/Companion
@@ -568,6 +740,8 @@ This project is not affiliated with, endorsed, or sponsored by Apple Inc.
 [cursor]: https://cursor.com
 [imessage-exporter]: https://github.com/ReagentX/imessage-exporter
 [json-ld]: https://json-ld.org
+[llama-app]: https://llama.app
+[llama-cpp]: https://github.com/ggml-org/llama.cpp
 [madrid]: https://github.com/mattt/Madrid
 [mcp]: https://modelcontextprotocol.io/introduction
 [mcp-clients]: https://modelcontextprotocol.io/clients
