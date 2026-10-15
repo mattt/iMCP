@@ -70,7 +70,7 @@
 		8172E39E4AC809B22EE49411 /* ../Shared/Mobile/MobileOutbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30DCD03A1950234EBB61EFEE /* ../Shared/Mobile/MobileOutbox.swift */; };
 		F26A5BE8BADF564840BB4AE9 /* ../Shared/Mobile/MobileAlarmRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59DE6C73F45F5069A5C32229 /* ../Shared/Mobile/MobileAlarmRequest.swift */; };
 		A7000000000000000000000C /* iMCP iOS Widgets.appex in Embed */ = {isa = PBXBuildFile; fileRef = A70000000000000000000001 /* iMCP iOS Widgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		A70000000000000000000040 /* AlarmIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000020 /* AlarmIntents.swift */; };
+		A70000000000000000000040 /* AlarmMetadata.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000020 /* AlarmMetadata.swift */; };
 		A8000000000000000000000C /* iMCP iOS Finance.appex in Embed */ = {isa = PBXBuildFile; fileRef = A80000000000000000000001 /* iMCP iOS Finance.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		A80000000000000000000040 /* MobileSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80000000000000000000020 /* MobileSync.swift */; };
 		A80000000000000000000041 /* MobileOutbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80000000000000000000021 /* MobileOutbox.swift */; };
@@ -179,7 +179,7 @@
 		CF94985E325A869657ADEA03 /* MobileOutboxTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileOutboxTests.swift; sourceTree = "<group>"; };
 		30DCD03A1950234EBB61EFEE /* ../Shared/Mobile/MobileOutbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Mobile/MobileOutbox.swift; sourceTree = "<group>"; };
 		59DE6C73F45F5069A5C32229 /* ../Shared/Mobile/MobileAlarmRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Mobile/MobileAlarmRequest.swift; sourceTree = "<group>"; };
-		A70000000000000000000020 /* AlarmIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AlarmIntents.swift; path = iOS/AlarmIntents.swift; sourceTree = SOURCE_ROOT; };
+		A70000000000000000000020 /* AlarmMetadata.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AlarmMetadata.swift; path = iOS/AlarmMetadata.swift; sourceTree = SOURCE_ROOT; };
 		A70000000000000000000001 /* iMCP iOS Widgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "iMCP iOS Widgets.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
 		A80000000000000000000020 /* MobileSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MobileSync.swift; path = Shared/Mobile/MobileSync.swift; sourceTree = SOURCE_ROOT; };
 		A80000000000000000000021 /* MobileOutbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MobileOutbox.swift; path = Shared/Mobile/MobileOutbox.swift; sourceTree = SOURCE_ROOT; };
@@ -876,7 +876,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A70000000000000000000040 /* AlarmIntents.swift in Sources */,
+				A70000000000000000000040 /* AlarmMetadata.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -1,6 +1,5 @@
 import ActivityKit
 import AlarmKit
-import AppIntents
 import SwiftUI
 import WidgetKit
 
@@ -23,11 +22,6 @@ struct AlarmLiveActivity: Widget {
                         .font(.largeTitle.monospacedDigit())
                 }
                 Spacer()
-                Button(intent: StopAlarmIntent(alarmID: context.state.alarmID)) {
-                    Image(systemName: "xmark")
-                }
-                .buttonStyle(.bordered)
-                .accessibilityLabel("Stop")
             }
             .padding()
             .activityBackgroundTint(.black.opacity(0.6))
@@ -38,9 +32,6 @@ struct AlarmLiveActivity: Widget {
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     Countdown(state: context.state).monospacedDigit()
-                }
-                DynamicIslandExpandedRegion(.bottom) {
-                    Button("Stop", intent: StopAlarmIntent(alarmID: context.state.alarmID))
                 }
             } compactLeading: {
                 Image(systemName: "timer")
