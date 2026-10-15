@@ -106,7 +106,6 @@ struct AlarmsPhoneService: PhoneService {
             title: LocalizedStringResource(stringLiteral: request.title),
             stopButton: AlarmButton(text: "Stop", textColor: .white, systemImageName: "stop.circle")
         )
-        let stop = StopAlarmIntent(alarmID: request.id)
         let configuration: AlarmManager.AlarmConfiguration<MobileAlarmMetadata>
         switch request.schedule {
         case .timer(let seconds):
@@ -123,8 +122,7 @@ struct AlarmsPhoneService: PhoneService {
                     ),
                     metadata: timerMetadata,
                     tintColor: .orange
-                ),
-                stopIntent: stop
+                )
             )
         case .fixed(let date):
             configuration = .alarm(
@@ -133,8 +131,7 @@ struct AlarmsPhoneService: PhoneService {
                     presentation: AlarmPresentation(alert: alert),
                     metadata: metadata,
                     tintColor: .orange
-                ),
-                stopIntent: stop
+                )
             )
         case .relative(let hour, let minute, let weekdays):
             let days = weekdays.compactMap(Self.weekday)
@@ -149,8 +146,7 @@ struct AlarmsPhoneService: PhoneService {
                     presentation: AlarmPresentation(alert: alert),
                     metadata: metadata,
                     tintColor: .orange
-                ),
-                stopIntent: stop
+                )
             )
         }
         let alarm: Alarm
