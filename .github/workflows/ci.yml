@@ -26,7 +26,8 @@ jobs:
                     - macos: "27"
                       xcode: "27.0"
                       runner: xcode-27
-        timeout-minutes: 10
+        # Runner images without the iOS platform download it before building the iOS app.
+        timeout-minutes: 30
         steps:
             - name: Checkout code
               uses: actions/checkout@v6
@@ -62,6 +63,14 @@ jobs:
                       CODE_SIGNING_REQUIRED=NO \
                       HELPER_CODE_SIGNING_ALLOWED=NO \
                       build
+
+            # Some runner images include Xcode without its iOS platform,
+            # which the iOS app needs even for an unsigned build.
+            - name: Install the iOS platform if it's missing
+              run: |
+                  if xcodebuild -showdestinations -scheme "iMCP iOS" 2>&1 | grep -q "is not installed"; then
+                      xcodebuild -downloadPlatform iOS
+                  fi
 
             # The iOS app's entitlements need a provisioning profile,
             # so CI checks that it compiles and packages without signing.
