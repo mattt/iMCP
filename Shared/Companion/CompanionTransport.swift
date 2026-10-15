@@ -44,19 +44,24 @@ enum CompanionTLS {
 /// first the companion handshake, then MCP messages.
 ///
 /// The handshake and MCP share one read buffer,
+/// and lines that arrive before MCP asks for them wait in the message stream,
 /// so no bytes are lost when the handshake ends and MCP begins.
+/// When the connection closes, the stream ends with an error,
+/// which stops the MCP client's and server's receive loops.
 actor CompanionChannel: Transport {
     nonisolated let logger = Logging.Logger(label: "co.dododo.iMCP.companion.channel")
     private let connection: NWConnection
     private var buffer = Data()
     private var closed = false
     private var reader: Task<Void, Never>?
-    private var continuation: AsyncThrowingStream<Data, Swift.Error>.Continuation?
+    private let messages: AsyncThrowingStream<Data, Swift.Error>
+    private let continuation: AsyncThrowingStream<Data, Swift.Error>.Continuation
     private var onClose: (@Sendable () async -> Void)?
     private static let maximumLine = 64 * 1024 * 1024
 
     init(connection: NWConnection) {
         self.connection = connection
+        (messages, continuation) = AsyncThrowingStream.makeStream(bufferingPolicy: .unbounded)
     }
 
     /// Starts the connection and waits until TLS is ready.
@@ -91,6 +96,7 @@ actor CompanionChannel: Transport {
             }
             group.addTask {
                 try await Task.sleep(for: timeout)
+                connection.cancel()
                 throw CompanionError("The connection didn't open within \(timeout).")
             }
             defer { group.cancelAll() }
@@ -162,6 +168,8 @@ actor CompanionChannel: Transport {
             group.addTask { try await self.readLine() }
             group.addTask {
                 try await Task.sleep(for: timeout)
+                // Closing the connection ends the pending read, so the group can finish.
+                await self.finish()
                 throw CompanionError("The other device didn't answer within \(timeout).")
             }
             defer { group.cancelAll() }
@@ -215,17 +223,17 @@ actor CompanionChannel: Transport {
     }
 
     func receive() -> AsyncThrowingStream<Data, Swift.Error> {
+        guard closed else { return messages }
+        // A closed stream can't be read again; fail at once so callers stop asking.
         let (stream, continuation) = AsyncThrowingStream<Data, Swift.Error>.makeStream()
-        if closed {
-            continuation.finish()
-        } else {
-            self.continuation = continuation
-        }
+        continuation.finish(throwing: Self.closedError)
         return stream
     }
 
+    private static var closedError: CompanionError { CompanionError("The connection closed.") }
+
     private func yield(_ line: Data) {
-        continuation?.yield(line)
+        continuation.yield(line)
     }
 
     private func finish() async {
@@ -234,8 +242,7 @@ actor CompanionChannel: Transport {
         reader?.cancel()
         reader = nil
         connection.cancel()
-        continuation?.finish()
-        continuation = nil
+        continuation.finish(throwing: Self.closedError)
         let handler = onClose
         onClose = nil
         await handler?()

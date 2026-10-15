@@ -150,10 +150,34 @@ final class PhoneConnection: ObservableObject {
 
     // MARK: - Background
 
+    private var flushing: Task<Bool, Never>?
+
     /// Connects long enough for the Mac to pull queued changes.
     /// Returns whether the queue emptied before `timeout`.
+    /// Calls that arrive during a flush share it rather than dialing again.
     @discardableResult
     func flush(timeout: Duration = .seconds(20)) async -> Bool {
+        if let flushing { return await flushing.value }
+        let task = Task { await performFlush(timeout: timeout) }
+        flushing = task
+        let flushed = await task.value
+        flushing = nil
+        return flushed
+    }
+
+    /// Flushes while iOS lets the app finish the work after a background wake.
+    func flushInBackground() async {
+        let application = UIApplication.shared
+        var identifier = UIBackgroundTaskIdentifier.invalid
+        identifier = application.beginBackgroundTask(withName: "Send changes to the Mac") {
+            application.endBackgroundTask(identifier)
+            identifier = .invalid
+        }
+        await flush()
+        if identifier != .invalid { application.endBackgroundTask(identifier) }
+    }
+
+    private func performFlush(timeout: Duration) async -> Bool {
         guard let credentials else { return false }
         if await PhoneBackend.shared.pendingBatches == 0 { return true }
         // A foreground connection already serves the Mac's pulls.
@@ -184,7 +208,7 @@ final class PhoneConnection: ObservableObject {
 
     private func waitForEmptyQueue(timeout: Duration) async -> Bool {
         let deadline = ContinuousClock.now.advanced(by: timeout)
-        while ContinuousClock.now < deadline {
+        while ContinuousClock.now < deadline, !Task.isCancelled {
             if await PhoneBackend.shared.pendingBatches == 0 { return true }
             try? await Task.sleep(for: .milliseconds(500))
         }

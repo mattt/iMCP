@@ -60,6 +60,29 @@ final class CompanionOutboxTests: XCTestCase {
         XCTAssertNil(anchor)
     }
 
+    func testWritesFromBeforeAResetAreRejected() async throws {
+        _ = try await outbox.pull(cacheID: "cache-1")
+        let generation = await outbox.generation
+        _ = try await outbox.pull(cacheID: "cache-2")
+        do {
+            try await outbox.enqueue(
+                [record("late")],
+                syncedAt: [.health: Date()],
+                state: ["anchor.workout": Data([9])],
+                generation: generation
+            )
+            XCTFail("A sync that started before the reset must not write.")
+        } catch is CompanionOutbox.Superseded {}
+        let anchor = await outbox.state("anchor.workout")
+        XCTAssertNil(anchor)
+        let pending = await outbox.pendingCount
+        XCTAssertEqual(pending, 0)
+        let current = await outbox.generation
+        try await outbox.enqueue([record("new")], syncedAt: [:], generation: current)
+        let after = await outbox.pendingCount
+        XCTAssertEqual(after, 1)
+    }
+
     func testLargeChangesSplitIntoBoundedBatches() async throws {
         _ = try await outbox.pull(cacheID: "cache-1")
         let records = (0 ..< 1_201).map { record("r\($0)") }

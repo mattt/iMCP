@@ -219,7 +219,7 @@ enum FinancePayload {
 enum FinanceSync {
     static var isEnabled: Bool { CompanionAppGroup.defaults.bool(forKey: "service.finance") }
 
-    static func sync(into outbox: CompanionOutbox) async throws {
+    static func sync(into outbox: CompanionOutbox, generation: Int) async throws {
         guard isEnabled, case .available = FinanceCapability.current else { return }
         let store = FinanceStore.shared
         guard try await store.authorizationStatus() == .authorized else { return }
@@ -227,6 +227,7 @@ enum FinanceSync {
         try await drain(
             key: "finance.token.accounts",
             outbox: outbox,
+            generation: generation,
             kind: .account,
             history: { store.accountHistory(since: $0, isMonitoring: false) },
             record: FinancePayload.record
@@ -236,6 +237,7 @@ enum FinanceSync {
             try await drain(
                 key: "finance.token.balances.\(account.id)",
                 outbox: outbox,
+                generation: generation,
                 kind: .balance,
                 history: { store.accountBalanceHistory(forAccountID: account.id, since: $0, isMonitoring: false) },
                 record: FinancePayload.record
@@ -243,12 +245,13 @@ enum FinanceSync {
             try await drain(
                 key: "finance.token.transactions.\(account.id)",
                 outbox: outbox,
+                generation: generation,
                 kind: .transaction,
                 history: { store.transactionHistory(forAccountID: account.id, since: $0, isMonitoring: false) },
                 record: FinancePayload.record
             )
         }
-        try await outbox.enqueue([], syncedAt: [.finance: Date()])
+        try await outbox.enqueue([], syncedAt: [.finance: Date()], generation: generation)
     }
 
     /// Reads one history from its saved token and queues each set of changes
@@ -257,6 +260,7 @@ enum FinanceSync {
     private static func drain<Model: Identifiable>(
         key: String,
         outbox: CompanionOutbox,
+        generation: Int,
         kind: CompanionKind,
         history: (FinanceStore.HistoryToken?) -> FinanceStore.History<Model>,
         record: (Model) throws -> CompanionRecord
@@ -265,11 +269,11 @@ enum FinanceSync {
             try? JSONDecoder().decode(FinanceStore.HistoryToken.self, from: $0)
         }
         do {
-            try await read(history(token), key: key, outbox: outbox, kind: kind, record: record)
+            try await read(history(token), key: key, outbox: outbox, generation: generation, kind: kind, record: record)
         } catch FinanceError.historyTokenInvalid {
             token = nil
-            try await outbox.setState(key, nil)
-            try await read(history(nil), key: key, outbox: outbox, kind: kind, record: record)
+            try await outbox.setState(key, nil, generation: generation)
+            try await read(history(nil), key: key, outbox: outbox, generation: generation, kind: kind, record: record)
         }
     }
 
@@ -277,6 +281,7 @@ enum FinanceSync {
         _ history: FinanceStore.History<Model>,
         key: String,
         outbox: CompanionOutbox,
+        generation: Int,
         kind: CompanionKind,
         record: (Model) throws -> CompanionRecord
     ) async throws where Model.ID == UUID {
@@ -287,7 +292,8 @@ enum FinanceSync {
             try await outbox.enqueue(
                 records,
                 syncedAt: [:],
-                state: [key: try JSONEncoder().encode(changes.newToken)]
+                state: [key: try JSONEncoder().encode(changes.newToken)],
+                generation: generation
             )
         }
     }
