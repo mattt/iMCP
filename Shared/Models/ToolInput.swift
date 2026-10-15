@@ -68,8 +68,12 @@ enum ToolInput {
             default: throw ToolInputError("\(path) must be a \(schema["type"]?.stringValue ?? "number").")
             }
             guard number.isFinite else { throw ToolInputError("\(path) must be finite.") }
-            if let min = numeric(schema["minimum"]), number < min { throw ToolInputError("\(path) is below its minimum.") }
-            if let max = numeric(schema["maximum"]), number > max { throw ToolInputError("\(path) exceeds its maximum.") }
+            if let min = numeric(schema["minimum"]), number < min {
+                throw ToolInputError("\(path) is below its minimum.")
+            }
+            if let max = numeric(schema["maximum"]), number > max {
+                throw ToolInputError("\(path) exceeds its maximum.")
+            }
         default: throw ToolInputError("Unsupported tool schema type.")
         }
     }

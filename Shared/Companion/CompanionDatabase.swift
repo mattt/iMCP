@@ -89,7 +89,13 @@ final class CompanionDatabase {
             case .text(let value): result = sqlite3_bind_text(statement, index, value, -1, transient)
             case .blob(let value):
                 result = value.withUnsafeBytes { bytes in
-                    sqlite3_bind_blob(statement, index, bytes.baseAddress ?? UnsafeRawPointer(bitPattern: 1), Int32(value.count), transient)
+                    sqlite3_bind_blob(
+                        statement,
+                        index,
+                        bytes.baseAddress ?? UnsafeRawPointer(bitPattern: 1),
+                        Int32(value.count),
+                        transient
+                    )
                 }
             }
             guard result == SQLITE_OK else { throw error() }

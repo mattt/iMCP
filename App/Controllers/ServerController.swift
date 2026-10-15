@@ -437,6 +437,11 @@ final class ServerController: ObservableObject {
 
             await self.networkManager.start()
             self.updateServerStatus("Running")
+
+            // Listen for the paired iPhone so it can sync before the first tool call.
+            if self.alarmsEnabled || self.financeEnabled || self.healthEnabled {
+                try? await CompanionService.shared.start()
+            }
         }
     }
 

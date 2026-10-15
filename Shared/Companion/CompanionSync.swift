@@ -139,7 +139,11 @@ enum CompanionLink {
 
     static func verify(_ proof: String, key: SymmetricKey, device: String, purpose: String) -> Bool {
         guard let data = Data(base64Encoded: proof) else { return false }
-        return HMAC<SHA256>.isValidAuthenticationCode(data, authenticating: Data("\(purpose)|\(device)".utf8), using: key)
+        return HMAC<SHA256>.isValidAuthenticationCode(
+            data,
+            authenticating: Data("\(purpose)|\(device)".utf8),
+            using: key
+        )
     }
 }
 
@@ -151,6 +155,8 @@ struct CompanionHello: Codable, Equatable, Sendable {
     /// Present when pairing: the pairing ID from the QR code.
     var pairing: String?
     var proof: String
+    /// Asks the Mac to forget this device, with a proof for the purpose `revoke`.
+    var revoke: Bool?
 }
 
 /// The Mac's reply. When pairing succeeds, it carries the device key.
