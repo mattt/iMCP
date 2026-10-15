@@ -132,6 +132,20 @@ actor CompanionCache {
         return id
     }
 
+    /// The last status the phone reported, such as why Finance is unavailable.
+    func phoneStatus() -> Value? {
+        var status: Value?
+        try? db().run("SELECT value FROM meta WHERE name = 'phone_status'") { row in
+            status = row.text(0).flatMap { try? JSONDecoder().decode(Value.self, from: Data($0.utf8)) }
+        }
+        return status
+    }
+
+    func setPhoneStatus(_ status: Value) throws {
+        let text = String(decoding: try JSONEncoder().encode(status), as: UTF8.self)
+        try db().run("INSERT OR REPLACE INTO meta (name, value) VALUES ('phone_status', ?)", [.text(text)])
+    }
+
     /// Removes every record and all sync state.
     func deleteAll() throws {
         let database = try db()
@@ -139,6 +153,7 @@ actor CompanionCache {
             try database.run("DELETE FROM records")
             try database.run("DELETE FROM sync_state")
             try database.run("UPDATE meta SET value = lower(hex(randomblob(16))) WHERE name = 'cache_id'")
+            try database.run("DELETE FROM meta WHERE name = 'phone_status'")
         }
         try database.execute("VACUUM")
     }

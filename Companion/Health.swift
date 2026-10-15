@@ -279,13 +279,13 @@ struct HealthPhoneService: PhoneService {
 
     // MARK: - Sync
 
-    func sync(into outbox: CompanionOutbox) async throws {
+    func sync(into outbox: CompanionOutbox, generation: Int) async throws {
         guard HKHealthStore.isHealthDataAvailable() else { return }
         let groups = HealthGroup.requested
         do {
             for group in HealthGroup.allCases where groups.contains(group) {
                 for identifier in group.quantityTypes {
-                    try await syncStatistics(HKQuantityType(identifier), into: outbox)
+                    try await syncStatistics(HKQuantityType(identifier), into: outbox, generation: generation)
                 }
                 for identifier in group.categoryTypes {
                     let type = HKCategoryType(identifier)
@@ -294,7 +294,8 @@ struct HealthPhoneService: PhoneService {
                         .categorySample(type: type),
                         anchorKey: "health.anchor.\(name)",
                         kind: .healthSample,
-                        into: outbox
+                        into: outbox,
+                        generation: generation
                     ) { sample in
                         CompanionRecord(
                             kind: .healthSample,
@@ -311,7 +312,8 @@ struct HealthPhoneService: PhoneService {
                         .workout(),
                         anchorKey: "health.anchor.workouts",
                         kind: .workout,
-                        into: outbox
+                        into: outbox,
+                        generation: generation
                     ) { workout in
                         CompanionRecord(
                             kind: .workout,
@@ -330,7 +332,8 @@ struct HealthPhoneService: PhoneService {
                             .clinicalRecord(type: type),
                             anchorKey: "health.anchor.\(name)",
                             kind: .clinicalRecord,
-                            into: outbox
+                            into: outbox,
+                            generation: generation
                         ) { record in
                             CompanionRecord(
                                 kind: .clinicalRecord,
@@ -349,7 +352,7 @@ struct HealthPhoneService: PhoneService {
             Self.log.notice("HealthKit is locked; sync waits for the next unlock")
             return
         }
-        try await outbox.enqueue([], syncedAt: [.health: Date()])
+        try await outbox.enqueue([], syncedAt: [.health: Date()], generation: generation)
     }
 
     /// Queues added and deleted objects since the type's anchor, a page at a time,
@@ -359,6 +362,7 @@ struct HealthPhoneService: PhoneService {
         anchorKey: String,
         kind: CompanionKind,
         into outbox: CompanionOutbox,
+        generation: Int,
         record: (Sample) -> CompanionRecord
     ) async throws {
         var anchor = await outbox.state(anchorKey).flatMap(Self.anchor)
@@ -371,7 +375,12 @@ struct HealthPhoneService: PhoneService {
             let records =
                 result.addedSamples.map(record)
                 + result.deletedObjects.map { CompanionRecord.deletion(kind: kind, id: $0.uuid.uuidString) }
-            try await outbox.enqueue(records, syncedAt: [:], state: [anchorKey: Self.archive(result.newAnchor)])
+            try await outbox.enqueue(
+                records,
+                syncedAt: [:],
+                state: [anchorKey: Self.archive(result.newAnchor)],
+                generation: generation
+            )
             anchor = result.newAnchor
             if result.addedSamples.count + result.deletedObjects.count < Self.pageSize { break }
         }
@@ -382,7 +391,7 @@ struct HealthPhoneService: PhoneService {
     /// The first sync computes every day of the last two years.
     /// Later syncs read the anchored changes to find the days with new samples.
     /// A deleted sample carries no date, so a deletion recomputes every day.
-    private func syncStatistics(_ type: HKQuantityType, into outbox: CompanionOutbox) async throws {
+    private func syncStatistics(_ type: HKQuantityType, into outbox: CompanionOutbox, generation: Int) async throws {
         let name = CompanionTools.healthTypeName(type.identifier)
         let anchorKey = "health.anchor.\(name)"
         let calendar = Calendar.current
@@ -428,7 +437,7 @@ struct HealthPhoneService: PhoneService {
             }
         }
         guard everyDay || !days.isEmpty else {
-            if let anchor { try await outbox.setState(anchorKey, Self.archive(anchor)) }
+            if let anchor { try await outbox.setState(anchorKey, Self.archive(anchor), generation: generation) }
             return
         }
         let from = everyDay ? earliest : (days.min() ?? today)
@@ -456,7 +465,12 @@ struct HealthPhoneService: PhoneService {
                 payload: try? Self.data(bucket.payload)
             )
         }
-        try await outbox.enqueue(records, syncedAt: [:], state: [anchorKey: anchor.flatMap(Self.archive)])
+        try await outbox.enqueue(
+            records,
+            syncedAt: [:],
+            state: [anchorKey: anchor.flatMap(Self.archive)],
+            generation: generation
+        )
     }
 
     // MARK: - Statistics
@@ -658,9 +672,10 @@ actor HealthObservers {
                     return
                 }
                 Task {
+                    // Concurrent wakes share one sync; HealthKit needs only the changes queued.
                     await PhoneBackend.shared.sync(.health)
-                    await PhoneConnection.shared.flush()
                     completion()
+                    await PhoneConnection.shared.flushInBackground()
                 }
             }
             queries[type.identifier] = query

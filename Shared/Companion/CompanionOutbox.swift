@@ -18,6 +18,16 @@ actor CompanionOutbox {
 
     static let batchSize = 500
 
+    /// A sync tried to write after the Mac's cache was reset.
+    /// Its anchor predates the reset, so its changes must not be queued.
+    struct Superseded: Error {}
+
+    /// Counts resets. A sync reads it before its anchors
+    /// and passes it to `enqueue`, which refuses writes from an older generation.
+    var generation: Int {
+        state("generation").flatMap { Int(String(decoding: $0, as: UTF8.self)) } ?? 0
+    }
+
     private let database: CompanionDatabase
 
     init(url: URL) throws {
@@ -60,7 +70,8 @@ actor CompanionOutbox {
         _ records: [CompanionRecord],
         syncedAt: [CompanionDomain: Date],
         replacing: [CompanionKind] = [],
-        state: [String: Data?] = [:]
+        state: [String: Data?] = [:],
+        generation: Int? = nil
     ) throws {
         let dates = Dictionary(uniqueKeysWithValues: syncedAt.map { ($0.key.rawValue, $0.value) })
         var chunks = stride(from: 0, to: records.count, by: Self.batchSize).map {
@@ -68,6 +79,7 @@ actor CompanionOutbox {
         }
         if chunks.isEmpty, !dates.isEmpty || !replacing.isEmpty { chunks = [[]] }
         try database.transaction {
+            if let generation, generation != self.generation { throw Superseded() }
             for (index, chunk) in chunks.enumerated() {
                 let last = index == chunks.count - 1
                 let body = Body(
@@ -84,7 +96,8 @@ actor CompanionOutbox {
         }
     }
 
-    func setState(_ name: String, _ value: Data?) throws {
+    func setState(_ name: String, _ value: Data?, generation: Int? = nil) throws {
+        if let generation, generation != self.generation { throw Superseded() }
         try write(name, value)
     }
 
@@ -98,9 +111,11 @@ actor CompanionOutbox {
 
     /// Clears the queue and all sync state, as when the phone unpairs.
     func deleteAll() throws {
+        let next = generation + 1
         try database.transaction {
             try database.run("DELETE FROM batches")
             try database.run("DELETE FROM state")
+            try write("generation", Data(String(next).utf8))
         }
     }
 
@@ -121,10 +136,12 @@ actor CompanionOutbox {
     /// The oldest queued batch, or an empty batch with sequence 0.
     func pull(cacheID: String) throws -> Pull {
         if state("cache") != Data(cacheID.utf8) {
+            let next = generation + 1
             try database.transaction {
                 try database.run("DELETE FROM batches")
                 try database.run("DELETE FROM state")
                 try write("cache", Data(cacheID.utf8))
+                try write("generation", Data(String(next).utf8))
             }
             return Pull(batch: CompanionBatch(sequence: 0, syncedAt: [:], records: []), reset: true)
         }
