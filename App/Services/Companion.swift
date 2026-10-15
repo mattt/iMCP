@@ -240,10 +240,33 @@ actor CompanionService: CompanionBackend {
                 throw Refusal("This pairing code expired or was already used. Show a new code in iMCP Settings.")
             }
             let key = CompanionLink.pairingKey(secret: pending.code.secret)
-            guard CompanionLink.verify(hello.proof, key: key, device: hello.device, purpose: "pair:\(pairing)") else {
+            guard let phone = hello.exchange,
+                CompanionLink.verify(
+                    hello.proof,
+                    key: key,
+                    device: hello.device,
+                    purpose: "pair:\(pairing)",
+                    context: phone
+                )
+            else {
                 throw Refusal("The pairing code doesn't match. Scan the code in iMCP Settings again.")
             }
-            let deviceKey = SymmetricKey(size: .bits256)
+            // Derive the device key from a key exchange, so it never crosses the network.
+            let exchange = Curve25519.KeyAgreement.PrivateKey()
+            let mac = exchange.publicKey.rawRepresentation
+            let deviceKey: SymmetricKey
+            do {
+                deviceKey = try CompanionKeyExchange.deviceKey(
+                    privateKey: exchange,
+                    peer: phone,
+                    pairingKey: key,
+                    device: hello.device,
+                    phone: phone,
+                    mac: mac
+                )
+            } catch {
+                throw Refusal("The iPhone sent an invalid pairing key. Scan the code in iMCP Settings again.")
+            }
             let device = CompanionDevice(id: hello.device, name: hello.name, pairedAt: Date())
             try pairings.save(device, key: deviceKey)
             pendingPairing = nil
@@ -251,7 +274,18 @@ actor CompanionService: CompanionBackend {
             log.notice("Paired iMCP Companion on \(hello.name, privacy: .public)")
             return (
                 device,
-                CompanionWelcome(ok: true, mac: Self.serviceName, deviceKey: deviceKey.withUnsafeBytes { Data($0) })
+                CompanionWelcome(
+                    ok: true,
+                    mac: Self.serviceName,
+                    exchange: mac,
+                    proof: CompanionKeyExchange.welcomeProof(
+                        pairingKey: key,
+                        pairingID: pairing,
+                        device: hello.device,
+                        phone: phone,
+                        mac: mac
+                    )
+                )
             )
         }
         let purpose = hello.revoke == true ? "revoke" : "connect"

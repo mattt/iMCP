@@ -130,14 +130,14 @@ final class PhoneConnection: ObservableObject {
 
     private func serve(_ credentials: PhoneCredentials) async throws {
         phase = .searching
-        let (channel, _) = try await CompanionDialer.connect(
+        let channel = try await CompanionDialer.connect(
             to: credentials.endpoint,
             with: CompanionDialer.paired(
                 device: credentials.device,
                 name: Self.deviceName,
                 key: SymmetricKey(data: credentials.key)
             )
-        )
+        ).channel
         self.channel = channel
         phase = .connected
         defer { self.channel = nil }
@@ -183,7 +183,7 @@ final class PhoneConnection: ObservableObject {
         // A foreground connection already serves the Mac's pulls.
         if channel != nil { return await waitForEmptyQueue(timeout: timeout) }
         do {
-            let (channel, _) = try await CompanionDialer.connect(
+            let channel = try await CompanionDialer.connect(
                 to: credentials.endpoint,
                 with: CompanionDialer.paired(
                     device: credentials.device,
@@ -191,7 +191,7 @@ final class PhoneConnection: ObservableObject {
                     key: SymmetricKey(data: credentials.key)
                 ),
                 timeout: .seconds(10)
-            )
+            ).channel
             let tools = PhoneBackend.shared.tools
             let version = self.version
             let server = Task { try await CompanionPeer.serve(channel, tools: tools, version: version) }
@@ -221,7 +221,7 @@ final class PhoneConnection: ObservableObject {
     func pair(_ code: CompanionPairingCode) async throws {
         stop()
         let device = credentials?.device ?? UUID().uuidString
-        let (channel, welcome) = try await CompanionDialer.connect(
+        let session = try await CompanionDialer.connect(
             to: NWEndpoint.service(
                 name: code.service,
                 type: CompanionLink.serviceType,
@@ -230,11 +230,12 @@ final class PhoneConnection: ObservableObject {
             ),
             with: CompanionDialer.pairing(code, device: device, name: Self.deviceName)
         )
-        guard let key = welcome.deviceKey else {
+        let channel = session.channel
+        guard let key = session.deviceKey else {
             await channel.disconnect()
-            throw CompanionError("The Mac didn't send a device key.")
+            throw CompanionError("Pairing didn't produce a device key. Show a new code and try again.")
         }
-        let credentials = PhoneCredentials(device: device, key: key, service: code.service)
+        let credentials = PhoneCredentials(device: device, key: key.withUnsafeBytes { Data($0) }, service: code.service)
         try credentials.save()
         // A new Mac has a new cache, which resets the outbox on its first pull.
         self.credentials = credentials
@@ -259,7 +260,7 @@ final class PhoneConnection: ObservableObject {
         if let credentials {
             // The Mac forgets the device when it can verify the request; if it's away,
             // the user can remove the phone in iMCP Settings.
-            if let (channel, _) = try? await CompanionDialer.connect(
+            if let channel = try? await CompanionDialer.connect(
                 to: credentials.endpoint,
                 with: CompanionDialer.paired(
                     device: credentials.device,
@@ -268,7 +269,7 @@ final class PhoneConnection: ObservableObject {
                     revoke: true
                 ),
                 timeout: .seconds(5)
-            ) {
+            ).channel {
                 await channel.disconnect()
             }
         }

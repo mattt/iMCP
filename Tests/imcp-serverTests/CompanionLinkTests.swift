@@ -43,11 +43,11 @@ final class CompanionLinkTests: XCTestCase {
     private func connectPhone(
         _ credentials: CompanionDialer.Credentials,
         tools: [Tool] = []
-    ) async throws -> CompanionWelcome {
-        let (channel, welcome) = try await CompanionDialer.connect(to: endpoint, with: credentials)
-        phoneChannels.append(channel)
-        phoneTasks.append(Task { try await CompanionPeer.serve(channel, tools: tools, version: "test") })
-        return welcome
+    ) async throws -> CompanionDialer.Session {
+        let session = try await CompanionDialer.connect(to: endpoint, with: credentials)
+        phoneChannels.append(session.channel)
+        phoneTasks.append(Task { try await CompanionPeer.serve(session.channel, tools: tools, version: "test") })
+        return session
     }
 
     private func waitUntilConnected(_ expected: Bool = true) async throws {
@@ -65,8 +65,8 @@ final class CompanionLinkTests: XCTestCase {
             CompanionDialer.pairing(code, device: "phone-1", name: "Test iPhone"),
             tools: [phoneTool("alarms_list") { _ in ["source": "live", "results": []] }]
         )
-        XCTAssertTrue(welcome.ok)
-        XCTAssertEqual(welcome.deviceKey?.count, 32)
+        XCTAssertTrue(welcome.welcome.ok)
+        XCTAssertEqual(welcome.deviceKey?.bitCount, 256)
         XCTAssertEqual(pairings.devices().map(\.id), ["phone-1"])
         try await waitUntilConnected()
 
@@ -75,6 +75,36 @@ final class CompanionLinkTests: XCTestCase {
         let status = try await service.call("companion_status", [:])
         XCTAssertEqual(status.objectValue?["connected"], true)
         XCTAssertEqual(status.objectValue?["device"], "Test iPhone")
+    }
+
+    func testPairingSendsNoKeyMaterial() async throws {
+        let code = try await service.beginPairing()
+        let credentials = CompanionDialer.pairing(code, device: "phone-1", name: "Test iPhone")
+        let session = try await connectPhone(credentials)
+        let key = try XCTUnwrap(session.deviceKey).withUnsafeBytes { Data($0) }
+        let wire =
+            try CompanionCoding.encoder.encode(credentials.hello) + CompanionCoding.encoder.encode(session.welcome)
+        XCTAssertNil(wire.range(of: key))
+        XCTAssertNil(wire.range(of: Data(key.base64EncodedString().utf8)))
+        // Someone who copied the QR code and recorded the handshake knows the pairing key
+        // and both public keys, but not the private ones, so can't derive the device key.
+        let observed = HKDF<SHA256>.deriveKey(
+            inputKeyMaterial: CompanionLink.pairingKey(secret: code.secret),
+            info: (credentials.hello.exchange ?? Data()) + (session.welcome.exchange ?? Data()),
+            outputByteCount: 32
+        )
+        XCTAssertNotEqual(observed.withUnsafeBytes { Data($0) }, key)
+    }
+
+    func testPairingRejectsASwappedExchangeKey() async throws {
+        let code = try await service.beginPairing()
+        var credentials = CompanionDialer.pairing(code, device: "phone-1", name: "Test iPhone")
+        credentials.hello.exchange = Curve25519.KeyAgreement.PrivateKey().publicKey.rawRepresentation
+        do {
+            try await connectPhone(credentials)
+            XCTFail("A hello whose exchange key its proof doesn't cover must be refused.")
+        } catch {}
+        XCTAssertTrue(pairings.devices().isEmpty)
     }
 
     func testPairingCodeWorksOnce() async throws {
@@ -90,7 +120,7 @@ final class CompanionLinkTests: XCTestCase {
     func testPairedDeviceReconnectsWithItsKey() async throws {
         let code = try await service.beginPairing()
         let welcome = try await connectPhone(CompanionDialer.pairing(code, device: "phone-1", name: "Test iPhone"))
-        let key = SymmetricKey(data: try XCTUnwrap(welcome.deviceKey))
+        let key = try XCTUnwrap(welcome.deviceKey)
         try await waitUntilConnected()
         await service.disconnect()
         try await waitUntilConnected(false)
@@ -99,7 +129,7 @@ final class CompanionLinkTests: XCTestCase {
         _ = try await service.beginPairing()
 
         let again = try await connectPhone(CompanionDialer.paired(device: "phone-1", name: "Test iPhone", key: key))
-        XCTAssertTrue(again.ok)
+        XCTAssertTrue(again.welcome.ok)
         XCTAssertNil(again.deviceKey)
         try await waitUntilConnected()
     }
@@ -129,7 +159,7 @@ final class CompanionLinkTests: XCTestCase {
     func testMacCanRevokeAPairing() async throws {
         let code = try await service.beginPairing()
         let welcome = try await connectPhone(CompanionDialer.pairing(code, device: "phone-1", name: "Test iPhone"))
-        let key = SymmetricKey(data: try XCTUnwrap(welcome.deviceKey))
+        let key = try XCTUnwrap(welcome.deviceKey)
         try await waitUntilConnected()
         await service.unpair("phone-1")
         try await waitUntilConnected(false)
@@ -143,11 +173,11 @@ final class CompanionLinkTests: XCTestCase {
     func testPhoneCanRevokeItsPairing() async throws {
         let code = try await service.beginPairing()
         let welcome = try await connectPhone(CompanionDialer.pairing(code, device: "phone-1", name: "Test iPhone"))
-        let key = SymmetricKey(data: try XCTUnwrap(welcome.deviceKey))
+        let key = try XCTUnwrap(welcome.deviceKey)
         let goodbye = try await connectPhone(
             CompanionDialer.paired(device: "phone-1", name: "Test iPhone", key: key, revoke: true)
         )
-        XCTAssertTrue(goodbye.ok)
+        XCTAssertTrue(goodbye.welcome.ok)
         XCTAssertTrue(pairings.devices().isEmpty)
     }
 
@@ -271,7 +301,7 @@ final class CompanionLinkTests: XCTestCase {
         }
         await phoneChannels.last?.disconnect()
         try await waitUntilConnected(false)
-        let key = SymmetricKey(data: try XCTUnwrap(welcome.deviceKey))
+        let key = try XCTUnwrap(welcome.deviceKey)
         try await connectPhone(
             CompanionDialer.paired(device: "phone-1", name: "Test iPhone", key: key),
             tools: tools
@@ -542,5 +572,67 @@ final class CompanionChannelTests: XCTestCase {
             XCTFail("A silent peer must time out.")
         } catch {}
         XCTAssertLessThan(clock.now - begin, .seconds(3))
+    }
+}
+
+final class CompanionKeyExchangeTests: XCTestCase {
+    private let code = CompanionPairingCode(
+        service: "iMCP on Test",
+        pairingID: "pairing",
+        secret: Data(repeating: 1, count: 32)
+    )
+
+    /// Answers a hello the way the Mac does, optionally with the wrong pairing key.
+    private func welcome(for hello: CompanionHello, secret: Data) throws -> (CompanionWelcome, SymmetricKey) {
+        let mac = Curve25519.KeyAgreement.PrivateKey()
+        let pairingKey = CompanionLink.pairingKey(secret: secret)
+        let phone = try XCTUnwrap(hello.exchange)
+        let key = try CompanionKeyExchange.deviceKey(
+            privateKey: mac,
+            peer: phone,
+            pairingKey: pairingKey,
+            device: hello.device,
+            phone: phone,
+            mac: mac.publicKey.rawRepresentation
+        )
+        let welcome = CompanionWelcome(
+            ok: true,
+            mac: code.service,
+            exchange: mac.publicKey.rawRepresentation,
+            proof: CompanionKeyExchange.welcomeProof(
+                pairingKey: pairingKey,
+                pairingID: code.pairingID,
+                device: hello.device,
+                phone: phone,
+                mac: mac.publicKey.rawRepresentation
+            )
+        )
+        return (welcome, key)
+    }
+
+    func testBothSidesDeriveTheSameKey() throws {
+        let credentials = CompanionDialer.pairing(code, device: "phone-1", name: "Test iPhone")
+        let (welcome, macKey) = try welcome(for: credentials.hello, secret: code.secret)
+        let phoneKey = try credentials.deviceKey(from: welcome)
+        XCTAssertEqual(phoneKey.map { $0.withUnsafeBytes { Data($0) } }, macKey.withUnsafeBytes { Data($0) })
+    }
+
+    func testPhoneRejectsAWelcomeProvedWithAnotherKey() throws {
+        let credentials = CompanionDialer.pairing(code, device: "phone-1", name: "Test iPhone")
+        let (welcome, _) = try welcome(for: credentials.hello, secret: Data(repeating: 2, count: 32))
+        XCTAssertThrowsError(try credentials.deviceKey(from: welcome))
+    }
+
+    func testPhoneRejectsAWelcomeWithoutAnExchange() throws {
+        let credentials = CompanionDialer.pairing(code, device: "phone-1", name: "Test iPhone")
+        XCTAssertThrowsError(try credentials.deviceKey(from: CompanionWelcome(ok: true, mac: code.service)))
+    }
+
+    func testEachPairingDerivesADifferentKey() throws {
+        let first = CompanionDialer.pairing(code, device: "phone-1", name: "Test iPhone")
+        let second = CompanionDialer.pairing(code, device: "phone-1", name: "Test iPhone")
+        let (_, a) = try welcome(for: first.hello, secret: code.secret)
+        let (_, b) = try welcome(for: second.hello, secret: code.secret)
+        XCTAssertNotEqual(a.withUnsafeBytes { Data($0) }, b.withUnsafeBytes { Data($0) })
     }
 }

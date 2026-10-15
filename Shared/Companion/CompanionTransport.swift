@@ -257,11 +257,48 @@ enum CompanionDialer {
         var identity: Data
         var key: SymmetricKey
         var hello: CompanionHello
+        /// When pairing: the phone's half of the key exchange.
+        var exchange: Curve25519.KeyAgreement.PrivateKey?
+
+        /// The device key from a pairing welcome, or nil for a connection that isn't pairing.
+        /// Throws if the Mac's proof doesn't cover the exchange.
+        func deviceKey(from welcome: CompanionWelcome) throws -> SymmetricKey? {
+            guard let exchange, let pairingID = hello.pairing else { return nil }
+            let phone = exchange.publicKey.rawRepresentation
+            guard let mac = welcome.exchange, let proof = welcome.proof,
+                CompanionLink.verify(
+                    proof,
+                    key: key,
+                    device: hello.device,
+                    purpose: "welcome:\(pairingID)",
+                    context: phone + mac
+                )
+            else {
+                throw CompanionError("The Mac's pairing answer couldn't be verified. Show a new code and try again.")
+            }
+            return try CompanionKeyExchange.deviceKey(
+                privateKey: exchange,
+                peer: mac,
+                pairingKey: key,
+                device: hello.device,
+                phone: phone,
+                mac: mac
+            )
+        }
+    }
+
+    /// An authenticated connection, with the device key when it was a pairing.
+    struct Session: Sendable {
+        var channel: CompanionChannel
+        var welcome: CompanionWelcome
+        var deviceKey: SymmetricKey?
     }
 
     /// Credentials for the first connection, from the scanned QR code.
     static func pairing(_ code: CompanionPairingCode, device: String, name: String) -> Credentials {
         let key = CompanionLink.pairingKey(secret: code.secret)
+        let exchange = Curve25519.KeyAgreement.PrivateKey()
+        let phone = exchange.publicKey.rawRepresentation
         return Credentials(
             identity: CompanionLink.pairingIdentity(code.pairingID),
             key: key,
@@ -270,12 +307,19 @@ enum CompanionDialer {
                 device: device,
                 name: name,
                 pairing: code.pairingID,
-                proof: CompanionLink.proof(key: key, device: device, purpose: "pair:\(code.pairingID)")
-            )
+                proof: CompanionLink.proof(
+                    key: key,
+                    device: device,
+                    purpose: "pair:\(code.pairingID)",
+                    context: phone
+                ),
+                exchange: phone
+            ),
+            exchange: exchange
         )
     }
 
-    /// Credentials for later connections, from the device key the Mac issued.
+    /// Credentials for later connections, from the device key that pairing derived.
     static func paired(device: String, name: String, key: SymmetricKey, revoke: Bool = false) -> Credentials {
         let purpose = revoke ? "revoke" : "connect"
         return Credentials(
@@ -296,7 +340,7 @@ enum CompanionDialer {
         to endpoint: NWEndpoint,
         with credentials: Credentials,
         timeout: Duration = .seconds(15)
-    ) async throws -> (CompanionChannel, CompanionWelcome) {
+    ) async throws -> Session {
         let connection = NWConnection(
             to: endpoint,
             using: CompanionTLS.parameters(keys: [(credentials.identity, credentials.key)])
@@ -309,7 +353,7 @@ enum CompanionDialer {
             guard welcome.ok else {
                 throw CompanionError(welcome.error ?? "The Mac refused the connection.")
             }
-            return (channel, welcome)
+            return Session(channel: channel, welcome: welcome, deviceKey: try credentials.deviceKey(from: welcome))
         } catch {
             await channel.disconnect()
             throw error

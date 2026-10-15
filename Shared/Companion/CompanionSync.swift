@@ -131,19 +131,69 @@ enum CompanionLink {
         )
     }
 
-    /// Proof that the sender holds `key`, bound to the device and the purpose.
-    static func proof(key: SymmetricKey, device: String, purpose: String) -> String {
-        let code = HMAC<SHA256>.authenticationCode(for: Data("\(purpose)|\(device)".utf8), using: key)
+    /// Proof that the sender holds `key`, bound to the device, the purpose,
+    /// and `context`, such as the public keys of a pairing exchange.
+    static func proof(key: SymmetricKey, device: String, purpose: String, context: Data = Data()) -> String {
+        let code = HMAC<SHA256>.authenticationCode(for: message(device, purpose, context), using: key)
         return Data(code).base64EncodedString()
     }
 
-    static func verify(_ proof: String, key: SymmetricKey, device: String, purpose: String) -> Bool {
+    static func verify(
+        _ proof: String,
+        key: SymmetricKey,
+        device: String,
+        purpose: String,
+        context: Data = Data()
+    ) -> Bool {
         guard let data = Data(base64Encoded: proof) else { return false }
         return HMAC<SHA256>.isValidAuthenticationCode(
             data,
-            authenticating: Data("\(purpose)|\(device)".utf8),
+            authenticating: message(device, purpose, context),
             using: key
         )
+    }
+
+    private static func message(_ device: String, _ purpose: String, _ context: Data) -> Data {
+        Data("\(purpose)|\(device)|\(context.base64EncodedString())".utf8)
+    }
+}
+
+/// The key exchange that gives a newly paired iPhone its device key.
+///
+/// Each side sends a one-time X25519 public key,
+/// and both derive the device key from the shared secret, salted with the pairing key.
+/// The device key never crosses the network,
+/// so someone who saw the QR code and recorded the pairing can't learn it.
+/// Each side's proof covers the public keys, so neither key can be swapped.
+enum CompanionKeyExchange {
+    static func deviceKey(
+        privateKey: Curve25519.KeyAgreement.PrivateKey,
+        peer: Data,
+        pairingKey: SymmetricKey,
+        device: String,
+        phone: Data,
+        mac: Data
+    ) throws -> SymmetricKey {
+        let shared = try privateKey.sharedSecretFromKeyAgreement(
+            with: Curve25519.KeyAgreement.PublicKey(rawRepresentation: peer)
+        )
+        return shared.hkdfDerivedSymmetricKey(
+            using: SHA256.self,
+            salt: pairingKey.withUnsafeBytes { Data($0) },
+            sharedInfo: Data("imcp-companion-device-key|\(device)|".utf8) + phone + mac,
+            outputByteCount: 32
+        )
+    }
+
+    /// The Mac's proof that it holds the pairing key and chose `mac` for this phone.
+    static func welcomeProof(
+        pairingKey: SymmetricKey,
+        pairingID: String,
+        device: String,
+        phone: Data,
+        mac: Data
+    ) -> String {
+        CompanionLink.proof(key: pairingKey, device: device, purpose: "welcome:\(pairingID)", context: phone + mac)
     }
 }
 
@@ -157,14 +207,19 @@ struct CompanionHello: Codable, Equatable, Sendable {
     var proof: String
     /// Asks the Mac to forget this device, with a proof for the purpose `revoke`.
     var revoke: Bool?
+    /// When pairing: the phone's one-time X25519 public key, which `proof` covers.
+    var exchange: Data?
 }
 
-/// The Mac's reply. When pairing succeeds, it carries the device key.
+/// The Mac's reply. When pairing succeeds, it carries the Mac's half of the key exchange.
 struct CompanionWelcome: Codable, Equatable, Sendable {
     var ok: Bool
-    var error: String?
-    var mac: String?
-    var deviceKey: Data?
+    var error: String? = nil
+    var mac: String? = nil
+    /// When pairing: the Mac's one-time X25519 public key.
+    var exchange: Data? = nil
+    /// When pairing: the Mac's proof that it holds the pairing key, covering both public keys.
+    var proof: String? = nil
 }
 
 /// What the QR code on the Mac carries.
