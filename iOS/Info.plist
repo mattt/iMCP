@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>BGTaskSchedulerPermittedIdentifiers</key>
+    <array>
+        <string>$(PRODUCT_BUNDLE_IDENTIFIER).sync</string>
+    </array>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>$(PRODUCT_BUNDLE_IDENTIFIER).pairing</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>imcp</string>
+            </array>
+        </dict>
+    </array>
+    <key>NSAlarmKitUsageDescription</key>
+    <string>iMCP schedules the alarms and timers that you ask an AI app to set through iMCP.</string>
+    <key>NSBonjourServices</key>
+    <array>
+        <string>_imcp-mobile._tcp</string>
+    </array>
+    <key>NSFinancialDataUsageDescription</key>
+    <string>iMCP reads the Wallet accounts and transactions you choose and sends them to iMCP on your Mac, where the AI apps you connect can use them.</string>
+    <key>NSHealthClinicalHealthRecordsShareUsageDescription</key>
+    <string>iMCP reads the health records you choose and sends them to iMCP on your Mac, where the AI apps you connect can use them.</string>
+    <key>NSSupportsLiveActivities</key>
+    <true/>
+    <key>UIBackgroundModes</key>
+    <array>
+        <string>fetch</string>
+    </array>
+    <key>iMCPAppGroup</key>
+    <string>group.$(IOS_BUNDLE_IDENTIFIER)</string>
+    <key>iMCPFinanceKit</key>
+    <string>$(IOS_FINANCEKIT)</string>
+</dict>
+</plist>
