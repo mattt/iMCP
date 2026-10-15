@@ -14,6 +14,13 @@ and a [growing list of clients][mcp-clients] that support the
 <table>
   <tr>
     <th>
+      <img src="Assets/alarms.svg" width="48" height="48" alt="" role="presentation"/>
+    </th>
+    <td><strong>Alarms</strong></td>
+    <td>Set one-time and weekly alarms and countdown timers on your iPhone or iPad, list them, and cancel them. They sound even in silent mode and Focus. Needs iMCP for iOS, which you <a href="#imcp-for-iphone-and-ipad">build with your own Apple Developer account</a>.</td>
+  </tr>
+  <tr>
+    <th>
       <img src="Assets/calendar.svg" width="48" height="48" alt="" role="presentation"/>
     </th>
     <td><strong>Calendar</strong></td>
@@ -25,6 +32,20 @@ and a [growing list of clients][mcp-clients] that support the
     </th>
     <td><strong>Contacts</strong></td>
     <td>Access contact information about yourself and search your contacts by name, phone number, or email address.</td>
+  </tr>
+  <tr>
+    <th>
+      <img src="Assets/finance.svg" width="48" height="48" alt="" role="presentation"/>
+    </th>
+    <td><strong>Finance</strong></td>
+    <td>Read Apple Card, Apple Cash, and Apple Savings accounts, balances, and transactions from Wallet on your iPhone or iPad. Needs iMCP for iOS, which you <a href="#imcp-for-iphone-and-ipad">build with your own Apple Developer account</a>. Also needs the FinanceKit entitlement, which Apple grants only after review.</td>
+  </tr>
+  <tr>
+    <th>
+      <img src="Assets/health.svg" width="48" height="48" alt="" role="presentation"/>
+    </th>
+    <td><strong>Health</strong></td>
+    <td>Read Health data from your iPhone or iPad: samples, daily statistics, workouts, and health records. Needs iMCP for iOS, which you <a href="#imcp-for-iphone-and-ipad">build with your own Apple Developer account</a>.</td>
   </tr>
   <tr>
     <th>
@@ -477,6 +498,111 @@ xcodebuild -scheme iMCP -configuration Debug -destination "platform=macOS" \
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
   HELPER_CODE_SIGNING_ALLOWED=NO build
 ```
+
+### iMCP for iPhone and iPad
+
+HealthKit, FinanceKit, and AlarmKit data stays on the iPhone or iPad,
+so the Health, Finance, and Alarms services get it from iMCP for iOS,
+an app in [`iOS`](/iOS/).
+Build and install it with your own Apple Developer account:
+
+```console
+Scripts/install-ios.sh
+```
+
+The script signs the app with your team's development certificate,
+gives it the bundle ID `local.imcp.ios.<team ID>`,
+checks that the build has its HealthKit and App Group entitlements,
+and installs it on your iPhone or iPad with `devicectl`.
+Run it with `--help` to choose another team, bundle ID, or device.
+You need a paid Apple Developer account with Xcode signed in to it,
+and an iPhone or iPad with iOS 26 or later in Developer Mode.
+Development profiles expire;
+the script prints the expiration date, and running it again renews the profile.
+
+To pair, open Settings > iPhone & iPad in iMCP on your Mac
+and click Pair iPhone or iPad,
+then scan the code in iMCP on the device.
+The code works once, for ten minutes.
+Then turn on each service on both devices; all of them start off.
+Turning a service on shares its data with the AI apps that you approve in iMCP,
+and the iOS app says so before it asks for permission.
+Health asks for each group of types, such as Activity or Sleep, separately.
+To unpair, remove the device in Settings > iPhone & iPad on the Mac,
+or tap Unpair in iMCP on the device.
+
+The device connects to the Mac over your local network.
+Nothing goes through iCloud or another server.
+When the iOS app isn't open, read-only tools answer from a copy on the Mac,
+and every answer says where it came from and when the device last sent the data.
+Delete that copy in Settings > iPhone & iPad.
+
+<details>
+<summary>How the iOS app works</summary>
+
+Both apps compile the same tool definitions from
+[`Shared/Mobile/MobileTools.swift`](/Shared/Mobile/MobileTools.swift).
+iOS suspends apps in the background, so the iPhone or iPad dials the Mac,
+which advertises "\_imcp-mobile.\_tcp" with Bonjour,
+and serves the tools as an MCP server on that connection;
+iMCP is the MCP client.
+The connection uses TLS with pre-shared keys:
+the one-time secret in the QR code for pairing,
+and a key for each device after that.
+A device that doesn't have a key can't complete the handshake.
+During pairing, the two devices derive the device key
+from an X25519 key exchange salted with the pairing secret,
+so the device key never crosses the network.
+Someone who saw the QR code and recorded the pairing still can't derive it.
+Later connections use the device key alone,
+so they don't have forward secrecy:
+someone who steals that key could decrypt traffic they recorded earlier.
+
+Read results include `source` (`live` or `cache`), `synced_at`, and `stale`.
+Cached data is stale after 4 hours for Health, 26 hours for Finance,
+and 1 hour for Alarms.
+The Mac keeps the cache in a SQLite database in its Application Support folder.
+Payloads are encrypted with AES-GCM under a key in the Keychain.
+After a lost connection, a read is retried once when the device reconnects
+and otherwise answers from the cache.
+Alarm changes carry an ID, so retrying one doesn't create a second alarm.
+
+HealthKit encrypts its store while the device is locked,
+and wakes apps in the background at most hourly for common types,
+so the device queues changes and sends them the next time it can.
+Each type has a saved anchor, so a sync sends only new and deleted objects.
+Quantity types, such as steps and heart rate, sync as daily statistics for two years;
+their raw samples are available only while the iOS app is reachable.
+Sleep, workouts, and health records sync in full.
+HealthKit doesn't tell apps when read access is denied,
+so an empty result means no samples or no access.
+
+AlarmKit gives an app access only to the alarms it creates,
+so the Alarms tools can't see or change Clock app alarms.
+Alarms sound even in silent mode and Focus.
+A running timer shows as a Live Activity from the
+[`iOSWidgets`](/iOSWidgets/) extension.
+The iOS app lists the alarms that AI apps created and can cancel them.
+
+FinanceKit needs a managed entitlement that Apple grants
+to organization account holders after review.
+Self-signed builds don't include it, so the Finance tools say they're unavailable.
+With the entitlement, build with `Scripts/install-ios.sh --finance`.
+A background delivery extension, [`iOSFinance`](/iOSFinance/),
+queues Wallet changes while the app isn't running.
+
+With Health, Finance, or Alarms on,
+`uv run Scripts/check-ios.py <path-to-imcp-server>`
+runs read-only checks of the tools, their schemas, and their sync status.
+CI builds the app unsigned,
+which checks compilation and packaging but can't access HealthKit:
+
+```console
+xcodebuild -scheme "iMCP iOS" -destination "generic/platform=iOS" \
+  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+```
+
+</details>
 
 ## Debugging
 
