@@ -7,6 +7,7 @@
 iMCP is a macOS app for connecting your digital life with AI.
 It works with [ChatGPT Desktop][chatgpt-app],
 [Claude Desktop][claude-app],
+local models served by [llama.cpp][llama-cpp],
 and a [growing list of clients][mcp-clients] that support the
 [Model Context Protocol (MCP)][mcp].
 
@@ -150,6 +151,8 @@ Click <kbd>Allow Full Access</kbd> to continue.
 > iMCP **does not** collect or store any of your data.
 > AI apps like ChatGPT and Claude _do_ send
 > your data off device as part of tool calls.
+> To keep your data on your Mac,
+> [use a local model with llama.cpp](#llamacpp).
 > Turn on only the services you want your AI app to use.
 
 <br clear="all">
@@ -374,6 +377,69 @@ Open this deep link to automatically install the iMCP server:
     <img alt="Install MCP Server" src="https://cursor.com/deeplink/mcp-install-light.svg">
   </picture>
 </a>
+
+#### [llama.cpp][llama-cpp]
+
+You can use iMCP with an open model that runs on your Mac
+through [llama.cpp][llama-cpp],
+so your conversations and tool results stay on your Mac.
+`llama-server` (or `llama serve`) starts the MCP servers
+listed in a configuration file
+and gives their tools to models in its web UI.
+This requires llama.cpp 0.1.0 or later.
+
+Create a file at `~/.config/llama/mcp.json` with the following contents:
+
+```json
+{
+  "mcpServers": {
+    "imcp": {
+      "command": "/Applications/iMCP.app/Contents/MacOS/imcp-server"
+    }
+  }
+}
+```
+
+Then start the server with the `--mcp-servers-config` option
+and a model that supports tool calling:
+
+```console
+llama serve --mcp-servers-config ~/.config/llama/mcp.json \
+            -hf ggml-org/Qwen3-4B-GGUF
+```
+
+Open the web UI at <http://localhost:8080>.
+iMCP tools show up with an `imcp_` prefix,
+such as `imcp_weather_current`.
+The web UI asks you before it runs each tool call,
+unless you choose to always allow that tool.
+
+<details>
+<summary>Use the Llama app</summary>
+
+[Llama][llama-app] is a menu bar app that runs `llama serve` for you.
+It doesn't have a setting for MCP servers,
+so add the `--mcp-servers-config` option to its custom server arguments:
+
+```console
+defaults write app.llama.Llama extraServerArgs -string "--mcp-servers-config $HOME/.config/llama/mcp.json"
+```
+
+Llama splits this value at each space and doesn't expand `~`,
+so use the full path to the file, without spaces.
+If you already set custom server arguments,
+add the option to your existing value.
+Quit and reopen Llama,
+then open the web UI at <http://localhost:9931>.
+
+</details>
+
+> [!TIP]
+> When the server starts,
+> it waits 10 seconds for iMCP to list its tools.
+> If you don't [approve the connection](#approve-connections)
+> from "llama.cpp" in that time,
+> no iMCP tools show up until you restart the server.
 
 ## Technical Details
 
@@ -674,6 +740,8 @@ This project is not affiliated with, endorsed, or sponsored by Apple Inc.
 [cursor]: https://cursor.com
 [imessage-exporter]: https://github.com/ReagentX/imessage-exporter
 [json-ld]: https://json-ld.org
+[llama-app]: https://llama.app
+[llama-cpp]: https://github.com/ggml-org/llama.cpp
 [madrid]: https://github.com/mattt/Madrid
 [mcp]: https://modelcontextprotocol.io/introduction
 [mcp-clients]: https://modelcontextprotocol.io/clients
