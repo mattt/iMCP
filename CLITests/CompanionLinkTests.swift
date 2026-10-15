@@ -292,6 +292,14 @@ final class CompanionRetryTests: XCTestCase {
         XCTAssertEqual(link.calls.filter { $0.tool == "alarms_list" }.count, 1)
     }
 
+    func testLockedPhoneReadsAnswerFromTheCache() async throws {
+        let link = FakeLink { _, _ in throw CompanionError(CompanionTools.lockedMessage) }
+        await service.attach(link)
+        let value = try await service.call("workouts_fetch", [:])
+        XCTAssertEqual(value.objectValue?["source"], "cache")
+        XCTAssertTrue(value.objectValue?["note"]?.stringValue?.contains("locked") == true)
+    }
+
     func testPhoneErrorsAreNotRetried() async throws {
         let link = FakeLink { _, _ in throw CompanionError("AlarmKit access is off.") }
         await service.attach(link)
