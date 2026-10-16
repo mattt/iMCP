@@ -57,6 +57,7 @@ enum ServiceRegistry {
             LocationService.shared,
             MapsService.shared,
             MessageService.shared,
+            NotesService.shared,
             PhoneService.shared,
             RemindersService.shared,
             ShortcutsService.shared,
@@ -79,6 +80,7 @@ enum ServiceRegistry {
         locationEnabled: Binding<Bool>,
         mapsEnabled: Binding<Bool>,
         messagesEnabled: Binding<Bool>,
+        notesEnabled: Binding<Bool>,
         phoneEnabled: Binding<Bool>,
         remindersEnabled: Binding<Bool>,
         shortcutsEnabled: Binding<Bool>,
@@ -135,6 +137,13 @@ enum ServiceRegistry {
                 color: .green,
                 service: MessageService.shared,
                 binding: messagesEnabled
+            ),
+            ServiceConfig(
+                name: "Notes",
+                iconName: "note.text",
+                color: .yellow,
+                service: NotesService.shared,
+                binding: notesEnabled
             ),
             ServiceConfig(
                 name: "Phone",
@@ -205,6 +214,7 @@ final class ServerController: ObservableObject {
     @AppStorage("locationEnabled") private var locationEnabled = false
     @AppStorage("mapsEnabled") private var mapsEnabled = true  // Default enabled
     @AppStorage("messagesEnabled") private var messagesEnabled = false
+    @AppStorage("notesEnabled") private var notesEnabled = false
     @AppStorage("phoneEnabled") private var phoneEnabled = false
     @AppStorage("remindersEnabled") private var remindersEnabled = false
     @AppStorage("shortcutsEnabled") private var shortcutsEnabled = false
@@ -229,6 +239,7 @@ final class ServerController: ObservableObject {
             locationEnabled: $locationEnabled,
             mapsEnabled: $mapsEnabled,
             messagesEnabled: $messagesEnabled,
+            notesEnabled: $notesEnabled,
             phoneEnabled: $phoneEnabled,
             remindersEnabled: $remindersEnabled,
             shortcutsEnabled: $shortcutsEnabled,
@@ -538,7 +549,7 @@ actor MCPConnectionManager {
             version: Bundle.main.shortVersionString ?? "unknown",
             instructions: """
                 Use iMCP for apps and data on the user's Mac: \
-                Calendar, Contacts, Location, Maps, Messages, Phone, Reminders, Shortcuts, Voicemail, Weather, \
+                Calendar, Contacts, Location, Maps, Messages, Notes, Phone, Reminders, Shortcuts, Voicemail, Weather, \
                 and the camera, microphone, and screen. \
                 Only the services that the user turns on in iMCP have tools.
                 """,
