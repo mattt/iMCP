@@ -36,6 +36,10 @@ final class MailCompositionTests: XCTestCase {
         XCTAssertThrowsError(try MailComposition(subject: "Hi\nBcc: x").url)
         XCTAssertThrowsError(try composition.open(using: { _ in false })) { error in
             XCTAssertEqual(error as? MailError, .composeFailed)
+            XCTAssertEqual(
+                String(describing: error),
+                "The default email app could not open the compose URL."
+            )
         }
         var opened: URL?
         try composition.open {

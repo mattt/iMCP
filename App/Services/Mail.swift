@@ -412,11 +412,13 @@ final class MailService: NSObject, Service, NSOpenSavePanelDelegate, Sendable {
     }
 }
 
-enum MailError: LocalizedError, Equatable {
+enum MailError: LocalizedError, CustomStringConvertible, Equatable {
     case invalidArgument(String)
     case accessExpired
     case folderNotReadable
     case composeFailed
+
+    var description: String { localizedDescription }
 
     var errorDescription: String? {
         switch self {
