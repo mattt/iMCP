@@ -28,6 +28,13 @@ and a [growing list of clients][mcp-clients] that support the
   </tr>
   <tr>
     <th>
+      <img src="Assets/home.svg" width="48" height="48" alt="" role="presentation"/>
+    </th>
+    <td><strong>Home</strong></td>
+    <td>Find homes, rooms, accessories, scenes, and automations, read and control accessories, and organize rooms and zones. Needs a helper app that you <a href="#imcp-helper">build with your own Apple Developer account</a>.</td>
+  </tr>
+  <tr>
+    <th>
       <img src="Assets/location.svg" width="48" height="48" alt="" role="presentation"/>
     </th>
     <td><strong>Location</strong></td>
@@ -56,10 +63,17 @@ and a [growing list of clients][mcp-clients] that support the
   </tr>
   <tr>
     <th>
+      <img src="Assets/voicemail.svg" width="48" height="48" alt="" role="presentation"/>
+    </th>
+    <td><strong>Voicemail</strong></td>
+    <td>Fetch voicemails synced from your iPhone, with transcripts and audio, filtering by sender, date, message type, or mailbox (inbox, blocked, or deleted).</td>
+  </tr>
+  <tr>
+    <th>
       <img src="Assets/reminders.svg" width="48" height="48" alt="" role="presentation"/>
     </th>
     <td><strong>Reminders</strong></td>
-    <td>View and create reminders with customizable due dates, priorities, and alerts across different reminder lists.</td>
+    <td>View, create, edit, and delete reminders with customizable due dates, recurrence, priorities, and alerts across different reminder lists, and manage the lists themselves.</td>
   </tr>
   <tr>
     <th>
@@ -355,6 +369,17 @@ leaves that log unreadable, so the newest messages were missing until then.
 If you granted `chat.db` with an earlier version, Messages keeps working from the last checkpoint;
 switch Messages off and on in the iMCP menu to grant the folder instead.
 
+Attachment files are a separate matter.
+The sandbox walls off `~/Library/Messages/Attachments` from a grant on its parent folder,
+so reading message attachments (`messages_attachment_read`)
+asks for that subfolder through the same picker —
+a second, read-only grant of its own.
+Granting it is optional:
+declining leaves `messages_attachment_read` unable to read files,
+while everything else keeps working.
+If you granted the Messages folder before attachments were supported,
+switch Messages off and on in the iMCP menu to be asked for it.
+
 But opening the iMessage database is just half the battle.
 Over the past few years,
 Apple has moved away from storing messages in plain text
@@ -372,6 +397,15 @@ Call history synced from your iPhone lives in a SQLite database at
 `~/Library/Application Support/CallHistoryDB/CallHistory.storedata`.
 Recent calls sit in its write-ahead log next to the store file,
 so the Phone service asks you to open the `CallHistoryDB` folder
+rather than the file alone.
+
+### Visual Voicemail Database Access
+
+Voicemails synced from your iPhone by the Phone app (on macOS 26 and later)
+live in a SQLite database at
+`~/Library/Group Containers/group.com.apple.FaceTime/com.apple.facetimemessagestored/Data Store/FaceTimeMessageStore-local.sqlitedb`.
+The store is a write-ahead log database, and the message audio sits in an `Assets`
+tree beside it, so the Voicemail service asks you to open the `Data Store` folder
 rather than the file alone.
 
 ### JSON-LD for Tool Results
@@ -402,7 +436,112 @@ a Swift package for working with structured data.
 It includes convenience initializers for types from Apple frameworks,
 such as those returned by iMCP tools.
 
+### iMCP Helper
+
+Apple doesn't make the HomeKit framework available to native macOS apps,
+only to Mac Catalyst apps.
+So the Home service runs in a separate Catalyst app,
+[`iMCP Helper`](/Helper/).
+Apple doesn't allow HomeKit in Developer ID apps,
+so iMCP's release build doesn't include the helper.
+Build and install it with your own Apple Developer account:
+
+```console
+git clone https://github.com/mattt/iMCP.git
+cd iMCP
+Scripts/install-helper.sh
+```
+
+The script signs the helper with your team's development certificate
+and installs it in `/Applications`.
+Run it with `--help` to choose another team, bundle ID, or install directory.
+Xcode must be signed in to your account (Xcode > Settings > Accounts),
+and the helper runs only on Macs registered to your team.
+Whether free personal teams can use HomeKit isn't verified.
+Then turn on Home in iMCP.
+iMCP finds the helper in `/Applications`.
+If you installed it somewhere else,
+iMCP asks you to choose it when you turn on Home,
+or you can choose it in Settings > Services > Home.
+When you enable Home,
+iMCP launches the helper and the helper asks for HomeKit access.
+The helper exits when iMCP exits,
+and its status window reports startup and permission errors.
+The Mac's iCloud account must have access to the home,
+and writes can require the owner or administrator role.
+
+Both apps compile the same tool definitions from
+[`Shared/Home/HomeTools.swift`](/Shared/Home/HomeTools.swift).
+The helper implements them with HomeKit;
+the app forwards each call over an MCP connection on the loopback interface,
+so the usual service and per-tool switches apply.
+Object IDs are HomeKit UUID strings.
+Inventory tools return live characteristic values only when `include_values` is true,
+with a five-second timeout and at most four outstanding HomeKit reads.
+After a lost connection, read-only calls retry once.
+Writes are not repeated, because HomeKit may have applied them already;
+the error asks the caller to inspect the home before retrying.
+
+iMCP passes an ephemeral loopback port to the helper it launches.
+A helper started some other way (for example, from Xcode)
+advertises "\_imcp-helper.\_tcp" on the local-only DNS-SD interface instead.
+If iMCP can't find such a helper, quit it and let iMCP launch its own.
+To point `imcp-server` (and so the MCP Inspector) at a running helper directly,
+set `IMCP_SERVICE_TYPE=_imcp-helper._tcp`.
+`uv run Scripts/check-home.py <path-to-imcp-server>` runs a read-only
+integration check against it.
+
+#### Building the helper
+
+Building the `iMCP` scheme runs
+[`Scripts/build-helper.sh`](/Scripts/build-helper.sh),
+which builds the `iMCP Helper` scheme for Mac Catalyst in its own
+derived-data directory and copies the product into the app.
+A direct target dependency selects the iOS variant of the helper,
+so the nested build is required.
+Release builds set `EMBED_HOME_HELPER = NO` and leave the helper out.
+
+The HomeKit entitlement requires a development certificate and a
+provisioning profile with the HomeKit capability.
+So the helper uses automatic signing with team `TTY35UM57S`
+in both Debug and Release, even though the native Debug app is unsigned.
+To build with another team, change it in the helper target's
+Signing & Capabilities tab.
+The first Mac Catalyst build for a new bundle ID can fail with
+"Entitlement com.apple.developer.homekit not found and could not be included in profile",
+because automatic provisioning registers the capability only for the iOS destination.
+`Scripts/install-helper.sh` handles this by building for iOS once and retrying.
+To do it by hand, build the helper once for iOS to register it,
+then build for Mac Catalyst:
+
+```console
+xcodebuild -scheme "iMCP Helper" -destination "generic/platform=iOS" \
+  -allowProvisioningUpdates build
+xcodebuild -scheme "iMCP Helper" -destination "platform=macOS,variant=Mac Catalyst" \
+  -allowProvisioningUpdates build
+```
+
+CI builds both apps unsigned,
+which checks compilation and packaging but can't access HomeKit:
+
+```console
+xcodebuild -scheme iMCP -configuration Debug -destination "platform=macOS" \
+  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+  HELPER_CODE_SIGNING_ALLOWED=NO build
+```
+
 ## Debugging
+
+### Allowing local network access
+
+`imcp-server` finds the iMCP app with Bonjour,
+so it needs permission to access the local network.
+`imcp-server` has its own entry in
+System Settings > Privacy & Security > Local Network,
+separate from iMCP and from the app that runs it, such as your terminal.
+If that entry is turned off,
+`imcp-server` can't find the app
+and reports that Bonjour service discovery timed out.
 
 ### Using the MCP Inspector
 

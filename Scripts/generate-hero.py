@@ -20,8 +20,10 @@ SERVICES = (
     ("calendar", "#ff453a"),
     ("contacts", "#ac8e68"),
     ("reminders", "#ff9f0a"),
+    ("home", "#ff9f0a"),
     ("messages", "#28d74b"),
     ("phone", "#28d74b"),
+    ("voicemail", "#28d74b"),
     ("weather", "#5ac8f5"),
     ("location", "#0a84ff"),
     ("shortcuts", "#5e5ce6"),
@@ -29,10 +31,10 @@ SERVICES = (
 )
 
 WIDTH, HEIGHT = 1012, 600
-ICON_SIZE = 100
+ICON_SIZE = 86
 RADIUS = 600
 ARC_TOP = 108
-SWEEP = math.radians(90)
+SWEEP = math.radians(100)
 
 
 def icon_centers(count: int) -> list[tuple[float, float]]:

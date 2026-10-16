@@ -53,6 +53,7 @@ enum ServiceRegistry {
             CalendarService.shared,
             CaptureService.shared,
             ContactsService.shared,
+            HomeService.shared,
             LocationService.shared,
             MapsService.shared,
             MailService.shared,
@@ -62,6 +63,9 @@ enum ServiceRegistry {
             ShortcutsService.shared,
             UtilitiesService.shared,
         ]
+        if VoicemailService.isSupported {
+            services.append(VoicemailService.shared)
+        }
         #if WEATHERKIT_AVAILABLE
             services.append(WeatherService.shared)
         #endif
@@ -72,6 +76,7 @@ enum ServiceRegistry {
         calendarEnabled: Binding<Bool>,
         captureEnabled: Binding<Bool>,
         contactsEnabled: Binding<Bool>,
+        homeEnabled: Binding<Bool>,
         locationEnabled: Binding<Bool>,
         mapsEnabled: Binding<Bool>,
         mailEnabled: Binding<Bool>,
@@ -80,6 +85,7 @@ enum ServiceRegistry {
         remindersEnabled: Binding<Bool>,
         shortcutsEnabled: Binding<Bool>,
         utilitiesEnabled: Binding<Bool>,
+        voicemailEnabled: Binding<Bool>,
         weatherEnabled: Binding<Bool>
     ) -> [ServiceConfig] {
         var configs: [ServiceConfig] = [
@@ -103,6 +109,13 @@ enum ServiceRegistry {
                 color: .brown,
                 service: ContactsService.shared,
                 binding: contactsEnabled
+            ),
+            ServiceConfig(
+                name: "Home",
+                iconName: "house.fill",
+                color: .orange,
+                service: HomeService.shared,
+                binding: homeEnabled
             ),
             ServiceConfig(
                 name: "Location",
@@ -154,6 +167,17 @@ enum ServiceRegistry {
                 binding: shortcutsEnabled
             ),
         ]
+        if VoicemailService.isSupported {
+            configs.append(
+                ServiceConfig(
+                    name: "Voicemail",
+                    iconName: "recordingtape",
+                    color: .green,
+                    service: VoicemailService.shared,
+                    binding: voicemailEnabled
+                )
+            )
+        }
         #if WEATHERKIT_AVAILABLE
             configs.append(
                 ServiceConfig(
@@ -186,6 +210,7 @@ final class ServerController: ObservableObject {
     @AppStorage("calendarEnabled") private var calendarEnabled = false
     @AppStorage("captureEnabled") private var captureEnabled = false
     @AppStorage("contactsEnabled") private var contactsEnabled = false
+    @AppStorage("homeEnabled") private var homeEnabled = false
     @AppStorage("locationEnabled") private var locationEnabled = false
     @AppStorage("mapsEnabled") private var mapsEnabled = true  // Default enabled
     @AppStorage("mailEnabled") private var mailEnabled = false
@@ -194,6 +219,7 @@ final class ServerController: ObservableObject {
     @AppStorage("remindersEnabled") private var remindersEnabled = false
     @AppStorage("shortcutsEnabled") private var shortcutsEnabled = false
     @AppStorage("utilitiesEnabled") private var utilitiesEnabled = true  // Default enabled
+    @AppStorage("voicemailEnabled") private var voicemailEnabled = false
     @AppStorage("weatherEnabled") private var weatherEnabled = false
 
     // MARK: - AppStorage for Trusted Clients
@@ -209,6 +235,7 @@ final class ServerController: ObservableObject {
             calendarEnabled: $calendarEnabled,
             captureEnabled: $captureEnabled,
             contactsEnabled: $contactsEnabled,
+            homeEnabled: $homeEnabled,
             locationEnabled: $locationEnabled,
             mapsEnabled: $mapsEnabled,
             mailEnabled: $mailEnabled,
@@ -217,6 +244,7 @@ final class ServerController: ObservableObject {
             remindersEnabled: $remindersEnabled,
             shortcutsEnabled: $shortcutsEnabled,
             utilitiesEnabled: $utilitiesEnabled,
+            voicemailEnabled: $voicemailEnabled,
             weatherEnabled: $weatherEnabled
         )
     }
@@ -298,7 +326,12 @@ final class ServerController: ObservableObject {
         Task {
             if enabled, await !config.isActivated {
                 do {
-                    try await config.service.activate()
+                    if config.service is HomeService, try !HomeService.shared.promptForHelperIfMissing() {
+                        self.objectWillChange.send()
+                        config.binding.wrappedValue = false
+                    } else {
+                        try await config.service.activate()
+                    }
                 } catch {
                     self.objectWillChange.send()
                     config.binding.wrappedValue = false
@@ -508,9 +541,18 @@ actor MCPConnectionManager {
         )
 
         // MCP server instance for this connection.
+        // Some clients, such as ChatGPT,
+        // describe the server to the model with only the first line of the instructions,
+        // so keep them on one line.
         self.server = MCP.Server(
             name: Bundle.main.name ?? "iMCP",
             version: Bundle.main.shortVersionString ?? "unknown",
+            instructions: """
+                Use iMCP for apps and data on the user's Mac: \
+                Calendar, Contacts, Location, Maps, Messages, Phone, Reminders, Shortcuts, Voicemail, Weather, \
+                and the camera, microphone, and screen. \
+                Only the services that the user turns on in iMCP have tools.
+                """,
             capabilities: MCP.Server.Capabilities(
                 tools: .init(listChanged: true)
             )
@@ -630,8 +672,9 @@ actor NetworkDiscoveryManager {
         let parameters = NWParameters.tcp
         parameters.acceptLocalOnly = true
         parameters.includePeerToPeer = false
-        // Match the IPv4 protocol below to avoid NECP errors for an IPv6 wildcard.
-        parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.any), port: .any)
+        // Accept connections from this Mac only; the CLI connects over loopback (#229).
+        // IPv4 matches the protocol below and avoids NECP errors for an IPv6 wildcard.
+        parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)
 
         if let tcpOptions = parameters.defaultProtocolStack.internetProtocol
             as? NWProtocolIP.Options
@@ -697,8 +740,9 @@ actor NetworkDiscoveryManager {
         let parameters: NWParameters = NWParameters.tcp  // Explicit type
         parameters.acceptLocalOnly = true
         parameters.includePeerToPeer = false
-        // Match the IPv4 protocol below to avoid NECP errors for an IPv6 wildcard.
-        parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.any), port: .any)
+        // Accept connections from this Mac only; the CLI connects over loopback (#229).
+        // IPv4 matches the protocol below and avoids NECP errors for an IPv6 wildcard.
+        parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)
 
         if let tcpOptions = parameters.defaultProtocolStack.internetProtocol
             as? NWProtocolIP.Options

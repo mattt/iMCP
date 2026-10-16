@@ -1,9 +1,10 @@
+import Foundation
 import Logging
 import MCP
 import Network
 import ServiceLifecycle
 
-private let serviceType = "_mcp._tcp"
+private let serviceType = ProcessInfo.processInfo.environment["IMCP_SERVICE_TYPE"] ?? "_mcp._tcp"
 
 private let parameters: NWParameters = {
     let parameters = NWParameters.tcp
@@ -31,7 +32,7 @@ actor MCPService: Service {
                     using: parameters
                 )
 
-                // Prefer a service advertised as iMCP; fall back to any MCP service.
+                // Prefer a service advertised as iMCP; fall back to any MCP service on this Mac.
                 // The helper cancels the browser on every exit path,
                 // so a timed-out attempt doesn't leak a DNS-SD connection (#192).
                 let endpoint: NWEndpoint
@@ -42,7 +43,13 @@ actor MCPService: Service {
                         preferring: { String(describing: $0.endpoint).contains("iMCP") }
                     )
                 } catch BonjourDiscovery.Error.timeout {
-                    await log.error("Bonjour service discovery timed out after 30 seconds")
+                    await log.error(
+                        """
+                        Bonjour service discovery timed out after 30 seconds. \
+                        Check that iMCP is running, and that imcp-server is turned on in \
+                        System Settings > Privacy & Security > Local Network.
+                        """
+                    )
                     throw MCPError.internalError("Service discovery timeout")
                 }
                 await log.info("Selected endpoint: \(endpoint)")

@@ -26,8 +26,9 @@ enum BonjourDiscovery {
     }
 
     /// Starts `browser` on the main queue
-    /// and returns the first result that satisfies `preferring`,
-    /// or the first result at all if none does.
+    /// and returns the first service on this Mac that satisfies `preferring`,
+    /// or the first service on this Mac if none does.
+    /// Services on other Macs are ignored (#257).
     ///
     /// The browser is cancelled before this function returns or throws,
     /// whether a result was found, the browser failed, or `timeout` elapsed.
@@ -58,7 +59,7 @@ enum BonjourDiscovery {
             }
 
             browser.browseResultsChangedHandler = { results, _ in
-                guard let selected = results.first(where: isPreferred) ?? results.first else { return }
+                guard let selected = select(from: results, isLocal: isLocal, preferring: isPreferred) else { return }
                 Task {
                     if await state.checkAndSetResumed() {
                         timeoutTask.cancel()
@@ -71,6 +72,28 @@ enum BonjourDiscovery {
 
             browser.start(queue: .main)
         }
+    }
+
+    /// Returns the first local result that satisfies `preferring`,
+    /// or the first local result if none does.
+    static func select<Result>(
+        from results: some Collection<Result>,
+        isLocal: (Result) -> Bool,
+        preferring isPreferred: (Result) -> Bool
+    ) -> Result? {
+        let local = results.filter(isLocal)
+        return local.first(where: isPreferred) ?? local.first
+    }
+
+    /// Returns whether `result` is a service advertised by this Mac.
+    ///
+    /// Bonjour reports a service registered on this Mac on the loopback interface,
+    /// and a service from another Mac only on network interfaces.
+    /// iMCP on another Mac accepts connections over its own loopback only (#242),
+    /// and its advertised port is meaningless here,
+    /// because the connection goes to this Mac's loopback address (#229).
+    static func isLocal(_ result: NWBrowser.Result) -> Bool {
+        result.interfaces.contains { $0.type == .loopback }
     }
 
     static func connectionEndpoint(

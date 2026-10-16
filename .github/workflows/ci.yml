@@ -13,7 +13,7 @@ permissions:
 jobs:
     build:
         name: Build on macOS ${{ matrix.macos }} with Xcode ${{ matrix.xcode }}
-        runs-on: macos-${{ matrix.macos }}
+        runs-on: ${{ matrix.runner }}
         env:
             DEVELOPER_DIR: "/Applications/Xcode_${{ matrix.xcode }}.app/Contents/Developer"
         strategy:
@@ -22,6 +22,10 @@ jobs:
                 include:
                     - macos: "26"
                       xcode: "26.0"
+                      runner: macos-26
+                    - macos: "27"
+                      xcode: "27.0"
+                      runner: xcode-27
         timeout-minutes: 10
         steps:
             - name: Checkout code
@@ -49,7 +53,15 @@ jobs:
               run: swift format lint --strict --recursive .
 
             - name: Build
-              run: xcodebuild -quiet -scheme iMCP -configuration Debug -destination "platform=macOS" build
+              run: |
+                  xcodebuild -quiet \
+                      -scheme iMCP \
+                      -configuration Debug \
+                      -destination "platform=macOS" \
+                      CODE_SIGNING_ALLOWED=NO \
+                      CODE_SIGNING_REQUIRED=NO \
+                      HELPER_CODE_SIGNING_ALLOWED=NO \
+                      build
 
             # The cache action's exclude pattern has not kept the module cache out of
             # the archive, and runner images with the same Xcode build can differ in

@@ -165,11 +165,19 @@ resolve_bundle_id() {
   if [[ ! -f "${PROJECT_FILE}" ]]; then
     return 1
   fi
+  # Match the PRODUCT_BUNDLE_IDENTIFIER key exactly,
+  # not settings that contain it, such as DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER,
+  # and skip the CLI, its tests, and values set from other build settings,
+  # such as the helper's $(HELPER_BUNDLE_IDENTIFIER).
+  local pattern='^[[:space:]]*PRODUCT_BUNDLE_IDENTIFIER = "?([^";]+)"?;'
   while IFS= read -r line; do
-    if [[ "${line}" == *"PRODUCT_BUNDLE_IDENTIFIER ="* && "${line}" != *"imcp-server"* ]]; then
-      BUNDLE_ID="${line#*PRODUCT_BUNDLE_IDENTIFIER = }"
-      BUNDLE_ID="${BUNDLE_ID%;}"
-      return 0
+    if [[ "${line}" =~ ${pattern} ]]; then
+      local value="${BASH_REMATCH[1]}"
+      # shellcheck disable=SC2016 # A literal "$(" marks a build-setting reference.
+      if [[ "${value}" != *"imcp-server"* && "${value}" != *'$('* ]]; then
+        BUNDLE_ID="${value}"
+        return 0
+      fi
     fi
   done < "${PROJECT_FILE}"
   return 1
@@ -262,11 +270,13 @@ bump_version() {
   local resolved_build_number="${BUILD_NUMBER}"
   if [[ -z "${resolved_build_number}" ]]; then
     # Find the current build number and increment it if not provided.
+    # Use the highest one, so the order of targets in the project file
+    # can't lower the build number that Sparkle compares.
     resolved_build_number="0"
     while IFS= read -r line; do
-      if [[ "${line}" =~ CURRENT_PROJECT_VERSION\ =\ ([0-9]+)\; ]]; then
+      if [[ "${line}" =~ CURRENT_PROJECT_VERSION\ =\ ([0-9]+)\; ]] &&
+        ((BASH_REMATCH[1] > resolved_build_number)); then
         resolved_build_number="${BASH_REMATCH[1]}"
-        break
       fi
     done < "${PROJECT_FILE}"
     resolved_build_number="$((resolved_build_number + 1))"

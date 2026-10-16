@@ -7,20 +7,43 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		158948D22D0E610E83A4433C /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = B75D49165A453E912E36DBFE /* Sparkle */; };
 		76F80A6E3EDBFB02048A6ED8 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E0E66768348853754D32208C /* Cocoa.framework */; };
 		826C0834A5B647F8A918E54D /* ServiceLifecycle in Frameworks */ = {isa = PBXBuildFile; productRef = DCE061F8A68D0CD546D919E2 /* ServiceLifecycle */; };
 		8DFCE9E4CBCBEB93A32E8560 /* ServiceLifecycleTestKit in Frameworks */ = {isa = PBXBuildFile; productRef = 1CD6B9E157EEC273F178543D /* ServiceLifecycleTestKit */; };
 		930214FCD680D7D74158F215 /* ServiceGroupConfigurationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75E148EAC5AC8B3263C5AA13 /* ServiceGroupConfigurationTests.swift */; };
+		A20000000000000000000020 /* MCP in Frameworks */ = {isa = PBXBuildFile; productRef = A20000000000000000000010 /* MCP */; };
+		A20000000000000000000021 /* JSONSchema in Frameworks */ = {isa = PBXBuildFile; productRef = A20000000000000000000011 /* JSONSchema */; };
+		A20000000000000000000022 /* Ontology in Frameworks */ = {isa = PBXBuildFile; productRef = A20000000000000000000012 /* Ontology */; };
+		A20000000000000000000023 /* Logging in Frameworks */ = {isa = PBXBuildFile; productRef = A20000000000000000000013 /* Logging */; };
+		A20000000000000000000030 /* BonjourDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF000000000001 /* BonjourDiscovery.swift */; };
+		A30000000000000000000020 /* HomeToolsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000010 /* HomeToolsTests.swift */; };
+		A30000000000000000000021 /* ../Shared/Home/HomeBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000011 /* ../Shared/Home/HomeBackend.swift */; };
+		A30000000000000000000022 /* ../Shared/Home/HomeError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000012 /* ../Shared/Home/HomeError.swift */; };
+		A30000000000000000000023 /* ../Shared/Home/HomeInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000013 /* ../Shared/Home/HomeInput.swift */; };
+		A30000000000000000000024 /* ../Shared/Home/HomeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000014 /* ../Shared/Home/HomeTools.swift */; };
+		A30000000000000000000025 /* ../Shared/Models/Tool.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000015 /* ../Shared/Models/Tool.swift */; };
+		A30000000000000000000026 /* ../Shared/Models/Value.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000016 /* ../Shared/Models/Value.swift */; };
+		A30000000000000000000030 /* MCP in Frameworks */ = {isa = PBXBuildFile; productRef = A20000000000000000000010 /* MCP */; };
+		A30000000000000000000031 /* JSONSchema in Frameworks */ = {isa = PBXBuildFile; productRef = A20000000000000000000011 /* JSONSchema */; };
+		A30000000000000000000032 /* Ontology in Frameworks */ = {isa = PBXBuildFile; productRef = A20000000000000000000012 /* Ontology */; };
+		A40000000000000000000020 /* HomeProxyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000010 /* HomeProxyTests.swift */; };
+		A40000000000000000000021 /* ../App/Services/Home.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000011 /* ../App/Services/Home.swift */; };
+		A40000000000000000000029 /* ../App/Services/HomeHelperLocator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000019 /* ../App/Services/HomeHelperLocator.swift */; };
+		A40000000000000000000022 /* ../Shared/Extensions/Logger+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000012 /* ../Shared/Extensions/Logger+Extensions.swift */; };
+		A40000000000000000000023 /* ../Shared/Extensions/Bundle+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000013 /* ../Shared/Extensions/Bundle+Extensions.swift */; };
+		A40000000000000000000024 /* ../Shared/Models/Service.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000014 /* ../Shared/Models/Service.swift */; };
 		B0D1DEADBEEF000000000002 /* BonjourDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF000000000001 /* BonjourDiscovery.swift */; };
 		B0D1DEADBEEF000000000004 /* BonjourDiscoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF000000000003 /* BonjourDiscoveryTests.swift */; };
 		B0D1DEADBEEF000000000006 /* MCPServiceLoop.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF000000000005 /* MCPServiceLoop.swift */; };
 		B0D1DEADBEEF000000000008 /* MCPServiceLoopTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF000000000007 /* MCPServiceLoopTests.swift */; };
+		B0D1DEADBEEF00000000000A /* MCPInitializeCompatibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF000000000009 /* MCPInitializeCompatibility.swift */; };
+		B0D1DEADBEEF00000000000C /* MCPInitializeCompatibilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF00000000000B /* MCPInitializeCompatibilityTests.swift */; };
 		F809556E2D7888920055B911 /* TypedStream in Frameworks */ = {isa = PBXBuildFile; productRef = F809556D2D7888920055B911 /* TypedStream */; };
 		F80955702D7888920055B911 /* iMessage in Frameworks */ = {isa = PBXBuildFile; productRef = F809556F2D7888920055B911 /* iMessage */; };
 		F825BDBF2D9AD00E0063ADD7 /* ServiceLifecycle in Frameworks */ = {isa = PBXBuildFile; productRef = F825BDBE2D9AD00E0063ADD7 /* ServiceLifecycle */; };
 		F825BDC12D9AD00E0063ADD7 /* UnixSignals in Frameworks */ = {isa = PBXBuildFile; productRef = F825BDC02D9AD00E0063ADD7 /* UnixSignals */; };
 		F873F48D2D712BCF0035CD0A /* Ontology in Frameworks */ = {isa = PBXBuildFile; productRef = F873F48C2D712BCF0035CD0A /* Ontology */; };
-		158948D22D0E610E83A4433C /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = B75D49165A453E912E36DBFE /* Sparkle */; };
 		F88358372D64A085000317CD /* Logging in Frameworks */ = {isa = PBXBuildFile; productRef = F88358362D64A085000317CD /* Logging */; };
 		F885C6B82D66079100963B25 /* imcp-server in Copy Executables */ = {isa = PBXBuildFile; fileRef = F8F44EB62D5908D00075D79C /* imcp-server */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		F8A7DE3E2DCB76F700530587 /* MCP in Frameworks */ = {isa = PBXBuildFile; productRef = F8A7DE3D2DCB76F700530587 /* MCP */; };
@@ -72,24 +95,47 @@
 /* Begin PBXFileReference section */
 		6A5CFBBEC66BC8CDA9D65496 /* imcp-serverTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "imcp-serverTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		75E148EAC5AC8B3263C5AA13 /* ServiceGroupConfigurationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ServiceGroupConfigurationTests.swift; sourceTree = "<group>"; };
+		A10000000000000000000001 /* iMCP Helper.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; path = "iMCP Helper.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		A30000000000000000000010 /* HomeToolsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeToolsTests.swift; sourceTree = "<group>"; };
+		A30000000000000000000011 /* ../Shared/Home/HomeBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Home/HomeBackend.swift; sourceTree = "<group>"; };
+		A30000000000000000000012 /* ../Shared/Home/HomeError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Home/HomeError.swift; sourceTree = "<group>"; };
+		A30000000000000000000013 /* ../Shared/Home/HomeInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Home/HomeInput.swift; sourceTree = "<group>"; };
+		A30000000000000000000014 /* ../Shared/Home/HomeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Home/HomeTools.swift; sourceTree = "<group>"; };
+		A30000000000000000000015 /* ../Shared/Models/Tool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Models/Tool.swift; sourceTree = "<group>"; };
+		A30000000000000000000016 /* ../Shared/Models/Value.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Models/Value.swift; sourceTree = "<group>"; };
+		A40000000000000000000010 /* HomeProxyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeProxyTests.swift; sourceTree = "<group>"; };
+		A40000000000000000000011 /* ../App/Services/Home.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../App/Services/Home.swift; sourceTree = "<group>"; };
+		A40000000000000000000019 /* ../App/Services/HomeHelperLocator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../App/Services/HomeHelperLocator.swift; sourceTree = "<group>"; };
+		A40000000000000000000012 /* ../Shared/Extensions/Logger+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Shared/Extensions/Logger+Extensions.swift"; sourceTree = "<group>"; };
+		A40000000000000000000013 /* ../Shared/Extensions/Bundle+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Shared/Extensions/Bundle+Extensions.swift"; sourceTree = "<group>"; };
+		A40000000000000000000014 /* ../Shared/Models/Service.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Models/Service.swift; sourceTree = "<group>"; };
 		B0D1DEADBEEF000000000001 /* BonjourDiscovery.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = BonjourDiscovery.swift; path = ../CLI/BonjourDiscovery.swift; sourceTree = "<group>"; };
 		B0D1DEADBEEF000000000003 /* BonjourDiscoveryTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BonjourDiscoveryTests.swift; sourceTree = "<group>"; };
 		B0D1DEADBEEF000000000005 /* MCPServiceLoop.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MCPServiceLoop.swift; path = ../CLI/MCPServiceLoop.swift; sourceTree = "<group>"; };
 		B0D1DEADBEEF000000000007 /* MCPServiceLoopTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MCPServiceLoopTests.swift; sourceTree = "<group>"; };
+		B0D1DEADBEEF000000000009 /* MCPInitializeCompatibility.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MCPInitializeCompatibility.swift; path = ../CLI/MCPInitializeCompatibility.swift; sourceTree = "<group>"; };
+		B0D1DEADBEEF00000000000B /* MCPInitializeCompatibilityTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MCPInitializeCompatibilityTests.swift; sourceTree = "<group>"; };
 		E0E66768348853754D32208C /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/System/Library/Frameworks/Cocoa.framework; sourceTree = DEVELOPER_DIR; };
 		F8F44E6D2D59038D0075D79C /* iMCP.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = iMCP.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F8F44EB62D5908D00075D79C /* imcp-server */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "imcp-server"; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA0033000000000000000064 /* MailCompositionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MailCompositionTests.swift; path = MailCompositionTests.swift; sourceTree = "<group>"; };
 		AA0033000000000000000066 /* Mail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Mail.swift; path = ../App/Services/Mail.swift; sourceTree = "<group>"; };
-		AA0033000000000000000068 /* Service.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Service.swift; path = ../App/Models/Service.swift; sourceTree = "<group>"; };
-		AA003300000000000000006A /* Tool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Tool.swift; path = ../App/Models/Tool.swift; sourceTree = "<group>"; };
-		AA003300000000000000006C /* Value.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Value.swift; path = ../App/Models/Value.swift; sourceTree = "<group>"; };
-		AA003300000000000000006E /* Logger+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "Logger+Extensions.swift"; path = "../App/Extensions/Logger+Extensions.swift"; sourceTree = "<group>"; };
+		AA0033000000000000000068 /* Service.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Service.swift; path = ../Shared/Models/Service.swift; sourceTree = "<group>"; };
+		AA003300000000000000006A /* Tool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Tool.swift; path = ../Shared/Models/Tool.swift; sourceTree = "<group>"; };
+		AA003300000000000000006C /* Value.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Value.swift; path = ../Shared/Models/Value.swift; sourceTree = "<group>"; };
+		AA003300000000000000006E /* Logger+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "Logger+Extensions.swift"; path = "../Shared/Extensions/Logger+Extensions.swift"; sourceTree = "<group>"; };
 		AA0033000000000000000070 /* Foundation+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "Foundation+Extensions.swift"; path = "../App/Extensions/Foundation+Extensions.swift"; sourceTree = "<group>"; };
 		AA0033000000000000000001 /* AppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		A1000000000000000000000B /* Exceptions for "Helper" folder in "iMCP Helper" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = A10000000000000000000003 /* iMCP Helper */;
+		};
 		F8F44EB12D5906E20075D79C /* Exceptions for "App" folder in "iMCP" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -100,6 +146,19 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		A10000000000000000000002 /* Helper */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				A1000000000000000000000B /* Exceptions for "Helper" folder in "iMCP Helper" target */,
+			);
+			path = Helper;
+			sourceTree = "<group>";
+		};
+		A20000000000000000000001 /* Shared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Shared;
+			sourceTree = "<group>";
+		};
 		F8F44E6F2D59038D0075D79C /* App */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
@@ -120,10 +179,24 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A30000000000000000000030 /* MCP in Frameworks */,
+				A30000000000000000000031 /* JSONSchema in Frameworks */,
+				A30000000000000000000032 /* Ontology in Frameworks */,
 				76F80A6E3EDBFB02048A6ED8 /* Cocoa.framework in Frameworks */,
 				826C0834A5B647F8A918E54D /* ServiceLifecycle in Frameworks */,
 				8DFCE9E4CBCBEB93A32E8560 /* ServiceLifecycleTestKit in Frameworks */,
 				F9E9902DC72D90F6C423EFE2 /* Logging in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A10000000000000000000006 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A20000000000000000000020 /* MCP in Frameworks */,
+				A20000000000000000000021 /* JSONSchema in Frameworks */,
+				A20000000000000000000022 /* Ontology in Frameworks */,
+				A20000000000000000000023 /* Logging in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -171,10 +244,25 @@
 		9784E568F0621136136A0EAC /* CLITests */ = {
 			isa = PBXGroup;
 			children = (
+				A40000000000000000000010 /* HomeProxyTests.swift */,
+				A40000000000000000000011 /* ../App/Services/Home.swift */,
+				A40000000000000000000019 /* ../App/Services/HomeHelperLocator.swift */,
+				A40000000000000000000012 /* ../Shared/Extensions/Logger+Extensions.swift */,
+				A40000000000000000000013 /* ../Shared/Extensions/Bundle+Extensions.swift */,
+				A40000000000000000000014 /* ../Shared/Models/Service.swift */,
+				A30000000000000000000010 /* HomeToolsTests.swift */,
+				A30000000000000000000011 /* ../Shared/Home/HomeBackend.swift */,
+				A30000000000000000000012 /* ../Shared/Home/HomeError.swift */,
+				A30000000000000000000013 /* ../Shared/Home/HomeInput.swift */,
+				A30000000000000000000014 /* ../Shared/Home/HomeTools.swift */,
+				A30000000000000000000015 /* ../Shared/Models/Tool.swift */,
+				A30000000000000000000016 /* ../Shared/Models/Value.swift */,
 				75E148EAC5AC8B3263C5AA13 /* ServiceGroupConfigurationTests.swift */,
 				B0D1DEADBEEF000000000003 /* BonjourDiscoveryTests.swift */,
 				B0D1DEADBEEF000000000001 /* BonjourDiscovery.swift */,
 				B0D1DEADBEEF000000000007 /* MCPServiceLoopTests.swift */,
+				B0D1DEADBEEF000000000009 /* MCPInitializeCompatibility.swift */,
+				B0D1DEADBEEF00000000000B /* MCPInitializeCompatibilityTests.swift */,
 				B0D1DEADBEEF000000000005 /* MCPServiceLoop.swift */,
 			);
 			path = CLITests;
@@ -192,6 +280,8 @@
 			isa = PBXGroup;
 			children = (
 				F8F44E6F2D59038D0075D79C /* App */,
+				A10000000000000000000002 /* Helper */,
+				A20000000000000000000001 /* Shared */,
 				F8F44EB72D5908D00075D79C /* CLI */,
 				F8F44E6E2D59038D0075D79C /* Products */,
 				13058B0C8A894B6DB0A7D2A8 /* Frameworks */,
@@ -204,6 +294,7 @@
 			isa = PBXGroup;
 			children = (
 				F8F44E6D2D59038D0075D79C /* iMCP.app */,
+				A10000000000000000000001 /* iMCP Helper.app */,
 				F8F44EB62D5908D00075D79C /* imcp-server */,
 				6A5CFBBEC66BC8CDA9D65496 /* imcp-serverTests.xctest */,
 				AA0033000000000000000001 /* AppTests.xctest */,
@@ -229,6 +320,9 @@
 			);
 			name = "imcp-serverTests";
 			packageProductDependencies = (
+				A20000000000000000000010 /* MCP */,
+				A20000000000000000000011 /* JSONSchema */,
+				A20000000000000000000012 /* Ontology */,
 				DCE061F8A68D0CD546D919E2 /* ServiceLifecycle */,
 				1CD6B9E157EEC273F178543D /* ServiceLifecycleTestKit */,
 				48ABEE9E6903427DD79096A1 /* Logging */,
@@ -236,6 +330,33 @@
 			productName = "imcp-serverTests";
 			productReference = 6A5CFBBEC66BC8CDA9D65496 /* imcp-serverTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		A10000000000000000000003 /* iMCP Helper */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A10000000000000000000004 /* Build configuration list for PBXNativeTarget "iMCP Helper" */;
+			buildPhases = (
+				A10000000000000000000005 /* Sources */,
+				A10000000000000000000006 /* Frameworks */,
+				A10000000000000000000007 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				A10000000000000000000002 /* Helper */,
+				A20000000000000000000001 /* Shared */,
+			);
+			name = "iMCP Helper";
+			packageProductDependencies = (
+				A20000000000000000000010 /* MCP */,
+				A20000000000000000000011 /* JSONSchema */,
+				A20000000000000000000012 /* Ontology */,
+				A20000000000000000000013 /* Logging */,
+			);
+			productName = "iMCP Helper";
+			productReference = A10000000000000000000001 /* iMCP Helper.app */;
+			productType = "com.apple.product-type.application";
 		};
 		F8F44E6C2D59038D0075D79C /* iMCP */ = {
 			isa = PBXNativeTarget;
@@ -245,12 +366,14 @@
 				F8F44E6A2D59038D0075D79C /* Frameworks */,
 				F8F44E6B2D59038D0075D79C /* Resources */,
 				F84900952D63C74F0044AA81 /* Copy Executables */,
+				A20000000000000000000035 /* Build and Embed Home Helper */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
+				A20000000000000000000001 /* Shared */,
 				F8F44E6F2D59038D0075D79C /* App */,
 			);
 			name = iMCP;
@@ -319,6 +442,20 @@
 				LastSwiftUpdateCheck = 1620;
 				LastUpgradeCheck = 2620;
 				TargetAttributes = {
+					A10000000000000000000003 = {
+						CreatedOnToolsVersion = 27.0;
+						SystemCapabilities = {
+							com.apple.HomeKit = {
+								enabled = 1;
+								properties = {
+									com.apple.developer.homekit = 1;
+								};
+							};
+							com.apple.Sandbox = {
+								enabled = 1;
+							};
+						};
+					};
 					F8F44E6C2D59038D0075D79C = {
 						CreatedOnToolsVersion = 16.2;
 					};
@@ -340,7 +477,7 @@
 				AA0011000000000000000003 /* XCRemoteSwiftPackageReference "Envelope" */,
 				F88358352D64A085000317CD /* XCRemoteSwiftPackageReference "swift-log" */,
 				F873F48B2D712BCF0035CD0A /* XCRemoteSwiftPackageReference "Ontology" */,
-				F809556C2D7888920055B911 /* XCRemoteSwiftPackageReference "madrid" */,
+				F809556C2D7888920055B911 /* XCRemoteSwiftPackageReference "Madrid" */,
 				F825BDBD2D9AD00E0063ADD7 /* XCRemoteSwiftPackageReference "swift-service-lifecycle" */,
 				F8D7C3182DCBD32100A4775F /* XCRemoteSwiftPackageReference "swift-sdk" */,
 				F8D8C48C2DCE0E6800369E5C /* XCRemoteSwiftPackageReference "JSONSchema" */,
@@ -351,6 +488,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
+				A10000000000000000000003 /* iMCP Helper */,
 				F8F44E6C2D59038D0075D79C /* iMCP */,
 				F8F44EB52D5908D00075D79C /* imcp-server */,
 				8F6A71ADC0CC6BD168A9167D /* imcp-serverTests */,
@@ -367,6 +505,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A10000000000000000000007 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		F8F44E6B2D59038D0075D79C /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -376,16 +521,56 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		A20000000000000000000035 /* Build and Embed Home Helper */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Build and Embed Home Helper";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "bash \"$SRCROOT/Scripts/build-helper.sh\"";
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
+		A10000000000000000000005 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		B53F67B71CE8E2EB7B5CB823 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A40000000000000000000020 /* HomeProxyTests.swift in Sources */,
+				A40000000000000000000021 /* ../App/Services/Home.swift in Sources */,
+				A40000000000000000000029 /* ../App/Services/HomeHelperLocator.swift in Sources */,
+				A40000000000000000000022 /* ../Shared/Extensions/Logger+Extensions.swift in Sources */,
+				A40000000000000000000023 /* ../Shared/Extensions/Bundle+Extensions.swift in Sources */,
+				A40000000000000000000024 /* ../Shared/Models/Service.swift in Sources */,
+				A30000000000000000000020 /* HomeToolsTests.swift in Sources */,
+				A30000000000000000000021 /* ../Shared/Home/HomeBackend.swift in Sources */,
+				A30000000000000000000022 /* ../Shared/Home/HomeError.swift in Sources */,
+				A30000000000000000000023 /* ../Shared/Home/HomeInput.swift in Sources */,
+				A30000000000000000000024 /* ../Shared/Home/HomeTools.swift in Sources */,
+				A30000000000000000000025 /* ../Shared/Models/Tool.swift in Sources */,
+				A30000000000000000000026 /* ../Shared/Models/Value.swift in Sources */,
 				930214FCD680D7D74158F215 /* ServiceGroupConfigurationTests.swift in Sources */,
 				B0D1DEADBEEF000000000004 /* BonjourDiscoveryTests.swift in Sources */,
 				B0D1DEADBEEF000000000002 /* BonjourDiscovery.swift in Sources */,
 				B0D1DEADBEEF000000000008 /* MCPServiceLoopTests.swift in Sources */,
 				B0D1DEADBEEF000000000006 /* MCPServiceLoop.swift in Sources */,
+				B0D1DEADBEEF00000000000A /* MCPInitializeCompatibility.swift in Sources */,
+				B0D1DEADBEEF00000000000C /* MCPInitializeCompatibilityTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -393,6 +578,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A20000000000000000000030 /* BonjourDiscovery.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -438,6 +624,87 @@
 				SWIFT_VERSION = 5.0;
 			};
 			name = Debug;
+		};
+		A10000000000000000000008 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGNING_ALLOWED = YES;
+				CODE_SIGNING_REQUIRED = YES;
+				CODE_SIGN_ENTITLEMENTS = Helper/Helper.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 23;
+				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
+				DEVELOPMENT_TEAM = TTY35UM57S;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				HELPER_BUNDLE_IDENTIFIER = co.dododo.iMCP.Helper;
+				INFOPLIST_FILE = Helper/Info.plist;
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSHomeKitUsageDescription = "iMCP uses HomeKit to inspect and organize your homes, accessories, scenes, and automations.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "iMCP connects to iMCP Helper on this Mac.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.7.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(HELPER_BUNDLE_IDENTIFIER)";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = YES;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		A10000000000000000000009 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGNING_ALLOWED = YES;
+				CODE_SIGNING_REQUIRED = YES;
+				CODE_SIGN_ENTITLEMENTS = Helper/Helper.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 23;
+				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
+				DEVELOPMENT_TEAM = TTY35UM57S;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				HELPER_BUNDLE_IDENTIFIER = co.dododo.iMCP.Helper;
+				INFOPLIST_FILE = Helper/Info.plist;
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSHomeKitUsageDescription = "iMCP uses HomeKit to inspect and organize your homes, accessories, scenes, and automations.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "iMCP connects to iMCP Helper on this Mac.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.7.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(HELPER_BUNDLE_IDENTIFIER)";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = YES;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
 		};
 		F8F44E902D59038E0075D79C /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -573,9 +840,10 @@
 				CODE_SIGN_IDENTITY = "-";
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 14;
+				CURRENT_PROJECT_VERSION = 23;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
+				EMBED_HOME_HELPER = YES;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_INCOMING_NETWORK_CONNECTIONS = YES;
@@ -586,8 +854,10 @@
 				ENABLE_RESOURCE_ACCESS_CAMERA = YES;
 				ENABLE_RESOURCE_ACCESS_CONTACTS = YES;
 				ENABLE_RESOURCE_ACCESS_LOCATION = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
+				HELPER_CODE_SIGNING_ALLOWED = YES;
 				INFOPLIST_FILE = App/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = iMCP;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
@@ -615,7 +885,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.1;
-				MARKETING_VERSION = 1.5.2;
+				MARKETING_VERSION = 1.7.0;
 				PRODUCT_BUNDLE_IDENTIFIER = co.dododo.iMCP;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -637,9 +907,10 @@
 				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 14;
+				CURRENT_PROJECT_VERSION = 23;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = TTY35UM57S;
+				EMBED_HOME_HELPER = NO;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_INCOMING_NETWORK_CONNECTIONS = YES;
@@ -654,8 +925,10 @@
 				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
 				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
 				ENABLE_RESOURCE_ACCESS_USB = NO;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
+				HELPER_CODE_SIGNING_ALLOWED = YES;
 				INFOPLIST_FILE = App/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = iMCP;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
@@ -683,7 +956,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.1;
-				MARKETING_VERSION = 1.5.2;
+				MARKETING_VERSION = 1.7.0;
 				PRODUCT_BUNDLE_IDENTIFIER = co.dododo.iMCP;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -773,6 +1046,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		A10000000000000000000004 /* Build configuration list for PBXNativeTarget "iMCP Helper" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A10000000000000000000008 /* Debug */,
+				A10000000000000000000009 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		F8F44E682D59038D0075D79C /* Build configuration list for PBXProject "iMCP" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -812,9 +1094,17 @@
 				minimumVersion = 0.2.0;
 			};
 		};
-		F809556C2D7888920055B911 /* XCRemoteSwiftPackageReference "madrid" */ = {
+		26120478122FBFCB2B073DE5 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
 			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/loopwork-ai/madrid";
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.6.0;
+			};
+		};
+		F809556C2D7888920055B911 /* XCRemoteSwiftPackageReference "Madrid" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/mattt/Madrid";
 			requirement = {
 				kind = upToNextMajorVersion;
 				minimumVersion = 0.5.0;
@@ -830,10 +1120,10 @@
 		};
 		F873F48B2D712BCF0035CD0A /* XCRemoteSwiftPackageReference "Ontology" */ = {
 			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/loopwork-ai/Ontology";
+			repositoryURL = "https://github.com/mattt/Ontology";
 			requirement = {
 				kind = upToNextMajorVersion;
-				minimumVersion = 0.8.0;
+				minimumVersion = 0.10.0;
 			};
 		};
 		F88358352D64A085000317CD /* XCRemoteSwiftPackageReference "swift-log" */ = {
@@ -854,18 +1144,10 @@
 		};
 		F8D8C48C2DCE0E6800369E5C /* XCRemoteSwiftPackageReference "JSONSchema" */ = {
 			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/loopwork-ai/JSONSchema.git";
+			repositoryURL = "https://github.com/mattt/JSONSchema.git";
 			requirement = {
 				kind = upToNextMajorVersion;
 				minimumVersion = 1.3.0;
-			};
-		};
-		26120478122FBFCB2B073DE5 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/sparkle-project/Sparkle";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 2.6.0;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
@@ -881,6 +1163,31 @@
 			package = F88358352D64A085000317CD /* XCRemoteSwiftPackageReference "swift-log" */;
 			productName = Logging;
 		};
+		A20000000000000000000010 /* MCP */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F8D7C3182DCBD32100A4775F /* XCRemoteSwiftPackageReference "swift-sdk" */;
+			productName = MCP;
+		};
+		A20000000000000000000011 /* JSONSchema */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F8D8C48C2DCE0E6800369E5C /* XCRemoteSwiftPackageReference "JSONSchema" */;
+			productName = JSONSchema;
+		};
+		A20000000000000000000012 /* Ontology */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F873F48B2D712BCF0035CD0A /* XCRemoteSwiftPackageReference "Ontology" */;
+			productName = Ontology;
+		};
+		A20000000000000000000013 /* Logging */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F88358352D64A085000317CD /* XCRemoteSwiftPackageReference "swift-log" */;
+			productName = Logging;
+		};
+		B75D49165A453E912E36DBFE /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 26120478122FBFCB2B073DE5 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
 		DCE061F8A68D0CD546D919E2 /* ServiceLifecycle */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = F825BDBD2D9AD00E0063ADD7 /* XCRemoteSwiftPackageReference "swift-service-lifecycle" */;
@@ -888,12 +1195,12 @@
 		};
 		F809556D2D7888920055B911 /* TypedStream */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = F809556C2D7888920055B911 /* XCRemoteSwiftPackageReference "madrid" */;
+			package = F809556C2D7888920055B911 /* XCRemoteSwiftPackageReference "Madrid" */;
 			productName = TypedStream;
 		};
 		F809556F2D7888920055B911 /* iMessage */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = F809556C2D7888920055B911 /* XCRemoteSwiftPackageReference "madrid" */;
+			package = F809556C2D7888920055B911 /* XCRemoteSwiftPackageReference "Madrid" */;
 			productName = iMessage;
 		};
 		F825BDBE2D9AD00E0063ADD7 /* ServiceLifecycle */ = {
@@ -941,11 +1248,6 @@
 		F8F44E9C2D5903F70075D79C /* MCP */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = MCP;
-		};
-		B75D49165A453E912E36DBFE /* Sparkle */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 26120478122FBFCB2B073DE5 /* XCRemoteSwiftPackageReference "Sparkle" */;
-			productName = Sparkle;
 		};
 		AA0011000000000000000002 /* Mail */ = {isa = XCSwiftPackageProductDependency; package = AA0011000000000000000003 /* XCRemoteSwiftPackageReference "Envelope" */; productName = Mail; };
 		AA0044000000000000000002 /* Emlx */ = {isa = XCSwiftPackageProductDependency; package = AA0011000000000000000003 /* XCRemoteSwiftPackageReference "Envelope" */; productName = Emlx; };
