@@ -109,7 +109,7 @@ final class MailService: NSObject, Service, NSOpenSavePanelDelegate, Sendable {
                     ),
                     "end": .string(
                         description:
-                            "End of the date range (exclusive). If timezone is omitted, local time is assumed. Date-only uses local midnight.",
+                            "End of the date range (exclusive). If timezone is omitted, local time is assumed. A date-only value includes that whole local day.",
                         format: .dateTime
                     ),
                     "isRead": .boolean(
