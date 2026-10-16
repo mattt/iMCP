@@ -21,6 +21,7 @@ SERVICES = (
     ("contacts", "#ac8e68"),
     ("reminders", "#ff9f0a"),
     ("home", "#ff9f0a"),
+    ("notes", "#ffd60a"),
     ("messages", "#28d74b"),
     ("phone", "#28d74b"),
     ("voicemail", "#28d74b"),
@@ -31,7 +32,7 @@ SERVICES = (
 )
 
 WIDTH, HEIGHT = 1012, 600
-ICON_SIZE = 86
+ICON_SIZE = 78
 RADIUS = 600
 ARC_TOP = 108
 SWEEP = math.radians(100)
