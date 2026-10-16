@@ -1,6 +1,15 @@
 {
-  "originHash" : "648cead66f491dae7b6c7cadbde59aaf2c01ecc423f1f63bd2781736a561f2a3",
+  "originHash" : "fb6076254aa91639c3c7f098fa2a4704e7320c9f466a1a834cf245e94f455955",
   "pins" : [
+    {
+      "identity" : "envelope",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/mattt/Envelope",
+      "state" : {
+        "revision" : "d54beacf37cdb85bcd2a377e4249c0bc40a66cbe",
+        "version" : "0.3.0"
+      }
+    },
     {
       "identity" : "eventsource",
       "kind" : "remoteSourceControl",
