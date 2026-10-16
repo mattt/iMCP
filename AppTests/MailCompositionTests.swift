@@ -4,17 +4,20 @@ import XCTest
 
 final class MailCompositionTests: XCTestCase {
     func testPackageErrorsPreserveToolGuidance() throws {
-        XCTAssertThrowsError(try Mail.Mailbox.parseIdentifier("INBOX")) { error in
+        XCTAssertThrowsError(try MailService.shared.mailboxID(from: "INBOX")) { error in
             let description = String(describing: MailToolError(underlying: error))
             XCTAssertTrue(description.contains("@id"))
             XCTAssertTrue(description.contains("\"12\""))
             XCTAssertTrue(description.contains("url field"))
         }
+        XCTAssertEqual(try MailService.shared.mailboxID(from: "12"), 12)
         XCTAssertEqual(
-            String(describing: MailToolError(underlying: Mail.ValidationError.limitOutOfRange)),
+            String(
+                describing: MailToolError(underlying: Mail.Message.FetchRequest.ValidationError.limitOutOfRange)
+            ),
             "Invalid argument: limit must be 1 through 100"
         )
-        XCTAssertTrue(MailToolError(underlying: Mail.Error.databaseBusy).localizedDescription.contains("iMCP"))
+        XCTAssertTrue(MailToolError(underlying: Mail.MailError.databaseBusy).localizedDescription.contains("iMCP"))
     }
 
     func testCompositionEncodingAndFailure() throws {

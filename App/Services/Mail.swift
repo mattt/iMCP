@@ -15,12 +15,13 @@ private let maximumLimit = 100
 final class MailService: NSObject, Service, NSOpenSavePanelDelegate, Sendable {
     static let shared = MailService()
 
-    private let files = Mail.Files()
-    private let worker = Mail.Worker()
+    /// The store runs one operation at a time, so concurrent reads wait their turn.
+    /// The default configuration is valid, so the initializer does not throw.
+    private let store = try! Mail.Store(root: mailDirectoryURL)
 
     var isActivated: Bool {
         get async {
-            let isActivated = canAccessDatabase
+            let isActivated = await canAccessDatabase
             log.debug("Mail service activation status: \(isActivated)")
             return isActivated
         }
@@ -33,7 +34,7 @@ final class MailService: NSObject, Service, NSOpenSavePanelDelegate, Sendable {
     /// so a canceled or denied grant must leave the service on.
     func activate() async throws {
         guard !Task.isCancelled else { return }
-        if canAccessDatabase {
+        if await canAccessDatabase {
             log.debug("Using the Mail index with the current grant")
             return
         }
@@ -43,13 +44,10 @@ final class MailService: NSObject, Service, NSOpenSavePanelDelegate, Sendable {
         guard !Task.isCancelled else { return }
 
         do {
-            try await worker.run { cancellation in
-                try self.withSecurityScopedAccess(selectedURL) { url in
-                    let database = try Mail.Database(root: url, cancellation: cancellation)
-                    defer { database.close() }
-                    try cancellation.check()
-                    try self.storeBookmark(for: url)
-                }
+            try await withSecurityScopedAccess(selectedURL) { url in
+                try await store.checkAccess()
+                try Task.checkCancellation()
+                try storeBookmark(for: url)
             }
             log.debug("Granted access to the Mail folder")
         } catch is CancellationError {
@@ -78,7 +76,7 @@ final class MailService: NSObject, Service, NSOpenSavePanelDelegate, Sendable {
                 openWorldHint: false
             )
         ) { _ in
-            let mailboxes = try await self.withDatabase { database, _ in try database.mailboxes() }
+            let mailboxes = try await self.withStore { store in try await store.mailboxes() }
 
             log.debug("Successfully listed \(mailboxes.count) mailboxes")
             return [
@@ -91,7 +89,7 @@ final class MailService: NSObject, Service, NSOpenSavePanelDelegate, Sendable {
         Tool(
             name: "mail_messages_search",
             description:
-                "Search local sender and subject metadata. Filters combine with AND; newest first. Does not search bodies or download messages. Sync status is unknown; empty results do not prove the server mailbox is empty.",
+                "Search local sender and subject metadata. Filters combine with AND; newest first. To get the next page, pass nextCursor as cursor with the same filters. Does not search bodies or download messages. Sync status is unknown; empty results do not prove the server mailbox is empty.",
             inputSchema: .object(
                 properties: [
                     "sender": .string(
@@ -123,10 +121,8 @@ final class MailService: NSObject, Service, NSOpenSavePanelDelegate, Sendable {
                         minimum: 1,
                         maximum: maximumLimit
                     ),
-                    "offset": .integer(
-                        description: "Number of matching messages to skip",
-                        default: .int(0),
-                        minimum: 0
+                    "cursor": .string(
+                        description: "The nextCursor value from a previous search with the same filters"
                     ),
                 ],
                 additionalProperties: false
@@ -143,16 +139,7 @@ final class MailService: NSObject, Service, NSOpenSavePanelDelegate, Sendable {
             request.sender = try self.argument("sender", in: arguments, as: \.stringValue)
             request.subject = try self.argument("subject", in: arguments, as: \.stringValue)
             if let mailbox = arguments["mailbox"], !mailbox.isNull {
-                guard let value = mailbox.stringValue else {
-                    throw MailError.invalidArgument(
-                        "mailbox must be a positive numeric @id string from mail_mailboxes_list, for example \"12\"; do not use the url field."
-                    )
-                }
-                do {
-                    request.mailbox = try Mail.Mailbox.parseIdentifier(value)
-                } catch {
-                    throw MailToolError(underlying: error)
-                }
+                request.mailboxID = try self.mailboxID(from: mailbox)
             }
             if let start = try self.argument("start", in: arguments, as: \.stringValue) {
                 guard let parsed = ISO8601DateFormatter.parsedLenientISO8601Date(fromISO8601String: start) else {
@@ -174,10 +161,15 @@ final class MailService: NSObject, Service, NSOpenSavePanelDelegate, Sendable {
             }
             request.isRead = try self.argument("isRead", in: arguments, as: \.boolValue)
             request.limit = try self.argument("limit", in: arguments, as: \.intValue) ?? defaultLimit
-            request.offset = try self.argument("offset", in: arguments, as: \.intValue) ?? 0
+            if let cursor = try self.argument("cursor", in: arguments, as: \.stringValue) {
+                guard let parsed = Mail.Message.FetchRequest.Cursor(cursor) else {
+                    throw MailError.invalidArgument("cursor must be a nextCursor value from mail_messages_search")
+                }
+                request.cursor = parsed
+            }
 
             let fetchRequest = request
-            return try await self.withDatabase { database, _ in try database.search(fetchRequest).value }
+            return try await self.withStore { store in try await store.search(fetchRequest).value }
         }
 
         Tool(
@@ -205,19 +197,13 @@ final class MailService: NSObject, Service, NSOpenSavePanelDelegate, Sendable {
                 throw MailError.invalidArgument("id must be an identifier from mail_messages_search")
             }
 
-            // Keep the folder grant, but release SQLite before scanning message files.
-            return try await self.withDatabase { database, cancellation in
-                let record = try database.record(for: identifier)
-                database.close()
-                let content = try self.files.read(record, version: database.versionURL, cancellation: cancellation) {
-                    try Emlx.Content(
-                        emlx: $0,
-                        expectedMessageID: record.messageID,
-                        checkCancellation: cancellation.check
-                    )
+            // The store closes its database connection before it reads the message file.
+            let content = try await self.withStore { store in
+                try await store.readMessage(identifier) { file in
+                    try Emlx.Content(emlx: file.data, expectedMessageID: file.message.messageID)
                 }
-                return content.value(for: identifier)
             }
+            return content.value(for: identifier)
         }
 
         Tool(
@@ -280,37 +266,44 @@ final class MailService: NSObject, Service, NSOpenSavePanelDelegate, Sendable {
         return result
     }
 
+    /// Returns the mailbox row identifier from a `mail_mailboxes_list` `@id` string.
+    func mailboxID(from value: Value) throws -> Int64 {
+        guard let string = value.stringValue, let id = Int64(string), id > 0 else {
+            throw MailError.invalidArgument(
+                "mailbox must be a positive numeric @id string from mail_mailboxes_list, for example \"12\"; do not use the url field."
+            )
+        }
+        return id
+    }
+
     // MARK: - Database Access
 
     private var canAccessDatabase: Bool {
-        // Status checks must not join Mail's SQLite locking protocol.
-        // Schema and journal checks belong to explicit read requests.
-        do {
-            let root = try resolveBookmarkURL() ?? mailDirectoryURL
-            return try withSecurityScopedAccess(root) { root in
-                let location = try Mail.Database.location(in: root)
-                return FileManager.default.isReadableFile(atPath: location.index.path)
+        get async {
+            // Status checks must not join Mail's SQLite locking protocol.
+            // Schema and journal checks belong to explicit read requests.
+            do {
+                let root = try resolveBookmarkURL() ?? mailDirectoryURL
+                return try await withSecurityScopedAccess(root) { _ in
+                    let location = try await store.location()
+                    return FileManager.default.isReadableFile(atPath: location.indexURL.path)
+                }
+            } catch {
+                return false
             }
-        } catch {
-            return false
         }
     }
 
-    /// Opens the index in the bookmarked folder, or at the default path when nothing is bookmarked.
-    private func withDatabase<T: Sendable>(
-        _ operation: @Sendable @escaping (Mail.Database, Mail.Cancellation) throws -> T
-    ) async throws -> T {
+    /// Runs an operation on the store inside the grant for the bookmarked folder,
+    /// or at the default path when nothing is bookmarked.
+    private func withStore<T>(_ operation: (Mail.Store) async throws -> T) async throws -> T {
         do {
-            return try await worker.run { cancellation in
-                let root = try self.resolveBookmarkURL() ?? mailDirectoryURL
+            let root = try resolveBookmarkURL() ?? mailDirectoryURL
 
-                // The grant must stay open until the last read:
-                // SQLite opens the write-ahead log lazily on the first statement.
-                return try self.withSecurityScopedAccess(root) { root in
-                    let database = try Mail.Database(root: root, cancellation: cancellation)
-                    defer { database.close() }
-                    return try operation(database, cancellation)
-                }
+            // Each store call finishes its database and file work before it returns,
+            // so the grant must stay open until the operation returns.
+            return try await withSecurityScopedAccess(root) { _ in
+                try await operation(store)
             }
         } catch is CancellationError {
             throw CancellationError()
@@ -350,6 +343,15 @@ final class MailService: NSObject, Service, NSOpenSavePanelDelegate, Sendable {
         let isScoped = url.startAccessingSecurityScopedResource()
         defer { if isScoped { url.stopAccessingSecurityScopedResource() } }
         return try operation(url)
+    }
+
+    private func withSecurityScopedAccess<T>(
+        _ url: URL,
+        _ operation: (URL) async throws -> T
+    ) async rethrows -> T {
+        let isScoped = url.startAccessingSecurityScopedResource()
+        defer { if isScoped { url.stopAccessingSecurityScopedResource() } }
+        return try await operation(url)
     }
 
     private func storeBookmark(for url: URL) throws {
@@ -438,31 +440,25 @@ struct MailToolError: LocalizedError, CustomStringConvertible {
 
     var errorDescription: String? {
         switch underlying {
-        case Mail.ValidationError.invalidMailboxIdentifier:
-            return
-                "Invalid argument: mailbox must be a positive numeric @id string from mail_mailboxes_list, for example \"12\"; do not use the url field."
-        case Mail.ValidationError.mailboxNotFound:
+        case Mail.MailError.mailboxNotFound:
             return
                 "Invalid argument: mailbox does not exist in the local index. Use a current numeric @id string from mail_mailboxes_list, for example \"12\"; do not use the url field."
-        case Mail.ValidationError.limitOutOfRange:
+        case Mail.Message.FetchRequest.ValidationError.limitOutOfRange:
             return "Invalid argument: limit must be 1 through 100"
-        case Mail.ValidationError.negativeOffset:
-            return "Invalid argument: offset must not be negative"
-        case Mail.ValidationError.invalidDateRange:
+        case Mail.Message.FetchRequest.ValidationError.invalidDateRange:
             return "Invalid argument: start must be before end"
-        case Mail.Error.indexNotFound:
+        case Mail.MailError.indexNotFound:
             return
                 "Mail access is unavailable: no local Envelope Index was found. Switch Mail off and on to select ~/Library/Mail."
-        case Mail.Error.indexNotReadable:
+        case Mail.MailError.indexNotReadable:
             return
                 "Mail access is unavailable. The index and its live WAL files must be readable. Switch Mail off and on to retry folder access."
-        case Mail.Error.unsupportedJournalMode:
+        case Mail.MailError.unsupportedJournalMode:
             return
                 "Mail reading is unavailable because the index is not in WAL mode. iMCP will not change Mail's database settings."
-        case Mail.Error.databaseBusy:
-            return
-                "Mail reading is busy. Try again later; iMCP does not wait for database locks or queue concurrent reads."
-        case Mail.Error.unsupportedMailbox:
+        case Mail.MailError.databaseBusy:
+            return "Mail reading is busy. Try again later; iMCP does not wait for database locks."
+        case Mail.MailError.unsupportedMailbox:
             return "Unsupported mailbox storage mapping. Metadata search and composition remain available."
         default:
             return underlying.localizedDescription
@@ -485,8 +481,8 @@ extension Mail.Mailbox {
         [
             "@id": .string(String(id)),
             "@type": "Collection",
-            "name": .string(name),
-            "url": .string(url),
+            "name": name.map(Value.string) ?? .null,
+            "url": url.map(Value.string) ?? .null,
             "account": account?.value ?? .null,
         ]
     }
@@ -497,12 +493,12 @@ extension Mail.Message {
     var value: Value {
         [
             "@type": "EmailMessage",
-            "@id": .string(identifier.description),
-            "mailbox": .string(String(mailbox)),
-            "subject": .string(subject),
+            "@id": .string(id.description),
+            "mailbox": .string(String(id.mailboxID)),
+            "subject": subject.map(Value.string) ?? .null,
             "sender": [
                 "@type": "Person",
-                "email": .string(sender),
+                "email": sender.map(Value.string) ?? .null,
             ],
             "dateReceived": .string(date.formatted(.iso8601)),
             "isRead": .bool(isRead),
@@ -520,19 +516,20 @@ extension Emlx.Content {
             "headers": .array(headers.map { ["name": .string($0.name), "value": .string($0.value)] }),
             "text": .string(body),
             "encodingFormat": .string(mediaType),
-            "attachment": .array(attachments.map { ["@type": "MediaObject", "name": .string($0)] }),
+            "attachment": .array(attachmentFilenames.map { ["@type": "MediaObject", "name": .string($0)] }),
         ]
     }
 }
 
-extension Mail.Database.SearchResult {
+extension Mail.Store.SearchResult {
     var value: Value {
         return [
             "@context": "https://schema.org",
             "@type": "ItemList",
             "itemListElement": .array(records.map(\.value)),
+            "nextCursor": nextCursor.map { .string($0.description) } ?? .null,
             "localIndex": [
-                "indexedMessageCount": .int(Int(indexedMessageCount)),
+                "indexedMessageCount": .int(indexedMessageCount),
                 "syncStatus": "unknown",
                 "description": .string(
                     indexedMessageCount == 0

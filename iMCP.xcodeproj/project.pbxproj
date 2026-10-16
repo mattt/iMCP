@@ -337,7 +337,7 @@
 			mainGroup = F8F44E642D59038D0075D79C;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				AA0011000000000000000003 /* XCLocalSwiftPackageReference "Envelope" */,
+				AA0011000000000000000003 /* XCRemoteSwiftPackageReference "Envelope" */,
 				F88358352D64A085000317CD /* XCRemoteSwiftPackageReference "swift-log" */,
 				F873F48B2D712BCF0035CD0A /* XCRemoteSwiftPackageReference "Ontology" */,
 				F809556C2D7888920055B911 /* XCRemoteSwiftPackageReference "madrid" */,
@@ -804,6 +804,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		AA0011000000000000000003 /* XCRemoteSwiftPackageReference "Envelope" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/mattt/Envelope";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.2.0;
+			};
+		};
 		F809556C2D7888920055B911 /* XCRemoteSwiftPackageReference "madrid" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/loopwork-ai/madrid";
@@ -861,13 +869,6 @@
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
-
-/* Begin XCLocalSwiftPackageReference section */
-		AA0011000000000000000003 /* XCLocalSwiftPackageReference "Envelope" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = ../../Envelope/djibouti;
-		};
-/* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
 		1CD6B9E157EEC273F178543D /* ServiceLifecycleTestKit */ = {
@@ -946,8 +947,8 @@
 			package = 26120478122FBFCB2B073DE5 /* XCRemoteSwiftPackageReference "Sparkle" */;
 			productName = Sparkle;
 		};
-		AA0011000000000000000002 /* Mail */ = {isa = XCSwiftPackageProductDependency; package = AA0011000000000000000003 /* XCLocalSwiftPackageReference "Envelope" */; productName = Mail; };
-		AA0044000000000000000002 /* Emlx */ = {isa = XCSwiftPackageProductDependency; package = AA0011000000000000000003 /* XCLocalSwiftPackageReference "Envelope" */; productName = Emlx; };
+		AA0011000000000000000002 /* Mail */ = {isa = XCSwiftPackageProductDependency; package = AA0011000000000000000003 /* XCRemoteSwiftPackageReference "Envelope" */; productName = Mail; };
+		AA0044000000000000000002 /* Emlx */ = {isa = XCSwiftPackageProductDependency; package = AA0011000000000000000003 /* XCRemoteSwiftPackageReference "Envelope" */; productName = Emlx; };
 /* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = F8F44E652D59038D0075D79C /* Project object */;
