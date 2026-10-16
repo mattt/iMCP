@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <circle fill="#ffcc00" cx="50" cy="50" r="50" />
+  <g fill="#fff" fill-opacity="0.85">
+    <path fill-rule="evenodd"
+      d="M35,21h30a10,10,0,0,1,10,10v38a10,10,0,0,1-10,10h-30a10,10,0,0,1-10-10v-38a10,10,0,0,1,10-10ZM35.5,27h29a4.5,4.5,0,0,1,4.5,4.5v37a4.5,4.5,0,0,1-4.5,4.5h-29a4.5,4.5,0,0,1-4.5-4.5v-37a4.5,4.5,0,0,1,4.5-4.5Z" />
+    <rect x="38" y="35" width="24" height="6" rx="3" />
+    <rect x="38" y="47" width="24" height="6" rx="3" />
+    <rect x="38" y="59" width="15" height="6" rx="3" />
+  </g>
+</svg>

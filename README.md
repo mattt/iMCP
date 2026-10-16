@@ -72,6 +72,13 @@ and a [growing list of clients][mcp-clients] that support the
   </tr>
   <tr>
     <th>
+      <img src="Assets/notes.svg" width="48" height="48" alt="" role="presentation"/>
+    </th>
+    <td><strong>Notes</strong></td>
+    <td>Search notes by text, folder, or date, and read them as Markdown with their checklists, tables, and links.</td>
+  </tr>
+  <tr>
+    <th>
       <img src="Assets/phone.svg" width="48" height="48" alt="" role="presentation"/>
     </th>
     <td><strong>Phone</strong></td>
@@ -605,6 +612,24 @@ For this project, we created [TSRP][tsrp]:
 a Swift package for reading your Voice Memos library.
 It reads transcripts from both `.m4a` and `.qta` files,
 which keep them in different places.
+
+### Notes Database Access
+
+Apple doesn't provide public APIs for accessing your notes, either.
+The Notes app keeps them in a SQLite database at
+`~/Library/Group Containers/group.com.apple.notes/NoteStore.sqlite`.
+Recent edits sit in its write-ahead log,
+so the Notes service asks you to open the `group.com.apple.notes` folder
+rather than the file alone.
+iMCP only reads the database; it never changes your notes.
+
+Each note's contents are stored as a gzip-compressed protocol buffer:
+the text, followed by runs that give the formatting of each part of it.
+Tables are stored separately, as the state of a CRDT
+that lists the rows, the columns, and the cell at each intersection.
+The Notes service decodes both and returns notes as Markdown.
+Notes locked with a password are encrypted,
+so iMCP can find them by title but can't read their contents.
 
 ### JSON-LD for Tool Results
 

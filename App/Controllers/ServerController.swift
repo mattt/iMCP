@@ -59,6 +59,7 @@ enum ServiceRegistry {
             MailService.shared,
             MessageService.shared,
             MusicService.shared,
+            NotesService.shared,
             PhoneService.shared,
             RemindersService.shared,
             ShortcutsService.shared,
@@ -84,6 +85,7 @@ enum ServiceRegistry {
         mailEnabled: Binding<Bool>,
         messagesEnabled: Binding<Bool>,
         musicEnabled: Binding<Bool>,
+        notesEnabled: Binding<Bool>,
         phoneEnabled: Binding<Bool>,
         remindersEnabled: Binding<Bool>,
         shortcutsEnabled: Binding<Bool>,
@@ -155,6 +157,13 @@ enum ServiceRegistry {
                 color: .black,
                 service: MusicService.shared,
                 binding: musicEnabled
+            ),
+            ServiceConfig(
+                name: "Notes",
+                iconName: "note.text",
+                color: .yellow,
+                service: NotesService.shared,
+                binding: notesEnabled
             ),
             ServiceConfig(
                 name: "Phone",
@@ -234,6 +243,7 @@ final class ServerController: ObservableObject {
     @AppStorage("mailEnabled") private var mailEnabled = false
     @AppStorage("messagesEnabled") private var messagesEnabled = false
     @AppStorage("musicEnabled") private var musicEnabled = false
+    @AppStorage("notesEnabled") private var notesEnabled = false
     @AppStorage("phoneEnabled") private var phoneEnabled = false
     @AppStorage("remindersEnabled") private var remindersEnabled = false
     @AppStorage("shortcutsEnabled") private var shortcutsEnabled = false
@@ -261,6 +271,7 @@ final class ServerController: ObservableObject {
             mailEnabled: $mailEnabled,
             messagesEnabled: $messagesEnabled,
             musicEnabled: $musicEnabled,
+            notesEnabled: $notesEnabled,
             phoneEnabled: $phoneEnabled,
             remindersEnabled: $remindersEnabled,
             shortcutsEnabled: $shortcutsEnabled,
@@ -578,7 +589,7 @@ actor MCPConnectionManager {
             version: Bundle.main.shortVersionString ?? "unknown",
             instructions: """
                 Use iMCP for apps and data on the user's Mac: \
-                Calendar, Contacts, Location, Mail, Maps, Messages, Music, Phone, Reminders, Shortcuts, Voice Memos, Voicemail, Weather, \
+                Calendar, Contacts, Location, Mail, Maps, Messages, Music, Notes, Phone, Reminders, Shortcuts, Voice Memos, Voicemail, Weather, \
                 and the camera, microphone, and screen. \
                 Only the services that the user turns on in iMCP have tools.
                 """,
