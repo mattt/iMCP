@@ -156,9 +156,9 @@ giving you complete control over what information iMCP can access.
 
 ### Mail access and search
 
-Mail store access uses [Envelope](https://github.com/mattt/Envelope).
-Its `Mail` module reads the local index and message files;
-its `Emlx` module selects readable content from Envelope's internal MIME reader.
+Mail store access uses [Envelope](https://github.com/mattt/Envelope),
+which reads the local index and message files
+and selects readable content with its internal MIME reader.
 iMCP manages folder access, tool arguments, JSON output, and composition.
 
 Mail reading requires access to `~/Library/Mail`.
@@ -181,8 +181,10 @@ Service status checks do not open SQLite connections,
 and message reads close the database before scanning mailbox files.
 These limits reduce interference, but active reads can still delay WAL checkpoints.
 
-Use the numeric `@id` string from `mail_mailboxes_list` as the `mailbox` filter
-in `mail_messages_search`, for example `{"mailbox": "12"}`.
+Use the `@id` string from `mail_mailboxes_list` as the `mailbox` filter
+in `mail_messages_search`, for example `{"mailbox": "V10:12"}`.
+The identifier includes the Mail store,
+so an identifier from before a Mail store upgrade returns an error.
 The `url` field describes storage and is not a search identifier.
 Each mailbox includes an account identifier when available.
 The account's `email` field comes from Mail's local account map;
