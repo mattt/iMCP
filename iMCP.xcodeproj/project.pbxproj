@@ -49,6 +49,7 @@
 		B0D1DEADBEEF00000000000C /* MCPInitializeCompatibilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF00000000000B /* MCPInitializeCompatibilityTests.swift */; };
 		F809556E2D7888920055B911 /* TypedStream in Frameworks */ = {isa = PBXBuildFile; productRef = F809556D2D7888920055B911 /* TypedStream */; };
 		F80955702D7888920055B911 /* iMessage in Frameworks */ = {isa = PBXBuildFile; productRef = F809556F2D7888920055B911 /* iMessage */; };
+		C0FFEE0000000000000000A1 /* TopoText in Frameworks */ = {isa = PBXBuildFile; productRef = C0FFEE0000000000000000A2 /* TopoText */; };
 		F825BDBF2D9AD00E0063ADD7 /* ServiceLifecycle in Frameworks */ = {isa = PBXBuildFile; productRef = F825BDBE2D9AD00E0063ADD7 /* ServiceLifecycle */; };
 		F825BDC12D9AD00E0063ADD7 /* UnixSignals in Frameworks */ = {isa = PBXBuildFile; productRef = F825BDC02D9AD00E0063ADD7 /* UnixSignals */; };
 		F873F48D2D712BCF0035CD0A /* Ontology in Frameworks */ = {isa = PBXBuildFile; productRef = F873F48C2D712BCF0035CD0A /* Ontology */; };
@@ -210,6 +211,7 @@
 				F8F1D2F82D6F9E0C00F6323D /* MCP in Frameworks */,
 				F8D7C3172DCBD30500A4775F /* MCP in Frameworks */,
 				F80955702D7888920055B911 /* iMessage in Frameworks */,
+				C0FFEE0000000000000000A1 /* TopoText in Frameworks */,
 				F8D8C48E2DCE0E6800369E5C /* JSONSchema in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -384,6 +386,7 @@
 				AA0011000000000000000002 /* Envelope */,
 				AB0055000000000000000002 /* TSRP */,
 				F809556F2D7888920055B911 /* iMessage */,
+				C0FFEE0000000000000000A2 /* TopoText */,
 				F8A7DE3D2DCB76F700530587 /* MCP */,
 				F8D7C3162DCBD30500A4775F /* MCP */,
 				F8D7C3192DCBD32100A4775F /* MCP */,
@@ -467,6 +470,7 @@
 				F88358352D64A085000317CD /* XCRemoteSwiftPackageReference "swift-log" */,
 				F873F48B2D712BCF0035CD0A /* XCRemoteSwiftPackageReference "Ontology" */,
 				F809556C2D7888920055B911 /* XCRemoteSwiftPackageReference "Madrid" */,
+				C0FFEE0000000000000000A3 /* XCRemoteSwiftPackageReference "TopoText" */,
 				F825BDBD2D9AD00E0063ADD7 /* XCRemoteSwiftPackageReference "swift-service-lifecycle" */,
 				F8D7C3182DCBD32100A4775F /* XCRemoteSwiftPackageReference "swift-sdk" */,
 				F8D8C48C2DCE0E6800369E5C /* XCRemoteSwiftPackageReference "JSONSchema" */,
@@ -1071,6 +1075,14 @@
 				minimumVersion = 0.5.0;
 			};
 		};
+		C0FFEE0000000000000000A3 /* XCRemoteSwiftPackageReference "TopoText" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/mattt/TopoText";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.1.0;
+			};
+		};
 		F825BDBD2D9AD00E0063ADD7 /* XCRemoteSwiftPackageReference "swift-service-lifecycle" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/swift-server/swift-service-lifecycle";
@@ -1171,6 +1183,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = F809556C2D7888920055B911 /* XCRemoteSwiftPackageReference "Madrid" */;
 			productName = iMessage;
+		};
+		C0FFEE0000000000000000A2 /* TopoText */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C0FFEE0000000000000000A3 /* XCRemoteSwiftPackageReference "TopoText" */;
+			productName = TopoText;
 		};
 		F825BDBE2D9AD00E0063ADD7 /* ServiceLifecycle */ = {
 			isa = XCSwiftPackageProductDependency;
