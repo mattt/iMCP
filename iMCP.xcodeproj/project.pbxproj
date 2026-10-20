@@ -33,6 +33,10 @@
 		A40000000000000000000022 /* ../Shared/Extensions/Logger+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000012 /* ../Shared/Extensions/Logger+Extensions.swift */; };
 		A40000000000000000000023 /* ../Shared/Extensions/Bundle+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000013 /* ../Shared/Extensions/Bundle+Extensions.swift */; };
 		A40000000000000000000024 /* ../Shared/Models/Service.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000014 /* ../Shared/Models/Service.swift */; };
+		A50000000000000000000020 /* MailTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000010 /* MailTests.swift */; };
+		A50000000000000000000021 /* ../App/Services/Mail.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000011 /* ../App/Services/Mail.swift */; };
+		A50000000000000000000022 /* ../App/Extensions/Foundation+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000012 /* ../App/Extensions/Foundation+Extensions.swift */; };
+		A50000000000000000000030 /* Envelope in Frameworks */ = {isa = PBXBuildFile; productRef = A50000000000000000000040 /* Envelope */; };
 		B0D1DEADBEEF000000000002 /* BonjourDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF000000000001 /* BonjourDiscovery.swift */; };
 		B0D1DEADBEEF000000000004 /* BonjourDiscoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF000000000003 /* BonjourDiscoveryTests.swift */; };
 		B0D1DEADBEEF000000000006 /* MCPServiceLoop.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF000000000005 /* MCPServiceLoop.swift */; };
@@ -54,17 +58,6 @@
 		F8F1D2F82D6F9E0C00F6323D /* MCP in Frameworks */ = {isa = PBXBuildFile; productRef = F8F44E9C2D5903F70075D79C /* MCP */; };
 		F9E9902DC72D90F6C423EFE2 /* Logging in Frameworks */ = {isa = PBXBuildFile; productRef = 48ABEE9E6903427DD79096A1 /* Logging */; };
 		AA0011000000000000000001 /* Envelope in Frameworks */ = {isa = PBXBuildFile; productRef = AA0011000000000000000002 /* Envelope */; };
-		AA0033000000000000000065 /* MailCompositionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0033000000000000000064 /* MailCompositionTests.swift */; };
-		AA0033000000000000000067 /* Mail.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0033000000000000000066 /* Mail.swift */; };
-		AA0033000000000000000069 /* Service.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0033000000000000000068 /* Service.swift */; };
-		AA003300000000000000006B /* Tool.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA003300000000000000006A /* Tool.swift */; };
-		AA003300000000000000006D /* Value.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA003300000000000000006C /* Value.swift */; };
-		AA003300000000000000006F /* Logger+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA003300000000000000006E /* Logger+Extensions.swift */; };
-		AA0033000000000000000071 /* Foundation+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0033000000000000000070 /* Foundation+Extensions.swift */; };
-		AA00330000000000000000C8 /* Envelope in Frameworks */ = {isa = PBXBuildFile; productRef = AA0011000000000000000002 /* Envelope */; };
-		AA00330000000000000000C9 /* Ontology in Frameworks */ = {isa = PBXBuildFile; productRef = F873F48C2D712BCF0035CD0A /* Ontology */; };
-		AA00330000000000000000CA /* MCP in Frameworks */ = {isa = PBXBuildFile; productRef = F8D7C3192DCBD32100A4775F /* MCP */; };
-		AA00330000000000000000CB /* JSONSchema in Frameworks */ = {isa = PBXBuildFile; productRef = F8D8C48D2DCE0E6800369E5C /* JSONSchema */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -107,6 +100,9 @@
 		A40000000000000000000012 /* ../Shared/Extensions/Logger+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Shared/Extensions/Logger+Extensions.swift"; sourceTree = "<group>"; };
 		A40000000000000000000013 /* ../Shared/Extensions/Bundle+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Shared/Extensions/Bundle+Extensions.swift"; sourceTree = "<group>"; };
 		A40000000000000000000014 /* ../Shared/Models/Service.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Models/Service.swift; sourceTree = "<group>"; };
+		A50000000000000000000010 /* MailTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MailTests.swift; sourceTree = "<group>"; };
+		A50000000000000000000011 /* ../App/Services/Mail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../App/Services/Mail.swift; sourceTree = "<group>"; };
+		A50000000000000000000012 /* ../App/Extensions/Foundation+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../App/Extensions/Foundation+Extensions.swift"; sourceTree = "<group>"; };
 		B0D1DEADBEEF000000000001 /* BonjourDiscovery.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = BonjourDiscovery.swift; path = ../CLI/BonjourDiscovery.swift; sourceTree = "<group>"; };
 		B0D1DEADBEEF000000000003 /* BonjourDiscoveryTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BonjourDiscoveryTests.swift; sourceTree = "<group>"; };
 		B0D1DEADBEEF000000000005 /* MCPServiceLoop.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MCPServiceLoop.swift; path = ../CLI/MCPServiceLoop.swift; sourceTree = "<group>"; };
@@ -116,14 +112,6 @@
 		E0E66768348853754D32208C /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/System/Library/Frameworks/Cocoa.framework; sourceTree = DEVELOPER_DIR; };
 		F8F44E6D2D59038D0075D79C /* iMCP.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = iMCP.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F8F44EB62D5908D00075D79C /* imcp-server */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "imcp-server"; sourceTree = BUILT_PRODUCTS_DIR; };
-		AA0033000000000000000064 /* MailCompositionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MailCompositionTests.swift; path = MailCompositionTests.swift; sourceTree = "<group>"; };
-		AA0033000000000000000066 /* Mail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Mail.swift; path = ../App/Services/Mail.swift; sourceTree = "<group>"; };
-		AA0033000000000000000068 /* Service.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Service.swift; path = ../Shared/Models/Service.swift; sourceTree = "<group>"; };
-		AA003300000000000000006A /* Tool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Tool.swift; path = ../Shared/Models/Tool.swift; sourceTree = "<group>"; };
-		AA003300000000000000006C /* Value.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Value.swift; path = ../Shared/Models/Value.swift; sourceTree = "<group>"; };
-		AA003300000000000000006E /* Logger+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "Logger+Extensions.swift"; path = "../Shared/Extensions/Logger+Extensions.swift"; sourceTree = "<group>"; };
-		AA0033000000000000000070 /* Foundation+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "Foundation+Extensions.swift"; path = "../App/Extensions/Foundation+Extensions.swift"; sourceTree = "<group>"; };
-		AA0033000000000000000001 /* AppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -180,6 +168,7 @@
 				A30000000000000000000030 /* MCP in Frameworks */,
 				A30000000000000000000031 /* JSONSchema in Frameworks */,
 				A30000000000000000000032 /* Ontology in Frameworks */,
+				A50000000000000000000030 /* Envelope in Frameworks */,
 				76F80A6E3EDBFB02048A6ED8 /* Cocoa.framework in Frameworks */,
 				826C0834A5B647F8A918E54D /* ServiceLifecycle in Frameworks */,
 				8DFCE9E4CBCBEB93A32E8560 /* ServiceLifecycleTestKit in Frameworks */,
@@ -226,7 +215,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		AA0033000000000000000004 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (AA00330000000000000000C8, AA00330000000000000000C9, AA00330000000000000000CA, AA00330000000000000000CB,); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -247,6 +235,9 @@
 				A40000000000000000000012 /* ../Shared/Extensions/Logger+Extensions.swift */,
 				A40000000000000000000013 /* ../Shared/Extensions/Bundle+Extensions.swift */,
 				A40000000000000000000014 /* ../Shared/Models/Service.swift */,
+				A50000000000000000000010 /* MailTests.swift */,
+				A50000000000000000000011 /* ../App/Services/Mail.swift */,
+				A50000000000000000000012 /* ../App/Extensions/Foundation+Extensions.swift */,
 				A30000000000000000000010 /* HomeToolsTests.swift */,
 				A30000000000000000000011 /* ../Shared/Home/HomeBackend.swift */,
 				A30000000000000000000012 /* ../Shared/Home/HomeError.swift */,
@@ -283,7 +274,6 @@
 				F8F44E6E2D59038D0075D79C /* Products */,
 				13058B0C8A894B6DB0A7D2A8 /* Frameworks */,
 				9784E568F0621136136A0EAC /* CLITests */,
-				AA0033000000000000000002 /* AppTests */,
 			);
 			sourceTree = "<group>";
 		};
@@ -294,12 +284,10 @@
 				A10000000000000000000001 /* iMCP Helper.app */,
 				F8F44EB62D5908D00075D79C /* imcp-server */,
 				6A5CFBBEC66BC8CDA9D65496 /* imcp-serverTests.xctest */,
-				AA0033000000000000000001 /* AppTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
 		};
-		AA0033000000000000000002 /* AppTests */ = {isa = PBXGroup; children = (AA0033000000000000000064, AA0033000000000000000066, AA0033000000000000000068, AA003300000000000000006A, AA003300000000000000006C, AA003300000000000000006E, AA0033000000000000000070,); path = AppTests; sourceTree = "<group>"; };
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -321,6 +309,7 @@
 				A20000000000000000000011 /* JSONSchema */,
 				A20000000000000000000012 /* Ontology */,
 				DCE061F8A68D0CD546D919E2 /* ServiceLifecycle */,
+				A50000000000000000000040 /* Envelope */,
 				1CD6B9E157EEC273F178543D /* ServiceLifecycleTestKit */,
 				48ABEE9E6903427DD79096A1 /* Logging */,
 			);
@@ -416,18 +405,6 @@
 			productReference = F8F44EB62D5908D00075D79C /* imcp-server */;
 			productType = "com.apple.product-type.tool";
 		};
-		AA0033000000000000000005 /* AppTests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = AA0033000000000000000006;
-			buildPhases = (AA0033000000000000000003, AA0033000000000000000004,);
-			buildRules = ();
-			dependencies = ();
-			name = AppTests;
-			packageProductDependencies = (AA0011000000000000000002, F873F48C2D712BCF0035CD0A, F8D7C3192DCBD32100A4775F, F8D8C48D2DCE0E6800369E5C,);
-			productName = AppTests;
-			productReference = AA0033000000000000000001;
-			productType = "com.apple.product-type.bundle.unit-test";
-		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -488,7 +465,6 @@
 				F8F44E6C2D59038D0075D79C /* iMCP */,
 				F8F44EB52D5908D00075D79C /* imcp-server */,
 				8F6A71ADC0CC6BD168A9167D /* imcp-serverTests */,
-				AA0033000000000000000005 /* AppTests */,
 			);
 		};
 /* End PBXProject section */
@@ -553,6 +529,9 @@
 				A40000000000000000000022 /* ../Shared/Extensions/Logger+Extensions.swift in Sources */,
 				A40000000000000000000023 /* ../Shared/Extensions/Bundle+Extensions.swift in Sources */,
 				A40000000000000000000024 /* ../Shared/Models/Service.swift in Sources */,
+				A50000000000000000000020 /* MailTests.swift in Sources */,
+				A50000000000000000000021 /* ../App/Services/Mail.swift in Sources */,
+				A50000000000000000000022 /* ../App/Extensions/Foundation+Extensions.swift in Sources */,
 				A30000000000000000000020 /* HomeToolsTests.swift in Sources */,
 				A30000000000000000000021 /* ../Shared/Home/HomeBackend.swift in Sources */,
 				A30000000000000000000022 /* ../Shared/Home/HomeError.swift in Sources */,
@@ -585,7 +564,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		AA0033000000000000000003 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (AA0033000000000000000065, AA0033000000000000000067, AA0033000000000000000069, AA003300000000000000006B, AA003300000000000000006D, AA003300000000000000006F, AA0033000000000000000071,); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
@@ -1000,36 +978,6 @@
 			};
 			name = Release;
 		};
-		AA0033000000000000000007 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ENABLE_TESTING_SEARCH_PATHS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundlePackageType = BNDL;
-				MACOSX_DEPLOYMENT_TARGET = 15.1;
-				PRODUCT_BUNDLE_IDENTIFIER = "co.dododo.iMCP.AppTests";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = macosx;
-				SUPPORTED_PLATFORMS = macosx;
-				SWIFT_VERSION = 5.0;
-			};
-			name = Debug;
-		};
-		AA0033000000000000000008 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ENABLE_TESTING_SEARCH_PATHS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundlePackageType = BNDL;
-				MACOSX_DEPLOYMENT_TARGET = 15.1;
-				PRODUCT_BUNDLE_IDENTIFIER = "co.dododo.iMCP.AppTests";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = macosx;
-				SUPPORTED_PLATFORMS = macosx;
-				SWIFT_VERSION = 5.0;
-			};
-			name = Release;
-		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -1078,7 +1026,6 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		AA0033000000000000000006 /* Build configuration list for AppTests */ = {isa = XCConfigurationList; buildConfigurations = (AA0033000000000000000007, AA0033000000000000000008,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -1246,6 +1193,11 @@
 			productName = MCP;
 		};
 		AA0011000000000000000002 /* Envelope */ = {isa = XCSwiftPackageProductDependency; package = AA0011000000000000000003 /* XCRemoteSwiftPackageReference "Envelope" */; productName = Envelope; };
+		A50000000000000000000040 /* Envelope */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA0011000000000000000003 /* XCRemoteSwiftPackageReference "Envelope" */;
+			productName = Envelope;
+		};
 /* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = F8F44E652D59038D0075D79C /* Project object */;

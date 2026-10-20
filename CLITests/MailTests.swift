@@ -2,7 +2,7 @@ import Foundation
 import Envelope
 import XCTest
 
-final class MailCompositionTests: XCTestCase {
+final class MailTests: XCTestCase {
     func testPackageErrorsPreserveToolGuidance() throws {
         XCTAssertThrowsError(try MailService.shared.mailboxID(from: "INBOX")) { error in
             let description = String(describing: MailToolError(underlying: error))
