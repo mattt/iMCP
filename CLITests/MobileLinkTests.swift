@@ -379,6 +379,24 @@ final class MobileRetryTests: XCTestCase {
         XCTAssertEqual(value.objectValue?["id"]?.stringValue, id)
     }
 
+    func testLostWriteIsNotRetriedOnAnotherDevice() async throws {
+        let first = FakeLink(device: "iphone") { _, _ in throw MobileLinkLost() }
+        let other = FakeLink(device: "ipad") { _, input in #"{"id":"\#(input["id"]?.stringValue ?? "")"}"# }
+        await service.attach(first)
+        let reconnect = Task {
+            try await Task.sleep(for: .milliseconds(100))
+            await service.attach(other)
+        }
+        do {
+            _ = try await service.call("timers_create", ["title": "Tea", "duration_seconds": 180])
+            XCTFail("A lost write must not succeed on another device.")
+        } catch {
+            XCTAssertTrue(String(describing: error).contains("lost"))
+        }
+        _ = try await reconnect.value
+        XCTAssertEqual(other.calls.filter { $0.tool == "timers_create" }.count, 0)
+    }
+
     func testLostWriteWithoutReconnectReportsTheIdentifier() async throws {
         let link = FakeLink { _, _ in throw MobileLinkLost() }
         await service.attach(link)
@@ -512,7 +530,7 @@ private final class FakeLink: MobilePeerLink, @unchecked Sendable {
         let input: [String: Value]
     }
 
-    let device = MobileDevice(id: "fake", name: "Fake iPhone", pairedAt: Date())
+    let device: MobileDevice
     private let lock = NSLock()
     private var recorded: [Call] = []
     private let syncs: Bool
@@ -520,9 +538,11 @@ private final class FakeLink: MobilePeerLink, @unchecked Sendable {
 
     /// A link that answers pulls with an empty batch, unless `syncs` passes them to `handler`.
     init(
+        device: String = "fake",
         syncs: Bool = false,
         _ handler: @escaping @Sendable (String, [String: Value]) async throws -> String
     ) {
+        self.device = MobileDevice(id: device, name: "Fake iPhone", pairedAt: Date())
         self.syncs = syncs
         self.handler = handler
     }

@@ -366,12 +366,16 @@ actor MobileService: MobileBackend {
         await current.close()
     }
 
-    private func waitForLink() async -> (any MobilePeerLink)? {
+    /// Waits for `device` to reconnect.
+    /// A connection from another paired device doesn't count,
+    /// so a retried call never reaches a device that the caller didn't choose.
+    private func waitForLink(to device: MobileDevice) async -> (any MobilePeerLink)? {
         let deadline = ContinuousClock.now.advanced(by: reconnectGrace)
         while ContinuousClock.now < deadline {
-            if let link { return link }
+            if let link, link.device.id == device.id { return link }
             try? await Task.sleep(for: .milliseconds(50))
         }
+        guard let link, link.device.id == device.id else { return nil }
         return link
     }
 
@@ -463,7 +467,7 @@ actor MobileService: MobileBackend {
                 note: "The iPhone or iPad is locked, so HealthKit can't be read live."
             )
         }
-        if let next = await waitForLink() {
+        if let next = await waitForLink(to: link.device) {
             do {
                 return try await send(tool, input, readOnly: readOnly, to: next)
             } catch is MobileLinkLost {
