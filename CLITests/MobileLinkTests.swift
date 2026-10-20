@@ -744,9 +744,16 @@ final class MobileChannelTests: XCTestCase {
         listener?.cancel()
     }
 
-    private func pair() async throws -> (MobileChannel, MobileChannel) {
-        let keys = [(Data("test".utf8), SymmetricKey(size: .bits256))]
-        let listener = try NWListener(using: MobileTLS.parameters(keys: keys), on: .any)
+    private let keys = [(Data("test".utf8), SymmetricKey(size: .bits256))]
+
+    /// Starts a listener that offers `cipherSuite` and returns its port and connections.
+    private func listen(
+        cipherSuite: UInt16 = MobileTLS.cipherSuite
+    ) async throws -> (NWEndpoint, AsyncStream<NWConnection>) {
+        let listener = try NWListener(
+            using: MobileTLS.parameters(keys: keys, cipherSuite: cipherSuite),
+            on: .any
+        )
         self.listener = listener
         let accepted = AsyncStream<NWConnection> { continuation in
             listener.newConnectionHandler = { continuation.yield($0) }
@@ -757,13 +764,12 @@ final class MobileChannelTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(20))
             if case .ready = listener.state { port = listener.port }
         }
-        let ready = try XCTUnwrap(port)
-        let client = MobileChannel(
-            connection: NWConnection(
-                to: .hostPort(host: .ipv4(.loopback), port: ready),
-                using: MobileTLS.parameters(keys: keys)
-            )
-        )
+        return (.hostPort(host: .ipv4(.loopback), port: try XCTUnwrap(port)), accepted)
+    }
+
+    private func pair() async throws -> (MobileChannel, MobileChannel) {
+        let (endpoint, accepted) = try await listen()
+        let client = MobileChannel(connection: NWConnection(to: endpoint, using: MobileTLS.parameters(keys: keys)))
         async let opened: Void = client.open()
         var iterator = accepted.makeAsyncIterator()
         let connection = await iterator.next()
@@ -771,6 +777,34 @@ final class MobileChannelTests: XCTestCase {
         try await server.open()
         try await opened
         return (client, server)
+    }
+
+    func testBothSidesNegotiateForwardSecrecy() async throws {
+        let (client, server) = try await pair()
+        let suites = (await client.cipherSuite, await server.cipherSuite)
+        XCTAssertEqual(suites.0, 0xCCAC)
+        XCTAssertEqual(suites.1, 0xCCAC)
+    }
+
+    func testAPlainPreSharedKeySuiteIsRefused() async throws {
+        // A server that prefers a suite without an ephemeral key exchange.
+        let (endpoint, accepted) = try await listen(cipherSuite: UInt16(TLS_PSK_WITH_AES_128_GCM_SHA256))
+        let client = MobileChannel(connection: NWConnection(to: endpoint, using: MobileTLS.parameters(keys: keys)))
+        let server = Task {
+            var iterator = accepted.makeAsyncIterator()
+            let connection = await iterator.next()
+            connection?.start(queue: .global())
+            return connection
+        }
+        do {
+            try await client.open(timeout: .seconds(5))
+            XCTFail("A connection without forward secrecy must be refused.")
+        } catch {
+            XCTAssertTrue(String(describing: error).contains("forward secrecy"), String(describing: error))
+        }
+        let closed = await client.isClosed
+        XCTAssertTrue(closed)
+        await server.value?.cancel()
     }
 
     func testLinesThatArriveBeforeReceiveAreKept() async throws {

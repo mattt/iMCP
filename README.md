@@ -769,17 +769,20 @@ and serves the tools as an MCP server on that connection;
 iMCP is the MCP client.
 The Mac listens and advertises only while a pairing code is on screen,
 or while a device is paired and Health, Finance, or Alarms is on.
-The connection uses TLS with pre-shared keys:
+The connection uses TLS 1.2 with pre-shared keys:
 the one-time secret in the QR code for pairing,
 and a key for each device after that.
 A device that doesn't have a key can't complete the handshake.
+The cipher suite, `TLS_ECDHE_PSK_WITH_CHACHA20_POLY1305_SHA256`,
+adds an ephemeral X25519 key exchange to each connection,
+so someone who steals a key later can't decrypt traffic they recorded earlier.
+Apple's TLS stack doesn't support external pre-shared keys in TLS 1.3,
+and it also offers pre-shared key suites without a key exchange,
+so both devices close a connection that negotiates any other suite.
 During pairing, the two devices derive the device key
 from an X25519 key exchange salted with the pairing secret,
 so the device key never crosses the network.
 Someone who saw the QR code and recorded the pairing still can't derive it.
-Later connections use the device key alone,
-so they don't have forward secrecy:
-someone who steals that key could decrypt traffic they recorded earlier.
 
 Read results include `source` (`live` or `cache`), `synced_at`, and `stale`.
 Cached data is stale after 4 hours for Health, 26 hours for Finance,
