@@ -3,12 +3,11 @@ import Foundation
 
 // Types that iMCP on iOS and on the Mac exchange.
 // This file uses only Foundation and CryptoKit,
-// so the FinanceKit background delivery extension can compile it.
+// so that app extensions can compile it.
 
 /// A group of mobile tools that the user turns on separately.
 enum MobileDomain: String, CaseIterable, Codable, Sendable {
     case health
-    case finance
     case alarms
 }
 
@@ -18,15 +17,11 @@ enum MobileKind: String, Codable, CaseIterable, Sendable {
     case healthStatistic = "health.statistic"
     case workout = "health.workout"
     case clinicalRecord = "health.clinical"
-    case account = "finance.account"
-    case balance = "finance.balance"
-    case transaction = "finance.transaction"
     case alarm = "alarm"
 
     var domain: MobileDomain {
         switch self {
         case .healthSample, .healthStatistic, .workout, .clinicalRecord: return .health
-        case .account, .balance, .transaction: return .finance
         case .alarm: return .alarms
         }
     }
@@ -35,7 +30,7 @@ enum MobileKind: String, Codable, CaseIterable, Sendable {
 /// One object to store on the Mac, or the deletion of one.
 ///
 /// `key` is what queries filter on:
-/// the HealthKit type name, workout activity type, or FinanceKit account ID.
+/// the HealthKit type name or workout activity type.
 /// `payload` is the JSON object that tools return, or nil for a deletion.
 struct MobileRecord: Codable, Equatable, Sendable {
     var kind: MobileKind

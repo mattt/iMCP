@@ -7,7 +7,7 @@ import Security
 /// Records live in a SQLite database in Application Support.
 /// Payloads are sealed with AES-GCM under a key kept in the Keychain,
 /// with each record's kind and ID as authenticated data,
-/// so the file alone doesn't reveal health or finance data
+/// so the file alone doesn't reveal health data
 /// and a payload can't be moved to another row.
 /// Kinds, IDs, query keys, and dates stay in plaintext so that queries can filter on them.
 actor MobileCache {
@@ -146,7 +146,7 @@ actor MobileCache {
         return id
     }
 
-    /// The last status the phone reported, such as why Finance is unavailable.
+    /// The last status the phone reported, such as which services are on.
     func phoneStatus() -> Value? {
         var status: Value?
         try? db().run("SELECT value FROM meta WHERE name = 'phone_status'") { row in

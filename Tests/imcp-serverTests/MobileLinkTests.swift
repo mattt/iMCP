@@ -576,16 +576,16 @@ final class MobileRetryTests: XCTestCase {
         XCTAssertTrue(value.objectValue?["note"]?.stringValue?.contains("locked") == true)
     }
 
-    func testCachedFinanceAnswersGiveThePhonesReason() async throws {
-        let reason = "This build of iMCP iOS doesn't have the FinanceKit entitlement."
+    func testCachedAnswersGiveThePhonesReasonForAnUnavailableService() async throws {
+        let reason = "Health data isn't available on this device."
         let link = FakeLink { tool, _ in
             guard tool == MobileTools.statusTool else { throw MobileLinkLost() }
-            return #"{"services":{"finance":{"available":false,"note":"\#(reason)"}}}"#
+            return #"{"services":{"health":{"available":false,"note":"\#(reason)"}}}"#
         }
         await service.attach(link)
         _ = try await service.call(MobileTools.statusTool, [:])
         await service.detach(link)
-        let value = try await service.call("finance_accounts_list", [:])
+        let value = try await service.call("workouts_fetch", [:])
         XCTAssertTrue(value.objectValue?["note"]?.stringValue?.contains(reason) == true)
     }
 
