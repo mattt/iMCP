@@ -498,7 +498,7 @@ extension MusicService {
         request.includeTopResults = includeTopResults || typesIncludeTopResults
 
         if let value = arguments["limit"], !value.isNull {
-            guard let limit = exactInt(from: value), (1 ... 50).contains(limit) else {
+            guard let limit = Self.exactInt(from: value), (1 ... 50).contains(limit) else {
                 throw NSError(
                     domain: "MusicServiceError",
                     code: 9,
@@ -513,7 +513,7 @@ extension MusicService {
         }
 
         if let value = arguments["offset"], !value.isNull {
-            guard let offset = exactInt(from: value), offset >= 0 else {
+            guard let offset = Self.exactInt(from: value), offset >= 0 else {
                 throw NSError(
                     domain: "MusicServiceError",
                     code: 10,
@@ -618,7 +618,7 @@ extension MusicService {
     /// Returns the integer value of an integer or whole-number argument.
     ///
     /// Numeric strings are rejected so runtime behavior matches the integer schema.
-    private func exactInt(from value: Value) -> Int? {
+    static func exactInt(from value: Value) -> Int? {
         switch value {
         case .int(let value):
             return value
