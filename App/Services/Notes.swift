@@ -48,7 +48,7 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
                 openWorldHint: false
             )
         ) { _ in
-            try await self.requestDatabaseAccess()
+            try self.checkDatabaseAccess()
             let folders = try await self.withStore { try await $0.folders() }
 
             return [
@@ -143,7 +143,7 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
             }
             let folderArgument = try self.argument("folder", in: arguments, as: \.stringValue)
 
-            try await self.requestDatabaseAccess()
+            try self.checkDatabaseAccess()
             let baseRequest = request
             let (result, folders) = try await self.withStore { store in
                 // The folders and the notes come from one snapshot, so they agree.
@@ -219,7 +219,7 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
             default: throw ArgumentError.invalid("format must be one of: markdown, plain")
             }
 
-            try await self.requestDatabaseAccess()
+            try self.checkDatabaseAccess()
             let (note, content, folders) = try await self.withStore { store in
                 try await store.withSnapshot { snapshot in
                     (try snapshot.note(for: id), try snapshot.content(for: id), try snapshot.folders())
@@ -241,6 +241,9 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
     /// The grant has to cover the `group.com.apple.notes` folder, not just the database file.
     /// The store is a WAL-mode SQLite database, so SQLite also opens the `-wal` and `-shm`
     /// files next to it, and Notes writes recent edits to the log first.
+    ///
+    /// Only the menu-bar toggle calls this, through `activate()`;
+    /// tool calls use `checkDatabaseAccess()` instead.
     private func requestDatabaseAccess() async throws {
         if canAccessDatabaseAtDefaultPath {
             log.debug("Using Notes database at default path")
@@ -267,6 +270,24 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
 
         try storeBookmark(for: selectedURL)
         log.debug("Granted access to Notes database")
+    }
+
+    /// Throws unless the Notes database is readable, without asking for access.
+    ///
+    /// A tool call can arrive when nobody is at the Mac,
+    /// so it must not park the server behind an alert or a folder picker,
+    /// and concurrent calls must not stack them.
+    /// The error tells the client how to grant access from the iMCP menu instead.
+    private func checkDatabaseAccess() throws {
+        if canAccessDatabaseAtDefaultPath {
+            return
+        }
+        guard UserDefaults.standard.data(forKey: notesContainerBookmarkKey) != nil else {
+            throw DatabaseAccessError.accessNotGranted
+        }
+        guard canAccessDatabaseUsingBookmark else {
+            throw DatabaseAccessError.grantUnusable
+        }
     }
 
     /// Returns an optional argument, or throws if it is present with the wrong type.
@@ -351,6 +372,8 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
         case securityScopeAccessFailed
         case userDeclinedAccess
         case invalidFolderSelected
+        case accessNotGranted
+        case grantUnusable
 
         var errorDescription: String? {
             switch self {
@@ -360,6 +383,12 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
                 return "Failed to access security-scoped resource"
             case .userDeclinedAccess:
                 return "User declined to grant access to the Notes database"
+            case .accessNotGranted:
+                return
+                    "The Notes folder (~/Library/Group Containers/group.com.apple.notes) has not been granted; switch Notes off and on in the iMCP menu and select it when asked"
+            case .grantUnusable:
+                return
+                    "Could not read the Notes database through the stored grant; switch Notes off and on in the iMCP menu to grant the Notes folder again"
             case .invalidFolderSelected:
                 return
                     "Notes database access denied or the selection is not the group.com.apple.notes folder"
