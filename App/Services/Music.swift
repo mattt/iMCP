@@ -15,14 +15,16 @@ final class MusicService: Service {
         }
     }
 
+    /// Asks for Apple Music access when someone turns on the service.
+    ///
+    /// Only the catalog tools use MusicKit.
+    /// The playback tools send Apple events to Music,
+    /// and macOS asks for Automation permission the first time they do.
+    /// A MusicKit denial therefore leaves the service on with only the playback tools working.
     func activate() async throws {
         let status = await MusicAuthorization.request()
-        guard status == .authorized else {
-            throw NSError(
-                domain: "MusicServiceError",
-                code: 1,
-                userInfo: [NSLocalizedDescriptionKey: "Apple Music access not authorized"]
-            )
+        if status != .authorized {
+            log.notice("Apple Music access not authorized; catalog tools are unavailable")
         }
     }
 
@@ -40,7 +42,6 @@ final class MusicService: Service {
                 openWorldHint: false
             )
         ) { _ in
-            try await self.activate()
             return try await self.fetchNowPlaying()
         }
 
@@ -65,7 +66,6 @@ final class MusicService: Service {
                 openWorldHint: false
             )
         ) { arguments in
-            try await self.activate()
             guard let actionRaw = arguments["action"]?.stringValue,
                 let action = ControlAction(rawValue: actionRaw)
             else {
@@ -130,7 +130,7 @@ final class MusicService: Service {
                 openWorldHint: true
             )
         ) { arguments in
-            try await self.activate()
+            try await self.authorizeCatalogAccess()
             return try await self.searchCatalog(with: arguments)
         }
     }
@@ -166,6 +166,28 @@ private struct MusicCatalogResult: Encodable {
 }
 
 extension MusicService {
+    /// Checks MusicKit authorization before a catalog request.
+    ///
+    /// This asks the user only when they haven't yet decided,
+    /// so later calls don't show a prompt.
+    private func authorizeCatalogAccess() async throws {
+        var status = MusicAuthorization.currentStatus
+        if status == .notDetermined {
+            status = await MusicAuthorization.request()
+        }
+
+        guard status == .authorized else {
+            throw NSError(
+                domain: "MusicServiceError",
+                code: 1,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Apple Music access not authorized. Allow iMCP in System Settings > Privacy & Security > Media & Apple Music."
+                ]
+            )
+        }
+    }
+
     @MainActor
     private func executeAppleScript(_ source: String) throws -> NSAppleEventDescriptor {
         var errorInfo: NSDictionary?
