@@ -41,6 +41,9 @@
 		A50000000000000000000021 /* ../App/Services/Mail.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000011 /* ../App/Services/Mail.swift */; };
 		A50000000000000000000022 /* ../App/Extensions/Foundation+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000012 /* ../App/Extensions/Foundation+Extensions.swift */; };
 		A50000000000000000000030 /* Envelope in Frameworks */ = {isa = PBXBuildFile; productRef = A50000000000000000000040 /* Envelope */; };
+		A70000000000000000000020 /* NoteRendererTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000010 /* NoteRendererTests.swift */; };
+		A70000000000000000000021 /* ../App/Services/Notes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000011 /* ../App/Services/Notes.swift */; };
+		A70000000000000000000030 /* TopoText in Frameworks */ = {isa = PBXBuildFile; productRef = A70000000000000000000040 /* TopoText */; };
 		B0D1DEADBEEF000000000002 /* BonjourDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF000000000001 /* BonjourDiscovery.swift */; };
 		B0D1DEADBEEF000000000004 /* BonjourDiscoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF000000000003 /* BonjourDiscoveryTests.swift */; };
 		B0D1DEADBEEF000000000006 /* MCPServiceLoop.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF000000000005 /* MCPServiceLoop.swift */; };
@@ -112,6 +115,8 @@
 		A40000000000000000000014 /* ../Shared/Models/Service.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Models/Service.swift; sourceTree = "<group>"; };
 		A50000000000000000000010 /* MailTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MailTests.swift; sourceTree = "<group>"; };
 		A50000000000000000000011 /* ../App/Services/Mail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../App/Services/Mail.swift; sourceTree = "<group>"; };
+		A70000000000000000000010 /* NoteRendererTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteRendererTests.swift; sourceTree = "<group>"; };
+		A70000000000000000000011 /* ../App/Services/Notes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../App/Services/Notes.swift; sourceTree = "<group>"; };
 		A50000000000000000000012 /* ../App/Extensions/Foundation+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../App/Extensions/Foundation+Extensions.swift"; sourceTree = "<group>"; };
 		B0D1DEADBEEF000000000001 /* BonjourDiscovery.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = BonjourDiscovery.swift; path = ../CLI/BonjourDiscovery.swift; sourceTree = "<group>"; };
 		B0D1DEADBEEF000000000003 /* BonjourDiscoveryTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BonjourDiscoveryTests.swift; sourceTree = "<group>"; };
@@ -179,6 +184,7 @@
 				A30000000000000000000031 /* JSONSchema in Frameworks */,
 				A30000000000000000000032 /* Ontology in Frameworks */,
 				A50000000000000000000030 /* Envelope in Frameworks */,
+				A70000000000000000000030 /* TopoText in Frameworks */,
 				76F80A6E3EDBFB02048A6ED8 /* Cocoa.framework in Frameworks */,
 				826C0834A5B647F8A918E54D /* ServiceLifecycle in Frameworks */,
 				8DFCE9E4CBCBEB93A32E8560 /* ServiceLifecycleTestKit in Frameworks */,
@@ -251,6 +257,8 @@
 				A40000000000000000000014 /* ../Shared/Models/Service.swift */,
 				A50000000000000000000010 /* MailTests.swift */,
 				A50000000000000000000011 /* ../App/Services/Mail.swift */,
+				A70000000000000000000010 /* NoteRendererTests.swift */,
+				A70000000000000000000011 /* ../App/Services/Notes.swift */,
 				A50000000000000000000012 /* ../App/Extensions/Foundation+Extensions.swift */,
 				A30000000000000000000010 /* HomeToolsTests.swift */,
 				A30000000000000000000011 /* ../Shared/Home/HomeBackend.swift */,
@@ -326,6 +334,7 @@
 				A20000000000000000000012 /* Ontology */,
 				DCE061F8A68D0CD546D919E2 /* ServiceLifecycle */,
 				A50000000000000000000040 /* Envelope */,
+				A70000000000000000000040 /* TopoText */,
 				1CD6B9E157EEC273F178543D /* ServiceLifecycleTestKit */,
 				48ABEE9E6903427DD79096A1 /* Logging */,
 			);
@@ -553,6 +562,8 @@
 				A40000000000000000000024 /* ../Shared/Models/Service.swift in Sources */,
 				A50000000000000000000020 /* MailTests.swift in Sources */,
 				A50000000000000000000021 /* ../App/Services/Mail.swift in Sources */,
+				A70000000000000000000020 /* NoteRendererTests.swift in Sources */,
+				A70000000000000000000021 /* ../App/Services/Notes.swift in Sources */,
 				A50000000000000000000022 /* ../App/Extensions/Foundation+Extensions.swift in Sources */,
 				A30000000000000000000020 /* HomeToolsTests.swift in Sources */,
 				A30000000000000000000021 /* ../Shared/Home/HomeBackend.swift in Sources */,
@@ -597,7 +608,7 @@
 				ENABLE_TESTING_SEARCH_PATHS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundlePackageType = BNDL;
-				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MACOSX_DEPLOYMENT_TARGET = 15.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "me.mattt.iMCP.imcp-serverTests";
 				PRODUCT_MODULE_NAME = imcp_serverTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -613,7 +624,7 @@
 				ENABLE_TESTING_SEARCH_PATHS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundlePackageType = BNDL;
-				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MACOSX_DEPLOYMENT_TARGET = 15.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "me.mattt.iMCP.imcp-serverTests";
 				PRODUCT_MODULE_NAME = imcp_serverTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1240,6 +1251,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = AA0011000000000000000003 /* XCRemoteSwiftPackageReference "Envelope" */;
 			productName = Envelope;
+		};
+		A70000000000000000000040 /* TopoText */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C0FFEE0000000000000000A3 /* XCRemoteSwiftPackageReference "TopoText" */;
+			productName = TopoText;
 		};
 		AB0055000000000000000002 /* TSRP */ = {isa = XCSwiftPackageProductDependency; package = AB0055000000000000000003 /* XCRemoteSwiftPackageReference "TSRP" */; productName = TSRP; };
 /* End XCSwiftPackageProductDependency section */

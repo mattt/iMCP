@@ -586,7 +586,9 @@ extension Note {
 // MARK: -
 
 /// Renders the contents of a note as Markdown or plain text.
-private struct NoteRenderer {
+///
+/// The renderer is internal, not private, so that tests can render synthetic contents.
+struct NoteRenderer {
     enum Format {
         case markdown
         case plain
