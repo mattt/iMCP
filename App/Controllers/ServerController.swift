@@ -54,6 +54,7 @@ enum ServiceRegistry {
             CalendarService.shared,
             CaptureService.shared,
             ContactsService.shared,
+            FinanceService.shared,
             HealthService.shared,
             HomeService.shared,
             LocationService.shared,
@@ -79,6 +80,7 @@ enum ServiceRegistry {
         calendarEnabled: Binding<Bool>,
         captureEnabled: Binding<Bool>,
         contactsEnabled: Binding<Bool>,
+        financeEnabled: Binding<Bool>,
         healthEnabled: Binding<Bool>,
         homeEnabled: Binding<Bool>,
         locationEnabled: Binding<Bool>,
@@ -120,6 +122,13 @@ enum ServiceRegistry {
                 color: .brown,
                 service: ContactsService.shared,
                 binding: contactsEnabled
+            ),
+            ServiceConfig(
+                name: "Finance",
+                iconName: "creditcard.fill",
+                color: .mint,
+                service: FinanceService.shared,
+                binding: financeEnabled
             ),
             ServiceConfig(
                 name: "Health",
@@ -229,6 +238,7 @@ final class ServerController: ObservableObject {
     @AppStorage("calendarEnabled") private var calendarEnabled = false
     @AppStorage("captureEnabled") private var captureEnabled = false
     @AppStorage("contactsEnabled") private var contactsEnabled = false
+    @AppStorage("financeEnabled") private var financeEnabled = false
     @AppStorage("healthEnabled") private var healthEnabled = false
     @AppStorage("homeEnabled") private var homeEnabled = false
     @AppStorage("locationEnabled") private var locationEnabled = false
@@ -256,6 +266,7 @@ final class ServerController: ObservableObject {
             calendarEnabled: $calendarEnabled,
             captureEnabled: $captureEnabled,
             contactsEnabled: $contactsEnabled,
+            financeEnabled: $financeEnabled,
             healthEnabled: $healthEnabled,
             homeEnabled: $homeEnabled,
             locationEnabled: $locationEnabled,
@@ -432,7 +443,7 @@ final class ServerController: ObservableObject {
             self.updateServerStatus("Running")
 
             // Listen for a paired iPhone or iPad so it can sync before the first tool call.
-            if self.alarmsEnabled || self.healthEnabled {
+            if self.alarmsEnabled || self.financeEnabled || self.healthEnabled {
                 try? await MobileService.shared.start()
             }
         }
@@ -586,7 +597,7 @@ actor MCPConnectionManager {
                 Use iMCP for apps and data on the user's Mac: \
                 Calendar, Contacts, Location, Mail, Maps, Messages, Phone, Reminders, Shortcuts, Voicemail, Weather, \
                 and the camera, microphone, and screen; \
-                and, through iMCP on the user's iPhone or iPad, Health and Alarms. \
+                and, through iMCP on the user's iPhone or iPad, Health, Finance, and Alarms. \
                 Only the services that the user turns on in iMCP have tools.
                 """,
             capabilities: MCP.Server.Capabilities(

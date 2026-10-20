@@ -23,6 +23,8 @@
     <array>
         <string>_imcp-mobile._tcp</string>
     </array>
+    <key>NSFinancialDataUsageDescription</key>
+    <string>iMCP reads the Wallet accounts and transactions you choose and sends them to iMCP on your Mac, where the AI apps you connect can use them.</string>
     <key>NSHealthClinicalHealthRecordsShareUsageDescription</key>
     <string>iMCP reads the health records you choose and sends them to iMCP on your Mac, where the AI apps you connect can use them.</string>
     <key>NSSupportsLiveActivities</key>
@@ -33,5 +35,7 @@
     </array>
     <key>iMCPAppGroup</key>
     <string>group.$(IOS_BUNDLE_IDENTIFIER)</string>
+    <key>iMCPFinanceKit</key>
+    <string>$(IOS_FINANCEKIT)</string>
 </dict>
 </plist>

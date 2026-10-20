@@ -3,7 +3,7 @@ import Foundation
 /// Changes that iMCP on iOS has collected but the Mac hasn't stored yet,
 /// and the sync state, such as HealthKit anchors, that produced them.
 ///
-/// The outbox lives in the App Group container.
+/// The app and the FinanceKit extension share the outbox through the App Group container.
 /// Records and the state that follows them are written in one transaction,
 /// so an anchor never advances past changes that aren't queued.
 /// The Mac pulls the oldest batch and acknowledges it after storing it;

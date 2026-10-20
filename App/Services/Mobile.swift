@@ -5,9 +5,9 @@ import Network
 import OSLog
 import Security
 
-/// Serves the Health and Alarms tools from iMCP on a paired iPhone or iPad.
+/// Serves the Health, Finance, and Alarms tools from iMCP on a paired iPhone or iPad.
 ///
-/// HealthKit and AlarmKit data stays on the phone,
+/// HealthKit, FinanceKit, and AlarmKit data stays on the phone,
 /// so the iOS app implements the tools from `MobileTools`.
 /// When the phone is connected, calls go to it live;
 /// otherwise read-only calls answer from `MobileCache`,
@@ -59,14 +59,14 @@ actor MobileService: MobileBackend {
         self.isEnabled = isEnabled
     }
 
-    /// Whether Health or Alarms is on in iMCP.
+    /// Whether Health, Finance, or Alarms is on in iMCP.
     nonisolated static func isAnyServiceEnabled() -> Bool {
-        ["alarmsEnabled", "healthEnabled"].contains { UserDefaults.standard.bool(forKey: $0) }
+        ["alarmsEnabled", "financeEnabled", "healthEnabled"].contains { UserDefaults.standard.bool(forKey: $0) }
     }
 
     /// Whether `service` is one of the services that this actor serves.
     nonisolated static func serves(_ service: any Service) -> Bool {
-        service is HealthService || service is AlarmsService
+        service is HealthService || service is FinanceService || service is AlarmsService
     }
 
     /// Opens the cache and listens for paired devices, if there are any.
@@ -80,8 +80,8 @@ actor MobileService: MobileBackend {
     /// The port that the listener uses, or nil when iMCP isn't listening.
     var listeningPort: UInt16? { listener == nil ? nil : port.rawValue }
 
-    /// Starts or stops listening after Health or Alarms is turned on or off.
-    /// When both are off, also closes the connection to the phone.
+    /// Starts or stops listening after Health, Finance, or Alarms is turned on or off.
+    /// When all of them are off, also closes the connection to the phone.
     func servicesChanged() async {
         if !isEnabled() { await disconnect() }
         do {
@@ -649,6 +649,39 @@ actor MobileService: MobileBackend {
                 limit: limit
             )
             if rows.isEmpty { note = MobileEnvelope.emptyHealthNote }
+        case "finance_accounts_list":
+            rows = try await cache.records(.account, ascending: true)
+        case "finance_balances_fetch":
+            rows = try await cache.records(
+                .balance,
+                key: try args.uuid("account")?.uuidString,
+                start: start,
+                end: end,
+                limit: limit
+            )
+        case "finance_transactions_fetch":
+            let status = args.string("status")
+            let query = args.string("query")?.lowercased()
+            let candidates = try await cache.records(
+                .transaction,
+                key: try args.uuid("account")?.uuidString,
+                start: start,
+                end: end,
+                limit: status == nil && query == nil ? limit : nil
+            )
+            rows = Array(
+                candidates.filter { row in
+                    let object = row.payload.objectValue ?? [:]
+                    if let status, object["status"]?.stringValue != status { return false }
+                    if let query {
+                        let text = [object["merchant_name"], object["description"]]
+                            .compactMap { $0?.stringValue?.lowercased() }
+                        if !text.contains(where: { $0.contains(query) }) { return false }
+                    }
+                    return true
+                }
+                .prefix(limit)
+            )
         case "alarms_list":
             rows = try await cache.records(.alarm, ascending: true)
         default:
@@ -656,7 +689,7 @@ actor MobileService: MobileBackend {
                 "\(tool) needs iMCP to be open on the iPhone or iPad and connected to this Mac."
             )
         }
-        // The phone reports when a service can't run there, with a note that says why.
+        // The phone reports when a service can't run there, such as Finance without its entitlement.
         let phone = await cache.phoneStatus()?.objectValue?["services"]?.objectValue?[domain.rawValue]?.objectValue
         let unavailable = phone?["available"] == .bool(false) ? phone?["note"]?.stringValue : nil
         return MobileEnvelope.make(
@@ -775,7 +808,7 @@ final class MobileRemoteLink: MobilePeerLink, @unchecked Sendable {
     let device: MobileDevice
     private let client: MCP.Client
     private let channel: MobileChannel
-    /// Live HealthKit queries can take a while on a large store.
+    /// Live HealthKit and FinanceKit queries can take a while on a large store.
     private static let timeout: Duration = .seconds(90)
 
     init(device: MobileDevice, client: MCP.Client, channel: MobileChannel) {
@@ -856,6 +889,14 @@ private final class ResumeOnce<T: Sendable, Failure: Error>: @unchecked Sendable
 struct HealthService: Service {
     static let shared = HealthService()
     var tools: [Tool] { return MobileTools.tools(for: .health, backend: MobileService.shared) }
+    var isActivated: Bool { get async { await MobileService.shared.isStarted } }
+    func activate() async throws { try await MobileService.shared.start() }
+}
+
+/// Apple Card, Apple Cash, and Apple Savings data from Wallet on the paired iPhone or iPad.
+struct FinanceService: Service {
+    static let shared = FinanceService()
+    var tools: [Tool] { return MobileTools.tools(for: .finance, backend: MobileService.shared) }
     var isActivated: Bool { get async { await MobileService.shared.isStarted } }
     func activate() async throws { try await MobileService.shared.start() }
 }

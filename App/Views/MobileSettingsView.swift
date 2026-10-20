@@ -82,7 +82,7 @@ struct MobileSettingsView: View {
             }
         } message: {
             Text(
-                "iMCP deletes its copy of Health and Alarms data. If a device stays paired, it sends its data again the next time it connects."
+                "iMCP deletes its copy of Health, Finance, and Alarms data. If a device stays paired, it sends its data again the next time it connects."
             )
         }
         .alert(
@@ -191,6 +191,7 @@ extension MobileDomain {
     var label: String {
         switch self {
         case .health: return "Health"
+        case .finance: return "Finance"
         case .alarms: return "Alarms"
         }
     }

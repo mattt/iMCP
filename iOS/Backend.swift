@@ -3,7 +3,7 @@ import JSONSchema
 import MCP
 import OSLog
 
-/// One of the frameworks that iMCP on iOS serves: HealthKit or AlarmKit.
+/// One of the frameworks that iMCP on iOS serves: HealthKit, FinanceKit, or AlarmKit.
 protocol PhoneService: Sendable {
     var domain: MobileDomain { get }
     /// Answers a tool call with live data.
@@ -26,6 +26,7 @@ extension MobileDomain {
     var title: String {
         switch self {
         case .health: return "Health"
+        case .finance: return "Finance"
         case .alarms: return "Alarms"
         }
     }
@@ -36,6 +37,9 @@ extension MobileDomain {
         case .health:
             return
                 "Sends the Health data you allow to iMCP on your Mac. Any AI app that you approve in iMCP can read it while Health is on in iMCP."
+        case .finance:
+            return
+                "Sends the Wallet accounts, balances, and transactions you allow to iMCP on your Mac. Any AI app that you approve in iMCP can read them while Finance is on in iMCP."
         case .alarms:
             return
                 "Lets AI apps that you approve in iMCP set alarms and timers on this device. They sound even in silent mode and Focus, and you can cancel them here."
@@ -70,6 +74,7 @@ actor PhoneBackend: MobileBackend {
     private let log = Logger(subsystem: "co.dododo.iMCP.iOS", category: "backend")
     nonisolated let services: [MobileDomain: any PhoneService] = [
         .health: HealthPhoneService(),
+        .finance: FinancePhoneService(),
         .alarms: AlarmsPhoneService(),
     ]
     private var outbox: MobileOutbox?
@@ -118,6 +123,10 @@ actor PhoneBackend: MobileBackend {
         if tool == MobileTools.statusTool { return await status() }
         guard let domain = MobileTools.domain(of: tool), let service = services[domain] else {
             throw MobileError("Unknown tool: \(tool)")
+        }
+        // Without the entitlement, Finance can't be turned on, so give the reason instead.
+        if domain == .finance, let reason = FinanceCapability.current.reason {
+            throw MobileError(reason)
         }
         guard PhoneSettings.isEnabled(domain) else {
             throw MobileError(
