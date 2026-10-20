@@ -348,32 +348,45 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
         return try operation(url)
     }
 
+    /// Runs an operation on the store, inside the grant for the bookmarked folder
+    /// unless the database is readable at the default path.
+    /// Errors from TopoText are rethrown as `StoreError`, which describes them for the client.
     private func withStore<T>(_ operation: (Store) async throws -> T) async throws -> T {
-        if canAccessDatabaseAtDefaultPath {
-            return try await operation(Store(root: notesContainerURL))
-        }
+        do {
+            if canAccessDatabaseAtDefaultPath {
+                return try await operation(Store(root: notesContainerURL))
+            }
 
-        let directory = try resolveBookmarkedContainer()
+            let directory = try resolveBookmarkedContainer()
 
-        // The grant must stay open until the store's call returns:
-        // SQLite opens the write-ahead log lazily on the first statement.
-        guard directory.startAccessingSecurityScopedResource() else {
-            log.error("Failed to start accessing security-scoped resource")
-            throw DatabaseAccessError.securityScopeAccessFailed
+            // The grant must stay open until the store's call returns:
+            // SQLite opens the write-ahead log lazily on the first statement.
+            guard directory.startAccessingSecurityScopedResource() else {
+                log.error("Failed to start accessing security-scoped resource")
+                throw DatabaseAccessError.securityScopeAccessFailed
+            }
+            defer { directory.stopAccessingSecurityScopedResource() }
+            return try await operation(Store(root: directory))
+        } catch let error as NotesError {
+            throw StoreError(underlying: error)
+        } catch let error as Note.FetchRequest.ValidationError {
+            throw StoreError(underlying: error)
         }
-        defer { directory.stopAccessingSecurityScopedResource() }
-        return try await operation(Store(root: directory))
     }
 
     // MARK: - Errors
 
-    private enum DatabaseAccessError: LocalizedError {
+    // The server reports a tool's error by interpolating it,
+    // so each error type describes itself with its readable message.
+    private enum DatabaseAccessError: LocalizedError, CustomStringConvertible {
         case noBookmarkFound
         case securityScopeAccessFailed
         case userDeclinedAccess
         case invalidFolderSelected
         case accessNotGranted
         case grantUnusable
+
+        var description: String { localizedDescription }
 
         var errorDescription: String? {
             switch self {
@@ -396,13 +409,39 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
         }
     }
 
-    private enum ArgumentError: LocalizedError {
+    private enum ArgumentError: LocalizedError, CustomStringConvertible {
         case invalid(String)
+
+        var description: String { localizedDescription }
 
         var errorDescription: String? {
             switch self {
             case .invalid(let message):
                 return "Invalid argument: \(message)"
+            }
+        }
+    }
+
+    /// An error from TopoText, with a description for the client.
+    /// TopoText's errors conform only to `LocalizedError`,
+    /// so interpolating one would show its case name instead of its message.
+    private struct StoreError: LocalizedError, CustomStringConvertible {
+        let underlying: any Swift.Error
+
+        var description: String { localizedDescription }
+
+        var errorDescription: String? {
+            switch underlying {
+            case NotesError.storeNotFound:
+                return
+                    "The Notes folder has no Notes database; switch Notes off and on in the iMCP menu and select the group.com.apple.notes folder"
+            case NotesError.storeNotReadable:
+                return
+                    "The Notes database or its write-ahead log files cannot be read; switch Notes off and on in the iMCP menu to grant the Notes folder again"
+            case is Note.FetchRequest.ValidationError:
+                return "Invalid argument: \(underlying.localizedDescription)"
+            default:
+                return underlying.localizedDescription
             }
         }
     }
