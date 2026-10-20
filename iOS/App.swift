@@ -118,7 +118,7 @@ struct StatusView: View {
                 Button("Unpair", role: .destructive) { Task { await connection.unpair() } }
             } message: {
                 Text(
-                    "This device stops sending data and asks the Mac to forget it. To delete the data the Mac already has, use Settings in iMCP on the Mac."
+                    "This device stops sending data and asks the Mac to forget it. If no other device is paired, the Mac also deletes its copy of the data. If the Mac can't be reached, remove this device in iMCP Settings on the Mac."
                 )
             }
             .task { await connection.refreshQueue() }
