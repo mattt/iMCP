@@ -403,12 +403,18 @@ actor MobileService: MobileBackend {
         defer { draining = false }
         do {
             let cache = try openCache()
-            let cacheID = try await cache.cacheID()
+            var cacheID = try await cache.cacheID()
             for _ in 0 ..< 1_000 {
                 let text = try await link.call(MobileLink.pullTool, ["cache": .string(cacheID)])
                 let batch = try MobileCoding.decoder.decode(MobileBatch.self, from: Data(text.utf8))
                 guard batch.sequence > 0 else { break }
-                try await cache.apply(batch)
+                // The cache can be deleted while the pull is in flight.
+                // Don't apply or acknowledge a batch for the old copy;
+                // pull again with the new ID so that the phone sends everything.
+                guard try await cache.apply(batch, cacheID: cacheID) else {
+                    cacheID = try await cache.cacheID()
+                    continue
+                }
                 _ = try await link.call(MobileLink.ackTool, ["sequence": .int(Int(batch.sequence))])
                 guard batch.hasMore else { break }
             }

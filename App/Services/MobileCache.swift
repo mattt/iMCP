@@ -89,9 +89,22 @@ actor MobileCache {
     /// Applies a batch in one transaction.
     /// Upserts replace earlier versions and deletions of unknown IDs do nothing,
     /// so applying the same batch again doesn't change the cache.
-    func apply(_ batch: MobileBatch) throws {
+    ///
+    /// When `cacheID` is given, the batch applies only if the cache still has that ID.
+    /// A batch that was requested before the cache was deleted belongs to the old copy,
+    /// so it's rejected, and the next pull with the new ID gets all of the data again.
+    /// - Returns: `false` if the batch was rejected.
+    @discardableResult
+    func apply(_ batch: MobileBatch, cacheID expected: String? = nil) throws -> Bool {
         let database = try db()
-        try database.transaction {
+        return try database.transaction {
+            if let expected {
+                var current = ""
+                try database.run("SELECT value FROM meta WHERE name = 'cache_id'") { row in
+                    current = row.text(0) ?? ""
+                }
+                guard current == expected else { return false }
+            }
             for kind in batch.replacing {
                 try database.run("DELETE FROM records WHERE kind = ?", [.text(kind.rawValue)])
             }
@@ -120,6 +133,7 @@ actor MobileCache {
                     [.text(domain), .double(date.timeIntervalSince1970)]
                 )
             }
+            return true
         }
     }
 

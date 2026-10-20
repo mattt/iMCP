@@ -148,6 +148,21 @@ final class MobileCacheTests: XCTestCase {
         XCTAssertEqual(rows.map(\.id), ["point", "steps-1"])
     }
 
+    func testBatchForAnOldCacheIDIsRejected() async throws {
+        let cache = try makeCache()
+        let old = try await cache.cacheID()
+        try await cache.deleteAll()
+        let applied = try await cache.apply(
+            MobileBatch(sequence: 1, syncedAt: ["health": Date()], records: [sleep("a", day: 0)]),
+            cacheID: old
+        )
+        XCTAssertFalse(applied)
+        let count = await cache.count(.healthSample)
+        let syncedAt = await cache.syncedAt(.health)
+        XCTAssertEqual(count, 0)
+        XCTAssertNil(syncedAt)
+    }
+
     func testDeleteAllRemovesRecordsAndSyncState() async throws {
         let cache = try makeCache()
         try await cache.apply(MobileBatch(sequence: 1, syncedAt: ["health": Date()], records: [sleep("a", day: 0)]))
