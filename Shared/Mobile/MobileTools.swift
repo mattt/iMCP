@@ -4,7 +4,7 @@ import MCP
 
 /// Handles calls to the mobile tools.
 ///
-/// The iOS app implements it with HealthKit, FinanceKit, and AlarmKit.
+/// The iOS app implements it with HealthKit and AlarmKit.
 /// The Mac app implements it by forwarding calls to the phone
 /// or answering from its cache when the phone isn't connected.
 protocol MobileBackend: Sendable {
@@ -30,7 +30,6 @@ enum MobileTools {
         "labResultRecord", "medicationRecord", "procedureRecord", "vitalSignRecord",
     ]
     static let weekdays = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
-    static let transactionStatuses = ["authorized", "memo", "pending", "booked", "rejected"]
     static let statisticsIntervals = ["hour", "day", "week", "month"]
     /// How far back health_statistics looks when the call gives no start.
     static let defaultStatisticsWindow: TimeInterval = 30 * 86_400
@@ -87,7 +86,6 @@ enum MobileTools {
             description:
                 "HealthKit type, such as stepCount, heartRate, or sleepAnalysis. HKQuantityTypeIdentifier and HKCategoryTypeIdentifier names also work."
         )
-        let account = JSONSchema.string(description: "FinanceKit account UUID. Omit for all accounts.")
 
         var tools: [Tool]
         switch domain {
@@ -136,30 +134,6 @@ enum MobileTools {
                             enum: clinicalTypes.map { .string($0) }
                         ),
                         "start": start, "end": end, "limit": limit,
-                    ],
-                    read: true
-                ),
-            ]
-        case .finance:
-            tools = [
-                tool(
-                    "finance_accounts_list",
-                    "List Apple Card, Apple Cash, and Apple Savings accounts from Wallet on the iPhone or iPad. \(sync)",
-                    read: true
-                ),
-                tool(
-                    "finance_balances_fetch",
-                    "Fetch account balances, newest first. \(sync)",
-                    ["account": account, "start": start, "end": end, "limit": limit],
-                    read: true
-                ),
-                tool(
-                    "finance_transactions_fetch",
-                    "Fetch Wallet transactions, newest first, with merchant, amount, status, and category code. \(sync)",
-                    [
-                        "account": account, "start": start, "end": end, "limit": limit,
-                        "status": .string(enum: transactionStatuses.map { .string($0) }),
-                        "query": .string(description: "Case-insensitive text to find in the merchant or description."),
                     ],
                     read: true
                 ),
@@ -246,7 +220,6 @@ enum MobileTools {
     static func domain(of tool: String) -> MobileDomain? {
         switch tool {
         case "health_fetch", "health_statistics", "workouts_fetch", "clinical_records_fetch": return .health
-        case "finance_accounts_list", "finance_balances_fetch", "finance_transactions_fetch": return .finance
         case "alarms_list", "alarms_create", "timers_create", "alarms_cancel": return .alarms
         default: return nil
         }
@@ -332,11 +305,9 @@ enum MobileEnvelope {
     enum Source: String { case live, cache }
 
     /// How old cached data can be before answers mark it stale.
-    /// HealthKit wakes the app at most hourly for common types,
-    /// and FinanceKit delivers changes at most hourly.
+    /// HealthKit wakes the app at most hourly for common types.
     static let staleAfter: [MobileDomain: TimeInterval] = [
         .health: 4 * 3_600,
-        .finance: 26 * 3_600,
         .alarms: 3_600,
     ]
 

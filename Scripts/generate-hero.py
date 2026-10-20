@@ -26,7 +26,6 @@ SERVICES = (
     ("messages", "#28d74b"),
     ("phone", "#28d74b"),
     ("voicemail", "#28d74b"),
-    ("finance", "#63e6e2"),
     ("weather", "#5ac8f5"),
     ("location", "#0a84ff"),
     ("mail", "#0a84ff"),

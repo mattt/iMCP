@@ -1,12 +1,12 @@
 #!/bin/bash
 # Builds iMCP for iOS with your Apple Developer team and installs it on an iPhone or iPad.
-# HealthKit, AlarmKit, and FinanceKit data stays on the device,
+# HealthKit and AlarmKit data stays on the device,
 # so iMCP reaches it through this app.
 set -euo pipefail
 
 usage() {
     cat <<'EOF'
-Usage: Scripts/install-ios.sh [--team TEAM_ID] [--bundle-id ID] [--device NAME_OR_ID] [--finance]
+Usage: Scripts/install-ios.sh [--team TEAM_ID] [--bundle-id ID] [--device NAME_OR_ID]
 
 Builds iMCP for iOS, signs it with your team's development
 certificate, and installs it on a connected or paired iPhone or iPad.
@@ -17,8 +17,6 @@ certificate, and installs it on a connected or paired iPhone or iPad.
   --bundle-id ID      App bundle ID. Default: local.imcp.ios.<team ID>.
   --device NAME_OR_ID iPhone or iPad to install on, by name, UDID, or identifier.
                       Default: the only available iPhone or iPad.
-  --finance           Include the FinanceKit entitlement. Apple grants it only
-                      after review, so most teams can't provision it.
   --build-only        Build and check the app without installing it.
 
 Requires Xcode signed in to a paid Apple Developer account
@@ -30,7 +28,6 @@ EOF
 team=""
 bundle_id=""
 device=""
-finance=NO
 install=YES
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -45,10 +42,6 @@ while [[ $# -gt 0 ]]; do
         --device)
             device="${2:?--device needs a value}"
             shift 2
-            ;;
-        --finance)
-            finance=YES
-            shift
             ;;
         --build-only)
             install=NO
@@ -159,13 +152,10 @@ if ! xcodebuild -quiet -project "$repo/iMCP.xcodeproj" -scheme "iMCP iOS" \
     -derivedDataPath "$work_dir/build" \
     -allowProvisioningUpdates -allowProvisioningDeviceRegistration \
     CODE_SIGN_STYLE=Automatic DEVELOPMENT_TEAM="$team" \
-    IOS_BUNDLE_IDENTIFIER="$bundle_id" IOS_FINANCEKIT="$finance" \
+    IOS_BUNDLE_IDENTIFIER="$bundle_id" \
     build >"$log" 2>&1; then
     cat "$log" >&2
-    if grep -q "financekit" "$log"; then
-        echo "error: Team $team can't provision FinanceKit. Build without --finance;" >&2
-        echo "Health and Alarms work without it." >&2
-    elif grep -qi "no devices\|register.*device" "$log"; then
+    if grep -qi "no devices\|register.*device" "$log"; then
         echo "error: Team $team has no registered iPhone or iPad. Connect the device once and rerun," >&2
         echo "or register it at developer.apple.com." >&2
     else
@@ -185,10 +175,6 @@ for entitlement in com.apple.developer.healthkit com.apple.security.application-
         exit 1
     fi
 done
-if [[ "$finance" == YES ]] && ! grep -q "com.apple.developer.financekit" <<<"$entitlements"; then
-    echo "error: The built app has no FinanceKit entitlement. Build without --finance." >&2
-    exit 1
-fi
 
 # Development profiles expire; iOS refuses to launch the app after that.
 expiration="$(security cms -D -i "$app/embedded.mobileprovision" 2>/dev/null |

@@ -4,7 +4,7 @@
 # ///
 """Check the iPhone and iPad tools through imcp-server without changing anything.
 
-Turn on Health, Finance, or Alarms in iMCP first.
+Turn on Health or Alarms in iMCP first.
 The checks pass whether or not an iPhone or iPad is connected:
 reads then come from the Mac's cache and must say so.
 """
@@ -22,9 +22,6 @@ TOOLS = {
     "health_statistics",
     "workouts_fetch",
     "clinical_records_fetch",
-    "finance_accounts_list",
-    "finance_balances_fetch",
-    "finance_transactions_fetch",
     "alarms_list",
     "alarms_create",
     "timers_create",
@@ -37,9 +34,6 @@ READ_ARGUMENTS = {
     "health_fetch": {"type": "sleepAnalysis", "limit": 5},
     "workouts_fetch": {"limit": 5},
     "clinical_records_fetch": {"limit": 5},
-    "finance_accounts_list": {},
-    "finance_balances_fetch": {"limit": 5},
-    "finance_transactions_fetch": {"limit": 5},
     "alarms_list": {},
 }
 
@@ -135,7 +129,7 @@ def check(client):
     tools = {tool["name"]: tool for tool in client.request("tools/list", {})["tools"]}
     present = TOOLS & tools.keys()
     assert "mobile_status" in present, (
-        "No mobile tools are listed. Turn on Health, Finance, or Alarms in iMCP."
+        "No mobile tools are listed. Turn on Health or Alarms in iMCP."
     )
     for name in present:
         annotations = tools[name]["annotations"]
@@ -162,8 +156,7 @@ def check(client):
             continue
         ok, value = client.call(name, arguments)
         if not ok:
-            # Finance reports why it's unavailable, such as a missing entitlement.
-            assert name.startswith("finance_") or "locked" in value, (name, value)
+            assert "locked" in value, (name, value)
             print(f"  {name}: {value}")
             continue
         check_envelope(name, value)
@@ -176,7 +169,6 @@ def check(client):
         ("health_fetch", {}),
         ("workouts_fetch", {"limit": "5"}),
         ("health_statistics", {"type": "stepCount", "interval": "fortnight"}),
-        ("finance_transactions_fetch", {"status": "lost"}),
         ("alarms_cancel", {}),
         ("timers_create", {"title": "Do not create", "duration_seconds": 0}),
         (

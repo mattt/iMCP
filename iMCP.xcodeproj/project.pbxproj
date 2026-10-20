@@ -76,11 +76,6 @@
 		F26A5BE8BADF564840BB4AE9 /* ../Shared/Mobile/MobileAlarmRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59DE6C73F45F5069A5C32229 /* ../Shared/Mobile/MobileAlarmRequest.swift */; };
 		A7000000000000000000000C /* iMCP iOS Widgets.appex in Embed */ = {isa = PBXBuildFile; fileRef = A70000000000000000000001 /* iMCP iOS Widgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		A70000000000000000000040 /* AlarmMetadata.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000020 /* AlarmMetadata.swift */; };
-		A8000000000000000000000C /* iMCP iOS Finance.appex in Embed */ = {isa = PBXBuildFile; fileRef = A80000000000000000000001 /* iMCP iOS Finance.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		A80000000000000000000040 /* MobileSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80000000000000000000020 /* MobileSync.swift */; };
-		A80000000000000000000041 /* MobileOutbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80000000000000000000021 /* MobileOutbox.swift */; };
-		A80000000000000000000042 /* MobileDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80000000000000000000022 /* MobileDatabase.swift */; };
-		A80000000000000000000043 /* FinanceRecords.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80000000000000000000023 /* FinanceRecords.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -90,13 +85,6 @@
 			proxyType = 1;
 			remoteGlobalIDString = A70000000000000000000002;
 			remoteInfo = "iMCP iOS Widgets";
-		};
-		A8000000000000000000000D /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = F8F44E652D59038D0075D79C /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = A80000000000000000000002;
-			remoteInfo = "iMCP iOS Finance";
 		};
 /* End PBXContainerItemProxy section */
 
@@ -130,17 +118,6 @@
 				A7000000000000000000000C /* iMCP iOS Widgets.appex in Embed */,
 			);
 			name = "Embed Foundation Extensions";
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		C6000000000000000000000D /* Embed ExtensionKit Extensions */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = "$(EXTENSIONS_FOLDER_PATH)";
-			dstSubfolderSpec = 16;
-			files = (
-				A8000000000000000000000C /* iMCP iOS Finance.appex in Embed */,
-			);
-			name = "Embed ExtensionKit Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
@@ -189,11 +166,6 @@
 		59DE6C73F45F5069A5C32229 /* ../Shared/Mobile/MobileAlarmRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Mobile/MobileAlarmRequest.swift; sourceTree = "<group>"; };
 		A70000000000000000000020 /* AlarmMetadata.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AlarmMetadata.swift; path = iOS/AlarmMetadata.swift; sourceTree = SOURCE_ROOT; };
 		A70000000000000000000001 /* iMCP iOS Widgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "iMCP iOS Widgets.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
-		A80000000000000000000020 /* MobileSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MobileSync.swift; path = Shared/Mobile/MobileSync.swift; sourceTree = SOURCE_ROOT; };
-		A80000000000000000000021 /* MobileOutbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MobileOutbox.swift; path = Shared/Mobile/MobileOutbox.swift; sourceTree = SOURCE_ROOT; };
-		A80000000000000000000022 /* MobileDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MobileDatabase.swift; path = Shared/Mobile/MobileDatabase.swift; sourceTree = SOURCE_ROOT; };
-		A80000000000000000000023 /* FinanceRecords.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FinanceRecords.swift; path = iOS/FinanceRecords.swift; sourceTree = SOURCE_ROOT; };
-		A80000000000000000000001 /* iMCP iOS Finance.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.extensionkit-extension"; includeInIndex = 0; path = "iMCP iOS Finance.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -227,7 +199,6 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				iOS.entitlements,
-				iOS.Finance.entitlements,
 				Info.plist,
 			);
 			target = C60000000000000000000002 /* iMCP iOS */;
@@ -248,15 +219,6 @@
 				Info.plist,
 			);
 			target = A70000000000000000000002 /* iMCP iOS Widgets */;
-		};
-		A80000000000000000000004 /* Exceptions for "iOSFinance" folder in "iMCP iOS Finance" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				iOSFinance.entitlements,
-				iOSFinance.Finance.entitlements,
-				Info.plist,
-			);
-			target = A80000000000000000000002 /* iMCP iOS Finance */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -305,14 +267,6 @@
 				A70000000000000000000004 /* Exceptions for "iOSWidgets" folder in "iMCP iOS Widgets" target */,
 			);
 			path = iOSWidgets;
-			sourceTree = "<group>";
-		};
-		A80000000000000000000003 /* iOSFinance */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				A80000000000000000000004 /* Exceptions for "iOSFinance" folder in "iMCP iOS Finance" target */,
-			);
-			path = iOSFinance;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -390,13 +344,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		A80000000000000000000007 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -464,7 +411,6 @@
 				F8F44E6F2D59038D0075D79C /* App */,
 				A10000000000000000000002 /* Helper */,
 				C60000000000000000000003 /* iOS */,
-				A80000000000000000000003 /* iOSFinance */,
 				A70000000000000000000003 /* iOSWidgets */,
 				A20000000000000000000001 /* Shared */,
 				F8F44EB72D5908D00075D79C /* CLI */,
@@ -480,7 +426,6 @@
 				F8F44E6D2D59038D0075D79C /* iMCP.app */,
 				A10000000000000000000001 /* iMCP Helper.app */,
 				C60000000000000000000001 /* iMCP iOS.app */,
-				A80000000000000000000001 /* iMCP iOS Finance.appex */,
 				A70000000000000000000001 /* iMCP iOS Widgets.appex */,
 				F8F44EB62D5908D00075D79C /* imcp-server */,
 				6A5CFBBEC66BC8CDA9D65496 /* imcp-serverTests.xctest */,
@@ -613,12 +558,10 @@
 				C60000000000000000000007 /* Frameworks */,
 				C60000000000000000000008 /* Resources */,
 				C6000000000000000000000C /* Embed Foundation Extensions */,
-				C6000000000000000000000D /* Embed ExtensionKit Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-				A8000000000000000000000E /* PBXTargetDependency */,
 				A7000000000000000000000E /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
@@ -658,28 +601,6 @@
 			productReference = A70000000000000000000001 /* iMCP iOS Widgets.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
-		A80000000000000000000002 /* iMCP iOS Finance */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = A80000000000000000000009 /* Build configuration list for PBXNativeTarget "iMCP iOS Finance" */;
-			buildPhases = (
-				A80000000000000000000006 /* Sources */,
-				A80000000000000000000007 /* Frameworks */,
-				A80000000000000000000008 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			fileSystemSynchronizedGroups = (
-				A80000000000000000000003 /* iOSFinance */,
-			);
-			name = "iMCP iOS Finance";
-			packageProductDependencies = (
-			);
-			productName = "iMCP iOS Finance";
-			productReference = A80000000000000000000001 /* iMCP iOS Finance.appex */;
-			productType = "com.apple.product-type.extensionkit-extension";
-		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -690,9 +611,6 @@
 				LastSwiftUpdateCheck = 1620;
 				LastUpgradeCheck = 2620;
 				TargetAttributes = {
-					A80000000000000000000002 = {
-						CreatedOnToolsVersion = 27.0;
-					};
 					A70000000000000000000002 = {
 						CreatedOnToolsVersion = 27.0;
 					};
@@ -748,7 +666,6 @@
 				A10000000000000000000003 /* iMCP Helper */,
 				C60000000000000000000002 /* iMCP iOS */,
 				A70000000000000000000002 /* iMCP iOS Widgets */,
-				A80000000000000000000002 /* iMCP iOS Finance */,
 				F8F44E6C2D59038D0075D79C /* iMCP */,
 				F8F44EB52D5908D00075D79C /* imcp-server */,
 				8F6A71ADC0CC6BD168A9167D /* imcp-serverTests */,
@@ -786,13 +703,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		A70000000000000000000008 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		A80000000000000000000008 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -899,17 +809,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		A80000000000000000000006 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				A80000000000000000000040 /* MobileSync.swift in Sources */,
-				A80000000000000000000041 /* MobileOutbox.swift in Sources */,
-				A80000000000000000000042 /* MobileDatabase.swift in Sources */,
-				A80000000000000000000043 /* FinanceRecords.swift in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -917,11 +816,6 @@
 			isa = PBXTargetDependency;
 			target = A70000000000000000000002 /* iMCP iOS Widgets */;
 			targetProxy = A7000000000000000000000D /* PBXContainerItemProxy */;
-		};
-		A8000000000000000000000E /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = A80000000000000000000002 /* iMCP iOS Finance */;
-			targetProxy = A8000000000000000000000D /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -1340,13 +1234,10 @@
 		C6000000000000000000000A /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = "iOS/iOS$(IOS_ENTITLEMENTS_SUFFIX_$(IOS_FINANCEKIT)).entitlements";
+				CODE_SIGN_ENTITLEMENTS = iOS/iOS.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				IOS_BUNDLE_IDENTIFIER = co.dododo.iMCP.iOS;
-				IOS_ENTITLEMENTS_SUFFIX_NO = "";
-				IOS_ENTITLEMENTS_SUFFIX_YES = .Finance;
-				IOS_FINANCEKIT = NO;
 				CURRENT_PROJECT_VERSION = 23;
 				DEVELOPMENT_TEAM = TTY35UM57S;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -1382,13 +1273,10 @@
 		C6000000000000000000000B /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = "iOS/iOS$(IOS_ENTITLEMENTS_SUFFIX_$(IOS_FINANCEKIT)).entitlements";
+				CODE_SIGN_ENTITLEMENTS = iOS/iOS.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				IOS_BUNDLE_IDENTIFIER = co.dododo.iMCP.iOS;
-				IOS_ENTITLEMENTS_SUFFIX_NO = "";
-				IOS_ENTITLEMENTS_SUFFIX_YES = .Finance;
-				IOS_FINANCEKIT = NO;
 				CURRENT_PROJECT_VERSION = 23;
 				DEVELOPMENT_TEAM = TTY35UM57S;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -1428,7 +1316,6 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				IOS_BUNDLE_IDENTIFIER = co.dododo.iMCP.iOS;
-				IOS_FINANCEKIT = NO;
 				CURRENT_PROJECT_VERSION = 23;
 				DEVELOPMENT_TEAM = TTY35UM57S;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -1461,7 +1348,6 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				IOS_BUNDLE_IDENTIFIER = co.dododo.iMCP.iOS;
-				IOS_FINANCEKIT = NO;
 				CURRENT_PROJECT_VERSION = 23;
 				DEVELOPMENT_TEAM = TTY35UM57S;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -1476,76 +1362,6 @@
 				);
 				MARKETING_VERSION = 1.7.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(IOS_BUNDLE_IDENTIFIER).Widgets";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphoneos;
-				SKIP_INSTALL = YES;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SUPPORTS_MACCATALYST = NO;
-				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Release;
-		};
-		A8000000000000000000000A /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = "iOSFinance/iOSFinance$(IOS_ENTITLEMENTS_SUFFIX_$(IOS_FINANCEKIT)).entitlements";
-				IOS_ENTITLEMENTS_SUFFIX_NO = "";
-				IOS_ENTITLEMENTS_SUFFIX_YES = .Finance;
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
-				IOS_BUNDLE_IDENTIFIER = co.dododo.iMCP.iOS;
-				IOS_FINANCEKIT = NO;
-				CURRENT_PROJECT_VERSION = 23;
-				DEVELOPMENT_TEAM = TTY35UM57S;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = iOSFinance/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "iMCP Finance";
-				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@executable_path/../../Frameworks",
-				);
-				MARKETING_VERSION = 1.7.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "$(IOS_BUNDLE_IDENTIFIER).FinanceDelivery";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphoneos;
-				SKIP_INSTALL = YES;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SUPPORTS_MACCATALYST = NO;
-				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Debug;
-		};
-		A8000000000000000000000B /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = "iOSFinance/iOSFinance$(IOS_ENTITLEMENTS_SUFFIX_$(IOS_FINANCEKIT)).entitlements";
-				IOS_ENTITLEMENTS_SUFFIX_NO = "";
-				IOS_ENTITLEMENTS_SUFFIX_YES = .Finance;
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
-				IOS_BUNDLE_IDENTIFIER = co.dododo.iMCP.iOS;
-				IOS_FINANCEKIT = NO;
-				CURRENT_PROJECT_VERSION = 23;
-				DEVELOPMENT_TEAM = TTY35UM57S;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = iOSFinance/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "iMCP Finance";
-				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@executable_path/../../Frameworks",
-				);
-				MARKETING_VERSION = 1.7.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "$(IOS_BUNDLE_IDENTIFIER).FinanceDelivery";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -1619,15 +1435,6 @@
 			buildConfigurations = (
 				A7000000000000000000000A /* Debug */,
 				A7000000000000000000000B /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		A80000000000000000000009 /* Build configuration list for PBXNativeTarget "iMCP iOS Finance" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				A8000000000000000000000A /* Debug */,
-				A8000000000000000000000B /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
