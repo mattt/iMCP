@@ -11,8 +11,23 @@ import Ontology
 /// the pairing secret from the QR code the first time,
 /// and a key for the device after that.
 /// A peer without the key can't complete the handshake.
+/// The handshake also runs an ephemeral X25519 key exchange,
+/// so someone who later gets the key can't decrypt traffic they recorded.
 enum MobileTLS {
+    /// `TLS_ECDHE_PSK_WITH_CHACHA20_POLY1305_SHA256`,
+    /// which combines the pre-shared key with an ephemeral key exchange.
+    ///
+    /// The TLS stack also offers the plain pre-shared key suites,
+    /// which have no forward secrecy, and a server picks by its own order,
+    /// so `MobileChannel` closes a connection that negotiated another suite.
+    static let cipherSuite = UInt16(TLS_ECDHE_PSK_WITH_CHACHA20_POLY1305_SHA256)
+
     static func parameters(keys: [(identity: Data, key: SymmetricKey)]) -> NWParameters {
+        parameters(keys: keys, cipherSuite: cipherSuite)
+    }
+
+    /// Parameters that offer `cipherSuite`; tests use another suite to check the rejection.
+    static func parameters(keys: [(identity: Data, key: SymmetricKey)], cipherSuite: UInt16) -> NWParameters {
         let tls = NWProtocolTLS.Options()
         let options = tls.securityProtocolOptions
         for (identity, key) in keys {
@@ -20,11 +35,11 @@ enum MobileTLS {
             let name = identity.withUnsafeBytes { DispatchData(bytes: $0) }
             sec_protocol_options_add_pre_shared_key(options, secret as __DispatchData, name as __DispatchData)
         }
-        sec_protocol_options_append_tls_ciphersuite(
-            options,
-            tls_ciphersuite_t(rawValue: UInt16(TLS_PSK_WITH_AES_128_GCM_SHA256))!
-        )
-        // Pre-shared key cipher suites exist only in TLS 1.2.
+        // The suite isn't in `tls_ciphersuite_t`, so it's created from its IANA value.
+        sec_protocol_options_append_tls_ciphersuite(options, tls_ciphersuite_t(rawValue: cipherSuite)!)
+        // TLS 1.3 has pre-shared keys too,
+        // but Apple's TLS stack doesn't support external pre-shared keys in TLS 1.3,
+        // so the link uses TLS 1.2.
         sec_protocol_options_set_min_tls_protocol_version(options, .TLSv12)
         sec_protocol_options_set_max_tls_protocol_version(options, .TLSv12)
 
@@ -37,6 +52,13 @@ enum MobileTLS {
         let parameters = NWParameters(tls: tls, tcp: tcp)
         parameters.includePeerToPeer = false
         return parameters
+    }
+
+    /// The cipher suite that a ready connection negotiated.
+    static func negotiatedCipherSuite(_ connection: NWConnection) -> UInt16? {
+        guard let metadata = connection.metadata(definition: NWProtocolTLS.definition) as? NWProtocolTLS.Metadata
+        else { return nil }
+        return sec_protocol_metadata_get_negotiated_tls_ciphersuite(metadata.securityProtocolMetadata).rawValue
     }
 }
 
@@ -59,12 +81,16 @@ actor MobileChannel: Transport {
     private var onClose: (@Sendable () async -> Void)?
     private static let maximumLine = 64 * 1024 * 1024
 
+    /// The cipher suite that TLS negotiated, after `open()` succeeds.
+    private(set) var cipherSuite: UInt16?
+
     init(connection: NWConnection) {
         self.connection = connection
         (messages, continuation) = AsyncThrowingStream.makeStream(bufferingPolicy: .unbounded)
     }
 
     /// Starts the connection and waits until TLS is ready.
+    /// Closes the connection if it didn't negotiate `MobileTLS.cipherSuite`.
     func open(timeout: Duration = .seconds(15)) async throws {
         let connection = self.connection
         try await withThrowingTaskGroup(of: Void.self) { group in
@@ -102,6 +128,14 @@ actor MobileChannel: Transport {
             defer { group.cancelAll() }
             try await group.next()
         }
+        let suite = MobileTLS.negotiatedCipherSuite(connection)
+        guard suite == MobileTLS.cipherSuite else {
+            await finish()
+            throw MobileError(
+                "The connection didn't negotiate forward secrecy (cipher suite \(suite.map { String(format: "0x%04X", $0) } ?? "unknown")), so iMCP closed it."
+            )
+        }
+        cipherSuite = suite
         connection.stateUpdateHandler = { [weak self] state in
             switch state {
             case .failed, .cancelled: Task { await self?.finish() }
