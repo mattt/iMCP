@@ -54,7 +54,8 @@ final class MusicService: Service {
                         enum: ControlAction.allCases.map { .string($0.rawValue) }
                     ),
                     "position": .number(
-                        description: "Playback position in seconds (for seek)"
+                        description:
+                            "Playback position in seconds (for seek). Clamped to the current track's duration, or to 86400 seconds when the duration is unknown."
                     ),
                 ],
                 required: ["action"],
@@ -149,6 +150,43 @@ private enum ControlAction: String, CaseIterable {
 }
 
 extension MusicService {
+    /// The latest seek position, in seconds, when the current track's duration is unknown.
+    static let maximumSeekPosition: Double = 86_400
+
+    /// Bounds a requested seek position to the playable range.
+    ///
+    /// - Parameters:
+    ///   - position: The requested position in seconds.
+    ///   - duration: The current track's duration in seconds, if known.
+    /// - Returns: The position clamped to zero and to the track's duration,
+    ///   or to ``maximumSeekPosition`` when the duration is unknown.
+    /// - Throws: An error when `position` isn't finite.
+    static func seekPosition(_ position: Double, duration: Double?) throws -> Double {
+        guard position.isFinite else {
+            throw NSError(
+                domain: "MusicServiceError",
+                code: 11,
+                userInfo: [NSLocalizedDescriptionKey: "Position must be a finite number"]
+            )
+        }
+
+        var upperBound = maximumSeekPosition
+        if let duration, duration.isFinite, duration > 0 {
+            upperBound = min(duration, maximumSeekPosition)
+        }
+        return min(max(position, 0), upperBound)
+    }
+
+    /// Formats a finite number as an AppleScript real literal.
+    ///
+    /// The result uses plain decimal notation with a period as the separator,
+    /// whatever the user's locale, and never uses exponent notation.
+    static func appleScriptNumber(_ value: Double) -> String {
+        // Avoid writing negative zero as "-0.000".
+        let value = value == 0 ? 0 : value
+        return String(format: "%.3f", locale: Locale(identifier: "en_US_POSIX"), value)
+    }
+
     enum CatalogSearchType: String, CaseIterable {
         case songs
         case albums
@@ -395,12 +433,34 @@ extension MusicService {
                     userInfo: [NSLocalizedDescriptionKey: "Seek position required"]
                 )
             }
-            let clampedPosition = max(0, position)
-            script = "tell application \"Music\" to set player position to \(clampedPosition)"
+            let seekPosition = try Self.seekPosition(position, duration: currentTrackDuration())
+            script =
+                "tell application \"Music\" to set player position to \(Self.appleScriptNumber(seekPosition))"
         }
 
         log.debug("Executing Music control action: \(action.rawValue)")
         _ = try executeAppleScript(script)
+    }
+
+    /// Returns the duration of the current track in seconds,
+    /// or `nil` when there's no current track or its duration is unknown.
+    @MainActor
+    private func currentTrackDuration() -> Double? {
+        let script = """
+            tell application "Music"
+                try
+                    return duration of current track
+                on error
+                    return -1
+                end try
+            end tell
+            """
+
+        guard let descriptor = try? executeAppleScript(script) else {
+            return nil
+        }
+        let duration = descriptor.doubleValue
+        return duration.isFinite && duration > 0 ? duration : nil
     }
 
     private func searchCatalog(with arguments: [String: Value]) async throws -> [MusicCatalogResult] {
