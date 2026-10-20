@@ -29,6 +29,7 @@ SERVICES = (
     ("mail", "#0a84ff"),
     ("shortcuts", "#5e5ce6"),
     ("maps", "#bf5af2"),
+    ("music", "#ff375f"),
 )
 
 WIDTH, HEIGHT = 1012, 600
