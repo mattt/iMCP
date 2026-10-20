@@ -177,7 +177,10 @@ a dialog asks "'iMCP' Would Like Full Access to Your Calendar".
 Click "Allow Full Access" to continue.
 
 > [!IMPORTANT]
-> iMCP **does not** collect or store any of your data.
+> iMCP **does not** collect your data.
+> The only data it stores is a copy of what a paired iPhone or iPad sends
+> for the Health, Finance, and Alarms services,
+> as described in [iMCP for iPhone and iPad](#imcp-for-iphone-and-ipad).
 > AI apps like Claude and ChatGPT _do_ send
 > your data off device as part of tool calls.
 > Turn on only the services you want your AI app to use.
@@ -752,11 +755,29 @@ Health asks for each group of types, such as Activity or Sleep, separately.
 To unpair, remove the device in Settings > iPhone & iPad on the Mac,
 or tap Unpair in iMCP on the device.
 
-The device connects to the Mac over your local network.
-Nothing goes through iCloud or another server.
-When the iOS app isn't open, read-only tools answer from a copy on the Mac,
-and every answer says where it came from and when the device last sent the data.
-Delete that copy in Settings > iPhone & iPad.
+The device connects to the Mac only over your local network;
+nothing goes through iCloud or another server.
+The connection uses TLS 1.2 with a pre-shared key from pairing
+and an ephemeral X25519 key exchange, which gives it forward secrecy.
+The pairing code and its link contain the pairing secret.
+Anyone who sees the code or the link during its ten minutes
+could pose as the Mac or as the device for that pairing,
+so show it only to the device that you're pairing.
+
+The Mac keeps an encrypted copy of what the paired iPhone or iPad sends,
+so read-only tools can answer while the device is locked or away.
+Every answer says where it came from and when the device last sent the data.
+The copy is a SQLite database in the Mac's Application Support folder.
+Each record's contents are encrypted with AES-GCM under a key in the Keychain,
+but record kinds, identifiers, query keys such as the Health data type, and dates
+stay unencrypted so that queries can filter on them.
+So does the device's last status report,
+which lists the services that are on and their permissions.
+Removing the last paired device deletes the copy,
+whether you remove it on the Mac or tap Unpair on the device while the Mac is reachable.
+To delete the copy and stay paired,
+click Delete Cached Data in Settings > iPhone & iPad;
+the device sends its data again the next time it connects.
 
 <details>
 <summary>How the iOS app works</summary>
@@ -787,8 +808,6 @@ Someone who saw the QR code and recorded the pairing still can't derive it.
 Read results include `source` (`live` or `cache`), `synced_at`, and `stale`.
 Cached data is stale after 4 hours for Health, 26 hours for Finance,
 and 1 hour for Alarms.
-The Mac keeps the cache in a SQLite database in its Application Support folder.
-Payloads are encrypted with AES-GCM under a key in the Keychain.
 After a lost connection, a read is retried once when the device reconnects
 and otherwise answers from the cache.
 Alarm changes carry an ID, so retrying one doesn't create a second alarm.

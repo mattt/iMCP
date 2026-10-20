@@ -57,7 +57,7 @@ struct MobileSettingsView: View {
                 Text("Data on This Mac")
             } footer: {
                 Text(
-                    "iMCP keeps an encrypted copy of what the iPhone or iPad sends, so tools can answer when it's locked or away. Answers say when the data last synced."
+                    "iMCP keeps a copy of what the iPhone or iPad sends, so tools can answer when it's locked or away, and answers say when the data last synced. The contents of each record are encrypted, but record types, identifiers, and dates aren't, so that queries can filter on them. Removing the last paired device deletes the copy."
                 )
             }
         }
