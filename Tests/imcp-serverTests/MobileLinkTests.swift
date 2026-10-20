@@ -402,6 +402,55 @@ final class MobileRetryTests: XCTestCase {
         XCTAssertEqual(link.calls.filter { $0.tool == "alarms_list" }.count, 1)
     }
 
+    func testBatchPulledBeforeTheCacheIsDeletedIsDropped() async throws {
+        let pulls = Recorder<String>()
+        let released = Gate()
+        let record = MobileRecord(
+            kind: .alarm,
+            id: "alarm-1",
+            key: nil,
+            start: nil,
+            end: nil,
+            payload: Data(#"{"id":"alarm-1","title":"Wake"}"#.utf8)
+        )
+        let link = FakeLink(syncs: true) { tool, input in
+            switch tool {
+            case MobileLink.pullTool:
+                await pulls.append(input["cache"]?.stringValue ?? "")
+                let batch: MobileBatch
+                if await pulls.values.count == 1 {
+                    await released.wait()
+                    batch = MobileBatch(sequence: 1, syncedAt: ["alarms": Date()], records: [record])
+                } else {
+                    batch = MobileBatch(sequence: 0, syncedAt: [:], records: [])
+                }
+                return String(decoding: try MobileCoding.encoder.encode(batch), as: UTF8.self)
+            case MobileLink.ackTool:
+                return #"{"ok":true}"#
+            default:
+                return "{}"
+            }
+        }
+        await service.attach(link)
+        for _ in 0 ..< 100 where await pulls.values.isEmpty {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let before = await service.cacheID
+        try await service.deleteCache()
+        let after = await service.cacheID
+        await released.open()
+        for _ in 0 ..< 100 where await pulls.values.count < 2 {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+
+        let ids = await pulls.values
+        XCTAssertEqual(ids, [before, after])
+        XCTAssertEqual(link.calls.filter { $0.tool == MobileLink.ackTool }.count, 0)
+        await service.detach(link)
+        let offline = try await service.call("alarms_list", [:])
+        XCTAssertEqual(offline.objectValue?["results"]?.arrayValue?.count ?? 0, 0)
+    }
+
     func testLockedPhoneReadsAnswerFromTheCache() async throws {
         let link = FakeLink { _, _ in throw MobileError(MobileTools.lockedMessage) }
         await service.attach(link)
@@ -466,9 +515,15 @@ private final class FakeLink: MobilePeerLink, @unchecked Sendable {
     let device = MobileDevice(id: "fake", name: "Fake iPhone", pairedAt: Date())
     private let lock = NSLock()
     private var recorded: [Call] = []
+    private let syncs: Bool
     private let handler: @Sendable (String, [String: Value]) async throws -> String
 
-    init(_ handler: @escaping @Sendable (String, [String: Value]) async throws -> String) {
+    /// A link that answers pulls with an empty batch, unless `syncs` passes them to `handler`.
+    init(
+        syncs: Bool = false,
+        _ handler: @escaping @Sendable (String, [String: Value]) async throws -> String
+    ) {
+        self.syncs = syncs
         self.handler = handler
     }
 
@@ -476,7 +531,7 @@ private final class FakeLink: MobilePeerLink, @unchecked Sendable {
 
     func call(_ tool: String, _ input: [String: Value]) async throws -> String {
         lock.withLock { recorded.append(Call(tool: tool, input: input)) }
-        if tool == MobileLink.pullTool {
+        if tool == MobileLink.pullTool, !syncs {
             return String(
                 decoding: try MobileCoding.encoder.encode(MobileBatch(sequence: 0, syncedAt: [:], records: [])),
                 as: UTF8.self
@@ -491,6 +546,22 @@ private final class FakeLink: MobilePeerLink, @unchecked Sendable {
 private actor Recorder<T: Sendable> {
     var values: [T] = []
     func append(_ value: T) { values.append(value) }
+}
+
+private actor Gate {
+    private var isOpen = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        if isOpen { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func open() {
+        isOpen = true
+        waiters.forEach { $0.resume() }
+        waiters = []
+    }
 }
 
 private struct NoBackend: MobileBackend {
