@@ -115,6 +115,39 @@ final class MobileCacheTests: XCTestCase {
         XCTAssertEqual(oldest.map(\.id), ["d0", "d1"])
     }
 
+    func testIntervalsEndingAtTheStartAreExcluded() async throws {
+        let cache = try makeCache()
+        let midnight = Date(timeIntervalSince1970: 1_767_225_600)
+        func day(_ offset: Int) -> MobileRecord {
+            let start = midnight.addingTimeInterval(Double(offset) * 86_400)
+            return MobileRecord(
+                kind: .healthStatistic,
+                id: "steps-\(offset)",
+                key: "stepCount",
+                start: start,
+                end: start.addingTimeInterval(86_400),
+                payload: Data(#"{"sum":1000}"#.utf8)
+            )
+        }
+        let reading = MobileRecord(
+            kind: .healthStatistic,
+            id: "point",
+            key: "stepCount",
+            start: midnight.addingTimeInterval(86_400),
+            end: nil,
+            payload: Data(#"{"sum":1}"#.utf8)
+        )
+        try await cache.apply(MobileBatch(sequence: 1, syncedAt: [:], records: [day(0), day(1), day(2), reading]))
+        let rows = try await cache.records(
+            .healthStatistic,
+            key: "stepCount",
+            start: midnight.addingTimeInterval(86_400),
+            end: midnight.addingTimeInterval(2 * 86_400),
+            ascending: true
+        )
+        XCTAssertEqual(rows.map(\.id), ["point", "steps-1"])
+    }
+
     func testDeleteAllRemovesRecordsAndSyncState() async throws {
         let cache = try makeCache()
         try await cache.apply(MobileBatch(sequence: 1, syncedAt: ["health": Date()], records: [sleep("a", day: 0)]))
