@@ -239,11 +239,15 @@ final class ServerController: ObservableObject {
     }
 
     private var currentServiceBindings: [String: Binding<Bool>] {
-        Dictionary(
+        var bindings = Dictionary(
             uniqueKeysWithValues: computedServiceConfigs.map {
                 ($0.id, $0.binding)
             }
         )
+        // Utilities has no toggle in the menu, so it has no config,
+        // but its tools still need a binding to be listed and called.
+        bindings[String(describing: UtilitiesService.self)] = $utilitiesEnabled
+        return bindings
     }
 
     // MARK: - Trusted Clients Management
