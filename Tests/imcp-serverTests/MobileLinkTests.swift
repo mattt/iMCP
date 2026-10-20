@@ -8,6 +8,7 @@ final class MobileLinkTests: XCTestCase {
     private var pairings: MobileMemoryPairings!
     private var service: MobileService!
     private var port: UInt16 = 0
+    private var enabled: Flag!
     private var phoneTasks: [Task<Void, Error>] = []
     private var phoneChannels: [MobileChannel] = []
 
@@ -15,17 +16,24 @@ final class MobileLinkTests: XCTestCase {
         directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         pairings = MobileMemoryPairings()
-        service = MobileService(
-            cache: try MobileCache(
+        enabled = Flag(true)
+        service = makeService()
+    }
+
+    private func makeService(codeLifetime: TimeInterval = MobileService.pairingLifetime) -> MobileService {
+        let enabled = self.enabled!
+        return MobileService(
+            cache: try? MobileCache(
                 url: directory.appendingPathComponent("cache.sqlite"),
                 key: SymmetricKey(size: .bits256)
             ),
             pairings: pairings,
             reconnectGrace: .milliseconds(500),
             advertise: false,
-            pollInterval: .seconds(60)
+            pollInterval: .seconds(60),
+            codeLifetime: codeLifetime,
+            isEnabled: { enabled.value }
         )
-        port = try await service.startListening()
     }
 
     override func tearDown() async throws {
@@ -44,7 +52,9 @@ final class MobileLinkTests: XCTestCase {
         _ credentials: MobileDialer.Credentials,
         tools: [Tool] = []
     ) async throws -> MobileDialer.Session {
-        let session = try await MobileDialer.connect(to: endpoint, with: credentials)
+        // The listener keeps its port when it restarts, and the last one stays after it stops.
+        if let current = await service.listeningPort { port = current }
+        let session = try await MobileDialer.connect(to: endpoint, with: credentials, timeout: .seconds(3))
         phoneChannels.append(session.channel)
         phoneTasks.append(Task { try await MobilePeer.serve(session.channel, tools: tools, version: "test") })
         return session
@@ -148,6 +158,7 @@ final class MobileLinkTests: XCTestCase {
     }
 
     func testUnknownDeviceKeyIsRejected() async throws {
+        _ = try await service.beginPairing()
         do {
             try await connectPhone(
                 MobileDialer.paired(device: "phone-9", name: "Stranger", key: SymmetricKey(size: .bits256))
@@ -164,6 +175,8 @@ final class MobileLinkTests: XCTestCase {
         await service.unpair("phone-1")
         try await waitUntilConnected(false)
         XCTAssertTrue(pairings.devices().isEmpty)
+        let listening = await service.listeningPort
+        XCTAssertNil(listening, "With no paired device, iMCP stops listening.")
         do {
             try await connectPhone(MobileDialer.paired(device: "phone-1", name: "Test iPhone", key: key))
             XCTFail("A revoked device must be rejected.")
@@ -180,6 +193,8 @@ final class MobileLinkTests: XCTestCase {
         )
         XCTAssertTrue(goodbye.welcome.ok)
         XCTAssertTrue(pairings.devices().isEmpty)
+        let listening = await service.listeningPort
+        XCTAssertNil(listening, "With no paired device, iMCP stops listening.")
         let after = await service.cacheID
         XCTAssertNotEqual(after, before, "Removing the last pairing deletes the cache.")
     }
@@ -314,6 +329,83 @@ final class MobileLinkTests: XCTestCase {
         }
         let acks = await acknowledged.values
         XCTAssertEqual(acks, [3], "The second connection must drain the queue.")
+    }
+
+    func testNothingListensWithoutAPairedDeviceOrACode() async throws {
+        try await service.start()
+        let listening = await service.listeningPort
+        XCTAssertNil(listening)
+    }
+
+    func testCancellingTheCodeStopsListening() async throws {
+        _ = try await service.beginPairing()
+        let during = await service.listeningPort
+        XCTAssertNotNil(during)
+        await service.cancelPairing()
+        let after = await service.listeningPort
+        XCTAssertNil(after)
+    }
+
+    func testAnExpiredCodeStopsListening() async throws {
+        await service.stop()
+        service = makeService(codeLifetime: 0.3)
+        _ = try await service.beginPairing()
+        let during = await service.listeningPort
+        XCTAssertNotNil(during)
+        for _ in 0 ..< 100 {
+            if await service.listeningPort == nil { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        let after = await service.listeningPort
+        XCTAssertNil(after, "An expired code must not keep the listener and its key.")
+        let pairing = await service.isPairing
+        XCTAssertFalse(pairing)
+    }
+
+    func testPairingKeepsListeningForTheDevice() async throws {
+        let code = try await service.beginPairing()
+        let welcome = try await connectPhone(MobileDialer.pairing(code, device: "phone-1", name: "Test iPhone"))
+        let key = try XCTUnwrap(welcome.deviceKey)
+        let listening = await service.listeningPort
+        XCTAssertNotNil(listening)
+        let pairing = await service.isPairing
+        XCTAssertFalse(pairing)
+        await service.disconnect()
+        try await waitUntilConnected(false)
+        try await connectPhone(MobileDialer.paired(device: "phone-1", name: "Test iPhone", key: key))
+        try await waitUntilConnected()
+    }
+
+    func testUnpairingOneOfTwoDevicesKeepsListening() async throws {
+        for id in ["phone-1", "phone-2"] {
+            let code = try await service.beginPairing()
+            try await connectPhone(MobileDialer.pairing(code, device: id, name: id))
+        }
+        await service.unpair("phone-1")
+        let listening = await service.listeningPort
+        XCTAssertNotNil(listening)
+    }
+
+    func testTurningOffTheServicesStopsListening() async throws {
+        let code = try await service.beginPairing()
+        try await connectPhone(MobileDialer.pairing(code, device: "phone-1", name: "Test iPhone"))
+        try await waitUntilConnected()
+
+        enabled.value = false
+        await service.servicesChanged()
+        let off = await service.listeningPort
+        XCTAssertNil(off)
+        try await waitUntilConnected(false)
+        // A pairing code still works while the services are off.
+        _ = try await service.beginPairing()
+        let pairing = await service.listeningPort
+        XCTAssertNotNil(pairing)
+        await service.cancelPairing()
+
+        enabled.value = true
+        await service.servicesChanged()
+        let on = await service.listeningPort
+        XCTAssertNotNil(on)
     }
 
     func testDeletingTheCacheChangesItsIdentifier() async throws {
@@ -604,6 +696,19 @@ private final class FakeLink: MobilePeerLink, @unchecked Sendable {
     }
 
     func close() async {}
+}
+
+/// A Boolean that a test changes while the service reads it.
+final class Flag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: Bool
+
+    init(_ value: Bool) { stored = value }
+
+    var value: Bool {
+        get { lock.withLock { stored } }
+        set { lock.withLock { stored = newValue } }
+    }
 }
 
 private actor Recorder<T: Sendable> {
