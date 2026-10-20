@@ -162,6 +162,8 @@ actor MobileCache {
 
     /// Records of one kind, newest first unless `ascending`,
     /// that overlap the date range when one is given.
+    /// Ranges are half-open: an interval that ends when the range starts doesn't overlap it,
+    /// but a point record at the start does.
     func records(
         _ kind: MobileKind,
         key: String? = nil,
@@ -177,8 +179,8 @@ actor MobileCache {
             bindings.append(.text(key))
         }
         if let start {
-            sql += " AND coalesce(end, start) >= ?"
-            bindings.append(.init(start))
+            sql += " AND (end > ? OR start >= ?)"
+            bindings += [.init(start), .init(start)]
         }
         if let end {
             sql += " AND start < ?"
