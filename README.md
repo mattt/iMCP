@@ -407,7 +407,8 @@ llama serve --mcp-servers-config ~/.config/llama/mcp.json \
             -hf ggml-org/Qwen3-4B-GGUF
 ```
 
-Open the web UI at <http://localhost:8080>.
+Open the web UI at <http://localhost:9931>
+(llama.cpp versions before 0.7.0 use port 8080).
 iMCP tools appear with an `imcp_` prefix,
 such as `imcp_weather_current`.
 The web UI asks you before it runs each tool call,
