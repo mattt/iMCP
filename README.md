@@ -42,6 +42,13 @@ and a [growing list of clients][mcp-clients] that support the
   </tr>
   <tr>
     <th>
+      <img src="Assets/mail.svg" width="48" height="48" alt="" role="presentation"/>
+    </th>
+    <td><strong>Mail</strong></td>
+    <td>List mailboxes, search messages by sender, subject, mailbox, date, or read status, read messages stored on your Mac, and open new drafts in your default email app. Reading mail needs <a href="#mail-access-and-search">access to your Mail folder</a>.</td>
+  </tr>
+  <tr>
+    <th>
       <img src="Assets/maps.svg" width="48" height="48" alt="" role="presentation"/>
     </th>
     <td><strong>Maps</strong></td>
