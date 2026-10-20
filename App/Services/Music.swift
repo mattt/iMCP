@@ -101,10 +101,12 @@ final class MusicService: Service {
                 properties: [
                     "term": .string(description: "Search term"),
                     "types": .array(
-                        description: "Catalog types to include",
+                        description:
+                            "Catalog types to include. Omit to search songs, albums, artists, and playlists.",
                         items: .string(
                             enum: CatalogSearchType.allCases.map { .string($0.rawValue) }
-                        )
+                        ),
+                        minItems: 1
                     ),
                     "limit": .integer(
                         description: "Maximum results per type",
@@ -146,14 +148,106 @@ private enum ControlAction: String, CaseIterable {
     case seek
 }
 
-private enum CatalogSearchType: String, CaseIterable {
-    case songs
-    case albums
-    case artists
-    case playlists
-    case musicVideos
-    case stations
-    case topResults
+extension MusicService {
+    enum CatalogSearchType: String, CaseIterable {
+        case songs
+        case albums
+        case artists
+        case playlists
+        case musicVideos
+        case stations
+        case topResults
+
+        /// The types to search when a request doesn't list any.
+        static let defaultTypes: [CatalogSearchType] = [.songs, .albums, .artists, .playlists]
+
+        /// The MusicKit type to search, or `nil` for top results,
+        /// which are a request option rather than a type.
+        var searchableType: (any MusicCatalogSearchable.Type)? {
+            switch self {
+            case .songs: return Song.self
+            case .albums: return Album.self
+            case .artists: return Artist.self
+            case .playlists: return Playlist.self
+            case .musicVideos: return MusicVideo.self
+            case .stations: return Station.self
+            case .topResults: return nil
+            }
+        }
+    }
+
+    /// Parses the `types` argument of `music_catalog_search`.
+    ///
+    /// - Returns: The requested types,
+    ///   or `nil` when the argument is absent or null to select the default types.
+    /// - Throws: An error when the value isn't an array of known types,
+    ///   or when it's an empty array.
+    static func requestedSearchTypes(from value: Value?) throws -> [CatalogSearchType]? {
+        guard let value, !value.isNull else {
+            return nil
+        }
+
+        let expected = CatalogSearchType.allCases.map(\.rawValue).joined(separator: ", ")
+        guard let rawTypes = value.arrayValue else {
+            throw NSError(
+                domain: "MusicServiceError",
+                code: 12,
+                userInfo: [
+                    NSLocalizedDescriptionKey: "Types must be an array of catalog types"
+                ]
+            )
+        }
+
+        guard !rawTypes.isEmpty else {
+            throw NSError(
+                domain: "MusicServiceError",
+                code: 12,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Types must not be empty. List one or more of: \(expected), or omit types to search songs, albums, artists, and playlists."
+                ]
+            )
+        }
+
+        return try rawTypes.map { rawType in
+            guard let name = rawType.stringValue,
+                let type = CatalogSearchType(rawValue: name)
+            else {
+                throw NSError(
+                    domain: "MusicServiceError",
+                    code: 12,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Unknown catalog type. Expected one of: \(expected)"
+                    ]
+                )
+            }
+            return type
+        }
+    }
+
+    /// Separates requested types into the types to search and the top results option.
+    ///
+    /// `nil` selects the default types.
+    /// A request for only top results also searches the default types,
+    /// because a catalog search needs at least one type.
+    static func resolveSearchTypes(
+        from requestedTypes: [CatalogSearchType]?
+    ) -> (types: [CatalogSearchType], includeTopResults: Bool) {
+        guard let requestedTypes else {
+            return (CatalogSearchType.defaultTypes, false)
+        }
+
+        var types: [CatalogSearchType] = []
+        for type in requestedTypes where type != .topResults && !types.contains(type) {
+            types.append(type)
+        }
+        if types.isEmpty {
+            types = CatalogSearchType.defaultTypes
+        }
+
+        return (types, requestedTypes.contains(.topResults))
+    }
 }
 
 private struct MusicCatalogResult: Encodable {
@@ -318,34 +412,8 @@ extension MusicService {
             )
         }
 
-        var requestedTypes: [CatalogSearchType] = []
-        if let value = arguments["types"], !value.isNull {
-            guard let rawTypes = value.arrayValue else {
-                throw NSError(
-                    domain: "MusicServiceError",
-                    code: 12,
-                    userInfo: [
-                        NSLocalizedDescriptionKey: "Types must be an array of catalog types"
-                    ]
-                )
-            }
-
-            for rawType in rawTypes {
-                guard let name = rawType.stringValue,
-                    let type = CatalogSearchType(rawValue: name)
-                else {
-                    throw NSError(
-                        domain: "MusicServiceError",
-                        code: 12,
-                        userInfo: [
-                            NSLocalizedDescriptionKey:
-                                "Unknown catalog type. Expected one of: \(CatalogSearchType.allCases.map(\.rawValue).joined(separator: ", "))"
-                        ]
-                    )
-                }
-                requestedTypes.append(type)
-            }
-        }
+        let requestedTypes = try Self.requestedSearchTypes(from: arguments["types"])
+        let (types, typesIncludeTopResults) = Self.resolveSearchTypes(from: requestedTypes)
 
         let includeTopResults: Bool
         if let value = arguments["includeTopResults"], !value.isNull {
@@ -360,12 +428,14 @@ extension MusicService {
             }
             includeTopResults = flag
         } else {
-            includeTopResults = requestedTypes.contains(.topResults)
+            includeTopResults = false
         }
 
-        let (types, includeTopResultsResolved) = resolveSearchTypes(from: requestedTypes)
-        var request = MusicCatalogSearchRequest(term: term, types: types)
-        request.includeTopResults = includeTopResults || includeTopResultsResolved
+        var request = MusicCatalogSearchRequest(
+            term: term,
+            types: types.compactMap(\.searchableType)
+        )
+        request.includeTopResults = includeTopResults || typesIncludeTopResults
 
         if let value = arguments["limit"], !value.isNull {
             guard let limit = exactInt(from: value), (1 ... 50).contains(limit) else {
@@ -497,38 +567,6 @@ extension MusicService {
         default:
             return nil
         }
-    }
-
-    private func resolveSearchTypes(
-        from requestedTypes: [CatalogSearchType]
-    ) -> ([any MusicCatalogSearchable.Type], Bool) {
-        var types: [any MusicCatalogSearchable.Type] = []
-        var includeTopResults = false
-
-        for requestedType in requestedTypes {
-            switch requestedType {
-            case .songs:
-                types.append(Song.self)
-            case .albums:
-                types.append(Album.self)
-            case .artists:
-                types.append(Artist.self)
-            case .playlists:
-                types.append(Playlist.self)
-            case .musicVideos:
-                types.append(MusicVideo.self)
-            case .stations:
-                types.append(Station.self)
-            case .topResults:
-                includeTopResults = true
-            }
-        }
-
-        if types.isEmpty {
-            types = [Song.self, Album.self, Artist.self, Playlist.self]
-        }
-
-        return (types, includeTopResults)
     }
 
     private func mapTopResult(
