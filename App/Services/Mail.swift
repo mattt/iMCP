@@ -4,7 +4,7 @@ import Envelope
 import OSLog
 
 private let log = Logger.service("mail")
-private let mailDirectoryURL = URL(
+private let defaultMailDirectoryURL = URL(
     fileURLWithPath: NSHomeDirectoryForUser(NSUserName()) ?? "/Users/\(NSUserName())"
 ).appendingPathComponent("Library/Mail")
 private let mailDirectoryBookmarkKey = "me.mattt.iMCP.mailDirectoryBookmark"
@@ -14,9 +14,19 @@ private let maximumLimit = 100
 final class MailService: NSObject, Service, NSOpenSavePanelDelegate, Sendable {
     static let shared = MailService()
 
+    /// The Mail folder to read when no folder is bookmarked.
+    private let mailDirectoryURL: URL
+
     /// The store for the most recently resolved Mail folder URL.
     /// A store runs one operation at a time, so concurrent reads wait their turn.
     private let currentStore = OSAllocatedUnfairLock<Envelope.Store?>(initialState: nil)
+
+    /// Creates a service for a Mail folder.
+    /// - Parameter mailDirectoryURL: The Mail folder to read when no folder is bookmarked.
+    ///   The default is `~/Library/Mail`.
+    init(mailDirectoryURL: URL? = nil) {
+        self.mailDirectoryURL = mailDirectoryURL ?? defaultMailDirectoryURL
+    }
 
     var isActivated: Bool {
         get async {
