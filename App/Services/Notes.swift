@@ -530,7 +530,7 @@ private struct NoteRenderer {
         switch format {
         case .plain:
             return content.paragraphs.map { paragraph in
-                paragraph.runs.map(plainText).joined()
+                paragraph.runs.map { plainText($0) }.joined()
                     .replacingOccurrences(of: "\u{2028}", with: "\n")
             }.joined(separator: "\n")
         case .markdown:
@@ -539,10 +539,14 @@ private struct NoteRenderer {
     }
 
     /// The text that stands in for an attachment.
-    private func text(for attachment: Note.Attachment) -> String {
+    /// In Markdown, its text is escaped unless `escaping` is `false`, as in code blocks.
+    private func text(for attachment: Note.Attachment, escaping: Bool = true) -> String {
+        func escape(_ text: String) -> String {
+            format == .markdown && escaping ? Self.escaped(text) : text
+        }
         if attachment.kind == .webLink, let url = attachment.url?.absoluteString {
             switch format {
-            case .markdown: return "[\(attachment.title ?? url)](\(url))"
+            case .markdown: return "[\(escape(attachment.title ?? url))](\(url))"
             case .plain: return attachment.title.map { "\($0) (\(url))" } ?? url
             }
         }
@@ -554,9 +558,9 @@ private struct NoteRenderer {
             if format == .markdown, attachment.kind == .noteLink, let target = attachment.tokenIdentifier,
                 !text.isEmpty
             {
-                return "[\(text)](\(target))"
+                return "[\(escape(text))](\(target))"
             }
-            return text
+            return escape(text)
         case .table:
             guard let table = attachment.table else {
                 return attachment.summary ?? "[Table]"
@@ -575,15 +579,15 @@ private struct NoteRenderer {
             default: kind = "Attachment"
             }
             if let name = attachment.title ?? attachment.fileName {
-                return "[\(kind): \(name)]"
+                return "[\(kind): \(escape(name))]"
             }
             return "[\(kind)]"
         }
     }
 
-    private func plainText(_ run: Note.TextRun) -> String {
+    private func plainText(_ run: Note.TextRun, escaping: Bool = true) -> String {
         if let attachment = run.attachment {
-            return text(for: attachment)
+            return text(for: attachment, escaping: escaping)
         }
         return run.text.replacingOccurrences(of: "\u{FFFC}", with: "")
     }
@@ -638,7 +642,7 @@ private struct NoteRenderer {
         for paragraph in paragraphs {
             let style = paragraph.style
             if style.kind == .monospaced {
-                code.append(paragraph.runs.map(plainText).joined())
+                code.append(paragraph.runs.map { plainText($0, escaping: false) }.joined())
                 continue
             }
             emitCode()
@@ -660,6 +664,9 @@ private struct NoteRenderer {
             }
 
             let content = inlineMarkdown(paragraph.runs)
+                .split(separator: "\u{2028}", omittingEmptySubsequences: false)
+                .map(Self.escapingLineStart)
+                .joined(separator: "\u{2028}")
             var prefix: String
             switch style.kind {
             case .title: prefix = "# "
@@ -730,7 +737,7 @@ private struct NoteRenderer {
             let leading = String(text.prefix { $0 == " " || $0 == "\t" })
             let trailing = String(text.reversed().prefix { $0 == " " || $0 == "\t" })
 
-            var formatted = core
+            var formatted = Self.escaped(core)
             if run.isStrikethrough {
                 formatted = "~~\(formatted)~~"
             }
@@ -745,6 +752,46 @@ private struct NoteRenderer {
             }
             return leading + formatted + trailing
         }.joined()
+    }
+
+    /// Escapes the characters that Markdown reads as emphasis, code, links, or HTML,
+    /// so that literal text renders as it appears in the note.
+    private static func escaped(_ text: String) -> String {
+        var result = ""
+        for character in text {
+            if "\\`*_~[]<>".contains(character) {
+                result.append("\\")
+            }
+            result.append(character)
+        }
+        return result
+    }
+
+    /// Escapes the start of a line that Markdown would read as a heading, list item,
+    /// or rule, such as `# Groceries`, `+ milk`, `1. eggs`, or `---`.
+    private static func escapingLineStart(_ line: Substring) -> String {
+        let indent = line.prefix { $0 == " " || $0 == "\t" }
+        let rest = line.dropFirst(indent.count)
+        func endsMarker(_ index: Substring.Index) -> Bool {
+            index == rest.endIndex || rest[index] == " " || rest[index] == "\t"
+        }
+        guard let first = rest.first else { return String(line) }
+
+        let hashes = rest.prefix { $0 == "#" }
+        let isHeading = (1 ... 6).contains(hashes.count) && endsMarker(hashes.endIndex)
+        let isBullet = (first == "-" || first == "+") && endsMarker(rest.index(after: rest.startIndex))
+        let isRule = "-=".contains(first) && rest.allSatisfy { $0 == first || $0 == " " || $0 == "\t" }
+        if isHeading || isBullet || isRule {
+            return String(indent) + "\\" + rest
+        }
+
+        let digits = rest.prefix { $0.isASCII && $0.isNumber }
+        if (1 ... 9).contains(digits.count), digits.endIndex < rest.endIndex,
+            ".)".contains(rest[digits.endIndex]), endsMarker(rest.index(after: digits.endIndex))
+        {
+            return String(indent + digits) + "\\" + rest[digits.endIndex...]
+        }
+        return String(line)
     }
 
     /// Renders a table as a Markdown table with the first row as its header,
@@ -768,7 +815,7 @@ private struct NoteRenderer {
         case .markdown:
             func line(_ cells: [String]) -> String {
                 let cells = cells.map {
-                    $0.replacingOccurrences(of: "\\", with: "\\\\")
+                    Self.escaped($0)
                         .replacingOccurrences(of: "|", with: "\\|")
                         .replacingOccurrences(of: "\n", with: "<br>")
                 }
