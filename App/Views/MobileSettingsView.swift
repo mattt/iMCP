@@ -99,7 +99,11 @@ struct MobileSettingsView: View {
                 }
             }
         } message: {
-            Text("The device can't connect again until you pair it again. Cached data stays until you delete it.")
+            Text(
+                devices.count > 1
+                    ? "The device can't connect again until you pair it again. The cached data stays, because other paired devices use it."
+                    : "The device can't connect again until you pair it again. iMCP also deletes its cached data from this Mac."
+            )
         }
     }
 

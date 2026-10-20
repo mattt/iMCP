@@ -174,11 +174,14 @@ final class MobileLinkTests: XCTestCase {
         let code = try await service.beginPairing()
         let welcome = try await connectPhone(MobileDialer.pairing(code, device: "phone-1", name: "Test iPhone"))
         let key = try XCTUnwrap(welcome.deviceKey)
+        let before = await service.cacheID
         let goodbye = try await connectPhone(
             MobileDialer.paired(device: "phone-1", name: "Test iPhone", key: key, revoke: true)
         )
         XCTAssertTrue(goodbye.welcome.ok)
         XCTAssertTrue(pairings.devices().isEmpty)
+        let after = await service.cacheID
+        XCTAssertNotEqual(after, before, "Removing the last pairing deletes the cache.")
     }
 
     func testSyncPullAppliesBatchesAndAcknowledgesThem() async throws {
@@ -338,17 +341,21 @@ final class MobileLinkTests: XCTestCase {
 
 final class MobileRetryTests: XCTestCase {
     private var directory: URL!
+    private var cache: MobileCache!
+    private var pairings: MobileMemoryPairings!
     private var service: MobileService!
 
     override func setUp() async throws {
         directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        cache = try MobileCache(
+            url: directory.appendingPathComponent("cache.sqlite"),
+            key: SymmetricKey(size: .bits256)
+        )
+        pairings = MobileMemoryPairings()
         service = MobileService(
-            cache: try MobileCache(
-                url: directory.appendingPathComponent("cache.sqlite"),
-                key: SymmetricKey(size: .bits256)
-            ),
-            pairings: MobileMemoryPairings(),
+            cache: cache,
+            pairings: pairings,
             reconnectGrace: .milliseconds(300),
             advertise: false,
             pollInterval: .seconds(60)
@@ -488,6 +495,42 @@ final class MobileRetryTests: XCTestCase {
         await service.detach(link)
         let value = try await service.call("finance_accounts_list", [:])
         XCTAssertTrue(value.objectValue?["note"]?.stringValue?.contains(reason) == true)
+    }
+
+    func testUnpairingTheLastDeviceDeletesTheCache() async throws {
+        for id in ["iphone", "ipad"] {
+            try pairings.save(
+                MobileDevice(id: id, name: id, pairedAt: Date()),
+                key: SymmetricKey(size: .bits256)
+            )
+        }
+        let record = MobileRecord(
+            kind: .alarm,
+            id: "alarm-1",
+            key: nil,
+            start: nil,
+            end: nil,
+            payload: Data(#"{"id":"alarm-1"}"#.utf8)
+        )
+        try await cache.apply(MobileBatch(sequence: 1, syncedAt: ["alarms": Date()], records: [record]))
+        try await cache.setPhoneStatus(["services": [:]])
+        let before = await service.cacheID
+
+        await service.unpair("ipad")
+        let shared = await cache.count(.alarm)
+        XCTAssertEqual(shared, 1, "Other paired devices still use the cache.")
+        let kept = await service.cacheID
+        XCTAssertEqual(kept, before)
+
+        await service.unpair("iphone")
+        let remaining = await cache.count(.alarm)
+        XCTAssertEqual(remaining, 0)
+        let syncedAt = await cache.syncedAt(.alarms)
+        XCTAssertNil(syncedAt)
+        let status = await cache.phoneStatus()
+        XCTAssertNil(status)
+        let after = await service.cacheID
+        XCTAssertNotEqual(after, before)
     }
 
     func testPhoneErrorsAreNotRetried() async throws {

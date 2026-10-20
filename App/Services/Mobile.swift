@@ -214,12 +214,21 @@ actor MobileService: MobileBackend {
     var pairingError: String? { lastPairingError }
 
     /// Forgets a paired device and closes its connection.
+    /// When no paired device remains,
+    /// also deletes the Mac's copy of mobile data.
     func unpair(_ device: String) async {
         pairings.remove(device)
         if let current = link, current.device.id == device {
             link = nil
             syncTask?.cancel()
             await current.close()
+        }
+        if pairings.devices().isEmpty {
+            do {
+                try await deleteCache()
+            } catch {
+                log.error("Couldn't delete the mobile cache: \(error.localizedDescription, privacy: .public)")
+            }
         }
         if listener != nil { _ = try? await startListening() }
     }
