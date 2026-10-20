@@ -17,6 +17,10 @@ struct ServiceToggleView: View {
         HStack {
             Button(action: {
                 config.binding.wrappedValue.toggle()
+                if MobileService.serves(config.service) {
+                    // The Mac listens for paired devices only while a mobile service is on.
+                    Task { await MobileService.shared.servicesChanged() }
+                }
                 if config.binding.wrappedValue && !isServiceActivated {
                     Task {
                         do {

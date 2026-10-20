@@ -14,7 +14,7 @@ import Security
 /// the copy of the data that the phone last sent,
 /// and every answer says when that was.
 actor MobileService: MobileBackend {
-    static let shared = MobileService()
+    static let shared = MobileService(isEnabled: { MobileService.isAnyServiceEnabled() })
 
     private let log = Logger.service("mobile")
     private var cache: MobileCache?
@@ -22,9 +22,13 @@ actor MobileService: MobileBackend {
     private let reconnectGrace: Duration
     private let advertise: Bool
     private let pollInterval: Duration
+    private let codeLifetime: TimeInterval
+    private let isEnabled: @Sendable () -> Bool
     private var listener: NWListener?
+    private var listenerUpdate: Task<Void, Error>?
     private var port: NWEndpoint.Port = .any
     private var pendingPairing: (code: MobilePairingCode, expires: Date)?
+    private var expiryTask: Task<Void, Never>?
     private var link: (any MobilePeerLink)?
     private var syncTask: Task<Void, Never>?
     private var draining = false
@@ -33,27 +37,59 @@ actor MobileService: MobileBackend {
     /// How long a pairing code works after iMCP shows it.
     static let pairingLifetime: TimeInterval = 600
 
+    /// - Parameters:
+    ///   - codeLifetime: How long a pairing code works.
+    ///   - isEnabled: Whether a mobile service is on.
+    ///     While none is, the Mac listens only for a pairing code.
     init(
         cache: MobileCache? = nil,
         pairings: any MobilePairingStore = MobileKeychainPairings(),
         reconnectGrace: Duration = .seconds(5),
         advertise: Bool = true,
-        pollInterval: Duration = .seconds(15)
+        pollInterval: Duration = .seconds(15),
+        codeLifetime: TimeInterval = MobileService.pairingLifetime,
+        isEnabled: @escaping @Sendable () -> Bool = { true }
     ) {
         self.cache = cache
         self.pairings = pairings
         self.reconnectGrace = reconnectGrace
         self.advertise = advertise
         self.pollInterval = pollInterval
+        self.codeLifetime = codeLifetime
+        self.isEnabled = isEnabled
     }
 
-    /// Opens the cache and starts listening for the paired iPhone or iPad.
+    /// Whether Health, Finance, or Alarms is on in iMCP.
+    nonisolated static func isAnyServiceEnabled() -> Bool {
+        ["alarmsEnabled", "financeEnabled", "healthEnabled"].contains { UserDefaults.standard.bool(forKey: $0) }
+    }
+
+    /// Whether `service` is one of the services that this actor serves.
+    nonisolated static func serves(_ service: any Service) -> Bool {
+        service is HealthService || service is FinanceService || service is AlarmsService
+    }
+
+    /// Opens the cache and listens for paired devices, if there are any.
     func start() async throws {
         _ = try openCache()
-        if listener == nil { _ = try await startListening() }
+        try await updateListener()
     }
 
-    var isStarted: Bool { cache != nil && listener != nil }
+    var isStarted: Bool { cache != nil }
+
+    /// The port that the listener uses, or nil when iMCP isn't listening.
+    var listeningPort: UInt16? { listener == nil ? nil : port.rawValue }
+
+    /// Starts or stops listening after Health, Finance, or Alarms is turned on or off.
+    /// When all of them are off, also closes the connection to the phone.
+    func servicesChanged() async {
+        if !isEnabled() { await disconnect() }
+        do {
+            try await updateListener()
+        } catch {
+            log.error("\(error.localizedDescription, privacy: .public)")
+        }
+    }
 
     var isConnected: Bool { link != nil }
 
@@ -87,6 +123,9 @@ actor MobileService: MobileBackend {
     }
 
     func stop() async {
+        expiryTask?.cancel()
+        expiryTask = nil
+        _ = await listenerUpdate?.result
         await stopListener()
         syncTask?.cancel()
         syncTask = nil
@@ -109,14 +148,29 @@ actor MobileService: MobileBackend {
         )
     }
 
-    /// Starts the TLS listener with the keys of every paired device
-    /// and of the pairing code on screen, if any.
-    /// Returns its port.
-    @discardableResult
-    func startListening() async throws -> UInt16 {
-        await stopListener()
-        var keys = pairings.devices().compactMap { device in
-            pairings.key(for: device.id).map { (MobileLink.deviceIdentity(device.id), $0) }
+    /// Listens while a device is paired and a mobile service is on,
+    /// or while a pairing code is on screen,
+    /// and stops listening otherwise.
+    /// A running listener restarts so that it has the current keys.
+    ///
+    /// Updates run one at a time,
+    /// so two callers can't start two listeners on the same port.
+    private func updateListener() async throws {
+        let previous = listenerUpdate
+        let update = Task {
+            _ = await previous?.result
+            try await self.applyListenerKeys()
+        }
+        listenerUpdate = update
+        try await update.value
+    }
+
+    private func applyListenerKeys() async throws {
+        var keys: [(identity: Data, key: SymmetricKey)] = []
+        if isEnabled() {
+            keys = pairings.devices().compactMap { device in
+                pairings.key(for: device.id).map { (MobileLink.deviceIdentity(device.id), $0) }
+            }
         }
         if let pending = pendingPairing, pending.expires > Date() {
             keys.append(
@@ -126,10 +180,13 @@ actor MobileService: MobileBackend {
                 )
             )
         }
-        if keys.isEmpty {
-            // TLS needs a key; this one belongs to no device.
-            keys.append((MobileLink.deviceIdentity("none"), SymmetricKey(size: .bits256)))
-        }
+        await stopListener()
+        if keys.isEmpty { return }
+        try await startListening(keys: keys)
+    }
+
+    /// Starts the TLS listener with `keys`.
+    private func startListening(keys: [(identity: Data, key: SymmetricKey)]) async throws {
         let parameters = MobileTLS.parameters(keys: keys)
         parameters.allowLocalEndpointReuse = true
         let listener = try NWListener(using: parameters, on: port)
@@ -159,7 +216,6 @@ actor MobileService: MobileBackend {
         }
         // Keep the same port when the listener restarts after pairing changes.
         port = NWEndpoint.Port(rawValue: ready) ?? .any
-        return ready
     }
 
     /// Cancels the listener and waits until it releases its port.
@@ -195,17 +251,42 @@ actor MobileService: MobileBackend {
             pairingID: id.base64URLEncodedString(),
             secret: secret
         )
-        pendingPairing = (code, Date().addingTimeInterval(Self.pairingLifetime))
+        let expires = Date().addingTimeInterval(codeLifetime)
+        pendingPairing = (code, expires)
         lastPairingError = nil
         _ = try openCache()
-        try await startListening()
+        scheduleExpiry(of: code, at: expires)
+        try await updateListener()
         return code
     }
 
     func cancelPairing() async {
         guard pendingPairing != nil else { return }
+        await endPairing()
+    }
+
+    /// Forgets the pairing code and stops listening if nothing else needs the listener.
+    private func endPairing() async {
         pendingPairing = nil
-        _ = try? await startListening()
+        expiryTask?.cancel()
+        expiryTask = nil
+        try? await updateListener()
+    }
+
+    /// Removes the pairing code's key from the listener when the code expires.
+    private func scheduleExpiry(of code: MobilePairingCode, at expires: Date) {
+        expiryTask?.cancel()
+        expiryTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(max(0, expires.timeIntervalSinceNow)))
+            guard !Task.isCancelled else { return }
+            await self?.expire(code)
+        }
+    }
+
+    private func expire(_ code: MobilePairingCode) async {
+        guard pendingPairing?.code == code else { return }
+        log.notice("The pairing code expired")
+        await endPairing()
     }
 
     var isPairing: Bool { pendingPairing.map { $0.expires > Date() } ?? false }
@@ -230,7 +311,7 @@ actor MobileService: MobileBackend {
                 log.error("Couldn't delete the mobile cache: \(error.localizedDescription, privacy: .public)")
             }
         }
-        if listener != nil { _ = try? await startListening() }
+        try? await updateListener()
     }
 
     private struct Refusal: Error {
@@ -280,8 +361,7 @@ actor MobileService: MobileBackend {
             }
             let device = MobileDevice(id: hello.device, name: hello.name, pairedAt: Date())
             try pairings.save(device, key: deviceKey)
-            pendingPairing = nil
-            _ = try? await startListening()
+            await endPairing()
             log.notice("Paired \(hello.name, privacy: .public)")
             return (
                 device,

@@ -767,6 +767,8 @@ iOS suspends apps in the background, so the iPhone or iPad dials the Mac,
 which advertises "\_imcp-mobile.\_tcp" with Bonjour,
 and serves the tools as an MCP server on that connection;
 iMCP is the MCP client.
+The Mac listens and advertises only while a pairing code is on screen,
+or while a device is paired and Health, Finance, or Alarms is on.
 The connection uses TLS with pre-shared keys:
 the one-time secret in the QR code for pairing,
 and a key for each device after that.

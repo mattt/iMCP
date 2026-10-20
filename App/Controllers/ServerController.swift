@@ -374,6 +374,10 @@ final class ServerController: ObservableObject {
                     config.binding.wrappedValue = false
                 }
             }
+            if MobileService.serves(config.service) {
+                // The Mac listens for paired devices only while a mobile service is on.
+                await MobileService.shared.servicesChanged()
+            }
             await networkManager.updateServiceBindings(self.currentServiceBindings)
         }
     }
@@ -438,7 +442,7 @@ final class ServerController: ObservableObject {
             await self.networkManager.start()
             self.updateServerStatus("Running")
 
-            // Listen for the paired iPhone or iPad so it can sync before the first tool call.
+            // Listen for a paired iPhone or iPad so it can sync before the first tool call.
             if self.alarmsEnabled || self.financeEnabled || self.healthEnabled {
                 try? await MobileService.shared.start()
             }
