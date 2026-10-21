@@ -5,8 +5,8 @@
 </picture>
 
 iMCP is a macOS app for connecting your digital life with AI.
-It works with [ChatGPT Desktop][chatgpt-app],
-[Claude Desktop][claude-app],
+It works with [Claude Desktop][claude-app],
+the [ChatGPT desktop app][chatgpt-app],
 local models served by [llama.cpp][llama-cpp],
 and a [growing list of clients][mcp-clients] that support the
 [Model Context Protocol (MCP)][mcp].
@@ -101,9 +101,9 @@ and an AI app that can connect to MCP servers.
 Install iMCP and turn on services first.
 Then follow the instructions for your AI app:
 
-- [ChatGPT Desktop](#connect-to-chatgpt-desktop)
 - [Claude Desktop](#connect-to-claude-desktop)
-- [Claude Code, Cursor, llama.cpp, and other clients](#connect-to-other-clients)
+- [ChatGPT desktop app](#connect-to-the-chatgpt-desktop-app)
+- [Claude Code, llama.cpp, and other clients](#connect-to-other-clients)
 
 ### Download and open the app
 
@@ -150,7 +150,7 @@ Click "Allow Full Access" to continue.
 
 > [!IMPORTANT]
 > iMCP **does not** collect or store any of your data.
-> AI apps like ChatGPT and Claude _do_ send
+> AI apps like Claude and ChatGPT _do_ send
 > your data off device as part of tool calls.
 > Turn on only the services you want your AI app to use.
 > To keep your data on your Mac,
@@ -190,77 +190,6 @@ You can remove trusted clients in
 \> "Settings" > "General".
 
 <br clear="all">
-
-### Connect to ChatGPT Desktop
-
-If you don't have ChatGPT Desktop installed,
-you can [download it here][chatgpt-app].
-
-> [!NOTE]
-> These steps use the labels in ChatGPT 26.930 for macOS
-> and haven't been tested end to end yet.
-> OpenAI documents MCP servers for
-> [Codex mode](https://learn.chatgpt.com/docs/extend/mcp),
-> so use iMCP in a Codex conversation.
-
-1. Click <img style="display: inline" width="20" height="16" src="/Assets/icon.svg" />
-   \> "Copy server command to clipboard".
-2. In ChatGPT, open Settings (<kbd>⌘</kbd><kbd>,</kbd>)
-   and click "MCP servers" in the sidebar.
-3. Click "Add server".
-   Enter `iMCP` for "Name", choose "STDIO" for "Type",
-   and paste the copied command into "Command to launch".
-   Leave the other fields empty.
-4. Click "Save", and then click "Restart".
-5. [Approve the connection](#approve-connections) in iMCP.
-   ChatGPT might identify itself as `codex-mcp-client`.
-
-To test the connection,
-start a new Codex conversation and send this message:
-
-> "Use iMCP to play a system sound."
-
-Your Mac plays a short sound.
-If your Mac is muted, open the tool call in the conversation;
-a result of `true` means that iMCP received the request.
-
-<details>
-<summary>Troubleshooting ChatGPT Desktop</summary>
-
-- **Settings doesn't show "MCP servers".**
-  Update ChatGPT and switch to Codex mode.
-  If ChatGPT shows "MCP server settings are unavailable"
-  and an organization manages your account,
-  ask your administrator whether you can add MCP servers.
-- **iMCP doesn't show an approval dialog.**
-  ChatGPT can't open iMCP for you.
-  Make sure that iMCP is open and "Enable MCP Server" is on,
-  and then click "Restart" in ChatGPT's "MCP servers" settings.
-  The dialog can also open behind other windows.
-  If you trusted ChatGPT before,
-  iMCP shows a notification instead of a dialog.
-- **ChatGPT can't use iMCP tools.**
-  Make sure that you're in a Codex conversation
-  and that iMCP is turned on in ChatGPT's "MCP servers" settings.
-  If you clicked "Deny", click "Restart" to see the dialog again.
-  If you turned on a service after connecting, click "Restart"
-  so that ChatGPT loads its tools.
-- **A service doesn't turn on in iMCP.**
-  If you denied permission when macOS asked,
-  open System Settings > "Privacy & Security",
-  click the category for the service, such as "Calendars",
-  and turn on iMCP.
-  Then click the service icon in the iMCP menu again.
-- **ChatGPT shows an error for the iMCP server.**
-  The command might point to the wrong place,
-  for example, if you moved iMCP after setting it up.
-  Copy the server command again,
-  open the iMCP server's settings in ChatGPT,
-  and replace "Command to launch" with the copied command.
-  Make sure that "Arguments" is empty,
-  and then click "Save" and "Restart".
-
-</details>
 
 ### Connect to Claude Desktop
 
@@ -330,6 +259,77 @@ so you don't have to share it in the conversation yourself.
   <img width="738" src="/Assets/claude-desktop-screenshot-message.png" alt="Screenshot of Claude response to user message 'How's the weather where I am?'" />
 </p>
 
+### Connect to the ChatGPT desktop app
+
+If you don't have the ChatGPT desktop app installed,
+you can [download it here][chatgpt-app].
+
+> [!NOTE]
+> These steps use the labels in ChatGPT 26.930 for macOS
+> and haven't been tested end to end yet.
+> OpenAI documents MCP servers for
+> [Codex mode](https://learn.chatgpt.com/docs/extend/mcp),
+> so use iMCP in a Codex conversation.
+
+1. Click <img style="display: inline" width="20" height="16" src="/Assets/icon.svg" />
+   \> "Copy server command to clipboard".
+2. In ChatGPT, open Settings (<kbd>⌘</kbd><kbd>,</kbd>)
+   and click "MCP servers" in the sidebar.
+3. Click "Add server".
+   Enter `iMCP` for "Name", choose "STDIO" for "Type",
+   and paste the copied command into "Command to launch".
+   Leave the other fields empty.
+4. Click "Save", and then click "Restart".
+5. [Approve the connection](#approve-connections) in iMCP.
+   ChatGPT might identify itself as `codex-mcp-client`.
+
+To test the connection,
+start a new Codex conversation and send this message:
+
+> "Use iMCP to play a system sound."
+
+Your Mac plays a short sound.
+If your Mac is muted, open the tool call in the conversation;
+a result of `true` means that iMCP received the request.
+
+<details>
+<summary>Troubleshooting the ChatGPT desktop app</summary>
+
+- **Settings doesn't show "MCP servers".**
+  Update ChatGPT and switch to Codex mode.
+  If ChatGPT shows "MCP server settings are unavailable"
+  and an organization manages your account,
+  ask your administrator whether you can add MCP servers.
+- **iMCP doesn't show an approval dialog.**
+  ChatGPT can't open iMCP for you.
+  Make sure that iMCP is open and "Enable MCP Server" is on,
+  and then click "Restart" in ChatGPT's "MCP servers" settings.
+  The dialog can also open behind other windows.
+  If you trusted ChatGPT before,
+  iMCP shows a notification instead of a dialog.
+- **ChatGPT can't use iMCP tools.**
+  Make sure that you're in a Codex conversation
+  and that iMCP is turned on in ChatGPT's "MCP servers" settings.
+  If you clicked "Deny", click "Restart" to see the dialog again.
+  If you turned on a service after connecting, click "Restart"
+  so that ChatGPT loads its tools.
+- **A service doesn't turn on in iMCP.**
+  If you denied permission when macOS asked,
+  open System Settings > "Privacy & Security",
+  click the category for the service, such as "Calendars",
+  and turn on iMCP.
+  Then click the service icon in the iMCP menu again.
+- **ChatGPT shows an error for the iMCP server.**
+  The command might point to the wrong place,
+  for example, if you moved iMCP after setting it up.
+  Copy the server command again,
+  open the iMCP server's settings in ChatGPT,
+  and replace "Command to launch" with the copied command.
+  Make sure that "Arguments" is empty,
+  and then click "Save" and "Restart".
+
+</details>
+
 ### Connect to other clients
 
 Most MCP clients can start iMCP as a local server
@@ -364,18 +364,6 @@ claude mcp add-from-claude-desktop
 ```
 
 </details>
-
-#### [Cursor][cursor]
-
-Open this link to add iMCP to Cursor:
-
-<a href="https://cursor.com/en-US/install-mcp?name=iMCP&config=eyJjb21tYW5kIjoiL0FwcGxpY2F0aW9ucy9pTUNQLmFwcC9Db250ZW50cy9NYWNPUy9pbWNwLXNlcnZlciAifQ%3D%3D">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://cursor.com/deeplink/mcp-install-dark.svg">
-    <source media="(prefers-color-scheme: light)" srcset="https://cursor.com/deeplink/mcp-install-light.svg">
-    <img alt="Install MCP Server" src="https://cursor.com/deeplink/mcp-install-light.svg">
-  </picture>
-</a>
 
 #### [llama.cpp][llama-cpp]
 
@@ -737,7 +725,6 @@ This project is not affiliated with, endorsed, or sponsored by Apple Inc.
 [companion-download]: https://github.com/mattt/Companion/releases/latest/download/Companion.zip
 [contacts-framework]: https://developer.apple.com/documentation/contacts
 [cncontact]: https://developer.apple.com/documentation/contacts/cncontact
-[cursor]: https://cursor.com
 [imessage-exporter]: https://github.com/ReagentX/imessage-exporter
 [json-ld]: https://json-ld.org
 [llama-app]: https://llama.app
