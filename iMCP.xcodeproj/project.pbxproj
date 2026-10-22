@@ -33,6 +33,10 @@
 		A40000000000000000000022 /* ../Shared/Extensions/Logger+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000012 /* ../Shared/Extensions/Logger+Extensions.swift */; };
 		A40000000000000000000023 /* ../Shared/Extensions/Bundle+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000013 /* ../Shared/Extensions/Bundle+Extensions.swift */; };
 		A40000000000000000000024 /* ../Shared/Models/Service.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000014 /* ../Shared/Models/Service.swift */; };
+		A50000000000000000000020 /* MailTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000010 /* MailTests.swift */; };
+		A50000000000000000000021 /* ../App/Services/Mail.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000011 /* ../App/Services/Mail.swift */; };
+		A50000000000000000000022 /* ../App/Extensions/Foundation+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000012 /* ../App/Extensions/Foundation+Extensions.swift */; };
+		A50000000000000000000030 /* Envelope in Frameworks */ = {isa = PBXBuildFile; productRef = A50000000000000000000040 /* Envelope */; };
 		B0D1DEADBEEF000000000002 /* BonjourDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF000000000001 /* BonjourDiscovery.swift */; };
 		B0D1DEADBEEF000000000004 /* BonjourDiscoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF000000000003 /* BonjourDiscoveryTests.swift */; };
 		B0D1DEADBEEF000000000006 /* MCPServiceLoop.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF000000000005 /* MCPServiceLoop.swift */; };
@@ -53,6 +57,7 @@
 		F8D8C48E2DCE0E6800369E5C /* JSONSchema in Frameworks */ = {isa = PBXBuildFile; productRef = F8D8C48D2DCE0E6800369E5C /* JSONSchema */; };
 		F8F1D2F82D6F9E0C00F6323D /* MCP in Frameworks */ = {isa = PBXBuildFile; productRef = F8F44E9C2D5903F70075D79C /* MCP */; };
 		F9E9902DC72D90F6C423EFE2 /* Logging in Frameworks */ = {isa = PBXBuildFile; productRef = 48ABEE9E6903427DD79096A1 /* Logging */; };
+		AA0011000000000000000001 /* Envelope in Frameworks */ = {isa = PBXBuildFile; productRef = AA0011000000000000000002 /* Envelope */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -95,6 +100,9 @@
 		A40000000000000000000012 /* ../Shared/Extensions/Logger+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Shared/Extensions/Logger+Extensions.swift"; sourceTree = "<group>"; };
 		A40000000000000000000013 /* ../Shared/Extensions/Bundle+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Shared/Extensions/Bundle+Extensions.swift"; sourceTree = "<group>"; };
 		A40000000000000000000014 /* ../Shared/Models/Service.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Models/Service.swift; sourceTree = "<group>"; };
+		A50000000000000000000010 /* MailTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MailTests.swift; sourceTree = "<group>"; };
+		A50000000000000000000011 /* ../App/Services/Mail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../App/Services/Mail.swift; sourceTree = "<group>"; };
+		A50000000000000000000012 /* ../App/Extensions/Foundation+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../App/Extensions/Foundation+Extensions.swift"; sourceTree = "<group>"; };
 		B0D1DEADBEEF000000000001 /* BonjourDiscovery.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = BonjourDiscovery.swift; path = ../CLI/BonjourDiscovery.swift; sourceTree = "<group>"; };
 		B0D1DEADBEEF000000000003 /* BonjourDiscoveryTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BonjourDiscoveryTests.swift; sourceTree = "<group>"; };
 		B0D1DEADBEEF000000000005 /* MCPServiceLoop.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MCPServiceLoop.swift; path = ../CLI/MCPServiceLoop.swift; sourceTree = "<group>"; };
@@ -160,6 +168,7 @@
 				A30000000000000000000030 /* MCP in Frameworks */,
 				A30000000000000000000031 /* JSONSchema in Frameworks */,
 				A30000000000000000000032 /* Ontology in Frameworks */,
+				A50000000000000000000030 /* Envelope in Frameworks */,
 				76F80A6E3EDBFB02048A6ED8 /* Cocoa.framework in Frameworks */,
 				826C0834A5B647F8A918E54D /* ServiceLifecycle in Frameworks */,
 				8DFCE9E4CBCBEB93A32E8560 /* ServiceLifecycleTestKit in Frameworks */,
@@ -183,6 +192,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				F809556E2D7888920055B911 /* TypedStream in Frameworks */,
+				AA0011000000000000000001 /* Envelope in Frameworks */,
 				158948D22D0E610E83A4433C /* Sparkle in Frameworks */,
 				F873F48D2D712BCF0035CD0A /* Ontology in Frameworks */,
 				F8D7C31A2DCBD32100A4775F /* MCP in Frameworks */,
@@ -225,6 +235,9 @@
 				A40000000000000000000012 /* ../Shared/Extensions/Logger+Extensions.swift */,
 				A40000000000000000000013 /* ../Shared/Extensions/Bundle+Extensions.swift */,
 				A40000000000000000000014 /* ../Shared/Models/Service.swift */,
+				A50000000000000000000010 /* MailTests.swift */,
+				A50000000000000000000011 /* ../App/Services/Mail.swift */,
+				A50000000000000000000012 /* ../App/Extensions/Foundation+Extensions.swift */,
 				A30000000000000000000010 /* HomeToolsTests.swift */,
 				A30000000000000000000011 /* ../Shared/Home/HomeBackend.swift */,
 				A30000000000000000000012 /* ../Shared/Home/HomeError.swift */,
@@ -296,6 +309,7 @@
 				A20000000000000000000011 /* JSONSchema */,
 				A20000000000000000000012 /* Ontology */,
 				DCE061F8A68D0CD546D919E2 /* ServiceLifecycle */,
+				A50000000000000000000040 /* Envelope */,
 				1CD6B9E157EEC273F178543D /* ServiceLifecycleTestKit */,
 				48ABEE9E6903427DD79096A1 /* Logging */,
 			);
@@ -353,6 +367,7 @@
 				F8F44E9C2D5903F70075D79C /* MCP */,
 				F873F48C2D712BCF0035CD0A /* Ontology */,
 				F809556D2D7888920055B911 /* TypedStream */,
+				AA0011000000000000000002 /* Envelope */,
 				F809556F2D7888920055B911 /* iMessage */,
 				F8A7DE3D2DCB76F700530587 /* MCP */,
 				F8D7C3162DCBD30500A4775F /* MCP */,
@@ -432,6 +447,7 @@
 			mainGroup = F8F44E642D59038D0075D79C;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				AA0011000000000000000003 /* XCRemoteSwiftPackageReference "Envelope" */,
 				F88358352D64A085000317CD /* XCRemoteSwiftPackageReference "swift-log" */,
 				F873F48B2D712BCF0035CD0A /* XCRemoteSwiftPackageReference "Ontology" */,
 				F809556C2D7888920055B911 /* XCRemoteSwiftPackageReference "Madrid" */,
@@ -513,6 +529,9 @@
 				A40000000000000000000022 /* ../Shared/Extensions/Logger+Extensions.swift in Sources */,
 				A40000000000000000000023 /* ../Shared/Extensions/Bundle+Extensions.swift in Sources */,
 				A40000000000000000000024 /* ../Shared/Models/Service.swift in Sources */,
+				A50000000000000000000020 /* MailTests.swift in Sources */,
+				A50000000000000000000021 /* ../App/Services/Mail.swift in Sources */,
+				A50000000000000000000022 /* ../App/Extensions/Foundation+Extensions.swift in Sources */,
 				A30000000000000000000020 /* HomeToolsTests.swift in Sources */,
 				A30000000000000000000021 /* ../Shared/Home/HomeBackend.swift in Sources */,
 				A30000000000000000000022 /* ../Shared/Home/HomeError.swift in Sources */,
@@ -1010,6 +1029,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		AA0011000000000000000003 /* XCRemoteSwiftPackageReference "Envelope" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/mattt/Envelope";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.3.1;
+			};
+		};
 		26120478122FBFCB2B073DE5 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/sparkle-project/Sparkle";
@@ -1164,6 +1191,12 @@
 		F8F44E9C2D5903F70075D79C /* MCP */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = MCP;
+		};
+		AA0011000000000000000002 /* Envelope */ = {isa = XCSwiftPackageProductDependency; package = AA0011000000000000000003 /* XCRemoteSwiftPackageReference "Envelope" */; productName = Envelope; };
+		A50000000000000000000040 /* Envelope */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA0011000000000000000003 /* XCRemoteSwiftPackageReference "Envelope" */;
+			productName = Envelope;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

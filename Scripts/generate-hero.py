@@ -26,6 +26,7 @@ SERVICES = (
     ("voicemail", "#28d74b"),
     ("weather", "#5ac8f5"),
     ("location", "#0a84ff"),
+    ("mail", "#0a84ff"),
     ("shortcuts", "#5e5ce6"),
     ("maps", "#bf5af2"),
 )
