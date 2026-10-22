@@ -6,8 +6,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/mattt/Envelope",
       "state" : {
-        "revision" : "d54beacf37cdb85bcd2a377e4249c0bc40a66cbe",
-        "version" : "0.3.0"
+        "revision" : "ee904821a60d524f324444172c99b60aed5f9064",
+        "version" : "0.3.1"
       }
     },
     {
