@@ -63,6 +63,7 @@ actor HomeService: Service, HomeBackend {
     /// A key that iMCP sent while pairing, kept until the helper acknowledges it or a connection uses it,
     /// so a lost acknowledgment doesn't leave the apps with different keys.
     private let pendingKeyStore: any HomeHelperKeyStore
+    private let isRunning: @MainActor @Sendable (pid_t) -> Bool
     private var client: MCP.Client?
     private var connection: NWConnection?
     private var connecting: Task<Void, Error>?
@@ -73,14 +74,19 @@ actor HomeService: Service, HomeBackend {
 
     /// Creates a service that uses `helperURL` instead of the helper that the user chose,
     /// and keeps its pairing keys in `keyStore` and `pendingKeyStore`.
+    /// `isRunning` tells whether the helper process with a given ID still runs.
     init(
         helperURL: URL? = nil,
         keyStore: any HomeHelperKeyStore = HomeHelperPairing.Keychain.app,
-        pendingKeyStore: any HomeHelperKeyStore = HomeHelperPairing.Keychain.appPending
+        pendingKeyStore: any HomeHelperKeyStore = HomeHelperPairing.Keychain.appPending,
+        isRunning: @escaping @MainActor @Sendable (pid_t) -> Bool = { pid in
+            NSRunningApplication(processIdentifier: pid).map { !$0.isTerminated } ?? false
+        }
     ) {
         self.helperURL = helperURL
         self.keyStore = keyStore
         self.pendingKeyStore = pendingKeyStore
+        self.isRunning = isRunning
     }
 
     // MARK: - Service
@@ -133,9 +139,9 @@ actor HomeService: Service, HomeBackend {
         let parameters = try HomeHelperPairing.pairingParameters(code: code)
         let paired: HelperCandidate
         do {
-            paired = try await connectToHelper(
+            (paired, _) = try await connectToHelper(
                 pid: pid,
-                parameters: parameters,
+                parameters: [parameters],
                 purpose: .pair(HomeHelperPairing.generateKey())
             )
         } catch PairingError.rejected {
@@ -243,43 +249,52 @@ actor HomeService: Service, HomeBackend {
         // Launch the helper even without a key, and bring it forward, so its window shows the code.
         let pid = try await launchHelper(overrideURL: helperURL, activates: !hasKey)
         helperPID = pid
-        try await connectWithSavedKeys { key in
-            try await self.connectToHelper(
+        try await connect(toHelperWithPID: pid)
+    }
+
+    /// Connects to the running helper with `pid`, or to another helper on this Mac,
+    /// with the saved key or a pending key.
+    func connect(toHelperWithPID pid: pid_t) async throws {
+        try await connectWithSavedKeys { keys in
+            let (candidate, index) = try await self.connectToHelper(
                 pid: pid,
-                parameters: HomeHelperPairing.parameters(key: key),
+                parameters: keys.map(HomeHelperPairing.parameters(key:)),
                 purpose: .serve
             )
+            return (index, candidate.processID == pid)
         }
     }
 
-    /// Connects with the saved key and, if the helper rejects it, with a pending key,
-    /// which the helper may have stored although its acknowledgment was lost.
-    /// Promotes a pending key that a connection uses, and deletes one that the saved key outlasted.
-    func connectWithSavedKeys(_ connect: (SymmetricKey) async throws -> Void) async throws {
+    /// Connects with the saved key and the pending key, which the helper may have stored
+    /// although its acknowledgment was lost.
+    /// `connect` tries the keys in order with each helper, the chosen one first,
+    /// and returns the index of the key that worked and whether the chosen helper accepted it.
+    /// Promotes a pending key that a connection uses.
+    /// Deletes the pending key only when the chosen helper still accepts the saved key,
+    /// not when another helper does.
+    func connectWithSavedKeys(_ connect: ([SymmetricKey]) async throws -> (index: Int, chosen: Bool)) async throws {
         let key = try keyStore.read()
         let pending = try pendingKeyStore.read()
-        guard key != nil || pending != nil else { throw PairingError.missing }
-        if let key {
-            do {
-                try await connect(key)
-                try? pendingKeyStore.delete()
-                return
-            } catch PairingError.rejected where pending != nil {}
+        let keys = [key, pending].compactMap { $0 }
+        guard !keys.isEmpty else { throw PairingError.missing }
+        let (index, chosen) = try await connect(keys)
+        if let pending, index == keys.count - 1 {
+            try keyStore.save(pending)
+            try? pendingKeyStore.delete()
+        } else if pending != nil, chosen {
+            try? pendingKeyStore.delete()
         }
-        guard let pending else { return }
-        try await connect(pending)
-        try keyStore.save(pending)
-        try? pendingKeyStore.delete()
     }
 
-    /// Connects to the helper with `pid` or, failing that, to another helper on this Mac,
-    /// and returns the advertisement that it connected to.
+    /// Connects to the helper with `pid` or, failing that, to another helper on this Mac.
+    /// Tries each of `parameters` with one helper before the next helper.
+    /// Returns the advertisement that it connected to and the index of the parameters that worked.
     @discardableResult
     private func connectToHelper(
         pid: pid_t,
-        parameters: NWParameters,
+        parameters: [NWParameters],
         purpose: ConnectionPurpose
-    ) async throws -> HelperCandidate {
+    ) async throws -> (HelperCandidate, Int) {
         // One deadline bounds discovery, resolution, and every connection attempt.
         let clock = ContinuousClock()
         let deadline = clock.now + .seconds(15)
@@ -296,28 +311,33 @@ actor HomeService: Service, HomeBackend {
             for candidate in ordered where clock.now < deadline {
                 // Don't try a code again with a helper that rejected it, so it doesn't count as another failure.
                 if candidate.processID != pid, log.others[candidate.name] == .rejected { continue }
-                let attempt: HelperAttempt
+                var attempt: HelperAttempt
                 if candidate.protocolVersion != HomeHelperPairing.protocolVersion {
                     attempt = .outdated
                 } else if candidate.isPairing != purpose.isPairing {
                     // A helper that shows a code accepts only pairing, and a paired helper only its key.
                     attempt = .rejected
                 } else {
-                    do {
-                        try await connect(
-                            to: .hostPort(host: .ipv4(.loopback), port: candidate.port),
-                            parameters: parameters,
-                            deadline: deadline,
-                            purpose: purpose
-                        )
-                        return candidate
-                    } catch let error as HomeError {
-                        // The handshake succeeded, so this is a paired helper, and its error stands.
-                        throw error
-                    } catch PairingError.rejected {
-                        attempt = .rejected
-                    } catch {
-                        attempt = .unavailable
+                    attempt = .rejected
+                    for (index, parameters) in parameters.enumerated() where clock.now < deadline {
+                        do {
+                            try await connect(
+                                to: .hostPort(host: .ipv4(.loopback), port: candidate.port),
+                                parameters: parameters,
+                                deadline: deadline,
+                                purpose: purpose
+                            )
+                            return (candidate, index)
+                        } catch let error as HomeError {
+                            // The handshake succeeded, so this is a paired helper, and its error stands.
+                            throw error
+                        } catch PairingError.rejected {
+                            continue
+                        } catch {
+                            // The helper didn't answer, so try it again in the next pass.
+                            attempt = .unavailable
+                            break
+                        }
                     }
                 }
                 if candidate.processID == pid {
@@ -531,10 +551,7 @@ actor HomeService: Service, HomeBackend {
 
     @MainActor
     private func checkHelperIsRunning(_ pid: pid_t) throws {
-        guard pid > 0,
-            let application = NSRunningApplication(processIdentifier: pid),
-            !application.isTerminated
-        else {
+        guard pid > 0, isRunning(pid) else {
             throw HomeError(
                 "iMCP Helper exited before the connection was ready. Check its crash report in Console, then retry."
             )

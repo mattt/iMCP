@@ -424,45 +424,101 @@ final class HomeHelperPairingTests: XCTestCase {
         withExtendedLifetime(server) {}
     }
 
-    func testConnectsWithAPendingKeyAndPromotesIt() async throws {
+    func testPromotesAPendingKeyThatAConnectionUses() async throws {
         let old = HomeHelperPairing.generateKey()
         let new = HomeHelperPairing.generateKey()
         let store = MemoryKeyStore(old)
         let pending = MemoryKeyStore(new)
-        var tried: [Data] = []
-        try await HomeService(keyStore: store, pendingKeyStore: pending).connectWithSavedKeys { key in
-            tried.append(Self.bytes(key))
-            // The helper stored the pending key, so it rejects the old one.
-            guard Self.bytes(key) == Self.bytes(new) else { throw HomeService.PairingError.rejected }
+        var offered: [[Data]] = []
+        try await HomeService(keyStore: store, pendingKeyStore: pending).connectWithSavedKeys { keys in
+            offered.append(keys.map(Self.bytes))
+            return (index: 1, chosen: true)
         }
-        XCTAssertEqual(tried, [Self.bytes(old), Self.bytes(new)])
+        XCTAssertEqual(offered, [[Self.bytes(old), Self.bytes(new)]])
         XCTAssertEqual(try store.read().map(Self.bytes), Self.bytes(new))
         XCTAssertNil(try pending.read())
 
-        // With no saved key, iMCP tries the pending key alone.
+        // With no saved key, iMCP offers the pending key alone.
         let onlyPending = MemoryKeyStore(new)
         let empty = MemoryKeyStore()
-        try await HomeService(keyStore: empty, pendingKeyStore: onlyPending).connectWithSavedKeys { _ in }
+        try await HomeService(keyStore: empty, pendingKeyStore: onlyPending).connectWithSavedKeys { keys in
+            XCTAssertEqual(keys.map(Self.bytes), [Self.bytes(new)])
+            return (index: 0, chosen: false)
+        }
         XCTAssertEqual(try empty.read().map(Self.bytes), Self.bytes(new))
         XCTAssertNil(try onlyPending.read())
     }
 
-    func testDropsAPendingKeyThatTheSavedKeyOutlasted() async throws {
+    func testDropsAPendingKeyOnlyWhenTheChosenHelperAcceptsTheSavedKey() async throws {
         let key = HomeHelperPairing.generateKey()
+        let new = HomeHelperPairing.generateKey()
         let store = MemoryKeyStore(key)
-        let pending = MemoryKeyStore(HomeHelperPairing.generateKey())
-        var tries = 0
-        try await HomeService(keyStore: store, pendingKeyStore: pending).connectWithSavedKeys { _ in tries += 1 }
-        XCTAssertEqual(tries, 1)
+        let pending = MemoryKeyStore(new)
+        // Another helper accepted the saved key, so the chosen one may still have the pending key.
+        try await HomeService(keyStore: store, pendingKeyStore: pending).connectWithSavedKeys { _ in
+            (index: 0, chosen: false)
+        }
+        XCTAssertEqual(try pending.read().map(Self.bytes), Self.bytes(new))
+        // The chosen helper accepted the saved key, so it never stored the pending one.
+        try await HomeService(keyStore: store, pendingKeyStore: pending).connectWithSavedKeys { _ in
+            (index: 0, chosen: true)
+        }
         XCTAssertEqual(try store.read().map(Self.bytes), Self.bytes(key))
         XCTAssertNil(try pending.read())
 
         // Without either key, iMCP needs pairing.
         do {
             try await HomeService(keyStore: MemoryKeyStore(), pendingKeyStore: MemoryKeyStore())
-                .connectWithSavedKeys { _ in }
+                .connectWithSavedKeys { _ in (index: 0, chosen: true) }
             XCTFail("Connecting without a key must ask for pairing.")
         } catch HomeService.PairingError.missing {}
+    }
+
+    @MainActor
+    func testTriesBothKeysWithTheChosenHelperBeforeAnotherHelper() async throws {
+        // An older helper still accepts the saved key; the chosen helper stored the pending key.
+        let old = HomeHelperPairing.generateKey()
+        let new = HomeHelperPairing.generateKey()
+        let olderServer = HelperServer(backend: StaticHomeBackend(), credential: .key(old))
+        let chosenServer = HelperServer(backend: StaticHomeBackend(), credential: .key(new))
+        let olderPort = try await olderServer.start()
+        let chosenPort = try await chosenServer.start()
+        let suffix = UUID().uuidString.prefix(8)
+        var registrations: [DNSServiceRef] = []
+        defer { registrations.forEach(DNSServiceRefDeallocate) }
+        for (name, port, pid) in [
+            ("iMCP Helper Test Older \(suffix)", olderPort, 41001),
+            ("iMCP Helper Test Chosen \(suffix)", chosenPort, 41002),
+        ] {
+            let record = ["protocol=\(HomeHelperPairing.protocolVersion)", "pid=\(pid)"]
+                .flatMap { [UInt8($0.utf8.count)] + Array($0.utf8) }
+            var reference: DNSServiceRef?
+            let status = DNSServiceRegister(
+                &reference,
+                0,
+                kDNSServiceInterfaceIndexLocalOnly,
+                name,
+                HomeHelperPairing.serviceType,
+                "local.",
+                "localhost.",
+                port.rawValue.bigEndian,
+                UInt16(record.count),
+                record,
+                nil,
+                nil
+            )
+            XCTAssertEqual(status, DNSServiceErrorType(kDNSServiceErr_NoError))
+            let registration = try XCTUnwrap(reference)
+            registrations.append(registration)
+            DNSServiceSetDispatchQueue(registration, .main)
+        }
+        let store = MemoryKeyStore(old)
+        let pending = MemoryKeyStore(new)
+        let service = HomeService(keyStore: store, pendingKeyStore: pending, isRunning: { _ in true })
+        try await service.connect(toHelperWithPID: 41002)
+        XCTAssertEqual(try store.read().map(Self.bytes), Self.bytes(new))
+        XCTAssertNil(try pending.read())
+        withExtendedLifetime((olderServer, chosenServer)) {}
     }
 
     private static func bytes(_ key: SymmetricKey) -> Data { key.withUnsafeBytes { Data($0) } }
