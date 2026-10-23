@@ -58,7 +58,7 @@ final class HelperRuntime: ObservableObject {
     @Published private(set) var isListening = false
     @Published private(set) var isReplacingCode = false
     private let backend = HomeKitBackend()
-    private let keychain = HomeHelperPairing.Keychain(service: "iMCP Helper pairing code")
+    private let keychain = HomeHelperPairing.Keychain.helper
     private var server: HelperServer?
     private var advertisement: HelperAdvertisement?
     private var started = false

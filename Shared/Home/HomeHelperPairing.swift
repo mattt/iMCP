@@ -104,6 +104,13 @@ enum HomeHelperPairing {
 
     /// Keeps a code as a generic password in this app's keychain.
     struct Keychain: Sendable {
+        /// The helper's own code.
+        static let helper = Keychain(service: "iMCP Helper pairing code")
+        /// The code that the user entered in iMCP.
+        /// Its own service keeps the apps' items apart in the login keychain,
+        /// which unsigned builds use.
+        static let app = Keychain(service: "iMCP pairing code for iMCP Helper")
+
         let service: String
         private let account = "pairing-code"
 

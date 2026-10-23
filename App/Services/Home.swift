@@ -39,7 +39,7 @@ actor HomeService: Service, HomeBackend {
     private let log = Logger.service("home")
     private let helperURL: URL?
     private let pairingCode: String?
-    private let keychain = HomeHelperPairing.Keychain(service: "iMCP Helper pairing code")
+    private let keychain = HomeHelperPairing.Keychain.app
     private var client: MCP.Client?
     private var connection: NWConnection?
     private var connecting: Task<Void, Error>?

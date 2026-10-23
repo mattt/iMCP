@@ -67,6 +67,10 @@ final class HomeHelperPairingTests: XCTestCase {
         XCTAssertEqual(HomeHelperPairing.format("abcdefghjkmnpqrstvwx"), "ABCDE-FGHJK-MNPQR-STVWX")
     }
 
+    func testAppsKeepTheirCodesUnderDifferentServices() {
+        XCTAssertNotEqual(HomeHelperPairing.Keychain.app.service, HomeHelperPairing.Keychain.helper.service)
+    }
+
     func testDerivesTheSameKeyForEveryFormOfACode() throws {
         func bytes(_ code: String) throws -> Data {
             try HomeHelperPairing.key(for: code).withUnsafeBytes { Data($0) }
