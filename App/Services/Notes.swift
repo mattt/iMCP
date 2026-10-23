@@ -372,6 +372,8 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
     /// The bookmark comes first whenever one exists: while another call holds the grant,
     /// the default path is readable too, but it stops being readable when that call ends,
     /// so each call holds a grant of its own.
+    /// A bookmark that no longer resolves grants nothing, so no call can hold its grant;
+    /// if the default path is readable then, as with Full Disk Access, it's used instead.
     /// Errors from TopoText are rethrown as `StoreError`, which describes them for the client.
     private func withStore<T>(_ operation: (TopoText.Store) async throws -> T) async throws -> T {
         do {
@@ -379,7 +381,15 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
                 return try await operation(TopoText.Store(root: notesContainerURL))
             }
 
-            let directory = try resolveBookmarkedContainer()
+            let directory: URL
+            do {
+                directory = try resolveBookmarkedContainer()
+            } catch let error where canAccessDatabaseAtDefaultPath {
+                log.error(
+                    "Using the Notes database at the default path because the stored bookmark doesn't resolve: \(error.localizedDescription)"
+                )
+                return try await operation(TopoText.Store(root: notesContainerURL))
+            }
 
             // The grant must stay open until the store's call returns:
             // SQLite opens the write-ahead log lazily on the first statement.
