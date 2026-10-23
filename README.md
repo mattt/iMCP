@@ -635,14 +635,20 @@ or you can choose it in Settings > Services > Home.
 When you enable Home,
 iMCP launches the helper if it isn't running,
 and the helper asks for HomeKit access.
-The helper's window shows a pairing code;
-copy it, and enter it when iMCP asks for it.
-iMCP keeps the code in its keychain, so you enter it once.
-To pair again, choose New Code in the helper's window,
-which disconnects iMCP,
-then choose Enter Code… in Settings > Services > Home.
+The first time, the helper's window shows an eight-character pairing code,
+such as `7KQ2-M9XD`;
+choose Copy Code, and paste the code when iMCP asks for it.
+If the window is behind other windows,
+choose Show iMCP Helper in iMCP's alert.
+The code works once:
+when you pair, iMCP sends the helper a new random key,
+and both apps keep that key in their keychains.
+After five wrong codes, the helper shows a new one.
+To pair again, choose Pair Again in the helper's window,
+which ends iMCP's connection and shows a new code,
+then choose Pair… in Settings > Services > Home.
 The helper keeps running after iMCP quits;
-choose Quit in its window to stop it.
+choose Quit iMCP Helper from its app menu, or press Command-Q, to stop it.
 The window also reports startup and permission errors.
 The Mac's iCloud account must have access to the home,
 and writes can require the owner or administrator role.
@@ -663,10 +669,11 @@ The helper advertises "\_imcp-helper.\_tcp" on the local-only DNS-SD interface,
 and iMCP finds it there, whether or not iMCP launched it.
 If more than one helper is running,
 iMCP tries the one at the chosen location first, then the others.
-The connection uses TLS with a pre-shared key
-that both apps derive from the pairing code,
-so a connection without the code fails the TLS handshake,
-and a process that advertises itself as the helper learns nothing that it can use.
+Connections use TLS with the key from pairing as a pre-shared key,
+so a connection without the key fails the TLS handshake.
+The pairing connection uses a key derived from the code with PBKDF2,
+which makes each guess slow for a process
+that advertises itself as the helper while you pair.
 If you built the helper with an earlier version of iMCP,
 quit it and rebuild it with `Scripts/install-helper.sh`;
 iMCP refuses a helper that doesn't declare the current protocol version.
