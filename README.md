@@ -671,6 +671,8 @@ If more than one helper is running,
 iMCP tries the one at the chosen location first, then the others.
 Connections use TLS with the key from pairing as a pre-shared key,
 so a connection without the key fails the TLS handshake.
+The cipher suite adds an ECDHE key exchange,
+so a recorded connection stays secret even if the key or code is found later.
 The pairing connection uses a key derived from the code with PBKDF2,
 which makes each guess slow for a process
 that advertises itself as the helper while you pair.
