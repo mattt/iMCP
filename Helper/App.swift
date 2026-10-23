@@ -333,8 +333,10 @@ final class HelperRuntime: ObservableObject {
 
     /// Finds iMCP by its bundle identifier.
     func findIMCP() {
-        canOpenIMCP = Self.iMCPURL() != nil
-        Self.log.info("Open iMCP… is \(self.canOpenIMCP ? "available" : "unavailable", privacy: .public).")
+        Task {
+            canOpenIMCP = await Self.iMCPURL() != nil
+            Self.log.info("Open iMCP… is \(self.canOpenIMCP ? "available" : "unavailable", privacy: .public).")
+        }
     }
 
     /// Opens iMCP's pairing window.
@@ -343,9 +345,18 @@ final class HelperRuntime: ObservableObject {
     /// so another app can't show a fake pairing window and capture the code.
     /// UIKit on Mac Catalyst can't do this, so it uses AppKit's shared workspace.
     func openIMCP() {
+        Task {
+            guard let application = await Self.iMCPURL() else {
+                canOpenIMCP = false
+                return
+            }
+            open(application)
+        }
+    }
+
+    private func open(_ application: URL) {
         guard
             let workspace = Self.workspace,
-            let application = Self.iMCPURL(),
             let configurationClass = NSClassFromString("NSWorkspaceOpenConfiguration") as? NSObject.Type
         else {
             canOpenIMCP = false
@@ -367,7 +378,7 @@ final class HelperRuntime: ObservableObject {
                 )
             }
         }
-        Self.log.info("Opening imcp://pair with \(application.path, privacy: .public).")
+        Self.log.info("Opening imcp://pair with \(application.path, privacy: .private).")
         typealias Open = @convention(c) (NSObject, Selector, NSArray, NSURL, NSObject, AnyObject?) -> Void
         unsafeBitCast(workspace.method(for: open), to: Open.self)(
             workspace,
@@ -408,14 +419,14 @@ final class HelperRuntime: ObservableObject {
     /// The copy of iMCP to open: the running one, or else the one that LaunchServices finds,
     /// if it declares the pairing URL's scheme.
     /// An older iMCP doesn't declare it, and LaunchServices refuses to open the URL with it.
-    private static func iMCPURL() -> URL? {
+    private static func iMCPURL() async -> URL? {
         guard let workspace else {
             log.error("Can't find iMCP: AppKit's shared workspace isn't available.")
             return nil
         }
         if let running = runningIMCP()?.perform(NSSelectorFromString("bundleURL"))?.takeUnretainedValue() as? URL {
-            log.info("Found the running iMCP at \(running.path, privacy: .public).")
-            switch declaresPairingScheme(running) {
+            log.info("Found the running iMCP at \(running.path, privacy: .private).")
+            switch await declaresPairingScheme(running) {
             case false?:
                 log.info("The running iMCP doesn't declare the imcp scheme.")
                 return nil
@@ -437,8 +448,8 @@ final class HelperRuntime: ObservableObject {
             log.info("iMCP isn't running, and LaunchServices found no app with its bundle ID.")
             return nil
         }
-        log.info("Found iMCP at \(installed.path, privacy: .public), which isn't running.")
-        if let declares = declaresPairingScheme(installed) {
+        log.info("Found iMCP at \(installed.path, privacy: .private), which isn't running.")
+        if let declares = await declaresPairingScheme(installed) {
             if !declares { log.info("That iMCP doesn't declare the imcp scheme.") }
             return declares ? installed : nil
         }
@@ -458,7 +469,8 @@ final class HelperRuntime: ObservableObject {
     }
 
     /// Whether the app at `url` declares the pairing URL's scheme, or nil if its Info.plist can't be read.
-    private static func declaresPairingScheme(_ url: URL) -> Bool? {
+    /// Reads the file off the main actor, so a slow volume doesn't stall the window.
+    private nonisolated static func declaresPairingScheme(_ url: URL) async -> Bool? {
         let plist = url.appendingPathComponent("Contents/Info.plist")
         guard
             let data = try? Data(contentsOf: plist),
