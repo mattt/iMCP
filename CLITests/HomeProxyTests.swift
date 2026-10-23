@@ -15,7 +15,11 @@ final class HomeProxyTests: XCTestCase {
                 "Set IMCP_HELPER_PATH and IMCP_HELPER_CODE (the code in the helper's window) to run the signed helper integration test."
             )
         }
-        let backend = HomeService(helperURL: URL(fileURLWithPath: path), keyStore: MemoryKeyStore())
+        let backend = HomeService(
+            helperURL: URL(fileURLWithPath: path),
+            keyStore: MemoryKeyStore(),
+            pendingKeyStore: MemoryKeyStore()
+        )
         let initial = await backend.isActivated
         XCTAssertFalse(initial)
         try await backend.pair(code: code)
@@ -108,14 +112,16 @@ final class HomeHelperPairingTests: XCTestCase {
         await pairingClient.disconnect()
 
         let store = MemoryKeyStore()
+        let pending = MemoryKeyStore()
         let key = HomeHelperPairing.generateKey()
-        try await HomeService(keyStore: store).connect(
+        try await HomeService(keyStore: store, pendingKeyStore: pending).connect(
             to: .hostPort(host: .ipv4(.loopback), port: pairingPort),
             parameters: pairing,
             deadline: .now + .seconds(10),
             purpose: .pair(key)
         )
         XCTAssertEqual(try store.read().map(Self.bytes), Self.bytes(key))
+        XCTAssertNil(try pending.read())
         // The helper stored the key before it acknowledged the pairing.
         XCTAssertEqual(try helperStore.read().map(Self.bytes), Self.bytes(key))
         let paired = try await events.next()
@@ -368,6 +374,97 @@ final class HomeHelperPairingTests: XCTestCase {
         }
     }
 
+    func testKeepsThePendingKeyWhenTheAcknowledgmentIsLost() async throws {
+        let code = try HomeHelperPairing.generateCode()
+        // The helper stores the key, but its acknowledgment comes too late for iMCP.
+        let server = HelperServer(
+            backend: StaticHomeBackend(),
+            credential: .code(code),
+            storeKey: { _, _ in try await Task.sleep(for: .seconds(6)) }
+        )
+        let port = try await server.start()
+        let store = MemoryKeyStore()
+        let pending = MemoryKeyStore()
+        let key = HomeHelperPairing.generateKey()
+        do {
+            try await HomeService(keyStore: store, pendingKeyStore: pending).connect(
+                to: .hostPort(host: .ipv4(.loopback), port: port),
+                parameters: HomeHelperPairing.pairingParameters(code: code),
+                deadline: .now + .seconds(10),
+                purpose: .pair(key)
+            )
+            XCTFail("The pairing must report the lost acknowledgment.")
+        } catch {}
+        XCTAssertNil(try store.read())
+        XCTAssertEqual(try pending.read().map(Self.bytes), Self.bytes(key))
+        withExtendedLifetime(server) {}
+    }
+
+    func testDropsThePendingKeyWhenTheHelperRefusesThePairing() async throws {
+        let code = try HomeHelperPairing.generateCode()
+        let server = HelperServer(
+            backend: StaticHomeBackend(),
+            credential: .code(code),
+            storeKey: { _, _ in throw HomeError("The keychain is locked.") }
+        )
+        let port = try await server.start()
+        let store = MemoryKeyStore()
+        let pending = MemoryKeyStore()
+        do {
+            try await HomeService(keyStore: store, pendingKeyStore: pending).connect(
+                to: .hostPort(host: .ipv4(.loopback), port: port),
+                parameters: HomeHelperPairing.pairingParameters(code: code),
+                deadline: .now + .seconds(10),
+                purpose: .pair(HomeHelperPairing.generateKey())
+            )
+            XCTFail("The pairing must fail when the helper can't store the key.")
+        } catch {}
+        XCTAssertNil(try store.read())
+        XCTAssertNil(try pending.read())
+        withExtendedLifetime(server) {}
+    }
+
+    func testConnectsWithAPendingKeyAndPromotesIt() async throws {
+        let old = HomeHelperPairing.generateKey()
+        let new = HomeHelperPairing.generateKey()
+        let store = MemoryKeyStore(old)
+        let pending = MemoryKeyStore(new)
+        var tried: [Data] = []
+        try await HomeService(keyStore: store, pendingKeyStore: pending).connectWithSavedKeys { key in
+            tried.append(Self.bytes(key))
+            // The helper stored the pending key, so it rejects the old one.
+            guard Self.bytes(key) == Self.bytes(new) else { throw HomeService.PairingError.rejected }
+        }
+        XCTAssertEqual(tried, [Self.bytes(old), Self.bytes(new)])
+        XCTAssertEqual(try store.read().map(Self.bytes), Self.bytes(new))
+        XCTAssertNil(try pending.read())
+
+        // With no saved key, iMCP tries the pending key alone.
+        let onlyPending = MemoryKeyStore(new)
+        let empty = MemoryKeyStore()
+        try await HomeService(keyStore: empty, pendingKeyStore: onlyPending).connectWithSavedKeys { _ in }
+        XCTAssertEqual(try empty.read().map(Self.bytes), Self.bytes(new))
+        XCTAssertNil(try onlyPending.read())
+    }
+
+    func testDropsAPendingKeyThatTheSavedKeyOutlasted() async throws {
+        let key = HomeHelperPairing.generateKey()
+        let store = MemoryKeyStore(key)
+        let pending = MemoryKeyStore(HomeHelperPairing.generateKey())
+        var tries = 0
+        try await HomeService(keyStore: store, pendingKeyStore: pending).connectWithSavedKeys { _ in tries += 1 }
+        XCTAssertEqual(tries, 1)
+        XCTAssertEqual(try store.read().map(Self.bytes), Self.bytes(key))
+        XCTAssertNil(try pending.read())
+
+        // Without either key, iMCP needs pairing.
+        do {
+            try await HomeService(keyStore: MemoryKeyStore(), pendingKeyStore: MemoryKeyStore())
+                .connectWithSavedKeys { _ in }
+            XCTFail("Connecting without a key must ask for pairing.")
+        } catch HomeService.PairingError.missing {}
+    }
+
     private static func bytes(_ key: SymmetricKey) -> Data { key.withUnsafeBytes { Data($0) } }
 
     @MainActor
@@ -616,8 +713,10 @@ final class HomeHelperPairingTests: XCTestCase {
 /// Keeps a pairing key in memory instead of the keychain.
 private final class MemoryKeyStore: HomeHelperKeyStore {
     private let key = OSAllocatedUnfairLock<SymmetricKey?>(initialState: nil)
+    init(_ key: SymmetricKey? = nil) { self.key.withLock { $0 = key } }
     func read() throws -> SymmetricKey? { key.withLock { $0 } }
     func save(_ key: SymmetricKey) throws { self.key.withLock { $0 = key } }
+    func delete() throws { key.withLock { $0 = nil } }
 }
 
 /// Holds sessions at the server's `willStartSession` point until the test opens it.

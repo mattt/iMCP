@@ -173,6 +173,8 @@ enum HomeHelperPairing {
         /// Its own service keeps the apps' items apart in the login keychain,
         /// which unsigned builds use.
         static let app = Keychain(service: "iMCP pairing key for iMCP Helper")
+        /// The key that iMCP sent while pairing, until the helper acknowledges it.
+        static let appPending = Keychain(service: "iMCP pending pairing key for iMCP Helper")
 
         let service: String
         private let account = "pairing-key"

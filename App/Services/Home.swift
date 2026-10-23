@@ -60,6 +60,9 @@ actor HomeService: Service, HomeBackend {
     private let log = Logger.service("home")
     private let helperURL: URL?
     private let keyStore: any HomeHelperKeyStore
+    /// A key that iMCP sent while pairing, kept until the helper acknowledges it or a connection uses it,
+    /// so a lost acknowledgment doesn't leave the apps with different keys.
+    private let pendingKeyStore: any HomeHelperKeyStore
     private var client: MCP.Client?
     private var connection: NWConnection?
     private var connecting: Task<Void, Error>?
@@ -69,10 +72,15 @@ actor HomeService: Service, HomeBackend {
     private var pairing: Task<Void, Error>?
 
     /// Creates a service that uses `helperURL` instead of the helper that the user chose,
-    /// and keeps its pairing key in `keyStore`.
-    init(helperURL: URL? = nil, keyStore: any HomeHelperKeyStore = HomeHelperPairing.Keychain.app) {
+    /// and keeps its pairing keys in `keyStore` and `pendingKeyStore`.
+    init(
+        helperURL: URL? = nil,
+        keyStore: any HomeHelperKeyStore = HomeHelperPairing.Keychain.app,
+        pendingKeyStore: any HomeHelperKeyStore = HomeHelperPairing.Keychain.appPending
+    ) {
         self.helperURL = helperURL
         self.keyStore = keyStore
+        self.pendingKeyStore = pendingKeyStore
     }
 
     // MARK: - Service
@@ -231,12 +239,37 @@ actor HomeService: Service, HomeBackend {
         connection?.cancel()
         connection = nil
         await old?.disconnect()
-        let key = try keyStore.read()
+        let hasKey = try keyStore.read() != nil || pendingKeyStore.read() != nil
         // Launch the helper even without a key, and bring it forward, so its window shows the code.
-        let pid = try await launchHelper(overrideURL: helperURL, activates: key == nil)
+        let pid = try await launchHelper(overrideURL: helperURL, activates: !hasKey)
         helperPID = pid
-        guard let key else { throw PairingError.missing }
-        try await connectToHelper(pid: pid, parameters: HomeHelperPairing.parameters(key: key), purpose: .serve)
+        try await connectWithSavedKeys { key in
+            try await self.connectToHelper(
+                pid: pid,
+                parameters: HomeHelperPairing.parameters(key: key),
+                purpose: .serve
+            )
+        }
+    }
+
+    /// Connects with the saved key and, if the helper rejects it, with a pending key,
+    /// which the helper may have stored although its acknowledgment was lost.
+    /// Promotes a pending key that a connection uses, and deletes one that the saved key outlasted.
+    func connectWithSavedKeys(_ connect: (SymmetricKey) async throws -> Void) async throws {
+        let key = try keyStore.read()
+        let pending = try pendingKeyStore.read()
+        guard key != nil || pending != nil else { throw PairingError.missing }
+        if let key {
+            do {
+                try await connect(key)
+                try? pendingKeyStore.delete()
+                return
+            } catch PairingError.rejected where pending != nil {}
+        }
+        guard let pending else { return }
+        try await connect(pending)
+        try keyStore.save(pending)
+        try? pendingKeyStore.delete()
     }
 
     /// Connects to the helper with `pid` or, failing that, to another helper on this Mac,
@@ -445,14 +478,21 @@ actor HomeService: Service, HomeBackend {
                 authorized = true
                 log.info("Connected to iMCP Helper")
             case .pair(let key):
+                // Keep the key as pending first, so iMCP can still use it if the acknowledgment is lost.
+                try pendingKeyStore.save(key)
                 do {
                     let data = key.withUnsafeBytes { Data($0) }
                     _ = try await client.send(HomeHelperPairing.Pair.request(.init(key: data))).value
                 } catch {
+                    // An error before the time limit is the helper's answer, so it didn't keep the key.
+                    // After the limit, the answer may be lost, so iMCP keeps the key as pending.
+                    probe?.cancel()
+                    if await probe?.value == false { try? pendingKeyStore.delete() }
                     throw HomeError("iMCP Helper didn't accept the pairing: \(error.localizedDescription)")
                 }
-                // The helper stored the key before it responded, so iMCP saves it only now.
+                // The helper stored the key before it responded.
                 try keyStore.save(key)
+                try? pendingKeyStore.delete()
                 connection.cancel()
                 await client.disconnect()
                 log.info("Paired with iMCP Helper")
@@ -569,7 +609,7 @@ actor HomeService: Service, HomeBackend {
 
     /// Whether iMCP has a pairing key for the helper.
     nonisolated func hasPairingKey() -> Bool {
-        (try? keyStore.read()) != nil
+        (try? keyStore.read()) != nil || (try? pendingKeyStore.read()) != nil
     }
 
     /// Asks for the code from the helper's window.
@@ -703,6 +743,7 @@ struct HelperCandidate: Equatable, Sendable {
 protocol HomeHelperKeyStore: Sendable {
     func read() throws -> SymmetricKey?
     func save(_ key: SymmetricKey) throws
+    func delete() throws
 }
 
 extension HomeHelperPairing.Keychain: HomeHelperKeyStore {}
