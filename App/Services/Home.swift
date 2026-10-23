@@ -721,7 +721,11 @@ actor HomeService: Service, HomeBackend {
             guard try HomeHelperLocator.protocolVersion(at: bundleURL) == HomeHelperPairing.protocolVersion else {
                 throw HomeError(Self.outdatedHelperMessage)
             }
-            if activates { _ = running.activate(from: .current) }
+            if activates {
+                // With cooperative activation, the helper comes forward only if iMCP yields to it.
+                NSApp.yieldActivation(to: running)
+                _ = running.activate(from: .current)
+            }
             return running.processIdentifier
         }
         guard let url else {
@@ -742,7 +746,13 @@ actor HomeService: Service, HomeBackend {
             "DYLD_LIBRARY_PATH": "",
             "DYLD_FRAMEWORK_PATH": "",
         ]
-        return try await NSWorkspace.shared.openApplication(at: url, configuration: configuration).processIdentifier
+        if activates, let identifier = Bundle(url: url)?.bundleIdentifier {
+            // Let the helper take activation when it launches and activates itself.
+            NSApp.yieldActivation(toApplicationWithBundleIdentifier: identifier)
+        }
+        let application = try await NSWorkspace.shared.openApplication(at: url, configuration: configuration)
+        if activates { _ = application.activate(from: .current) }
+        return application.processIdentifier
     }
 }
 
