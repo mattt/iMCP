@@ -203,7 +203,13 @@ final class HelperRuntime: ObservableObject {
         } catch {
             isListening = false
             listenerFailure = .failed(error)
-            failedChange = change
+            // A replacement whose code check passed is retried without the check,
+            // which fails now that the code is cleared.
+            if case .tooManyFailedPairings = change {
+                failedChange = .pairAgain
+            } else {
+                failedChange = change
+            }
             canRetry = true
         }
     }
