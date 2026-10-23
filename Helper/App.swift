@@ -15,7 +15,8 @@ struct HelperApp: App {
                 if let code = runtime.pairingCode {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Pairing code").font(.headline)
-                        Text(code).font(.title2.monospaced()).textSelection(.enabled)
+                        // Not selectable, so copies go through the Copy button's restrictions.
+                        Text(code).font(.title2.monospaced())
                         Text("Enter this code in iMCP to turn on Home. A new code disconnects iMCP until you enter it.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
