@@ -320,14 +320,16 @@ actor HomeService: Service, HomeBackend {
         configuration.activates = false
         // Xcode's native macOS debugger libraries cannot load in a Catalyst app.
         // Empty values override the launch environment; omitting the keys does not.
-        // The secret goes in the environment because other processes can read the arguments.
+        // The port and secret go in the environment because other processes can read the arguments.
+        // A process that learned the port could bind it first and receive the secret.
         configuration.environment = [
             "DYLD_INSERT_LIBRARIES": "",
             "DYLD_LIBRARY_PATH": "",
             "DYLD_FRAMEWORK_PATH": "",
-            HomeHelperSecret.environmentKey: secret,
+            HomeHelperSecret.portEnvironmentKey: String(port),
+            HomeHelperSecret.secretEnvironmentKey: secret,
         ]
-        configuration.arguments = ["--parent-pid", String(getpid()), "--port", String(port)]
+        configuration.arguments = ["--parent-pid", String(getpid())]
         let application = try await NSWorkspace.shared.openApplication(at: url, configuration: configuration)
         // LaunchServices returns the running helper without the new arguments and environment,
         // so keep the port and secret it was launched with.
@@ -340,7 +342,7 @@ actor HomeService: Service, HomeBackend {
     }
 
     /// Selects an ephemeral loopback port for the child process.
-    /// The helper reports a bind error if another process takes it before launch.
+    /// The helper exits if another process takes it before the helper listens.
     nonisolated func availableLoopbackPort() throws -> UInt16 {
         let descriptor = socket(AF_INET, SOCK_STREAM, 0)
         guard descriptor >= 0 else { throw HomeError("Cannot allocate a socket for iMCP Helper.") }

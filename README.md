@@ -651,8 +651,8 @@ After a lost connection, read-only calls retry once.
 Writes are not repeated, because HomeKit may have applied them already;
 the error asks the caller to inspect the home before retrying.
 
-iMCP passes an ephemeral loopback port to each helper it launches,
-and a new secret in the helper's launch environment,
+iMCP passes an ephemeral loopback port and a new secret
+to each helper it launches in the helper's launch environment,
 which only the helper and root can read, unlike its arguments.
 The helper serves only connections that present this secret,
 and exits if it can't listen on the port.

@@ -6,10 +6,13 @@ import Security
 /// iMCP makes a new secret for each launch and passes it in the helper's
 /// launch environment, which other processes can't read,
 /// unlike the launch arguments.
-/// iMCP presents it in the experimental capabilities of its `initialize` request,
+/// The helper's port goes there too,
+/// so that no other process can bind the port before the helper does.
+/// iMCP presents the secret in the experimental capabilities of its `initialize` request,
 /// and the helper ends any connection that doesn't present it.
 enum HomeHelperSecret {
-    static let environmentKey = "IMCP_HELPER_SECRET"
+    static let secretEnvironmentKey = "IMCP_HELPER_SECRET"
+    static let portEnvironmentKey = "IMCP_HELPER_PORT"
     static let capabilityKey = "app.imcp.helper.secret"
 
     static func generate() throws -> String {

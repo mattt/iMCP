@@ -42,10 +42,11 @@ final class HelperRuntime: ObservableObject {
         }
         do {
             try monitorParent()
-            // iMCP passes the port in the arguments and a new secret in the environment.
+            // iMCP passes the port and a new secret in the environment.
             // Without the secret, no client can prove that iMCP launched this helper.
-            guard let port = try requestedPort(),
-                let secret = ProcessInfo.processInfo.environment[HomeHelperSecret.environmentKey], !secret.isEmpty
+            let environment = ProcessInfo.processInfo.environment
+            guard let port = try requestedPort(environment),
+                let secret = environment[HomeHelperSecret.secretEnvironmentKey], !secret.isEmpty
             else {
                 status =
                     "iMCP Helper accepts connections only when iMCP launches it. Quit iMCP Helper, then turn Home on in iMCP."
@@ -71,13 +72,10 @@ final class HelperRuntime: ObservableObject {
         }
     }
 
-    private func requestedPort() throws -> NWEndpoint.Port? {
-        guard let index = CommandLine.arguments.firstIndex(of: "--port") else { return nil }
-        guard CommandLine.arguments.indices.contains(index + 1),
-            let number = UInt16(CommandLine.arguments[index + 1]), number > 0,
-            let port = NWEndpoint.Port(rawValue: number)
-        else {
-            throw HomeError("--port requires a TCP port between 1 and 65535.")
+    private func requestedPort(_ environment: [String: String]) throws -> NWEndpoint.Port? {
+        guard let value = environment[HomeHelperSecret.portEnvironmentKey] else { return nil }
+        guard let number = UInt16(value), number > 0, let port = NWEndpoint.Port(rawValue: number) else {
+            throw HomeError("\(HomeHelperSecret.portEnvironmentKey) requires a TCP port between 1 and 65535.")
         }
         return port
     }
