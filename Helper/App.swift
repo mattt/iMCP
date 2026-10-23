@@ -1,6 +1,7 @@
 import Network
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 @main
 struct HelperApp: App {
@@ -19,7 +20,13 @@ struct HelperApp: App {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         HStack {
-                            Button("Copy") { UIPasteboard.general.string = code }
+                            Button("Copy") {
+                                // Keep the code off other devices, and off the pasteboard after two minutes.
+                                UIPasteboard.general.setItems(
+                                    [[UTType.utf8PlainText.identifier: code]],
+                                    options: [.localOnly: true, .expirationDate: Date().addingTimeInterval(120)]
+                                )
+                            }
                             Button("New Code") { Task { await runtime.replacePairingCode() } }
                         }
                     }
