@@ -2,7 +2,7 @@
 # requires-python = ">=3.11"
 # dependencies = []
 # ///
-"""Check the running iMCP Helper through imcp-server without changing the home."""
+"""Check iMCP's Home tools through imcp-server without changing the home."""
 
 import argparse
 import json
@@ -14,13 +14,12 @@ from pathlib import Path
 
 
 class HomeClient:
-    def __init__(self, server: Path, service_type: str = "_imcp-helper._tcp"):
+    def __init__(self, server: Path):
         self.process = subprocess.Popen(
             [str(server.resolve())],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
-            env={**os.environ, "IMCP_SERVICE_TYPE": service_type},
         )
         self.sequence = 0
         self.buffer = b""
@@ -86,8 +85,26 @@ class HomeClient:
             self.process.wait()
 
 
+# iMCP lists the tools of every enabled service; these prefixes select Home's.
+HOME_PREFIXES = (
+    "home_",
+    "homes_",
+    "rooms_",
+    "zones_",
+    "accessories_",
+    "services_",
+    "characteristics_",
+    "scenes_",
+    "automations_",
+)
+
+
 def check(client):
-    tools = client.request("tools/list", {})["tools"]
+    tools = [
+        tool
+        for tool in client.request("tools/list", {})["tools"]
+        if tool["name"].startswith(HOME_PREFIXES)
+    ]
     assert len(tools) == 28
     assert len({tool["name"] for tool in tools}) == 28
     destructive = {
@@ -149,11 +166,10 @@ def main():
     parser.add_argument(
         "server", type=Path, help="Path to the built imcp-server executable"
     )
-    parser.add_argument("--service-type", default="_imcp-helper._tcp")
     args = parser.parse_args()
     client = None
     try:
-        client = HomeClient(args.server, args.service_type)
+        client = HomeClient(args.server)
         check(client)
     finally:
         if client is not None:

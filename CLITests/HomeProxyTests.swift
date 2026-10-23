@@ -1,4 +1,6 @@
 import AppKit
+import MCP
+import Network
 import XCTest
 
 final class HomeProxyTests: XCTestCase {
@@ -38,6 +40,109 @@ final class HomeProxyTests: XCTestCase {
         let reactivated = await backend.isActivated
         XCTAssertTrue(reactivated)
     }
+}
+
+final class HomeHelperSecretTests: XCTestCase {
+    func testGeneratesDistinctSecretsOf32Bytes() throws {
+        let first = try HomeHelperSecret.generate()
+        let second = try HomeHelperSecret.generate()
+        XCTAssertEqual(Data(base64Encoded: first)?.count, 32)
+        XCTAssertNotEqual(first, second)
+    }
+
+    func testMatchesOnlyTheSameSecret() throws {
+        let secret = try HomeHelperSecret.generate()
+        XCTAssertTrue(HomeHelperSecret.matches(secret, secret))
+        XCTAssertFalse(HomeHelperSecret.matches(nil, secret))
+        XCTAssertFalse(HomeHelperSecret.matches("", secret))
+        XCTAssertFalse(HomeHelperSecret.matches(String(secret.dropLast()), secret))
+        XCTAssertFalse(HomeHelperSecret.matches(secret + "A", secret))
+        XCTAssertFalse(HomeHelperSecret.matches(try HomeHelperSecret.generate(), secret))
+        XCTAssertFalse(HomeHelperSecret.matches("", ""))
+    }
+
+    func testHelperServesOnlyClientsWithTheSecret() async throws {
+        let secret = try HomeHelperSecret.generate()
+        let port = try HomeService().availableLoopbackPort()
+        let server = HelperServer(
+            backend: StaticHomeBackend(),
+            port: try XCTUnwrap(NWEndpoint.Port(rawValue: port)),
+            secret: secret
+        )
+        try await server.start()
+
+        // Strict mode drops requests before initialize,
+        // and the helper ends a connection that doesn't present the secret.
+        let early = try await exchange(#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#, port: port)
+        XCTAssertNil(early)
+
+        // A wrong or missing secret ends the connection without a reply.
+        for capabilities in [#"{"experimental":{"app.imcp.helper.secret":"wrong"}}"#, "{}"] {
+            let reply = try await exchange(
+                #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","#
+                    + #""clientInfo":{"name":"iMCP","version":"1"},"capabilities":"# + capabilities + "}}",
+                port: port
+            )
+            XCTAssertNil(reply, capabilities)
+        }
+
+        let connection = NWConnection(host: .ipv4(.loopback), port: NWEndpoint.Port(rawValue: port)!, using: .tcp)
+        let client = MCP.Client(
+            name: "iMCP",
+            version: "1",
+            capabilities: .init(experimental: [HomeHelperSecret.capabilityKey: secret])
+        )
+        let result = try await client.connect(
+            transport: NetworkTransport(
+                connection: connection,
+                heartbeatConfig: .init(enabled: false),
+                reconnectionConfig: .disabled
+            )
+        )
+        XCTAssertEqual(result.serverInfo.name, "iMCP Helper")
+        let tools = try await client.listTools().tools
+        XCTAssertEqual(tools.count, 28)
+        let call = try await client.callTool(name: "homes_list")
+        XCTAssertEqual(call.isError, false)
+        await client.disconnect()
+    }
+
+    /// Sends one JSON-RPC message and returns the first line of the reply,
+    /// or nil if the helper closes the connection first.
+    private func exchange(_ message: String, port: UInt16) async throws -> String? {
+        let connection = NWConnection(host: .ipv4(.loopback), port: NWEndpoint.Port(rawValue: port)!, using: .tcp)
+        defer { connection.cancel() }
+        connection.start(queue: .main)
+        connection.send(content: Data((message + "\n").utf8), completion: .idempotent)
+        let start = ContinuousClock.now
+        let timeout = Task {
+            try await Task.sleep(for: .seconds(10))
+            connection.cancel()
+        }
+        defer { timeout.cancel() }
+        var received = Data()
+        while true {
+            let (data, closed) = await withCheckedContinuation { continuation in
+                connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { data, _, isComplete, error in
+                    continuation.resume(returning: (data, isComplete || error != nil))
+                }
+            }
+            if let data { received.append(data) }
+            if let newline = received.firstIndex(of: UInt8(ascii: "\n")) {
+                return String(decoding: received[..<newline], as: UTF8.self)
+            }
+            if closed {
+                if ContinuousClock.now - start >= .seconds(10) {
+                    throw HomeError("The helper neither replied to nor closed \(message)")
+                }
+                return received.isEmpty ? nil : String(decoding: received, as: UTF8.self)
+            }
+        }
+    }
+}
+
+private struct StaticHomeBackend: HomeBackend {
+    func call(_ tool: String, _ input: [String: Value]) async throws -> Value { .object(["homes": .array([])]) }
 }
 
 final class HomeHelperLocatorTests: XCTestCase {

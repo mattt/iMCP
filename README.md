@@ -651,14 +651,15 @@ After a lost connection, read-only calls retry once.
 Writes are not repeated, because HomeKit may have applied them already;
 the error asks the caller to inspect the home before retrying.
 
-iMCP passes an ephemeral loopback port to the helper it launches.
+iMCP passes an ephemeral loopback port to each helper it launches,
+and a new secret in the helper's launch environment.
+The helper serves only connections that present this secret,
+so no other process can use it.
 A helper started some other way (for example, from Xcode)
-advertises "\_imcp-helper.\_tcp" on the local-only DNS-SD interface instead.
-If iMCP can't find such a helper, quit it and let iMCP launch its own.
-To point `imcp-server` (and so the MCP Inspector) at a running helper directly,
-set `IMCP_SERVICE_TYPE=_imcp-helper._tcp`.
+accepts no connections; quit it and let iMCP launch its own.
+With Home turned on in iMCP,
 `uv run Scripts/check-home.py <path-to-imcp-server>` runs a read-only
-integration check against it.
+integration check through iMCP.
 
 #### Building the helper
 

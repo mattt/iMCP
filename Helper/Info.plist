@@ -6,9 +6,5 @@
     <true/>
     <key>LSMultipleInstancesProhibited</key>
     <true/>
-    <key>NSBonjourServices</key>
-    <array>
-        <string>_imcp-helper._tcp</string>
-    </array>
 </dict>
 </plist>

@@ -27,6 +27,7 @@ actor HomeService: Service, HomeBackend {
     private struct LaunchedHelper: Sendable {
         let pid: pid_t
         let endpoint: NWEndpoint
+        let secret: String
     }
 
     init(helperURL: URL? = nil) { self.helperURL = helperURL }
@@ -140,38 +141,21 @@ actor HomeService: Service, HomeBackend {
         connection?.cancel()
         connection = nil
         await old?.disconnect()
-        launchedHelper = try await launchHelper(previous: launchedHelper, overrideURL: helperURL)
         let parameters = NWParameters.tcp
         parameters.acceptLocalOnly = true
         parameters.requiredInterfaceType = .loopback
         parameters.includePeerToPeer = false
         if let ip = parameters.defaultProtocolStack.internetProtocol as? NWProtocolIP.Options { ip.version = .v4 }
-        let endpoint: NWEndpoint
-        if let launchedHelper {
-            endpoint = launchedHelper.endpoint
-        } else {
-            let browser = NWBrowser(for: .bonjour(type: "_imcp-helper._tcp", domain: "local."), using: .tcp)
-            do {
-                endpoint = try await BonjourDiscovery.discoverEndpoint(
-                    using: browser,
-                    timeout: .seconds(15),
-                    preferring: { String(describing: $0.endpoint).contains("iMCP Helper") }
-                )
-            } catch {
-                throw HomeError(
-                    "iMCP Helper was not found. Quit any manually started iMCP Helper and enable Home again. \(error.localizedDescription)"
-                )
-            }
-        }
+        let helper = try await launchHelper(previous: launchedHelper, overrideURL: helperURL)
+        launchedHelper = helper
         let deadline = Date().addingTimeInterval(15)
         repeat {
-            if let launchedHelper { try await checkHelperIsRunning(launchedHelper) }
+            try await checkHelperIsRunning(helper)
             do {
-                try await connect(to: endpoint, parameters: parameters)
+                try await connect(to: helper.endpoint, secret: helper.secret, parameters: parameters)
                 return
             } catch let error as HomeError { throw error } catch {
-                guard let launchedHelper else { throw error }
-                try await checkHelperIsRunning(launchedHelper)
+                try await checkHelperIsRunning(helper)
                 guard Date() < deadline else {
                     throw HomeError(
                         "iMCP Helper did not accept a local connection within 15 seconds. Check its status window, then retry."
@@ -182,7 +166,7 @@ actor HomeService: Service, HomeBackend {
         } while true
     }
 
-    private func connect(to endpoint: NWEndpoint, parameters: NWParameters) async throws {
+    private func connect(to endpoint: NWEndpoint, secret: String, parameters: NWParameters) async throws {
         let connection = NWConnection(to: endpoint, using: parameters)
         let transport = NetworkTransport(
             connection: connection,
@@ -190,7 +174,11 @@ actor HomeService: Service, HomeBackend {
             reconnectionConfig: .disabled,
             bufferConfig: .unlimited
         )
-        let client = MCP.Client(name: "iMCP", version: Bundle.main.shortVersionString ?? "unknown")
+        let client = MCP.Client(
+            name: "iMCP",
+            version: Bundle.main.shortVersionString ?? "unknown",
+            capabilities: .init(experimental: [HomeHelperSecret.capabilityKey: secret])
+        )
         let timeout = Task {
             // NetworkTransport waits indefinitely in NWConnection.waiting.
             // Retry refused connections while the helper starts.
@@ -302,7 +290,7 @@ actor HomeService: Service, HomeBackend {
     }
 
     @MainActor
-    private func launchHelper(previous: LaunchedHelper?, overrideURL: URL?) async throws -> LaunchedHelper? {
+    private func launchHelper(previous: LaunchedHelper?, overrideURL: URL?) async throws -> LaunchedHelper {
         let url = overrideURL ?? helperLocation()
         if let running = NSWorkspace.shared.runningApplications.first(where: { application in
             !application.isTerminated
@@ -313,7 +301,11 @@ actor HomeService: Service, HomeBackend {
                     isHelper: HomeHelperLocator.isHelper(at:)
                 )
         }) {
-            return previous?.pid == running.processIdentifier ? previous : nil
+            // Only the helper that this instance launched has its port and secret.
+            if let previous, previous.pid == running.processIdentifier { return previous }
+            throw HomeError(
+                "iMCP Helper is already running, but iMCP didn't launch it. Quit iMCP Helper, then turn Home off and on again."
+            )
         }
         guard let url else {
             throw HomeError(
@@ -323,29 +315,33 @@ actor HomeService: Service, HomeBackend {
         let accessing = url.startAccessingSecurityScopedResource()
         defer { if accessing { url.stopAccessingSecurityScopedResource() } }
         let port = try availableLoopbackPort()
+        let secret = try HomeHelperSecret.generate()
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = false
         // Xcode's native macOS debugger libraries cannot load in a Catalyst app.
         // Empty values override the launch environment; omitting the keys does not.
+        // The secret goes in the environment because other processes can read the arguments.
         configuration.environment = [
             "DYLD_INSERT_LIBRARIES": "",
             "DYLD_LIBRARY_PATH": "",
             "DYLD_FRAMEWORK_PATH": "",
+            HomeHelperSecret.environmentKey: secret,
         ]
         configuration.arguments = ["--parent-pid", String(getpid()), "--port", String(port)]
         let application = try await NSWorkspace.shared.openApplication(at: url, configuration: configuration)
-        // LaunchServices returns the running helper without the new arguments,
-        // so keep the port it was launched with.
+        // LaunchServices returns the running helper without the new arguments and environment,
+        // so keep the port and secret it was launched with.
         if let previous, previous.pid == application.processIdentifier { return previous }
         return LaunchedHelper(
             pid: application.processIdentifier,
-            endpoint: .hostPort(host: .ipv4(.loopback), port: NWEndpoint.Port(rawValue: port)!)
+            endpoint: .hostPort(host: .ipv4(.loopback), port: NWEndpoint.Port(rawValue: port)!),
+            secret: secret
         )
     }
 
     /// Selects an ephemeral loopback port for the child process.
     /// The helper reports a bind error if another process takes it before launch.
-    private nonisolated func availableLoopbackPort() throws -> UInt16 {
+    nonisolated func availableLoopbackPort() throws -> UInt16 {
         let descriptor = socket(AF_INET, SOCK_STREAM, 0)
         guard descriptor >= 0 else { throw HomeError("Cannot allocate a socket for iMCP Helper.") }
         defer { close(descriptor) }

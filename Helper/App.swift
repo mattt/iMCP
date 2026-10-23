@@ -34,9 +34,22 @@ final class HelperRuntime: ObservableObject {
         guard !started else { return }
         started = true
         canRetry = false
+        defer {
+            print(status)
+            fflush(stdout)
+        }
         do {
             try monitorParent()
-            let server = try self.server ?? HelperServer(backend: backend, port: requestedPort())
+            // iMCP passes the port in the arguments and a new secret in the environment.
+            // Without the secret, no client can prove that iMCP launched this helper.
+            guard let port = try requestedPort(),
+                let secret = ProcessInfo.processInfo.environment[HomeHelperSecret.environmentKey], !secret.isEmpty
+            else {
+                status =
+                    "iMCP Helper accepts connections only when iMCP launches it. Quit iMCP Helper, then turn Home on in iMCP."
+                return
+            }
+            let server = self.server ?? HelperServer(backend: backend, port: port, secret: secret)
             self.server = server
             status = "Starting the local connection…"
             try await server.start()
@@ -48,8 +61,6 @@ final class HelperRuntime: ObservableObject {
             started = false
             canRetry = true
         }
-        print(status)
-        fflush(stdout)
     }
 
     private func requestedPort() throws -> NWEndpoint.Port? {

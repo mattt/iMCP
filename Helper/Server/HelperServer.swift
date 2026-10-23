@@ -6,16 +6,17 @@ import Ontology
 
 actor HelperServer {
     private let backend: any HomeBackend
-    private let port: NWEndpoint.Port?
+    private let port: NWEndpoint.Port
+    private let secret: String
     private var listener: NWListener?
-    private var advertisement: HelperAdvertisement?
     private var sessions: [UUID: MCP.Server] = [:]
     private var startup: CheckedContinuation<Void, Error>?
     private let log = Logger.service("helper.server")
 
-    init(backend: any HomeBackend, port: NWEndpoint.Port? = nil) {
+    init(backend: any HomeBackend, port: NWEndpoint.Port, secret: String) {
         self.backend = backend
         self.port = port
+        self.secret = secret
     }
 
     func start() async throws {
@@ -24,7 +25,7 @@ actor HelperServer {
         parameters.acceptLocalOnly = true
         parameters.requiredInterfaceType = .loopback
         parameters.includePeerToPeer = false
-        parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: port ?? .any)
+        parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: port)
         if let ip = parameters.defaultProtocolStack.internetProtocol as? NWProtocolIP.Options { ip.version = .v4 }
         let listener = try NWListener(using: parameters)
         self.listener = listener
@@ -42,22 +43,9 @@ actor HelperServer {
                 await self?.startupTimedOut()
             }
         }
-        // Parent-launched helpers use the private port passed by iMCP.
-        // Manual launches retain Bonjour discovery for development clients.
-        if port != nil { return }
-        guard let port = listener.port else { throw HomeError("iMCP Helper has no TCP port.") }
-        let advertisement = await HelperAdvertisement()
-        self.advertisement = advertisement
-        do { try await advertisement.start(port: port.rawValue) } catch {
-            listener.cancel()
-            self.listener = nil
-            await advertisement.stop()
-            self.advertisement = nil
-            throw error
-        }
     }
 
-    private func stateChanged(_ state: NWListener.State) async {
+    private func stateChanged(_ state: NWListener.State) {
         switch state {
         case .ready:
             startup?.resume()
@@ -67,8 +55,6 @@ actor HelperServer {
             startup = nil
             listener?.cancel()
             listener = nil
-            await advertisement?.stop()
-            advertisement = nil
             log.error("Home listener failed: \(error.localizedDescription)")
         default: break
         }
@@ -86,7 +72,9 @@ actor HelperServer {
         let server = MCP.Server(
             name: "iMCP Helper",
             version: Bundle.main.shortVersionString ?? "1.0",
-            capabilities: .init(tools: .init(listChanged: false))
+            capabilities: .init(tools: .init(listChanged: false)),
+            // Strict mode answers nothing but ping until the initialize hook accepts the secret.
+            configuration: .strict
         )
         let tools = HomeKitService(backend: backend).tools
         let transport = NetworkTransport(
@@ -127,10 +115,24 @@ actor HelperServer {
                 )
             }
         }
+        let secret = self.secret
+        // End a connection that doesn't present the secret promptly.
+        let deadline = Task {
+            try await Task.sleep(for: .seconds(5))
+            await transport.disconnect()
+        }
         do {
-            try await server.start(transport: transport)
+            try await server.start(transport: transport) { _, capabilities in
+                guard HomeHelperSecret.matches(capabilities.experimental?[HomeHelperSecret.capabilityKey], secret)
+                else {
+                    await transport.disconnect()
+                    throw MCPError.invalidRequest("iMCP Helper serves only the iMCP app that launched it.")
+                }
+                deadline.cancel()
+            }
             await server.waitUntilCompleted()
         } catch { log.error("Home connection failed: \(error.localizedDescription)") }
+        deadline.cancel()
         await server.stop()
         sessions.removeValue(forKey: id)
         connection.cancel()
