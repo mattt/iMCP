@@ -30,8 +30,8 @@
 		A40000000000000000000020 /* HomeProxyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000010 /* HomeProxyTests.swift */; };
 		A40000000000000000000021 /* ../App/Services/Home.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000011 /* ../App/Services/Home.swift */; };
 		A40000000000000000000029 /* ../App/Services/HomeHelperLocator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000019 /* ../App/Services/HomeHelperLocator.swift */; };
-		A60000000000000000000020 /* MusicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000010 /* MusicTests.swift */; };
-		A60000000000000000000021 /* ../App/Services/Music.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000011 /* ../App/Services/Music.swift */; };
+		B13300000000000000000020 /* MusicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13300000000000000000010 /* MusicTests.swift */; };
+		B13300000000000000000021 /* ../App/Services/Music.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13300000000000000000011 /* ../App/Services/Music.swift */; };
 		A40000000000000000000022 /* ../Shared/Extensions/Logger+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000012 /* ../Shared/Extensions/Logger+Extensions.swift */; };
 		A40000000000000000000023 /* ../Shared/Extensions/Bundle+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000013 /* ../Shared/Extensions/Bundle+Extensions.swift */; };
 		A40000000000000000000024 /* ../Shared/Models/Service.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000014 /* ../Shared/Models/Service.swift */; };
@@ -99,8 +99,8 @@
 		A40000000000000000000010 /* HomeProxyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeProxyTests.swift; sourceTree = "<group>"; };
 		A40000000000000000000011 /* ../App/Services/Home.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../App/Services/Home.swift; sourceTree = "<group>"; };
 		A40000000000000000000019 /* ../App/Services/HomeHelperLocator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../App/Services/HomeHelperLocator.swift; sourceTree = "<group>"; };
-		A60000000000000000000010 /* MusicTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicTests.swift; sourceTree = "<group>"; };
-		A60000000000000000000011 /* ../App/Services/Music.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../App/Services/Music.swift; sourceTree = "<group>"; };
+		B13300000000000000000010 /* MusicTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicTests.swift; sourceTree = "<group>"; };
+		B13300000000000000000011 /* ../App/Services/Music.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../App/Services/Music.swift; sourceTree = "<group>"; };
 		A40000000000000000000012 /* ../Shared/Extensions/Logger+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Shared/Extensions/Logger+Extensions.swift"; sourceTree = "<group>"; };
 		A40000000000000000000013 /* ../Shared/Extensions/Bundle+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Shared/Extensions/Bundle+Extensions.swift"; sourceTree = "<group>"; };
 		A40000000000000000000014 /* ../Shared/Models/Service.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Models/Service.swift; sourceTree = "<group>"; };
@@ -236,8 +236,8 @@
 				A40000000000000000000010 /* HomeProxyTests.swift */,
 				A40000000000000000000011 /* ../App/Services/Home.swift */,
 				A40000000000000000000019 /* ../App/Services/HomeHelperLocator.swift */,
-				A60000000000000000000010 /* MusicTests.swift */,
-				A60000000000000000000011 /* ../App/Services/Music.swift */,
+				B13300000000000000000010 /* MusicTests.swift */,
+				B13300000000000000000011 /* ../App/Services/Music.swift */,
 				A40000000000000000000012 /* ../Shared/Extensions/Logger+Extensions.swift */,
 				A40000000000000000000013 /* ../Shared/Extensions/Bundle+Extensions.swift */,
 				A40000000000000000000014 /* ../Shared/Models/Service.swift */,
@@ -532,8 +532,8 @@
 				A40000000000000000000020 /* HomeProxyTests.swift in Sources */,
 				A40000000000000000000021 /* ../App/Services/Home.swift in Sources */,
 				A40000000000000000000029 /* ../App/Services/HomeHelperLocator.swift in Sources */,
-				A60000000000000000000020 /* MusicTests.swift in Sources */,
-				A60000000000000000000021 /* ../App/Services/Music.swift in Sources */,
+				B13300000000000000000020 /* MusicTests.swift in Sources */,
+				B13300000000000000000021 /* ../App/Services/Music.swift in Sources */,
 				A40000000000000000000022 /* ../Shared/Extensions/Logger+Extensions.swift in Sources */,
 				A40000000000000000000023 /* ../Shared/Extensions/Bundle+Extensions.swift in Sources */,
 				A40000000000000000000024 /* ../Shared/Models/Service.swift in Sources */,
