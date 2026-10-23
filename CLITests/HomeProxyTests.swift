@@ -224,6 +224,19 @@ final class HomeHelperPairingTests: XCTestCase {
         XCTAssertLessThan(clock.now - start, .seconds(3))
     }
 
+    func testFirstReadFromAPairedHelperCanOutlastTheSharedDeadline() async throws {
+        let code = try HomeHelperPairing.generateCode()
+        let server = HelperServer(backend: SlowHomeBackend(), code: code)
+        let port = try await server.start()
+        // The read takes two seconds, as it can while the helper waits for HomeKit access.
+        try await HomeService().connect(
+            to: .hostPort(host: .ipv4(.loopback), port: port),
+            parameters: HomeHelperPairing.parameters(code: code),
+            deadline: .now + .seconds(1)
+        )
+        withExtendedLifetime(server) {}
+    }
+
     func testReportsFailuresOnlyAfterEveryCandidateAnswers() {
         typealias Attempts = [(chosen: Bool, attempt: HomeService.HelperAttempt)]
         func failure(_ attempts: Attempts, deadlinePassed: Bool = false) -> String? {
@@ -331,6 +344,13 @@ final class HomeHelperPairingTests: XCTestCase {
                 return received.isEmpty ? nil : String(decoding: received, as: UTF8.self)
             }
         }
+    }
+}
+
+private struct SlowHomeBackend: HomeBackend {
+    func call(_ tool: String, _ input: [String: Value]) async throws -> Value {
+        try await Task.sleep(for: .seconds(2))
+        return .object(["homes": .array([])])
     }
 }
 

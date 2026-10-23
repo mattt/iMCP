@@ -276,7 +276,9 @@ actor HomeService: Service, HomeBackend {
         }
     }
 
-    /// Connects to one helper, giving up at `deadline`.
+    /// Connects to one helper.
+    /// The TLS handshake and `initialize` must finish by `deadline`;
+    /// the first HomeKit read then has its own limit.
     func connect(
         to endpoint: NWEndpoint,
         parameters: NWParameters,
@@ -307,10 +309,23 @@ actor HomeService: Service, HomeBackend {
             return failedHandshake
         }
         defer { timeout.cancel() }
+        var probe: Task<Bool, Never>?
+        defer { probe?.cancel() }
         do {
             let result = try await client.connect(transport: transport)
             guard result.serverInfo.name == "iMCP Helper" else {
                 throw HomeError("The selected endpoint is not iMCP Helper.")
+            }
+            // Only a helper with the pairing code gets past the handshake and initialize.
+            // Its first HomeKit read can wait for a person to answer the HomeKit prompt,
+            // which the helper ends after 10 seconds, so it has its own limit, not the shared deadline.
+            timeout.cancel()
+            _ = await timeout.value
+            probe = Task {
+                do { try await Task.sleep(for: Self.firstReadLimit) } catch { return false }
+                connection.cancel()
+                await client.disconnect()
+                return true
             }
             _ = try await forward(client, "homes_list", [:])
             self.client = client
@@ -321,12 +336,22 @@ actor HomeService: Service, HomeBackend {
             let failedHandshake = Self.failedHandshake(connection.state)
             timeout.cancel()
             let timedOutInHandshake = await timeout.value
+            probe?.cancel()
+            let timedOutInFirstRead = await probe?.value ?? false
             connection.cancel()
             await client.disconnect()
             if failedHandshake || timedOutInHandshake { throw PairingError.rejected }
+            if timedOutInFirstRead {
+                throw HomeError(
+                    "iMCP Helper didn't answer within 20 seconds. Check its window for HomeKit access, then retry."
+                )
+            }
             throw error
         }
     }
+
+    /// How long the first HomeKit read through a paired helper can take.
+    private static let firstReadLimit = Duration.seconds(20)
 
     // MARK: - Helper Launch
 
