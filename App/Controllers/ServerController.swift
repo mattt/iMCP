@@ -62,6 +62,7 @@ enum ServiceRegistry {
             RemindersService.shared,
             ShortcutsService.shared,
             UtilitiesService.shared,
+            VoiceMemosService.shared,
         ]
         if VoicemailService.isSupported {
             services.append(VoicemailService.shared)
@@ -85,6 +86,7 @@ enum ServiceRegistry {
         remindersEnabled: Binding<Bool>,
         shortcutsEnabled: Binding<Bool>,
         utilitiesEnabled: Binding<Bool>,
+        voiceMemosEnabled: Binding<Bool>,
         voicemailEnabled: Binding<Bool>,
         weatherEnabled: Binding<Bool>
     ) -> [ServiceConfig] {
@@ -166,6 +168,13 @@ enum ServiceRegistry {
                 service: ShortcutsService.shared,
                 binding: shortcutsEnabled
             ),
+            ServiceConfig(
+                name: "Voice Memos",
+                iconName: "waveform",
+                color: .red,
+                service: VoiceMemosService.shared,
+                binding: voiceMemosEnabled
+            ),
         ]
         if VoicemailService.isSupported {
             configs.append(
@@ -219,6 +228,7 @@ final class ServerController: ObservableObject {
     @AppStorage("remindersEnabled") private var remindersEnabled = false
     @AppStorage("shortcutsEnabled") private var shortcutsEnabled = false
     @AppStorage("utilitiesEnabled") private var utilitiesEnabled = true  // Default enabled
+    @AppStorage("voiceMemosEnabled") private var voiceMemosEnabled = false
     @AppStorage("voicemailEnabled") private var voicemailEnabled = false
     @AppStorage("weatherEnabled") private var weatherEnabled = false
 
@@ -244,6 +254,7 @@ final class ServerController: ObservableObject {
             remindersEnabled: $remindersEnabled,
             shortcutsEnabled: $shortcutsEnabled,
             utilitiesEnabled: $utilitiesEnabled,
+            voiceMemosEnabled: $voiceMemosEnabled,
             voicemailEnabled: $voicemailEnabled,
             weatherEnabled: $weatherEnabled
         )
@@ -553,7 +564,7 @@ actor MCPConnectionManager {
             version: Bundle.main.shortVersionString ?? "unknown",
             instructions: """
                 Use iMCP for apps and data on the user's Mac: \
-                Calendar, Contacts, Location, Mail, Maps, Messages, Phone, Reminders, Shortcuts, Voicemail, Weather, \
+                Calendar, Contacts, Location, Mail, Maps, Messages, Phone, Reminders, Shortcuts, Voice Memos, Voicemail, Weather, \
                 and the camera, microphone, and screen. \
                 Only the services that the user turns on in iMCP have tools.
                 """,

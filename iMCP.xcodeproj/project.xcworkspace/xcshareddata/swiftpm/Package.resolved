@@ -1,5 +1,5 @@
 {
-  "originHash" : "fb6076254aa91639c3c7f098fa2a4704e7320c9f466a1a834cf245e94f455955",
+  "originHash" : "21c3e1b73b34bee33cf4f2402223e85341ee4dcb0513bef1ddedba64cc28b706",
   "pins" : [
     {
       "identity" : "envelope",
@@ -125,6 +125,14 @@
       "state" : {
         "revision" : "a34201439c74b53f0fd71ef11741af7e7caf01e1",
         "version" : "1.4.2"
+      }
+    },
+    {
+      "identity" : "tsrp",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/mattt/TSRP",
+      "state" : {
+        "revision" : "f5a85dcb623d8712a79ea366756c613121247e3c"
       }
     }
   ],

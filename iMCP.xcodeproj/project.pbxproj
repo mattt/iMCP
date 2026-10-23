@@ -58,6 +58,7 @@
 		F8F1D2F82D6F9E0C00F6323D /* MCP in Frameworks */ = {isa = PBXBuildFile; productRef = F8F44E9C2D5903F70075D79C /* MCP */; };
 		F9E9902DC72D90F6C423EFE2 /* Logging in Frameworks */ = {isa = PBXBuildFile; productRef = 48ABEE9E6903427DD79096A1 /* Logging */; };
 		AA0011000000000000000001 /* Envelope in Frameworks */ = {isa = PBXBuildFile; productRef = AA0011000000000000000002 /* Envelope */; };
+		AB0055000000000000000001 /* TSRP in Frameworks */ = {isa = PBXBuildFile; productRef = AB0055000000000000000002 /* TSRP */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -193,6 +194,7 @@
 			files = (
 				F809556E2D7888920055B911 /* TypedStream in Frameworks */,
 				AA0011000000000000000001 /* Envelope in Frameworks */,
+				AB0055000000000000000001 /* TSRP in Frameworks */,
 				158948D22D0E610E83A4433C /* Sparkle in Frameworks */,
 				F873F48D2D712BCF0035CD0A /* Ontology in Frameworks */,
 				F8D7C31A2DCBD32100A4775F /* MCP in Frameworks */,
@@ -368,6 +370,7 @@
 				F873F48C2D712BCF0035CD0A /* Ontology */,
 				F809556D2D7888920055B911 /* TypedStream */,
 				AA0011000000000000000002 /* Envelope */,
+				AB0055000000000000000002 /* TSRP */,
 				F809556F2D7888920055B911 /* iMessage */,
 				F8A7DE3D2DCB76F700530587 /* MCP */,
 				F8D7C3162DCBD30500A4775F /* MCP */,
@@ -447,6 +450,7 @@
 			mainGroup = F8F44E642D59038D0075D79C;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				AB0055000000000000000003 /* XCRemoteSwiftPackageReference "TSRP" */,
 				AA0011000000000000000003 /* XCRemoteSwiftPackageReference "Envelope" */,
 				F88358352D64A085000317CD /* XCRemoteSwiftPackageReference "swift-log" */,
 				F873F48B2D712BCF0035CD0A /* XCRemoteSwiftPackageReference "Ontology" */,
@@ -1093,6 +1097,14 @@
 				minimumVersion = 1.3.0;
 			};
 		};
+		AB0055000000000000000003 /* XCRemoteSwiftPackageReference "TSRP" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/mattt/TSRP";
+			requirement = {
+				kind = revision;
+				revision = f5a85dcb623d8712a79ea366756c613121247e3c;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -1198,6 +1210,7 @@
 			package = AA0011000000000000000003 /* XCRemoteSwiftPackageReference "Envelope" */;
 			productName = Envelope;
 		};
+		AB0055000000000000000002 /* TSRP */ = {isa = XCSwiftPackageProductDependency; package = AB0055000000000000000003 /* XCRemoteSwiftPackageReference "TSRP" */; productName = TSRP; };
 /* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = F8F44E652D59038D0075D79C /* Project object */;
