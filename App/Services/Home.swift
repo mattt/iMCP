@@ -35,9 +35,9 @@ actor HomeService: Service, HomeBackend {
             case .missing:
                 "iMCP isn't paired with iMCP Helper. Choose Pair… in Settings > Services > Home, then enter the code from the helper's window."
             case .rejected:
-                "iMCP Helper doesn't accept iMCP's pairing key. Choose Pair… in Settings > Services > Home, then enter the code from the helper's window."
+                "iMCP Helper no longer recognizes iMCP. In Settings > Services > Home, click Pair…, then enter the code shown in iMCP Helper."
             case .codeRejected:
-                "iMCP Helper didn't accept the code. Check the code in its window, then try again."
+                "That code didn't work. Check the code shown in iMCP Helper, then try again."
             }
         }
     }
@@ -158,7 +158,7 @@ actor HomeService: Service, HomeBackend {
             try await Task.sleep(for: .milliseconds(200))
         }
         throw HomeError(
-            "iMCP Helper accepted the pairing but didn't start using the new key. Check its window, then turn Home off and on again."
+            "iMCP Helper accepted the pairing but didn't finish it. Check iMCP Helper, then turn Home off and on again."
         )
     }
 
@@ -683,7 +683,7 @@ actor HomeService: Service, HomeBackend {
             } catch PairingError.missing {
             } catch PairingError.rejected {
                 message =
-                    "iMCP Helper doesn't accept iMCP's pairing key. Enter the code shown in its window to pair again."
+                    "iMCP Helper no longer recognizes iMCP. Enter the code shown in iMCP Helper to pair again."
             }
             guard await pairAskingUser(message: message) else { return false }
         }
@@ -988,7 +988,7 @@ private final class PairingWindow: NSObject, NSWindowDelegate {
     private func submit() {
         guard !model.isPairing else { return }
         guard let code = HomeHelperPairing.normalize(model.code) else {
-            model.error = "That isn't a pairing code. A code has eight letters and digits, such as 7KQ2-M9XD."
+            model.error = "Enter the 8 letters and numbers shown in iMCP Helper, such as 7KQ2-M9XD."
             return
         }
         model.error = nil
@@ -1006,7 +1006,7 @@ private final class PairingWindow: NSObject, NSWindowDelegate {
                 finish(paired: true)
             } catch HomeService.PairingError.codeRejected {
                 model.error =
-                    "That code didn't work. Check the code in iMCP Helper's window. After \(HomeHelperPairing.failedPairingLimit) wrong codes, it shows a new one."
+                    "That code didn't work. Check the code shown in iMCP Helper. After \(HomeHelperPairing.failedPairingLimit) wrong codes, iMCP Helper shows a new one."
             } catch {
                 model.error = error.localizedDescription
             }
@@ -1047,10 +1047,11 @@ private struct PairingView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text(model.message)
                 .fixedSize(horizontal: false, vertical: true)
-            TextField("Pairing Code", text: $model.code, prompt: Text("XXXX-XXXX"))
+            TextField("Pairing Code", text: $model.code, prompt: Text("7KQ2-M9XD"))
                 .labelsHidden()
                 .textFieldStyle(.roundedBorder)
                 .font(.system(.title3, design: .monospaced))
+                .frame(width: 180)
                 .disabled(model.isPairing)
                 .onSubmit(pair)
             if let error = model.error {
@@ -1060,7 +1061,7 @@ private struct PairingView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             HStack {
-                Button("Show iMCP Helper", action: showHelper)
+                Button("Open iMCP Helper…", action: showHelper)
                 Spacer()
                 if model.isPairing { ProgressView().controlSize(.small) }
                 Button("Cancel", role: .cancel, action: cancel)
@@ -1068,7 +1069,7 @@ private struct PairingView: View {
                     .disabled(model.isPairing)
                 Button("Pair", action: pair)
                     .keyboardShortcut(.defaultAction)
-                    .disabled(model.isPairing)
+                    .disabled(model.isPairing || HomeHelperPairing.normalize(model.code) == nil)
             }
         }
         .padding(20)

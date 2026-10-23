@@ -117,7 +117,7 @@ enum HomeHelperPairing {
                 key.count
             )
         }
-        guard status == kCCSuccess else { throw HomeError("Cannot derive the iMCP Helper pairing key (\(status)).") }
+        guard status == kCCSuccess else { throw HomeError("Cannot prepare the pairing code (\(status)).") }
         return SymmetricKey(data: key)
     }
 
@@ -212,7 +212,7 @@ enum HomeHelperPairing {
                 case errSecMissingEntitlement:
                     continue
                 default:
-                    throw HomeError("Cannot read the iMCP Helper pairing key from the keychain (\(status)).")
+                    throw HomeError("Cannot read the pairing from the keychain (\(status)).")
                 }
             }
             return nil
@@ -233,7 +233,7 @@ enum HomeHelperPairing {
                 // Apps without an application identifier, such as unsigned Debug builds,
                 // can't use the data protection keychain.
                 if status != errSecMissingEntitlement {
-                    throw HomeError("Cannot save the iMCP Helper pairing key in the keychain (\(status)).")
+                    throw HomeError("Cannot save the pairing in the keychain (\(status)).")
                 }
             }
         }
@@ -242,7 +242,7 @@ enum HomeHelperPairing {
             for dataProtection in [true, false] {
                 let status = SecItemDelete(baseQuery(dataProtection: dataProtection) as CFDictionary)
                 guard [errSecSuccess, errSecItemNotFound, errSecMissingEntitlement].contains(status) else {
-                    throw HomeError("Cannot delete the iMCP Helper pairing key from the keychain (\(status)).")
+                    throw HomeError("Cannot remove the pairing from the keychain (\(status)).")
                 }
             }
         }

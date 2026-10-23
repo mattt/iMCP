@@ -286,14 +286,14 @@ actor HelperServer {
         guard sessions[session] != nil, case .code(let current) = credential, current == code, pairing == nil else {
             throw Self.refusal("This pairing code was already used.")
         }
-        guard key.count == 32 else { throw Self.refusal("The pairing key must have 256 bits.") }
+        guard key.count == 32 else { throw Self.refusal("iMCP Helper can't use this pairing.") }
         let claimed = Pairing(session: session, key: SymmetricKey(data: key), code: code)
         pairing = claimed
         do {
             try await storeKey(claimed.key, code)
         } catch {
             if pairing?.id == claimed.id { pairing = nil }
-            throw Self.refusal("iMCP Helper couldn't store the pairing key: \(error.localizedDescription)")
+            throw Self.refusal("iMCP Helper couldn't save the pairing: \(error.localizedDescription)")
         }
         // A restart while the key was stored replaced this pairing.
         guard pairing?.id == claimed.id else { throw Self.refusal("This pairing code was replaced.") }
