@@ -194,6 +194,11 @@ final class HomeHelperPairingTests: XCTestCase {
         XCTAssertTrue(failure([(false, .outdated)], deadlinePassed: true)?.contains("install-helper") == true)
         XCTAssertTrue(failure([], deadlinePassed: true)?.contains("didn't appear") == true)
         XCTAssertTrue(failure([(true, .unavailable)], deadlinePassed: true)?.contains("15 seconds") == true)
+        // At the deadline, a chosen helper that never answered outweighs another helper's rejection.
+        XCTAssertTrue(
+            failure([(true, .unavailable), (false, .rejected)], deadlinePassed: true)?.contains("15 seconds") == true
+        )
+        XCTAssertEqual(failure([(true, .unavailable), (true, .rejected)], deadlinePassed: true), rejected)
     }
 
     private func connectClient(port: NWEndpoint.Port, code: String) async throws -> MCP.Client {

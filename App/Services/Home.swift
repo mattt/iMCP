@@ -220,8 +220,9 @@ actor HomeService: Service, HomeBackend {
 
     /// Chooses the error to report after no helper accepted a connection,
     /// or returns nil to keep looking.
-    /// The results from the chosen helper decide as soon as all of them are final;
-    /// other helpers' results decide only after the deadline.
+    /// The results from the chosen helper decide as soon as all of them are final,
+    /// and at the deadline if it advertised at all;
+    /// other helpers' results decide only at the deadline, and only if it didn't.
     nonisolated static func connectionFailure(
         _ attempts: [(chosen: Bool, attempt: HelperAttempt)],
         deadlinePassed: Bool
@@ -231,10 +232,10 @@ actor HomeService: Service, HomeBackend {
             return chosen.contains(.rejected) ? PairingError.rejected : HomeError(outdatedHelperMessage)
         }
         guard deadlinePassed else { return nil }
-        let all = attempts.map(\.attempt)
-        if all.contains(.rejected) { return PairingError.rejected }
-        if all.contains(.outdated) { return HomeError(outdatedHelperMessage) }
-        if all.isEmpty {
+        let decisive = chosen.isEmpty ? attempts.map(\.attempt) : chosen
+        if decisive.contains(.rejected) { return PairingError.rejected }
+        if decisive.contains(.outdated) { return HomeError(outdatedHelperMessage) }
+        if attempts.isEmpty {
             return HomeError(
                 "iMCP Helper didn't appear on this Mac. Check its window, and allow it in System Settings > Privacy & Security > Local Network."
             )
