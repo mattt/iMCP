@@ -86,20 +86,6 @@ and a [growing list of clients][mcp-clients] that support the
   </tr>
   <tr>
     <th width="48">
-      <img src="Assets/voicemail.svg" width="48" height="48" alt="" role="presentation"/>
-    </th>
-    <td><strong>Voicemail</strong></td>
-    <td>Fetch voicemails synced from your iPhone, with transcripts and audio, filtering by sender, date, message type, or mailbox (inbox, blocked, or deleted).</td>
-  </tr>
-  <tr>
-    <th width="48">
-      <img src="Assets/voice-memos.svg" width="48" height="48" alt="" role="presentation"/>
-    </th>
-    <td><strong>Voice Memos</strong></td>
-    <td>Fetch recordings from Voice Memos, with transcripts and audio, filtering by title, folder, or date, or reading Recently Deleted. Needs <a href="#voice-memos-library-access">access to your Voice Memos folder</a>.</td>
-  </tr>
-  <tr>
-    <th width="48">
       <img src="Assets/reminders.svg" width="48" height="48" alt="" role="presentation"/>
     </th>
     <td><strong>Reminders</strong></td>
@@ -111,6 +97,20 @@ and a [growing list of clients][mcp-clients] that support the
     </th>
     <td><strong>Shortcuts</strong></td>
     <td>List and run shortcuts on your Mac, with optional text input.</td>
+  </tr>
+  <tr>
+    <th width="48">
+      <img src="Assets/voice-memos.svg" width="48" height="48" alt="" role="presentation"/>
+    </th>
+    <td><strong>Voice Memos</strong></td>
+    <td>Fetch recordings from Voice Memos, with transcripts and audio, filtering by title, folder, or date, or reading Recently Deleted. Needs <a href="#voice-memos-library-access">access to your Voice Memos folder</a>.</td>
+  </tr>
+  <tr>
+    <th width="48">
+      <img src="Assets/voicemail.svg" width="48" height="48" alt="" role="presentation"/>
+    </th>
+    <td><strong>Voicemail</strong></td>
+    <td>Fetch voicemails synced from your iPhone, with transcripts and audio, filtering by sender, date, message type, or mailbox (inbox, blocked, or deleted).</td>
   </tr>
   <tr>
     <th width="48">
