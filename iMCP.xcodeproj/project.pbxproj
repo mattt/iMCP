@@ -1101,8 +1101,8 @@
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/mattt/TSRP";
 			requirement = {
-				kind = revision;
-				revision = f5a85dcb623d8712a79ea366756c613121247e3c;
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.1.0;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
