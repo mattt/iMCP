@@ -79,6 +79,13 @@ and a [growing list of clients][mcp-clients] that support the
   </tr>
   <tr>
     <th>
+      <img src="Assets/voice-memos.svg" width="48" height="48" alt="" role="presentation"/>
+    </th>
+    <td><strong>Voice Memos</strong></td>
+    <td>Fetch recordings from Voice Memos, with transcripts and audio, filtering by title, folder, or date, or reading Recently Deleted. Needs <a href="#voice-memos-library-access">access to your Voice Memos folder</a>.</td>
+  </tr>
+  <tr>
+    <th>
       <img src="Assets/reminders.svg" width="48" height="48" alt="" role="presentation"/>
     </th>
     <td><strong>Reminders</strong></td>
@@ -577,6 +584,21 @@ The store is a write-ahead log database, and the message audio sits in an `Asset
 tree beside it, so the Voicemail service asks you to open the `Data Store` folder
 rather than the file alone.
 
+### Voice Memos Library Access
+
+Voice Memos keeps its library in a SQLite database at
+`~/Library/Group Containers/group.com.apple.VoiceMemos.shared/Recordings/CloudRecordings.db`.
+The audio files sit beside the database,
+so the Voice Memos service asks you to open the `Recordings` folder
+rather than the file alone.
+Voice Memos writes each transcript into the audio file of its recording,
+so a recording has a transcript only when its audio is on your Mac.
+
+For this project, we created [TSRP][tsrp]:
+a Swift package for reading your Voice Memos library.
+It reads transcripts from both `.m4a` and `.qta` files,
+which keep them in different places.
+
 ### JSON-LD for Tool Results
 
 The tools provided by iMCP return results as
@@ -870,4 +892,5 @@ This project is not affiliated with, endorsed, or sponsored by Apple Inc.
 [ontology]: https://github.com/mattt/Ontology
 [schema.org]: https://schema.org
 [swift-sdk]: https://github.com/modelcontextprotocol/swift-sdk
+[tsrp]: https://github.com/mattt/TSRP
 [typedstream-blog-post]: https://chrissardegna.com/blog/reverse-engineering-apples-typedstream-format/
