@@ -11,6 +11,7 @@ actor HelperServer {
     private var listener: NWListener?
     private var sessions: [UUID: NWConnection] = [:]
     private var startup: CheckedContinuation<Void, Error>?
+    private var starting: Task<NWEndpoint.Port, Error>?
     private let log = Logger.service("helper.server")
 
     init(backend: any HomeBackend, code: String) {
@@ -19,8 +20,17 @@ actor HelperServer {
     }
 
     /// Listens on an ephemeral loopback port and returns the port.
+    /// Concurrent calls share one start.
     func start() async throws -> NWEndpoint.Port {
+        if let starting { return try await starting.value }
         if let port = listener?.port { return port }
+        let task = Task { try await self.listen() }
+        starting = task
+        defer { starting = nil }
+        return try await task.value
+    }
+
+    private func listen() async throws -> NWEndpoint.Port {
         let parameters = try HomeHelperPairing.parameters(code: code)
         parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)
         let listener = try NWListener(using: parameters)
@@ -47,6 +57,8 @@ actor HelperServer {
     /// and listens again with a new pairing code.
     /// Returns the new port.
     func restart(code: String) async throws -> NWEndpoint.Port {
+        // Let a start in progress finish, so its caller doesn't wait forever.
+        _ = try? await starting?.value
         listener?.cancel()
         listener = nil
         for connection in sessions.values { connection.cancel() }
