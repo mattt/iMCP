@@ -132,8 +132,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/mattt/TopoText",
       "state" : {
-        "revision" : "94c3e16793b3d5eea54f343e1eff5c8a921db256",
-        "version" : "0.1.0"
+        "revision" : "69aa77928f0eb85d98dff819f5459e893294bd71",
+        "version" : "0.2.0"
       }
     },
     {
