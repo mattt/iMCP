@@ -106,14 +106,7 @@ final class HelperRuntime: ObservableObject {
             symbol: "house",
             tint: .secondary
         )
-        static func ready(homes: Int) -> Status {
-            Status(
-                text: homes == 1
-                    ? "HomeKit is ready. 1 home is available." : "HomeKit is ready. \(homes) homes are available.",
-                symbol: "checkmark.circle.fill",
-                tint: .green
-            )
-        }
+        static let ready = Status(text: "HomeKit is ready.", symbol: "checkmark.circle.fill", tint: .green)
         static func failed(_ error: Error) -> Status {
             Status(
                 text: "iMCP Helper failed: \(homeErrorMessage(error))",
@@ -283,7 +276,7 @@ final class HelperRuntime: ObservableObject {
             homeKitStatus = .waitingForHomeKit
             do {
                 try await backend.store.ensureLoaded()
-                homeKitStatus = .ready(homes: backend.store.homes.count)
+                homeKitStatus = .ready
             } catch {
                 homeKitStatus = .failed(error)
                 canRetry = true
