@@ -175,46 +175,73 @@ actor HomeService: Service, HomeBackend {
         let deadline = Date().addingTimeInterval(15)
         repeat {
             try await checkHelperIsRunning(pid)
-            do {
-                // Discover each time, because a new pairing code moves the helper to a new port.
-                try await connect(to: discoverHelper(), parameters: parameters)
-                return
-            } catch let error as HomeError { throw error } catch let error as PairingError { throw error } catch {
-                try await checkHelperIsRunning(pid)
-                guard Date() < deadline else {
-                    throw HomeError(
-                        "iMCP Helper did not accept a local connection within 15 seconds. Check its status window, then retry."
-                    )
+            // Discover each time, because a new pairing code moves the helper to a new port.
+            let candidates = await HelperResolution.discover(timeout: .seconds(3))
+            // Try the helper that iMCP launched or found running first, then any other.
+            // Only the TLS handshake decides whether a helper can be trusted.
+            let ordered = candidates.filter { $0.processID == pid } + candidates.filter { $0.processID != pid }
+            var attempts: [(chosen: Bool, attempt: HelperAttempt)] = []
+            for candidate in ordered {
+                let chosen = candidate.processID == pid
+                guard candidate.protocolVersion == HomeHelperPairing.protocolVersion else {
+                    attempts.append((chosen, .outdated))
+                    continue
                 }
-                try await Task.sleep(for: .milliseconds(250))
+                do {
+                    try await connect(
+                        to: .hostPort(host: .ipv4(.loopback), port: candidate.port),
+                        parameters: parameters
+                    )
+                    return
+                } catch let error as HomeError {
+                    // The handshake succeeded, so this is a paired helper, and its error stands.
+                    throw error
+                } catch PairingError.rejected {
+                    attempts.append((chosen, .rejected))
+                } catch {
+                    attempts.append((chosen, .unavailable))
+                }
             }
+            try await checkHelperIsRunning(pid)
+            if let failure = Self.connectionFailure(attempts, deadlinePassed: Date() >= deadline) { throw failure }
+            try await Task.sleep(for: .milliseconds(250))
         } while true
     }
 
-    /// Finds the helper's loopback endpoint in its local-only Bonjour advertisement,
-    /// and checks the protocol version in its TXT record.
-    private func discoverHelper() async throws -> NWEndpoint {
-        let browser = NWBrowser(for: .bonjour(type: HomeHelperPairing.serviceType, domain: "local."), using: .tcp)
-        let endpoint: NWEndpoint
-        do {
-            endpoint = try await BonjourDiscovery.discoverEndpoint(
-                using: browser,
-                timeout: .seconds(15),
-                preferring: { String(describing: $0.endpoint).contains("iMCP Helper") }
+    /// What happened when iMCP tried one helper advertisement.
+    enum HelperAttempt: Equatable {
+        /// The helper doesn't declare the current protocol version.
+        case outdated
+        /// The helper failed the TLS handshake, so its pairing code differs.
+        case rejected
+        /// The helper refused the connection or didn't answer.
+        case unavailable
+    }
+
+    /// Chooses the error to report after no helper accepted a connection,
+    /// or returns nil to keep looking.
+    /// The results from the chosen helper decide as soon as all of them are final;
+    /// other helpers' results decide only after the deadline.
+    nonisolated static func connectionFailure(
+        _ attempts: [(chosen: Bool, attempt: HelperAttempt)],
+        deadlinePassed: Bool
+    ) -> Error? {
+        let chosen = attempts.filter(\.chosen).map(\.attempt)
+        if !chosen.isEmpty, !chosen.contains(.unavailable) {
+            return chosen.contains(.rejected) ? PairingError.rejected : HomeError(outdatedHelperMessage)
+        }
+        guard deadlinePassed else { return nil }
+        let all = attempts.map(\.attempt)
+        if all.contains(.rejected) { return PairingError.rejected }
+        if all.contains(.outdated) { return HomeError(outdatedHelperMessage) }
+        if all.isEmpty {
+            return HomeError(
+                "iMCP Helper didn't appear on this Mac. Check its window, and allow it in System Settings > Privacy & Security > Local Network."
             )
-        } catch {
-            throw HomeError(
-                "iMCP Helper didn't appear on this Mac. Check its window, and allow it in System Settings > Privacy & Security > Local Network. \(error.localizedDescription)"
-            )
         }
-        guard case .service(let name, let type, let domain, _) = endpoint else {
-            throw HomeError("iMCP Helper's Bonjour service has no name.")
-        }
-        let service = try await HelperResolution.resolve(name: name, type: type, domain: domain)
-        guard service.protocolVersion == HomeHelperPairing.protocolVersion else {
-            throw HomeError(Self.outdatedHelperMessage)
-        }
-        return .hostPort(host: .ipv4(.loopback), port: service.port)
+        return HomeError(
+            "iMCP Helper did not accept a local connection within 15 seconds. Check its status window, then retry."
+        )
     }
 
     /// Whether a connection failed its TLS handshake, which means the pairing codes differ.
@@ -237,9 +264,11 @@ actor HomeService: Service, HomeBackend {
         let timeout = Task { () -> Bool in
             // NetworkTransport waits indefinitely in NWConnection.waiting.
             // Retry refused connections while the helper starts.
-            for _ in 0 ..< 80 {
+            for tick in 1 ... 80 {
                 do { try await Task.sleep(for: .milliseconds(250)) } catch { return false }
                 if case .waiting = connection.state { break }
+                // A peer that doesn't finish the TLS handshake in five seconds isn't a working helper.
+                if tick == 20, connection.state != .ready { break }
             }
             let failedHandshake = Self.failedHandshake(connection.state)
             connection.cancel()
@@ -444,19 +473,47 @@ actor HomeService: Service, HomeBackend {
     }
 }
 
-/// Resolves the helper's local-only Bonjour service to its port and protocol version.
+/// A helper's local-only Bonjour advertisement, resolved to its port and TXT record.
+struct HelperCandidate: Equatable, Sendable {
+    let port: NWEndpoint.Port
+    let protocolVersion: Int?
+    let processID: pid_t?
+}
+
+/// Finds and resolves the helpers' local-only Bonjour advertisements.
 ///
 /// `NWBrowser` doesn't report local-only services when it asks for TXT records,
-/// so this resolves the service with DNS-SD.
+/// so this browses without them and resolves each service with DNS-SD.
 @MainActor
 final class HelperResolution {
-    private var continuation: CheckedContinuation<(port: NWEndpoint.Port, protocolVersion: Int?), Error>?
+    private var continuation: CheckedContinuation<HelperCandidate, Error>?
 
-    static func resolve(
-        name: String,
-        type: String,
-        domain: String
-    ) async throws -> (port: NWEndpoint.Port, protocolVersion: Int?) {
+    /// Browses for helpers on this Mac and resolves each one.
+    /// Waits up to `timeout` for the first advertisement, then briefly for others.
+    static func discover(timeout: Duration) async -> [HelperCandidate] {
+        let browser = NWBrowser(for: .bonjour(type: HomeHelperPairing.serviceType, domain: "local."), using: .tcp)
+        defer { browser.cancel() }
+        browser.start(queue: .main)
+        let clock = ContinuousClock()
+        let deadline = clock.now + timeout
+        var firstSeen: ContinuousClock.Instant?
+        while clock.now < deadline {
+            do { try await Task.sleep(for: .milliseconds(100)) } catch { break }
+            guard browser.browseResults.contains(where: BonjourDiscovery.isLocal) else { continue }
+            if let firstSeen, clock.now - firstSeen >= .milliseconds(300) { break }
+            firstSeen = firstSeen ?? clock.now
+        }
+        var candidates: [HelperCandidate] = []
+        for result in browser.browseResults where BonjourDiscovery.isLocal(result) {
+            guard case .service(let name, let type, let domain, _) = result.endpoint,
+                let candidate = try? await resolve(name: name, type: type, domain: domain)
+            else { continue }
+            candidates.append(candidate)
+        }
+        return candidates
+    }
+
+    static func resolve(name: String, type: String, domain: String) async throws -> HelperCandidate {
         let resolution = HelperResolution()
         var reference: DNSServiceRef?
         defer { if let reference { DNSServiceRefDeallocate(reference) } }
@@ -486,22 +543,23 @@ final class HelperResolution {
                             )
                             return
                         }
-                        var valueLength: UInt8 = 0
-                        let value = TXTRecordGetValuePtr(
-                            length,
-                            record,
-                            HomeHelperPairing.protocolVersionTXTKey,
-                            &valueLength
-                        )
-                        let version = value.flatMap {
-                            Int(
-                                String(
-                                    decoding: UnsafeRawBufferPointer(start: $0, count: Int(valueLength)),
-                                    as: UTF8.self
+                        func value(_ key: String) -> String? {
+                            var valueLength: UInt8 = 0
+                            guard let value = TXTRecordGetValuePtr(length, record, key, &valueLength) else {
+                                return nil
+                            }
+                            let bytes = UnsafeRawBufferPointer(start: value, count: Int(valueLength))
+                            return String(decoding: bytes, as: UTF8.self)
+                        }
+                        resolution.finish(
+                            .success(
+                                HelperCandidate(
+                                    port: port,
+                                    protocolVersion: value(HomeHelperPairing.protocolVersionTXTKey).flatMap { Int($0) },
+                                    processID: value(HomeHelperPairing.processIDTXTKey).flatMap { pid_t($0) }
                                 )
                             )
-                        }
-                        resolution.finish(.success((port, version)))
+                        )
                     }
                 },
                 Unmanaged.passUnretained(resolution).toOpaque()
@@ -517,7 +575,7 @@ final class HelperResolution {
         }
     }
 
-    private func finish(_ result: Result<(port: NWEndpoint.Port, protocolVersion: Int?), Error>) {
+    private func finish(_ result: Result<HelperCandidate, Error>) {
         continuation?.resume(with: result)
         continuation = nil
     }

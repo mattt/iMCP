@@ -17,6 +17,7 @@ enum HomeHelperPairing {
     static let protocolVersion = 2
     static let protocolVersionInfoKey = "iMCPHelperProtocolVersion"
     static let protocolVersionTXTKey = "protocol"
+    static let processIDTXTKey = "pid"
     static let serviceType = "_imcp-helper._tcp"
 
     /// Crockford's base32 alphabet, which leaves out I, L, O, and U.

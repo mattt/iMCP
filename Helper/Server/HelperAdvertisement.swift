@@ -4,7 +4,8 @@ import dnssd
 
 /// Publishes the helper only to processes on this Mac, without multicast discovery.
 ///
-/// The TXT record gives the protocol version, which iMCP checks before it connects.
+/// The TXT record gives the protocol version, which iMCP checks before it connects,
+/// and the process ID, which lets iMCP try the helper it launched or chose first.
 @MainActor
 final class HelperAdvertisement {
     private var reference: DNSServiceRef?
@@ -22,8 +23,10 @@ final class HelperAdvertisement {
         }
         defer { timeout.cancel() }
         // A TXT record is a sequence of length-prefixed key=value strings.
-        let entry = Array("\(HomeHelperPairing.protocolVersionTXTKey)=\(HomeHelperPairing.protocolVersion)".utf8)
-        let record = [UInt8(entry.count)] + entry
+        let record = [
+            "\(HomeHelperPairing.protocolVersionTXTKey)=\(HomeHelperPairing.protocolVersion)",
+            "\(HomeHelperPairing.processIDTXTKey)=\(ProcessInfo.processInfo.processIdentifier)",
+        ].flatMap { [UInt8($0.utf8.count)] + Array($0.utf8) }
         try await withCheckedThrowingContinuation { continuation in
             self.continuation = continuation
             let result = DNSServiceRegister(

@@ -135,10 +135,14 @@ final class HomeHelperPairingTests: XCTestCase {
     }
 
     @MainActor
-    func testResolvesTheProtocolVersionOfALocalOnlyService() async throws {
-        for (record, expected) in [("protocol=2", 2), (nil, nil)] as [(String?, Int?)] {
+    func testResolvesAndDiscoversLocalOnlyServices() async throws {
+        let current = HelperCandidate(port: 54321, protocolVersion: 2, processID: 4242)
+        let old = HelperCandidate(port: 54322, protocolVersion: nil, processID: nil)
+        var registrations: [DNSServiceRef] = []
+        defer { registrations.forEach(DNSServiceRefDeallocate) }
+        for (entries, candidate) in [(["protocol=2", "pid=4242"], current), ([], old)] {
             let name = "iMCP Helper Test \(UUID().uuidString.prefix(8))"
-            let entry = record.map { [UInt8($0.utf8.count)] + Array($0.utf8) } ?? []
+            let record = entries.flatMap { [UInt8($0.utf8.count)] + Array($0.utf8) }
             var reference: DNSServiceRef?
             let status = DNSServiceRegister(
                 &reference,
@@ -148,24 +152,48 @@ final class HomeHelperPairingTests: XCTestCase {
                 HomeHelperPairing.serviceType,
                 "local.",
                 "localhost.",
-                UInt16(54321).bigEndian,
-                UInt16(entry.count),
-                entry,
+                candidate.port.rawValue.bigEndian,
+                UInt16(record.count),
+                record,
                 nil,
                 nil
             )
             XCTAssertEqual(status, DNSServiceErrorType(kDNSServiceErr_NoError))
             let registration = try XCTUnwrap(reference)
-            defer { DNSServiceRefDeallocate(registration) }
+            registrations.append(registration)
             DNSServiceSetDispatchQueue(registration, .main)
-            let service = try await HelperResolution.resolve(
+            let resolved = try await HelperResolution.resolve(
                 name: name,
                 type: HomeHelperPairing.serviceType,
                 domain: "local."
             )
-            XCTAssertEqual(service.port, 54321)
-            XCTAssertEqual(service.protocolVersion, expected)
+            XCTAssertEqual(resolved, candidate)
         }
+        // Discovery finds every local helper, not only the first one.
+        let discovered = await HelperResolution.discover(timeout: .seconds(3))
+        XCTAssertTrue(discovered.contains(current), "\(discovered)")
+        XCTAssertTrue(discovered.contains(old), "\(discovered)")
+    }
+
+    func testReportsFailuresOnlyAfterEveryCandidateAnswers() {
+        typealias Attempts = [(chosen: Bool, attempt: HomeService.HelperAttempt)]
+        func failure(_ attempts: Attempts, deadlinePassed: Bool = false) -> String? {
+            HomeService.connectionFailure(attempts, deadlinePassed: deadlinePassed)?.localizedDescription
+        }
+        let rejected = HomeService.PairingError.rejected.localizedDescription
+        // Until the chosen helper answers, other helpers' failures don't decide.
+        XCTAssertNil(failure([]))
+        XCTAssertNil(failure([(false, .outdated), (false, .rejected)]))
+        XCTAssertNil(failure([(true, .unavailable), (false, .rejected)]))
+        // The chosen helper's answers decide.
+        XCTAssertEqual(failure([(true, .rejected), (false, .outdated)]), rejected)
+        XCTAssertEqual(failure([(true, .outdated), (true, .rejected)]), rejected)
+        XCTAssertTrue(failure([(true, .outdated)])?.contains("Scripts/install-helper.sh") == true)
+        // After the deadline, any helper's answer decides, a rejection first.
+        XCTAssertEqual(failure([(false, .outdated), (false, .rejected)], deadlinePassed: true), rejected)
+        XCTAssertTrue(failure([(false, .outdated)], deadlinePassed: true)?.contains("install-helper") == true)
+        XCTAssertTrue(failure([], deadlinePassed: true)?.contains("didn't appear") == true)
+        XCTAssertTrue(failure([(true, .unavailable)], deadlinePassed: true)?.contains("15 seconds") == true)
     }
 
     private func connectClient(port: NWEndpoint.Port, code: String) async throws -> MCP.Client {
