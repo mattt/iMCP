@@ -409,9 +409,10 @@ final class ServerController: ObservableObject {
         }
     }
 
-    func updateServiceBindings(_ bindings: [String: Binding<Bool>]) async {
-        // Called by the UI when service toggles change.
-        await networkManager.updateServiceBindings(bindings)
+    /// Sends every service's binding to the server, including Utilities, which has no toggle.
+    /// Called by the UI when service toggles change.
+    func updateServiceBindings() async {
+        await networkManager.updateServiceBindings(currentServiceBindings)
     }
 
     func startServer() async {
@@ -1187,6 +1188,15 @@ actor ServerNetworkManager {
                 }
             }
 
+            // Say why no service answered, so that an intermittent failure can be traced.
+            if let owner = await self.services.first(where: { $0.tools.contains { $0.name == params.name } }) {
+                let serviceId = String(describing: type(of: owner))
+                let binding = await self.serviceBindings[serviceId]
+                let state = binding.map { $0.wrappedValue ? "on" : "off" } ?? "missing"
+                log.error(
+                    "Tool \(params.name, privacy: .public) belongs to \(serviceId, privacy: .public), whose binding is \(state, privacy: .public)"
+                )
+            }
             log.error("Tool not found or service not enabled: \(params.name)")
             return CallTool.Result(
                 content: [
@@ -1216,6 +1226,10 @@ actor ServerNetworkManager {
     // Update service bindings.
     func updateServiceBindings(_ newBindings: [String: Binding<Bool>]) async {
         self.serviceBindings = newBindings
+        let enabled = newBindings.filter { $0.value.wrappedValue }.keys.sorted()
+        log.notice(
+            "Updated service bindings: \(newBindings.count) services, on: \(enabled.joined(separator: ", "), privacy: .public)"
+        )
 
         // Notify clients that tool availability may have changed.
         Task {
