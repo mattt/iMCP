@@ -646,12 +646,25 @@ actor HomeService: Service, HomeBackend {
         )
     }
 
+    /// The pairing that an `imcp://pair` URL started, which later opens of the URL share.
+    @MainActor private static var urlPairing: Task<Void, Never>?
+
     /// Opens the pairing window for `imcp://pair`, as Pair… in Settings does,
     /// and reconnects if Home is on.
+    /// Repeated opens share one pairing, so one result reconnects at most once.
     @MainActor
     func pairFromURL() async {
-        guard await pairAskingUser(message: "Enter the code shown in iMCP Helper's window.") else { return }
-        if UserDefaults.standard.bool(forKey: "homeEnabled") { try? await reconnect() }
+        if let pairing = Self.urlPairing {
+            PairingWindow.bringToFront()
+            return await pairing.value
+        }
+        let pairing = Task { @MainActor in
+            guard await self.pairAskingUser(message: "Enter the code shown in iMCP Helper's window.") else { return }
+            if UserDefaults.standard.bool(forKey: "homeEnabled") { try? await self.reconnect() }
+        }
+        Self.urlPairing = pairing
+        await pairing.value
+        Self.urlPairing = nil
     }
 
     /// Turns Home on for the user:
@@ -917,8 +930,7 @@ private final class PairingWindow: NSObject, NSWindowDelegate {
         showHelper: @escaping () async -> Void
     ) async -> Bool {
         if let current {
-            current.window?.makeKeyAndOrderFront(nil)
-            NSApp.activate()
+            bringToFront()
             return await withCheckedContinuation { current.continuations.append($0) }
         }
         let controller = PairingWindow(message: message, pair: pair, showHelper: showHelper)
@@ -927,6 +939,13 @@ private final class PairingWindow: NSObject, NSWindowDelegate {
             controller.continuations.append(continuation)
             controller.show()
         }
+    }
+
+    /// Brings the open pairing window, if any, to the front.
+    static func bringToFront() {
+        guard let window = current?.window else { return }
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate()
     }
 
     private func show() {
