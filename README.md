@@ -661,6 +661,8 @@ the error asks the caller to inspect the home before retrying.
 
 The helper advertises "\_imcp-helper.\_tcp" on the local-only DNS-SD interface,
 and iMCP finds it there, whether or not iMCP launched it.
+If more than one helper is running,
+iMCP tries the one at the chosen location first, then the others.
 The connection uses TLS with a pre-shared key
 that both apps derive from the pairing code,
 so a connection without the code fails the TLS handshake,
