@@ -11,9 +11,6 @@ actor HelperServer {
     private var listener: NWListener?
     private var sessions: [UUID: NWConnection] = [:]
     private var startup: CheckedContinuation<Void, Error>?
-    /// Increases with each restart, so work for an older code can't replace newer work.
-    private var generation = 0
-    private var starting: (generation: Int, task: Task<NWEndpoint.Port, Error>)?
     private let log = Logger.service("helper.server")
 
     init(backend: any HomeBackend, code: String) {
@@ -22,22 +19,11 @@ actor HelperServer {
     }
 
     /// Listens on an ephemeral loopback port and returns the port.
-    /// Concurrent calls share one start.
-    /// Throws `CancellationError` if a restart replaces the listener first.
+    /// The helper's window doesn't start, retry, or restart while another of these runs,
+    /// so calls don't overlap.
     func start() async throws -> NWEndpoint.Port {
-        let generation = self.generation
-        if let starting, starting.generation == generation { return try await current(starting.task, generation) }
         if let port = listener?.port { return port }
-        let task = Task { try await self.listen() }
-        starting = (generation, task)
-        defer { if self.starting?.generation == generation { self.starting = nil } }
-        return try await current(task, generation)
-    }
-
-    private func current(_ task: Task<NWEndpoint.Port, Error>, _ generation: Int) async throws -> NWEndpoint.Port {
-        let port = try await task.value
-        guard generation == self.generation else { throw CancellationError() }
-        return port
+        return try await listen()
     }
 
     private func listen() async throws -> NWEndpoint.Port {
@@ -59,27 +45,20 @@ actor HelperServer {
                 await self?.startupTimedOut(listener)
             }
         }
-        guard listener === self.listener, let port = listener.port else { throw CancellationError() }
+        // A restart while this listener started replaced it.
+        guard listener === self.listener else { throw CancellationError() }
+        guard let port = listener.port else { throw HomeError("iMCP Helper has no TCP port.") }
         return port
     }
 
     /// Ends every session, including any in its TLS handshake,
     /// and listens again with a new pairing code.
     /// Returns the new port.
-    /// Throws `CancellationError` if a later restart replaces this one.
     ///
     /// Tool calls that a session already accepted can still finish:
     /// swift-sdk's `Server.stop()` doesn't cancel request handlers,
     /// and HomeKit mutations with several steps don't check the session between steps.
     func restart(code: String) async throws -> NWEndpoint.Port {
-        generation += 1
-        let generation = self.generation
-        // Let a start in progress finish before its listener is replaced,
-        // and don't let a later start reuse its finished task.
-        let pending = starting?.task
-        starting = nil
-        _ = try? await pending?.value
-        guard generation == self.generation else { throw CancellationError() }
         stopListening()
         for connection in sessions.values { connection.cancel() }
         self.code = code

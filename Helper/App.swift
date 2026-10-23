@@ -12,7 +12,8 @@ struct HelperApp: App {
             VStack(alignment: .leading, spacing: 16) {
                 Text("iMCP Helper").font(.title)
                 Text(runtime.status).textSelection(.enabled)
-                if let code = runtime.pairingCode {
+                // Show the code once a client can use it, and hide New Code while the listener changes.
+                if let code = runtime.pairingCode, runtime.isListening {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Pairing code").font(.headline)
                         // Not selectable, so copies go through the Copy button's restrictions.
@@ -36,6 +37,7 @@ struct HelperApp: App {
                 HStack {
                     if runtime.canRetry {
                         Button("Retry") { Task { await runtime.start() } }
+                            .disabled(runtime.isReplacingCode)
                     }
                     Button("Quit") { exit(0) }
                 }
@@ -52,16 +54,17 @@ final class HelperRuntime: ObservableObject {
     @Published private(set) var canRetry = false
     @Published private(set) var status = "Starting HomeKit…"
     @Published private(set) var pairingCode: String?
+    /// Whether the listener is ready and advertised.
+    @Published private(set) var isListening = false
     @Published private(set) var isReplacingCode = false
     private let backend = HomeKitBackend()
     private let keychain = HomeHelperPairing.Keychain(service: "iMCP Helper pairing code")
     private var server: HelperServer?
     private var advertisement: HelperAdvertisement?
-    private var lastListenerChange: Task<Void, Error>?
     private var started = false
 
     func start() async {
-        guard !started else { return }
+        guard !started, !isReplacingCode else { return }
         started = true
         canRetry = false
         defer {
@@ -74,7 +77,9 @@ final class HelperRuntime: ObservableObject {
             let server = self.server ?? HelperServer(backend: backend, code: code)
             self.server = server
             status = "Starting the local connection…"
-            try await serialized { try await self.advertise(port: server.start()) }
+            isListening = false
+            try await advertise(port: server.start())
+            isListening = true
             status = "Waiting for HomeKit access…"
             try await backend.store.ensureLoaded()
             status = "HomeKit is ready. \(backend.store.homes.count) homes available."
@@ -85,32 +90,19 @@ final class HelperRuntime: ObservableObject {
 
     /// Makes a new pairing code and ends the sessions that use the old one.
     func replacePairingCode() async {
-        guard !isReplacingCode else { return }
+        guard isListening, !isReplacingCode, let server else { return }
         isReplacingCode = true
+        isListening = false
         defer { isReplacingCode = false }
         do {
-            try await serialized {
-                let code = try HomeHelperPairing.generateCode()
-                try self.keychain.save(code)
-                self.pairingCode = code
-                guard let server = self.server else { return }
-                try await self.advertise(port: server.restart(code: code))
-            }
+            let code = try HomeHelperPairing.generateCode()
+            try keychain.save(code)
+            pairingCode = code
+            try await advertise(port: server.restart(code: code))
+            isListening = true
         } catch {
             fail(error)
         }
-    }
-
-    /// Runs a listener and advertisement change after earlier ones finish,
-    /// so an earlier change can't advertise a port after a later one.
-    private func serialized(_ change: @escaping @MainActor () async throws -> Void) async throws {
-        let previous = lastListenerChange
-        let task = Task { @MainActor in
-            _ = await previous?.result
-            try await change()
-        }
-        lastListenerChange = task
-        try await task.value
     }
 
     private func fail(_ error: Error) {
