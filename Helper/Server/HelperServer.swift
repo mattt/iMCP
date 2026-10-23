@@ -175,7 +175,14 @@ actor HelperServer {
             connection.cancel()
         }
         do {
-            try await server.start(transport: transport) { _, _ in deadline.cancel() }
+            try await server.start(transport: transport) { _, _ in
+                // Network.framework also accepts its default PSK suites, which lack forward secrecy.
+                guard HomeHelperPairing.usesCipherSuite(connection) else {
+                    connection.cancel()
+                    throw MCPError.invalidRequest("iMCP Helper requires an ECDHE-PSK cipher suite.")
+                }
+                deadline.cancel()
+            }
             await server.waitUntilCompleted()
         } catch {
             if case .code(let code) = credential, Self.failedHandshake(connection.state) {

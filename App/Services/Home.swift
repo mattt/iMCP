@@ -403,6 +403,12 @@ actor HomeService: Service, HomeBackend {
             guard result.serverInfo.name == "iMCP Helper" else {
                 throw HomeError("The selected endpoint is not iMCP Helper.")
             }
+            // Network.framework also accepts its default PSK suites, which lack forward secrecy.
+            guard HomeHelperPairing.usesCipherSuite(connection) else {
+                throw HomeError(
+                    "iMCP Helper didn't use an ECDHE-PSK cipher suite. Rebuild it with Scripts/install-helper.sh."
+                )
+            }
             // Only a helper with the key or code gets past the handshake and initialize.
             // Its first HomeKit read can wait for a person to answer the HomeKit prompt,
             // which the helper ends after 10 seconds, so it has its own limit, not the shared deadline.

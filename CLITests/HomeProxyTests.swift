@@ -194,6 +194,82 @@ final class HomeHelperPairingTests: XCTestCase {
         withExtendedLifetime(server) {}
     }
 
+    func testNegotiatesOnlyTheECDHEPSKCipherSuite() async throws {
+        let key = HomeHelperPairing.generateKey()
+        let server = HelperServer(backend: StaticHomeBackend(), credential: .key(key))
+        let port = try await server.start()
+        let connection = NWConnection(host: .ipv4(.loopback), port: port, using: HomeHelperPairing.parameters(key: key))
+        defer { connection.cancel() }
+        connection.start(queue: .main)
+        try await waitUntilReady(connection)
+        let metadata = try XCTUnwrap(
+            connection.metadata(definition: NWProtocolTLS.definition) as? NWProtocolTLS.Metadata
+        )
+        XCTAssertEqual(
+            sec_protocol_metadata_get_negotiated_tls_ciphersuite(metadata.securityProtocolMetadata).rawValue,
+            0xCCAC  // TLS_ECDHE_PSK_WITH_CHACHA20_POLY1305_SHA256
+        )
+        XCTAssertTrue(HomeHelperPairing.usesCipherSuite(connection))
+
+        // Network.framework accepts its default PSK suites too, so the helper checks the suite itself.
+        let plain = NWConnection(host: .ipv4(.loopback), port: port, using: Self.plainPSKParameters(key: key))
+        defer { plain.cancel() }
+        plain.start(queue: .main)
+        try await waitUntilReady(plain)
+        XCTAssertFalse(HomeHelperPairing.usesCipherSuite(plain))
+        let reply = try await exchange(Self.initialize, on: plain)
+        XCTAssertNil(reply)
+        withExtendedLifetime(server) {}
+    }
+
+    private static let initialize =
+        #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","clientInfo":{"name":"iMCP","version":"1"},"capabilities":{}}}"#
+
+    /// TLS parameters with the paired identity and Network.framework's plain PSK suite.
+    private static func plainPSKParameters(key: SymmetricKey) -> NWParameters {
+        let tls = NWProtocolTLS.Options()
+        let options = tls.securityProtocolOptions
+        sec_protocol_options_add_pre_shared_key(
+            options,
+            key.withUnsafeBytes { DispatchData(bytes: $0) } as __DispatchData,
+            Data("iMCP Helper paired v3".utf8).withUnsafeBytes { DispatchData(bytes: $0) } as __DispatchData
+        )
+        sec_protocol_options_append_tls_ciphersuite(
+            options,
+            tls_ciphersuite_t(rawValue: UInt16(TLS_PSK_WITH_AES_128_GCM_SHA256))!
+        )
+        sec_protocol_options_set_min_tls_protocol_version(options, .TLSv12)
+        sec_protocol_options_set_max_tls_protocol_version(options, .TLSv12)
+        let parameters = NWParameters(tls: tls)
+        parameters.requiredInterfaceType = .loopback
+        if let ip = parameters.defaultProtocolStack.internetProtocol as? NWProtocolIP.Options { ip.version = .v4 }
+        return parameters
+    }
+
+    /// Sends one JSON-RPC message on a started connection and returns the first line of the reply,
+    /// or nil if the server closes the connection first or doesn't answer within three seconds.
+    private func exchange(_ message: String, on connection: NWConnection) async throws -> String? {
+        connection.send(content: Data((message + "\n").utf8), completion: .idempotent)
+        let timeout = Task {
+            try await Task.sleep(for: .seconds(3))
+            connection.cancel()
+        }
+        defer { timeout.cancel() }
+        var received = Data()
+        while true {
+            let (data, closed) = await withCheckedContinuation { continuation in
+                connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { data, _, isComplete, error in
+                    continuation.resume(returning: (data, isComplete || error != nil))
+                }
+            }
+            if let data { received.append(data) }
+            if let newline = received.firstIndex(of: UInt8(ascii: "\n")) {
+                return String(decoding: received[..<newline], as: UTF8.self)
+            }
+            if closed { return nil }
+        }
+    }
+
     private static func bytes(_ key: SymmetricKey) -> Data { key.withUnsafeBytes { Data($0) } }
 
     @MainActor

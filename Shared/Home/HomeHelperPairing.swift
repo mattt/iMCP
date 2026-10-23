@@ -34,6 +34,9 @@ enum HomeHelperPairing {
     static let failedPairingLimit = 5
     /// PBKDF2-HMAC-SHA256 iterations, about half a second on Apple silicon.
     static let keyDerivationIterations: UInt32 = 3_500_000
+    /// The only cipher suite that the apps accept: ECDHE with the pre-shared key,
+    /// so a recorded connection stays secret even if the code or key is found later.
+    static let cipherSuite = tls_ciphersuite_t(rawValue: UInt16(TLS_ECDHE_PSK_WITH_CHACHA20_POLY1305_SHA256))!
 
     /// Crockford's base32 alphabet, which leaves out I, L, O, and U.
     private static let alphabet = Array("0123456789ABCDEFGHJKMNPQRSTVWXYZ")
@@ -130,10 +133,9 @@ enum HomeHelperPairing {
             identity.withUnsafeBytes { DispatchData(bytes: $0) } as __DispatchData
         )
         // PSK cipher suites exist only in TLS 1.2.
-        sec_protocol_options_append_tls_ciphersuite(
-            options,
-            tls_ciphersuite_t(rawValue: UInt16(TLS_PSK_WITH_AES_128_GCM_SHA256))!
-        )
+        // Network.framework still offers and accepts its default PSK suites,
+        // so both apps also check the negotiated suite with `usesCipherSuite(_:)`.
+        sec_protocol_options_append_tls_ciphersuite(options, cipherSuite)
         sec_protocol_options_set_min_tls_protocol_version(options, .TLSv12)
         sec_protocol_options_set_max_tls_protocol_version(options, .TLSv12)
         let parameters = NWParameters(tls: tls)
@@ -142,6 +144,13 @@ enum HomeHelperPairing {
         parameters.includePeerToPeer = false
         if let ip = parameters.defaultProtocolStack.internetProtocol as? NWProtocolIP.Options { ip.version = .v4 }
         return parameters
+    }
+
+    /// Whether a ready connection negotiated `cipherSuite`.
+    static func usesCipherSuite(_ connection: NWConnection) -> Bool {
+        guard let metadata = connection.metadata(definition: NWProtocolTLS.definition) as? NWProtocolTLS.Metadata
+        else { return false }
+        return sec_protocol_metadata_get_negotiated_tls_ciphersuite(metadata.securityProtocolMetadata) == cipherSuite
     }
 
     /// The one request that a pairing connection accepts:
