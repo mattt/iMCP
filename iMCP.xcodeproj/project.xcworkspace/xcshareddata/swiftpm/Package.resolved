@@ -132,8 +132,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/mattt/TSRP",
       "state" : {
-        "revision" : "f5a85dcb623d8712a79ea366756c613121247e3c",
-        "version" : "0.1.0"
+        "revision" : "f8cf47d66830e6a6124cf112f13dcb4e34d49f16",
+        "version" : "0.1.1"
       }
     }
   ],
