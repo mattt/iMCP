@@ -153,6 +153,10 @@ enum HomeHelperPairing {
         return sec_protocol_metadata_get_negotiated_tls_ciphersuite(metadata.securityProtocolMetadata) == cipherSuite
     }
 
+    /// The JSON-RPC error code with which the helper refuses a pairing and doesn't keep its key.
+    /// Other errors, such as a failed send, don't say whether the helper kept the key.
+    static let refusalCode = -32010
+
     /// The one request that a pairing connection accepts:
     /// iMCP sends the key that both apps use from then on.
     enum Pair: MCP.Method {

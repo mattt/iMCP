@@ -284,19 +284,19 @@ actor HelperServer {
     func receivePairing(_ key: Data, session: UUID, code: String) async throws {
         // swift-sdk runs handlers in their own tasks, so this can run after the session ended.
         guard sessions[session] != nil, case .code(let current) = credential, current == code, pairing == nil else {
-            throw MCPError.invalidRequest("This pairing code was already used.")
+            throw Self.refusal("This pairing code was already used.")
         }
-        guard key.count == 32 else { throw MCPError.invalidParams("The pairing key must have 256 bits.") }
+        guard key.count == 32 else { throw Self.refusal("The pairing key must have 256 bits.") }
         let claimed = Pairing(session: session, key: SymmetricKey(data: key), code: code)
         pairing = claimed
         do {
             try await storeKey(claimed.key, code)
         } catch {
             if pairing?.id == claimed.id { pairing = nil }
-            throw MCPError.internalError("iMCP Helper couldn't store the pairing key: \(error.localizedDescription)")
+            throw Self.refusal("iMCP Helper couldn't store the pairing key: \(error.localizedDescription)")
         }
         // A restart while the key was stored replaced this pairing.
-        guard pairing?.id == claimed.id else { throw MCPError.invalidRequest("This pairing code was replaced.") }
+        guard pairing?.id == claimed.id else { throw Self.refusal("This pairing code was replaced.") }
         pairing?.stored = true
         // The code works once: stop accepting it, and end the other pairing connections.
         stopListening()
@@ -308,6 +308,11 @@ actor HelperServer {
             try? await Task.sleep(for: .seconds(2))
             await self?.endSession(session)
         }
+    }
+
+    /// An error that tells iMCP the helper didn't keep the key.
+    private static func refusal(_ message: String) -> MCPError {
+        .serverError(code: HomeHelperPairing.refusalCode, message: message)
     }
 
     private func endSession(_ id: UUID) {

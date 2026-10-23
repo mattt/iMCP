@@ -487,10 +487,11 @@ actor HomeService: Service, HomeBackend {
                     let data = key.withUnsafeBytes { Data($0) }
                     _ = try await client.send(HomeHelperPairing.Pair.request(.init(key: data))).value
                 } catch {
-                    // An error before the time limit is the helper's answer, so it didn't keep the key.
-                    // After the limit, the answer may be lost, so iMCP keeps the key as pending.
-                    probe?.cancel()
-                    if await probe?.value == false { try? pendingKeyStore.delete() }
+                    // Only an explicit refusal says that the helper didn't keep the key.
+                    // After a send error or a lost answer, iMCP keeps the key as pending.
+                    if case MCPError.serverError(HomeHelperPairing.refusalCode, _) = error {
+                        try? pendingKeyStore.delete()
+                    }
                     throw HomeError("iMCP Helper didn't accept the pairing: \(error.localizedDescription)")
                 }
                 // The helper stored the key before it responded.
