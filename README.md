@@ -271,6 +271,10 @@ so mail that arrives between requests does not shift later pages.
 
 Search matches sender and subject metadata only.
 `mail_messages_read` can read the local content of a returned message.
+It lists attachments without their content.
+When Mail stores a message's attachments or inline images in separate files,
+the message file keeps the text, and each of those attachments has
+`isStoredSeparately` set to `true`.
 Body search is not available, and these tools do not download messages.
 
 ### Connect to Claude Desktop
