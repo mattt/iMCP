@@ -652,9 +652,10 @@ Writes are not repeated, because HomeKit may have applied them already;
 the error asks the caller to inspect the home before retrying.
 
 iMCP passes an ephemeral loopback port to each helper it launches,
-and a new secret in the helper's launch environment.
+and a new secret in the helper's launch environment,
+which only the helper and root can read, unlike its arguments.
 The helper serves only connections that present this secret,
-so no other process can use it.
+and exits if it can't listen on the port.
 A helper started some other way (for example, from Xcode)
 accepts no connections; quit it and let iMCP launch its own.
 With Home turned on in iMCP,

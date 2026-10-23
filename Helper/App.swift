@@ -1,4 +1,5 @@
 import Network
+import OSLog
 import SwiftUI
 
 @main
@@ -26,6 +27,7 @@ final class HelperRuntime: ObservableObject {
     @Published private(set) var canRetry = false
     @Published private(set) var status = "Starting HomeKit…"
     private let backend = HomeKitBackend()
+    private let log = Logger.service("helper")
     private var server: HelperServer?
     private var parentMonitor: DispatchSourceProcess?
     private var started = false
@@ -52,7 +54,13 @@ final class HelperRuntime: ObservableObject {
             let server = self.server ?? HelperServer(backend: backend, port: port, secret: secret)
             self.server = server
             status = "Starting the local connection…"
-            try await server.start()
+            do { try await server.start() } catch {
+                // Another process may hold the port and have received iMCP's secret.
+                // Exit instead of listening later with that secret,
+                // so iMCP launches a new helper with a new port and secret.
+                log.error("iMCP Helper couldn't listen on its port: \(homeErrorMessage(error), privacy: .public)")
+                exit(1)
+            }
             status = "Waiting for HomeKit access…"
             try await backend.store.ensureLoaded()
             status = "HomeKit is ready. \(backend.store.homes.count) homes available."

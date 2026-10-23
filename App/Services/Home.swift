@@ -216,7 +216,7 @@ actor HomeService: Service, HomeBackend {
             !application.isTerminated
         else {
             throw HomeError(
-                "iMCP Helper exited before the connection was ready. Check its crash report in Console, then retry."
+                "iMCP Helper exited before the connection was ready. Check its log messages and crash reports in Console, then retry."
             )
         }
     }

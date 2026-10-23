@@ -73,7 +73,7 @@ actor HelperServer {
             name: "iMCP Helper",
             version: Bundle.main.shortVersionString ?? "1.0",
             capabilities: .init(tools: .init(listChanged: false)),
-            // Strict mode answers nothing but ping until the initialize hook accepts the secret.
+            // Strict mode refuses every request but ping until the initialize hook accepts the secret.
             configuration: .strict
         )
         let tools = HomeKitService(backend: backend).tools
