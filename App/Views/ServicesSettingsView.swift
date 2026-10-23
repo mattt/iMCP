@@ -5,6 +5,7 @@ struct ServicesSettingsView: View {
     @State private var homeHelperPath: String?
     @State private var homeHelperError: String?
     @State private var homeHelperPaired = false
+    @State private var homeHelperPairing = false
 
     var body: some View {
         Form {
@@ -78,7 +79,9 @@ struct ServicesSettingsView: View {
                 Text(homeHelperPaired ? "Paired" : "Not paired")
                     .foregroundStyle(.secondary)
                 Button("Pair…") {
+                    homeHelperPairing = true
                     Task {
+                        defer { homeHelperPairing = false }
                         var message = "Enter the code shown in iMCP Helper's window."
                         while let code = await HomeService.shared.askForPairingCode(message: message) {
                             do {
@@ -96,6 +99,7 @@ struct ServicesSettingsView: View {
                         }
                     }
                 }
+                .disabled(homeHelperPairing)
             }
             if let homeHelperError {
                 Text(homeHelperError).font(.caption).foregroundStyle(.red)

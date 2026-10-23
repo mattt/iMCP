@@ -65,6 +65,8 @@ actor HomeService: Service, HomeBackend {
     private var connecting: Task<Void, Error>?
     private var authorized = false
     private var helperPID: pid_t?
+    /// The pairing in progress; each pairing waits for the one before it.
+    private var pairing: Task<Void, Error>?
 
     /// Creates a service that uses `helperURL` instead of the helper that the user chose,
     /// and keeps its pairing key in `keyStore`.
@@ -105,8 +107,19 @@ actor HomeService: Service, HomeBackend {
 
     /// Pairs with the helper that shows `code`:
     /// sends a new key over a pairing connection and saves the key once the helper accepts it.
+    /// Pairings run one at a time, so iMCP can't save a key that the helper didn't accept.
     /// Call `activate()` or `reconnect()` afterward to connect with the key.
     func pair(code: String) async throws {
+        let previous = pairing
+        let task = Task {
+            _ = await previous?.result
+            try await self.pairNow(code: code)
+        }
+        pairing = task
+        try await task.value
+    }
+
+    private func pairNow(code: String) async throws {
         let pid = try await launchHelper(overrideURL: helperURL, activates: true)
         helperPID = pid
         let parameters = try HomeHelperPairing.pairingParameters(code: code)
