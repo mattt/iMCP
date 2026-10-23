@@ -8,6 +8,7 @@
 	<array>
 		<string>_mcp._tcp</string>
 		<string>_imcp-helper._tcp</string>
+		<string>_imcp-mobile._tcp</string>
 	</array>
 	<key>SUEnableInstallerLauncherService</key>
 	<true/>

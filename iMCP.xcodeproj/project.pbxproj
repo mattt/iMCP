@@ -20,7 +20,7 @@
 		A30000000000000000000020 /* HomeToolsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000010 /* HomeToolsTests.swift */; };
 		A30000000000000000000021 /* ../Shared/Home/HomeBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000011 /* ../Shared/Home/HomeBackend.swift */; };
 		A30000000000000000000022 /* ../Shared/Home/HomeError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000012 /* ../Shared/Home/HomeError.swift */; };
-		A30000000000000000000023 /* ../Shared/Home/HomeInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000013 /* ../Shared/Home/HomeInput.swift */; };
+		A30000000000000000000023 /* ../Shared/Models/ToolInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000013 /* ../Shared/Models/ToolInput.swift */; };
 		A30000000000000000000024 /* ../Shared/Home/HomeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000014 /* ../Shared/Home/HomeTools.swift */; };
 		A30000000000000000000025 /* ../Shared/Models/Tool.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000015 /* ../Shared/Models/Tool.swift */; };
 		A30000000000000000000026 /* ../Shared/Models/Value.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000016 /* ../Shared/Models/Value.swift */; };
@@ -58,7 +58,35 @@
 		F8F1D2F82D6F9E0C00F6323D /* MCP in Frameworks */ = {isa = PBXBuildFile; productRef = F8F44E9C2D5903F70075D79C /* MCP */; };
 		F9E9902DC72D90F6C423EFE2 /* Logging in Frameworks */ = {isa = PBXBuildFile; productRef = 48ABEE9E6903427DD79096A1 /* Logging */; };
 		AA0011000000000000000001 /* Envelope in Frameworks */ = {isa = PBXBuildFile; productRef = AA0011000000000000000002 /* Envelope */; };
+		2338670AAB836453A859F214 /* MobileToolsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 273A40A00FB6B45F6E05FAC1 /* MobileToolsTests.swift */; };
+		0C442369FEFC71CA64EFDDCD /* MobileCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E70399C0AD0A7EF1C0755801 /* MobileCacheTests.swift */; };
+		6BF018C12FF02CEE36315400 /* ../Shared/Mobile/MobileTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98166DE39243B5BB0D2EA812 /* ../Shared/Mobile/MobileTools.swift */; };
+		6C9F37571E84FF608EA69DFF /* ../Shared/Mobile/MobileSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09284CEAE710F67F75A9D584 /* ../Shared/Mobile/MobileSync.swift */; };
+		0EBDDCD81AB193D1DCDA3616 /* ../Shared/Mobile/MobileDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 528763F26319BDDB15541474 /* ../Shared/Mobile/MobileDatabase.swift */; };
+		A1BA6CCAD87FD4F9DABADE3F /* ../App/Services/Mobile.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE3608360482D8D430F9A6FD /* ../App/Services/Mobile.swift */; };
+		1A4EBB7CECB525CCC26EE438 /* ../App/Services/MobileCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BC3F2481A2BC3DA6FCD135F /* ../App/Services/MobileCache.swift */; };
+		C74EAB68D139846AC0C118E1 /* MobileLinkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D623AA705C646B58688D52F0 /* MobileLinkTests.swift */; };
+		1201B5B17FF1368F8E9CD48F /* ../Shared/Mobile/MobileTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEA9566F574C683C4FB198FB /* ../Shared/Mobile/MobileTransport.swift */; };
+		C6000000000000000000001E /* MCP in Frameworks */ = {isa = PBXBuildFile; productRef = C60000000000000000000014 /* MCP */; };
+		C6000000000000000000001F /* JSONSchema in Frameworks */ = {isa = PBXBuildFile; productRef = C60000000000000000000015 /* JSONSchema */; };
+		C60000000000000000000020 /* Ontology in Frameworks */ = {isa = PBXBuildFile; productRef = C60000000000000000000016 /* Ontology */; };
+		C60000000000000000000021 /* Logging in Frameworks */ = {isa = PBXBuildFile; productRef = C60000000000000000000017 /* Logging */; };
+		7976D430435CEB5885069EDC /* MobileOutboxTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF94985E325A869657ADEA03 /* MobileOutboxTests.swift */; };
+		8172E39E4AC809B22EE49411 /* ../Shared/Mobile/MobileOutbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30DCD03A1950234EBB61EFEE /* ../Shared/Mobile/MobileOutbox.swift */; };
+		F26A5BE8BADF564840BB4AE9 /* ../Shared/Mobile/MobileAlarmRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59DE6C73F45F5069A5C32229 /* ../Shared/Mobile/MobileAlarmRequest.swift */; };
+		A7000000000000000000000C /* iMCP iOS Widgets.appex in Embed */ = {isa = PBXBuildFile; fileRef = A70000000000000000000001 /* iMCP iOS Widgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		A70000000000000000000040 /* AlarmMetadata.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000020 /* AlarmMetadata.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		A7000000000000000000000D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = F8F44E652D59038D0075D79C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A70000000000000000000002;
+			remoteInfo = "iMCP iOS Widgets";
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
 		F84900952D63C74F0044AA81 /* Copy Executables */ = {
@@ -81,6 +109,17 @@
 			);
 			runOnlyForDeploymentPostprocessing = 1;
 		};
+		C6000000000000000000000C /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				A7000000000000000000000C /* iMCP iOS Widgets.appex in Embed */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
@@ -90,7 +129,7 @@
 		A30000000000000000000010 /* HomeToolsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeToolsTests.swift; sourceTree = "<group>"; };
 		A30000000000000000000011 /* ../Shared/Home/HomeBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Home/HomeBackend.swift; sourceTree = "<group>"; };
 		A30000000000000000000012 /* ../Shared/Home/HomeError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Home/HomeError.swift; sourceTree = "<group>"; };
-		A30000000000000000000013 /* ../Shared/Home/HomeInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Home/HomeInput.swift; sourceTree = "<group>"; };
+		A30000000000000000000013 /* ../Shared/Models/ToolInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Models/ToolInput.swift; sourceTree = "<group>"; };
 		A30000000000000000000014 /* ../Shared/Home/HomeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Home/HomeTools.swift; sourceTree = "<group>"; };
 		A30000000000000000000015 /* ../Shared/Models/Tool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Models/Tool.swift; sourceTree = "<group>"; };
 		A30000000000000000000016 /* ../Shared/Models/Value.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Models/Value.swift; sourceTree = "<group>"; };
@@ -112,6 +151,21 @@
 		E0E66768348853754D32208C /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/System/Library/Frameworks/Cocoa.framework; sourceTree = DEVELOPER_DIR; };
 		F8F44E6D2D59038D0075D79C /* iMCP.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = iMCP.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F8F44EB62D5908D00075D79C /* imcp-server */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "imcp-server"; sourceTree = BUILT_PRODUCTS_DIR; };
+		273A40A00FB6B45F6E05FAC1 /* MobileToolsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileToolsTests.swift; sourceTree = "<group>"; };
+		E70399C0AD0A7EF1C0755801 /* MobileCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileCacheTests.swift; sourceTree = "<group>"; };
+		98166DE39243B5BB0D2EA812 /* ../Shared/Mobile/MobileTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Mobile/MobileTools.swift; sourceTree = "<group>"; };
+		09284CEAE710F67F75A9D584 /* ../Shared/Mobile/MobileSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Mobile/MobileSync.swift; sourceTree = "<group>"; };
+		528763F26319BDDB15541474 /* ../Shared/Mobile/MobileDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Mobile/MobileDatabase.swift; sourceTree = "<group>"; };
+		DE3608360482D8D430F9A6FD /* ../App/Services/Mobile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../App/Services/Mobile.swift; sourceTree = "<group>"; };
+		7BC3F2481A2BC3DA6FCD135F /* ../App/Services/MobileCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../App/Services/MobileCache.swift; sourceTree = "<group>"; };
+		D623AA705C646B58688D52F0 /* MobileLinkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileLinkTests.swift; sourceTree = "<group>"; };
+		AEA9566F574C683C4FB198FB /* ../Shared/Mobile/MobileTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Mobile/MobileTransport.swift; sourceTree = "<group>"; };
+		C60000000000000000000001 /* iMCP iOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "iMCP iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		CF94985E325A869657ADEA03 /* MobileOutboxTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileOutboxTests.swift; sourceTree = "<group>"; };
+		30DCD03A1950234EBB61EFEE /* ../Shared/Mobile/MobileOutbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Mobile/MobileOutbox.swift; sourceTree = "<group>"; };
+		59DE6C73F45F5069A5C32229 /* ../Shared/Mobile/MobileAlarmRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Mobile/MobileAlarmRequest.swift; sourceTree = "<group>"; };
+		A70000000000000000000020 /* AlarmMetadata.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AlarmMetadata.swift; path = iOS/AlarmMetadata.swift; sourceTree = SOURCE_ROOT; };
+		A70000000000000000000001 /* iMCP iOS Widgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "iMCP iOS Widgets.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -129,6 +183,43 @@
 			);
 			target = F8F44E6C2D59038D0075D79C /* iMCP */;
 		};
+		C5000000000000000000000B /* Exceptions for "Shared" folder in "iMCP Helper" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Mobile/MobileAlarmRequest.swift,
+				Mobile/MobileDatabase.swift,
+				Mobile/MobileOutbox.swift,
+				Mobile/MobileSync.swift,
+				Mobile/MobileTools.swift,
+				Mobile/MobileTransport.swift,
+			);
+			target = A10000000000000000000003 /* iMCP Helper */;
+		};
+		C60000000000000000000004 /* Exceptions for "iOS" folder in "iMCP iOS" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				iOS.entitlements,
+				Info.plist,
+			);
+			target = C60000000000000000000002 /* iMCP iOS */;
+		};
+		C60000000000000000000005 /* Exceptions for "Shared" folder in "iMCP iOS" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Home/HomeBackend.swift,
+				Home/HomeError.swift,
+				Home/HomeTools.swift,
+			);
+			target = C60000000000000000000002 /* iMCP iOS */;
+		};
+		A70000000000000000000004 /* Exceptions for "iOSWidgets" folder in "iMCP iOS Widgets" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				iOSWidgets.entitlements,
+				Info.plist,
+			);
+			target = A70000000000000000000002 /* iMCP iOS Widgets */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -142,6 +233,10 @@
 		};
 		A20000000000000000000001 /* Shared */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				C5000000000000000000000B /* Exceptions for "Shared" folder in "iMCP Helper" target */,
+				C60000000000000000000005 /* Exceptions for "Shared" folder in "iMCP iOS" target */,
+			);
 			path = Shared;
 			sourceTree = "<group>";
 		};
@@ -156,6 +251,22 @@
 		F8F44EB72D5908D00075D79C /* CLI */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = CLI;
+			sourceTree = "<group>";
+		};
+		C60000000000000000000003 /* iOS */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				C60000000000000000000004 /* Exceptions for "iOS" folder in "iMCP iOS" target */,
+			);
+			path = iOS;
+			sourceTree = "<group>";
+		};
+		A70000000000000000000003 /* iOSWidgets */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				A70000000000000000000004 /* Exceptions for "iOSWidgets" folder in "iMCP iOS Widgets" target */,
+			);
+			path = iOSWidgets;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -215,6 +326,24 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C60000000000000000000007 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C6000000000000000000001E /* MCP in Frameworks */,
+				C6000000000000000000001F /* JSONSchema in Frameworks */,
+				C60000000000000000000020 /* Ontology in Frameworks */,
+				C60000000000000000000021 /* Logging in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A70000000000000000000007 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -230,6 +359,18 @@
 			isa = PBXGroup;
 			children = (
 				A40000000000000000000010 /* HomeProxyTests.swift */,
+				59DE6C73F45F5069A5C32229 /* ../Shared/Mobile/MobileAlarmRequest.swift */,
+				30DCD03A1950234EBB61EFEE /* ../Shared/Mobile/MobileOutbox.swift */,
+				CF94985E325A869657ADEA03 /* MobileOutboxTests.swift */,
+				AEA9566F574C683C4FB198FB /* ../Shared/Mobile/MobileTransport.swift */,
+				D623AA705C646B58688D52F0 /* MobileLinkTests.swift */,
+				7BC3F2481A2BC3DA6FCD135F /* ../App/Services/MobileCache.swift */,
+				DE3608360482D8D430F9A6FD /* ../App/Services/Mobile.swift */,
+				528763F26319BDDB15541474 /* ../Shared/Mobile/MobileDatabase.swift */,
+				09284CEAE710F67F75A9D584 /* ../Shared/Mobile/MobileSync.swift */,
+				98166DE39243B5BB0D2EA812 /* ../Shared/Mobile/MobileTools.swift */,
+				E70399C0AD0A7EF1C0755801 /* MobileCacheTests.swift */,
+				273A40A00FB6B45F6E05FAC1 /* MobileToolsTests.swift */,
 				A40000000000000000000011 /* ../App/Services/Home.swift */,
 				A40000000000000000000019 /* ../App/Services/HomeHelperLocator.swift */,
 				A40000000000000000000012 /* ../Shared/Extensions/Logger+Extensions.swift */,
@@ -241,7 +382,7 @@
 				A30000000000000000000010 /* HomeToolsTests.swift */,
 				A30000000000000000000011 /* ../Shared/Home/HomeBackend.swift */,
 				A30000000000000000000012 /* ../Shared/Home/HomeError.swift */,
-				A30000000000000000000013 /* ../Shared/Home/HomeInput.swift */,
+				A30000000000000000000013 /* ../Shared/Models/ToolInput.swift */,
 				A30000000000000000000014 /* ../Shared/Home/HomeTools.swift */,
 				A30000000000000000000015 /* ../Shared/Models/Tool.swift */,
 				A30000000000000000000016 /* ../Shared/Models/Value.swift */,
@@ -269,6 +410,8 @@
 			children = (
 				F8F44E6F2D59038D0075D79C /* App */,
 				A10000000000000000000002 /* Helper */,
+				C60000000000000000000003 /* iOS */,
+				A70000000000000000000003 /* iOSWidgets */,
 				A20000000000000000000001 /* Shared */,
 				F8F44EB72D5908D00075D79C /* CLI */,
 				F8F44E6E2D59038D0075D79C /* Products */,
@@ -282,6 +425,8 @@
 			children = (
 				F8F44E6D2D59038D0075D79C /* iMCP.app */,
 				A10000000000000000000001 /* iMCP Helper.app */,
+				C60000000000000000000001 /* iMCP iOS.app */,
+				A70000000000000000000001 /* iMCP iOS Widgets.appex */,
 				F8F44EB62D5908D00075D79C /* imcp-server */,
 				6A5CFBBEC66BC8CDA9D65496 /* imcp-serverTests.xctest */,
 			);
@@ -405,6 +550,57 @@
 			productReference = F8F44EB62D5908D00075D79C /* imcp-server */;
 			productType = "com.apple.product-type.tool";
 		};
+		C60000000000000000000002 /* iMCP iOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C60000000000000000000009 /* Build configuration list for PBXNativeTarget "iMCP iOS" */;
+			buildPhases = (
+				C60000000000000000000006 /* Sources */,
+				C60000000000000000000007 /* Frameworks */,
+				C60000000000000000000008 /* Resources */,
+				C6000000000000000000000C /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A7000000000000000000000E /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				C60000000000000000000003 /* iOS */,
+				A20000000000000000000001 /* Shared */,
+			);
+			name = "iMCP iOS";
+			packageProductDependencies = (
+				C60000000000000000000014 /* MCP */,
+				C60000000000000000000015 /* JSONSchema */,
+				C60000000000000000000016 /* Ontology */,
+				C60000000000000000000017 /* Logging */,
+			);
+			productName = "iMCP iOS";
+			productReference = C60000000000000000000001 /* iMCP iOS.app */;
+			productType = "com.apple.product-type.application";
+		};
+		A70000000000000000000002 /* iMCP iOS Widgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A70000000000000000000009 /* Build configuration list for PBXNativeTarget "iMCP iOS Widgets" */;
+			buildPhases = (
+				A70000000000000000000006 /* Sources */,
+				A70000000000000000000007 /* Frameworks */,
+				A70000000000000000000008 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				A70000000000000000000003 /* iOSWidgets */,
+			);
+			name = "iMCP iOS Widgets";
+			packageProductDependencies = (
+			);
+			productName = "iMCP iOS Widgets";
+			productReference = A70000000000000000000001 /* iMCP iOS Widgets.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -415,6 +611,12 @@
 				LastSwiftUpdateCheck = 1620;
 				LastUpgradeCheck = 2620;
 				TargetAttributes = {
+					A70000000000000000000002 = {
+						CreatedOnToolsVersion = 27.0;
+					};
+					C60000000000000000000002 = {
+						CreatedOnToolsVersion = 27.0;
+					};
 					A10000000000000000000003 = {
 						CreatedOnToolsVersion = 27.0;
 						SystemCapabilities = {
@@ -462,6 +664,8 @@
 			projectRoot = "";
 			targets = (
 				A10000000000000000000003 /* iMCP Helper */,
+				C60000000000000000000002 /* iMCP iOS */,
+				A70000000000000000000002 /* iMCP iOS Widgets */,
 				F8F44E6C2D59038D0075D79C /* iMCP */,
 				F8F44EB52D5908D00075D79C /* imcp-server */,
 				8F6A71ADC0CC6BD168A9167D /* imcp-serverTests */,
@@ -485,6 +689,20 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		F8F44E6B2D59038D0075D79C /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C60000000000000000000008 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A70000000000000000000008 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -524,6 +742,18 @@
 			buildActionMask = 2147483647;
 			files = (
 				A40000000000000000000020 /* HomeProxyTests.swift in Sources */,
+				F26A5BE8BADF564840BB4AE9 /* ../Shared/Mobile/MobileAlarmRequest.swift in Sources */,
+				8172E39E4AC809B22EE49411 /* ../Shared/Mobile/MobileOutbox.swift in Sources */,
+				7976D430435CEB5885069EDC /* MobileOutboxTests.swift in Sources */,
+				1201B5B17FF1368F8E9CD48F /* ../Shared/Mobile/MobileTransport.swift in Sources */,
+				C74EAB68D139846AC0C118E1 /* MobileLinkTests.swift in Sources */,
+				1A4EBB7CECB525CCC26EE438 /* ../App/Services/MobileCache.swift in Sources */,
+				A1BA6CCAD87FD4F9DABADE3F /* ../App/Services/Mobile.swift in Sources */,
+				0EBDDCD81AB193D1DCDA3616 /* ../Shared/Mobile/MobileDatabase.swift in Sources */,
+				6C9F37571E84FF608EA69DFF /* ../Shared/Mobile/MobileSync.swift in Sources */,
+				6BF018C12FF02CEE36315400 /* ../Shared/Mobile/MobileTools.swift in Sources */,
+				0C442369FEFC71CA64EFDDCD /* MobileCacheTests.swift in Sources */,
+				2338670AAB836453A859F214 /* MobileToolsTests.swift in Sources */,
 				A40000000000000000000021 /* ../App/Services/Home.swift in Sources */,
 				A40000000000000000000029 /* ../App/Services/HomeHelperLocator.swift in Sources */,
 				A40000000000000000000022 /* ../Shared/Extensions/Logger+Extensions.swift in Sources */,
@@ -535,7 +765,7 @@
 				A30000000000000000000020 /* HomeToolsTests.swift in Sources */,
 				A30000000000000000000021 /* ../Shared/Home/HomeBackend.swift in Sources */,
 				A30000000000000000000022 /* ../Shared/Home/HomeError.swift in Sources */,
-				A30000000000000000000023 /* ../Shared/Home/HomeInput.swift in Sources */,
+				A30000000000000000000023 /* ../Shared/Models/ToolInput.swift in Sources */,
 				A30000000000000000000024 /* ../Shared/Home/HomeTools.swift in Sources */,
 				A30000000000000000000025 /* ../Shared/Models/Tool.swift in Sources */,
 				A30000000000000000000026 /* ../Shared/Models/Value.swift in Sources */,
@@ -564,7 +794,30 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C60000000000000000000006 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A70000000000000000000006 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A70000000000000000000040 /* AlarmMetadata.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A7000000000000000000000E /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A70000000000000000000002 /* iMCP iOS Widgets */;
+			targetProxy = A7000000000000000000000D /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		730CCB1C20FB35151860DD40 /* Release */ = {
@@ -978,6 +1231,148 @@
 			};
 			name = Release;
 		};
+		C6000000000000000000000A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = iOS/iOS.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				IOS_BUNDLE_IDENTIFIER = co.dododo.iMCP.iOS;
+				CURRENT_PROJECT_VERSION = 24;
+				DEVELOPMENT_TEAM = TTY35UM57S;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = iOS/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = iMCP;
+				INFOPLIST_KEY_NSCameraUsageDescription = "iMCP uses the camera to scan the pairing code that iMCP shows on your Mac.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "iMCP reads the health data you choose and sends it to iMCP on your Mac, where the AI apps you connect can use it.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "iMCP connects to iMCP on your Mac over your local network.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.7.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(IOS_BUNDLE_IDENTIFIER)";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		C6000000000000000000000B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = iOS/iOS.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				IOS_BUNDLE_IDENTIFIER = co.dododo.iMCP.iOS;
+				CURRENT_PROJECT_VERSION = 24;
+				DEVELOPMENT_TEAM = TTY35UM57S;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = iOS/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = iMCP;
+				INFOPLIST_KEY_NSCameraUsageDescription = "iMCP uses the camera to scan the pairing code that iMCP shows on your Mac.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "iMCP reads the health data you choose and sends it to iMCP on your Mac, where the AI apps you connect can use it.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "iMCP connects to iMCP on your Mac over your local network.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.7.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(IOS_BUNDLE_IDENTIFIER)";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		A7000000000000000000000A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "iOSWidgets/iOSWidgets.entitlements";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				IOS_BUNDLE_IDENTIFIER = co.dododo.iMCP.iOS;
+				CURRENT_PROJECT_VERSION = 24;
+				DEVELOPMENT_TEAM = TTY35UM57S;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = iOSWidgets/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "iMCP Widgets";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.7.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(IOS_BUNDLE_IDENTIFIER).Widgets";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		A7000000000000000000000B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "iOSWidgets/iOSWidgets.entitlements";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				IOS_BUNDLE_IDENTIFIER = co.dododo.iMCP.iOS;
+				CURRENT_PROJECT_VERSION = 24;
+				DEVELOPMENT_TEAM = TTY35UM57S;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = iOSWidgets/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "iMCP Widgets";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.7.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(IOS_BUNDLE_IDENTIFIER).Widgets";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -1022,6 +1417,24 @@
 			buildConfigurations = (
 				F8F44EBB2D5908D00075D79C /* Debug */,
 				F8F44EBC2D5908D00075D79C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C60000000000000000000009 /* Build configuration list for PBXNativeTarget "iMCP iOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C6000000000000000000000A /* Debug */,
+				C6000000000000000000000B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A70000000000000000000009 /* Build configuration list for PBXNativeTarget "iMCP iOS Widgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A7000000000000000000000A /* Debug */,
+				A7000000000000000000000B /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
@@ -1197,6 +1610,26 @@
 			isa = XCSwiftPackageProductDependency;
 			package = AA0011000000000000000003 /* XCRemoteSwiftPackageReference "Envelope" */;
 			productName = Envelope;
+		};
+		C60000000000000000000014 /* MCP */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F8D7C3182DCBD32100A4775F /* XCRemoteSwiftPackageReference "swift-sdk" */;
+			productName = MCP;
+		};
+		C60000000000000000000015 /* JSONSchema */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F8D8C48C2DCE0E6800369E5C /* XCRemoteSwiftPackageReference "JSONSchema" */;
+			productName = JSONSchema;
+		};
+		C60000000000000000000016 /* Ontology */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F873F48B2D712BCF0035CD0A /* XCRemoteSwiftPackageReference "Ontology" */;
+			productName = Ontology;
+		};
+		C60000000000000000000017 /* Logging */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F88358352D64A085000317CD /* XCRemoteSwiftPackageReference "swift-log" */;
+			productName = Logging;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

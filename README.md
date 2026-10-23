@@ -16,6 +16,13 @@ and a [growing list of clients][mcp-clients] that support the
 <table>
   <tr>
     <th>
+      <img src="Assets/alarms.svg" width="48" height="48" alt="" role="presentation"/>
+    </th>
+    <td><strong>Alarms</strong></td>
+    <td>Set one-time and weekly alarms and countdown timers on your iPhone or iPad, list them, and cancel them. They sound even in silent mode and Focus. Needs iMCP for iOS, which you <a href="#imcp-for-iphone-and-ipad">build with your own Apple Developer account</a>.</td>
+  </tr>
+  <tr>
+    <th>
       <img src="Assets/calendar.svg" width="48" height="48" alt="" role="presentation"/>
     </th>
     <td><strong>Calendar</strong></td>
@@ -27,6 +34,13 @@ and a [growing list of clients][mcp-clients] that support the
     </th>
     <td><strong>Contacts</strong></td>
     <td>Access contact information about yourself and search your contacts by name, phone number, or email address.</td>
+  </tr>
+  <tr>
+    <th>
+      <img src="Assets/health.svg" width="48" height="48" alt="" role="presentation"/>
+    </th>
+    <td><strong>Health</strong></td>
+    <td>Read Health data from your iPhone or iPad: samples, daily statistics, workouts, and health records. Needs iMCP for iOS, which you <a href="#imcp-for-iphone-and-ipad">build with your own Apple Developer account</a>.</td>
   </tr>
   <tr>
     <th>
@@ -156,7 +170,10 @@ a dialog asks "'iMCP' Would Like Full Access to Your Calendar".
 Click "Allow Full Access" to continue.
 
 > [!IMPORTANT]
-> iMCP **does not** collect or store any of your data.
+> iMCP **does not** collect your data.
+> The only data it stores is a copy of what a paired iPhone or iPad sends
+> for the Health and Alarms services,
+> as described in [iMCP for iPhone and iPad](#imcp-for-iphone-and-ipad).
 > AI apps like Claude and ChatGPT _do_ send
 > your data off device as part of tool calls.
 > Turn on only the services you want your AI app to use.
@@ -698,6 +715,125 @@ xcodebuild -scheme iMCP -configuration Debug -destination "platform=macOS" \
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
   HELPER_CODE_SIGNING_ALLOWED=NO build
 ```
+
+### iMCP for iPhone and iPad
+
+HealthKit and AlarmKit data stays on the iPhone or iPad,
+so the Health and Alarms services get it from iMCP for iOS,
+an app in [`iOS`](/iOS/).
+Build and install it with your own Apple Developer account:
+
+```console
+Scripts/install-ios.sh
+```
+
+The script signs the app with your team's development certificate,
+gives it the bundle ID `local.imcp.ios.<team ID>`,
+checks that the build has its HealthKit and App Group entitlements,
+and installs it on your iPhone or iPad with `devicectl`.
+Run it with `--help` to choose another team, bundle ID, or device.
+You need a paid Apple Developer account with Xcode signed in to it,
+and an iPhone or iPad with iOS 26 or later in Developer Mode.
+Development profiles expire;
+the script prints the expiration date, and running it again renews the profile.
+
+To pair, open Settings > iPhone & iPad in iMCP on your Mac
+and click Pair iPhone or iPad,
+then scan the code in iMCP on the device.
+The code works once, for ten minutes.
+Then turn on each service on both devices; all of them start off.
+Turning a service on shares its data with the AI apps that you approve in iMCP,
+and the iOS app says so before it asks for permission.
+Health asks for each group of types, such as Activity or Sleep, separately.
+To unpair, remove the device in Settings > iPhone & iPad on the Mac,
+or tap Unpair in iMCP on the device.
+
+The device connects to the Mac only over your local network;
+nothing goes through iCloud or another server.
+The connection uses TLS 1.2 with a pre-shared key from pairing
+and an ephemeral X25519 key exchange, which gives it forward secrecy.
+The pairing code and its link contain the pairing secret.
+Anyone who sees the code or the link during its ten minutes
+could pose as the Mac or as the device for that pairing,
+so show it only to the device that you're pairing.
+
+The Mac keeps an encrypted copy of what the paired iPhone or iPad sends,
+so read-only tools can answer while the device is locked or away.
+Every answer says where it came from and when the device last sent the data.
+The copy is a SQLite database in the Mac's Application Support folder.
+Each record's contents are encrypted with AES-GCM under a key in the Keychain,
+but record kinds, identifiers, query keys such as the Health data type, and dates
+stay unencrypted so that queries can filter on them.
+So does the device's last status report,
+which lists the services that are on and their permissions.
+Removing the last paired device deletes the copy,
+whether you remove it on the Mac or tap Unpair on the device while the Mac is reachable.
+To delete the copy and stay paired,
+click Delete Cached Data in Settings > iPhone & iPad;
+the device sends its data again the next time it connects.
+
+<details>
+<summary>How the iOS app works</summary>
+
+Both apps compile the same tool definitions from
+[`Shared/Mobile/MobileTools.swift`](/Shared/Mobile/MobileTools.swift).
+iOS suspends apps in the background, so the iPhone or iPad dials the Mac,
+which advertises "\_imcp-mobile.\_tcp" with Bonjour,
+and serves the tools as an MCP server on that connection;
+iMCP is the MCP client.
+The Mac listens and advertises only while a pairing code is on screen,
+or while a device is paired and Health or Alarms is on.
+The connection uses TLS 1.2 with pre-shared keys:
+the one-time secret in the QR code for pairing,
+and a key for each device after that.
+A device that doesn't have a key can't complete the handshake.
+The cipher suite, `TLS_ECDHE_PSK_WITH_CHACHA20_POLY1305_SHA256`,
+adds an ephemeral X25519 key exchange to each connection,
+so someone who steals a key later can't decrypt traffic they recorded earlier.
+Apple's TLS stack doesn't support external pre-shared keys in TLS 1.3,
+and it also offers pre-shared key suites without a key exchange,
+so both devices close a connection that negotiates any other suite.
+During pairing, the two devices derive the device key
+from an X25519 key exchange salted with the pairing secret,
+so the device key never crosses the network.
+Someone who saw the QR code and recorded the pairing still can't derive it.
+
+Read results include `source` (`live` or `cache`), `synced_at`, and `stale`.
+Cached data is stale after 4 hours for Health
+and 1 hour for Alarms.
+After a lost connection, a read is retried once when the device reconnects
+and otherwise answers from the cache.
+Alarm changes carry an ID, so retrying one doesn't create a second alarm.
+
+HealthKit encrypts its store while the device is locked,
+and wakes apps in the background at most hourly for common types,
+so the device queues changes and sends them the next time it can.
+Each type has a saved anchor, so a sync sends only new and deleted objects.
+Quantity types, such as steps and heart rate, sync as daily statistics for two years;
+their raw samples are available only while the iOS app is reachable.
+Sleep, workouts, and health records sync in full.
+HealthKit doesn't tell apps when read access is denied,
+so an empty result means no samples or no access.
+
+AlarmKit gives an app access only to the alarms it creates,
+so the Alarms tools can't see or change Clock app alarms.
+Alarms sound even in silent mode and Focus.
+A running timer shows as a Live Activity from the
+[`iOSWidgets`](/iOSWidgets/) extension.
+The iOS app lists the alarms that AI apps created and can cancel them.
+
+With Health or Alarms on,
+`uv run Scripts/check-ios.py <path-to-imcp-server>`
+runs read-only checks of the tools, their schemas, and their sync status.
+CI builds the app unsigned,
+which checks compilation and packaging but can't access HealthKit:
+
+```console
+xcodebuild -scheme "iMCP iOS" -destination "generic/platform=iOS" \
+  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+```
+
+</details>
 
 ## Debugging
 
