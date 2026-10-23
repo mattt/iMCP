@@ -633,9 +633,30 @@ If you installed it somewhere else,
 iMCP asks you to choose it when you turn on Home,
 or you can choose it in Settings > Services > Home.
 When you enable Home,
-iMCP launches the helper and the helper asks for HomeKit access.
-The helper exits when iMCP exits,
-and its status window reports startup and permission errors.
+iMCP launches the helper if it isn't running,
+and the helper asks for HomeKit access.
+The first time, the helper's window shows an eight-character pairing code,
+such as `7KQ2-M9XD`, and numbered steps:
+click Copy Code,
+click Open iMCP… to open iMCP's Pair with iMCP Helper window,
+then paste the code and click Pair.
+The button opens the URL `imcp://pair`, which carries no data;
+iMCP only opens its pairing window for it.
+The helper opens that URL only with the app that has iMCP's bundle ID, `co.dododo.iMCP`,
+preferring the running copy, and not with a copy that doesn't declare the `imcp` scheme;
+otherwise, for example if you built iMCP with another bundle ID,
+the helper tells you to choose Pair… in Settings > Services > Home instead.
+If the helper's window is behind other windows,
+click Open iMCP Helper… in iMCP's window.
+The code works once:
+when you pair, iMCP sends the helper a new random key,
+and both apps keep that key in their keychains.
+After five wrong codes, the helper shows a new one.
+To pair again, click Pair Again… in the helper's window and confirm;
+the helper ends iMCP's connection and shows a new code and the same steps.
+The helper keeps running after iMCP quits;
+choose Quit iMCP Helper from its app menu, or press Command-Q, to stop it.
+The window also reports startup and permission errors.
 The Mac's iCloud account must have access to the home,
 and writes can require the owner or administrator role.
 
@@ -651,14 +672,23 @@ After a lost connection, read-only calls retry once.
 Writes are not repeated, because HomeKit may have applied them already;
 the error asks the caller to inspect the home before retrying.
 
-iMCP passes an ephemeral loopback port to the helper it launches.
-A helper started some other way (for example, from Xcode)
-advertises "\_imcp-helper.\_tcp" on the local-only DNS-SD interface instead.
-If iMCP can't find such a helper, quit it and let iMCP launch its own.
-To point `imcp-server` (and so the MCP Inspector) at a running helper directly,
-set `IMCP_SERVICE_TYPE=_imcp-helper._tcp`.
+The helper advertises "\_imcp-helper.\_tcp" on the local-only DNS-SD interface,
+and iMCP finds it there, whether or not iMCP launched it.
+If more than one helper is running,
+iMCP tries the one at the chosen location first, then the others.
+Connections use TLS with the key from pairing as a pre-shared key,
+so a connection without the key fails the TLS handshake.
+The cipher suite adds an ECDHE key exchange,
+so a recorded connection stays secret even if the key or code is found later.
+The pairing connection uses a key derived from the code with PBKDF2,
+which makes each guess slow for a process
+that advertises itself as the helper while you pair.
+If you built the helper with an earlier version of iMCP,
+quit it and rebuild it with `Scripts/install-helper.sh`;
+iMCP refuses a helper that doesn't declare the current protocol version.
+With Home turned on in iMCP,
 `uv run Scripts/check-home.py <path-to-imcp-server>` runs a read-only
-integration check against it.
+integration check through iMCP.
 
 #### Building the helper
 

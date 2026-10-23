@@ -4,6 +4,8 @@
 <dict>
     <key>iMCPHelper</key>
     <true/>
+    <key>iMCPHelperProtocolVersion</key>
+    <integer>3</integer>
     <key>LSMultipleInstancesProhibited</key>
     <true/>
     <key>NSBonjourServices</key>

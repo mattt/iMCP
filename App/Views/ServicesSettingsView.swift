@@ -4,12 +4,14 @@ struct ServicesSettingsView: View {
     @ObservedObject var serverController: ServerController
     @State private var homeHelperPath: String?
     @State private var homeHelperError: String?
+    @State private var homeHelperPaired = false
+    @State private var homeHelperPairing = false
 
     var body: some View {
         Form {
             ForEach(serverController.computedServiceConfigs) { config in
                 Section {
-                    if config.service is HomeService { homeHelperRow() }
+                    if config.service is HomeService { homeHelperRow(enabled: config.binding.wrappedValue) }
                     ForEach(config.service.tools, id: \.name) { tool in
                         toolRow(tool)
                     }
@@ -44,7 +46,7 @@ struct ServicesSettingsView: View {
     }
 
     @ViewBuilder
-    private func homeHelperRow() -> some View {
+    private func homeHelperRow(enabled: Bool) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack {
                 Text("Helper")
@@ -71,6 +73,28 @@ struct ServicesSettingsView: View {
                     }
                 }
             }
+            HStack {
+                Text("Pairing")
+                Spacer()
+                Text(homeHelperPaired ? "Paired" : "Not paired")
+                    .foregroundStyle(.secondary)
+                Button("Pair…") {
+                    homeHelperPairing = true
+                    Task {
+                        defer { homeHelperPairing = false }
+                        let message = "Enter the code shown in iMCP Helper's window."
+                        guard await HomeService.shared.pairAskingUser(message: message) else { return }
+                        homeHelperPaired = true
+                        homeHelperError = nil
+                        do {
+                            if enabled { try await HomeService.shared.reconnect() }
+                        } catch {
+                            homeHelperError = error.localizedDescription
+                        }
+                    }
+                }
+                .disabled(homeHelperPairing)
+            }
             if let homeHelperError {
                 Text(homeHelperError).font(.caption).foregroundStyle(.red)
             } else if homeHelperPath == nil {
@@ -79,7 +103,10 @@ struct ServicesSettingsView: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .task { homeHelperPath = HomeService.shared.helperLocation()?.path }
+        .task {
+            homeHelperPath = HomeService.shared.helperLocation()?.path
+            homeHelperPaired = HomeService.shared.hasPairingKey()
+        }
     }
 
     @ViewBuilder

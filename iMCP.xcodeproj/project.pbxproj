@@ -20,6 +20,8 @@
 		A30000000000000000000020 /* HomeToolsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000010 /* HomeToolsTests.swift */; };
 		A30000000000000000000021 /* ../Shared/Home/HomeBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000011 /* ../Shared/Home/HomeBackend.swift */; };
 		A30000000000000000000022 /* ../Shared/Home/HomeError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000012 /* ../Shared/Home/HomeError.swift */; };
+		A60000000000000000000021 /* ../Shared/Home/HomeHelperPairing.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000011 /* ../Shared/Home/HomeHelperPairing.swift */; };
+		A60000000000000000000022 /* ../Helper/Server/HelperServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000012 /* ../Helper/Server/HelperServer.swift */; };
 		A30000000000000000000023 /* ../Shared/Home/HomeInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000013 /* ../Shared/Home/HomeInput.swift */; };
 		A30000000000000000000024 /* ../Shared/Home/HomeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000014 /* ../Shared/Home/HomeTools.swift */; };
 		A30000000000000000000025 /* ../Shared/Models/Tool.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000015 /* ../Shared/Models/Tool.swift */; };
@@ -90,6 +92,8 @@
 		A30000000000000000000010 /* HomeToolsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeToolsTests.swift; sourceTree = "<group>"; };
 		A30000000000000000000011 /* ../Shared/Home/HomeBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Home/HomeBackend.swift; sourceTree = "<group>"; };
 		A30000000000000000000012 /* ../Shared/Home/HomeError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Home/HomeError.swift; sourceTree = "<group>"; };
+		A60000000000000000000011 /* ../Shared/Home/HomeHelperPairing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Home/HomeHelperPairing.swift; sourceTree = "<group>"; };
+		A60000000000000000000012 /* ../Helper/Server/HelperServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Helper/Server/HelperServer.swift; sourceTree = "<group>"; };
 		A30000000000000000000013 /* ../Shared/Home/HomeInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Home/HomeInput.swift; sourceTree = "<group>"; };
 		A30000000000000000000014 /* ../Shared/Home/HomeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Home/HomeTools.swift; sourceTree = "<group>"; };
 		A30000000000000000000015 /* ../Shared/Models/Tool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Models/Tool.swift; sourceTree = "<group>"; };
@@ -241,6 +245,8 @@
 				A30000000000000000000010 /* HomeToolsTests.swift */,
 				A30000000000000000000011 /* ../Shared/Home/HomeBackend.swift */,
 				A30000000000000000000012 /* ../Shared/Home/HomeError.swift */,
+				A60000000000000000000011 /* ../Shared/Home/HomeHelperPairing.swift */,
+				A60000000000000000000012 /* ../Helper/Server/HelperServer.swift */,
 				A30000000000000000000013 /* ../Shared/Home/HomeInput.swift */,
 				A30000000000000000000014 /* ../Shared/Home/HomeTools.swift */,
 				A30000000000000000000015 /* ../Shared/Models/Tool.swift */,
@@ -535,6 +541,8 @@
 				A30000000000000000000020 /* HomeToolsTests.swift in Sources */,
 				A30000000000000000000021 /* ../Shared/Home/HomeBackend.swift in Sources */,
 				A30000000000000000000022 /* ../Shared/Home/HomeError.swift in Sources */,
+				A60000000000000000000021 /* ../Shared/Home/HomeHelperPairing.swift in Sources */,
+				A60000000000000000000022 /* ../Helper/Server/HelperServer.swift in Sources */,
 				A30000000000000000000023 /* ../Shared/Home/HomeInput.swift in Sources */,
 				A30000000000000000000024 /* ../Shared/Home/HomeTools.swift in Sources */,
 				A30000000000000000000025 /* ../Shared/Models/Tool.swift in Sources */,
@@ -615,7 +623,6 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				HELPER_BUNDLE_IDENTIFIER = co.dododo.iMCP.Helper;
 				INFOPLIST_FILE = Helper/Info.plist;
-				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHomeKitUsageDescription = "iMCP uses HomeKit to inspect and organize your homes, accessories, scenes, and automations.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "iMCP connects to iMCP Helper on this Mac.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -635,7 +642,7 @@
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = "1,2,6";
 			};
 			name = Debug;
 		};
@@ -655,7 +662,6 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				HELPER_BUNDLE_IDENTIFIER = co.dododo.iMCP.Helper;
 				INFOPLIST_FILE = Helper/Info.plist;
-				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHomeKitUsageDescription = "iMCP uses HomeKit to inspect and organize your homes, accessories, scenes, and automations.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "iMCP connects to iMCP Helper on this Mac.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -676,7 +682,7 @@
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = "1,2,6";
 			};
 			name = Release;
 		};

@@ -79,6 +79,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    func application(_ application: NSApplication, open urls: [URL]) {
+        // iMCP Helper's Open iMCP button opens imcp://pair, which only opens the pairing window.
+        guard urls.contains(where: HomeHelperPairing.isPairingURL) else { return }
+        Task { await HomeService.shared.pairFromURL() }
+    }
+
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
         // Reopening the app must work even when the menu bar item is absent.
         shouldOpenSettings = true
