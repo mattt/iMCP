@@ -148,6 +148,8 @@ final class HelperRuntime: ObservableObject {
     private var server: HelperServer?
     private var advertisement: HelperAdvertisement?
     private var homeKit: Task<Void, Never>?
+    /// The change that failed, which Try Again repeats.
+    private var failedChange: Change?
 
     init() {
         let (stream, continuation) = AsyncStream.makeStream(of: Change.self)
@@ -161,7 +163,8 @@ final class HelperRuntime: ObservableObject {
 
     func retry() {
         canRetry = false
-        changes.yield(.start)
+        changes.yield(failedChange ?? .start)
+        failedChange = nil
     }
 
     /// Deletes the key, ends every session, and shows a new code.
@@ -187,12 +190,21 @@ final class HelperRuntime: ObservableObject {
                 }
                 loadHomeKit()
             case .pairAgain:
-                keychain.delete()
+                // Refuse a key that a pairing in progress tries to store from now on.
+                pairing = nil
+                isListening = false
+                do {
+                    try keychain.delete()
+                } catch {
+                    // Don't show a new code while the old key would still work after a relaunch.
+                    await server?.stop()
+                    throw error
+                }
                 try await listen(.code(HomeHelperPairing.generateCode()))
             case .paired(let key, let code):
                 // Ignore a pairing with a code that the window no longer shows.
+                // `storeKey(_:code:)` already saved the key.
                 guard pairing == .code(code) else { return }
-                try keychain.save(key)
                 try await listen(.key(key))
             case .tooManyFailedPairings(let code):
                 guard pairing == .code(code) else { return }
@@ -201,8 +213,15 @@ final class HelperRuntime: ObservableObject {
         } catch {
             isListening = false
             listenerFailure = .failed(error)
+            failedChange = change
             canRetry = true
         }
+    }
+
+    /// Saves a key from pairing, if the window still shows the code that it came with.
+    private func storeKey(_ key: SymmetricKey, code: String) throws {
+        guard pairing == .code(code) else { throw HomeError("The pairing code was replaced.") }
+        try keychain.save(key)
     }
 
     /// Listens with a credential and advertises the listener.
@@ -212,9 +231,15 @@ final class HelperRuntime: ObservableObject {
         if let server {
             port = try await server.restart(credential: credential)
         } else {
-            let server = HelperServer(backend: backend, credential: credential) { [weak self] event in
-                await self?.receive(event)
-            }
+            let server = HelperServer(
+                backend: backend,
+                credential: credential,
+                storeKey: { [weak self] key, code in
+                    guard let self else { throw HomeError("iMCP Helper stopped.") }
+                    try await self.storeKey(key, code: code)
+                },
+                onEvent: { [weak self] event in await self?.receive(event) }
+            )
             self.server = server
             port = try await server.start()
         }

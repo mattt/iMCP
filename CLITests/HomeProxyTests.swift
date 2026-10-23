@@ -89,7 +89,13 @@ final class HomeHelperPairingTests: XCTestCase {
     func testPairsWithTheCodeThenConnectsOnlyWithTheKey() async throws {
         let code = try HomeHelperPairing.generateCode()
         let events = EventRecorder()
-        let server = HelperServer(backend: StaticHomeBackend(), credential: .code(code)) { await events.record($0) }
+        let helperStore = MemoryKeyStore()
+        let server = HelperServer(
+            backend: StaticHomeBackend(),
+            credential: .code(code),
+            storeKey: { key, _ in try helperStore.save(key) },
+            onEvent: { await events.record($0) }
+        )
         let pairingPort = try await server.start()
         let pairing = try HomeHelperPairing.pairingParameters(code: code)
 
@@ -110,6 +116,8 @@ final class HomeHelperPairingTests: XCTestCase {
             purpose: .pair(key)
         )
         XCTAssertEqual(try store.read().map(Self.bytes), Self.bytes(key))
+        // The helper stored the key before it acknowledged the pairing.
+        XCTAssertEqual(try helperStore.read().map(Self.bytes), Self.bytes(key))
         let paired = try await events.next()
         guard case .paired(let received, code: code) = paired else { return XCTFail("\(paired)") }
         XCTAssertEqual(Self.bytes(received), Self.bytes(key))
@@ -138,7 +146,11 @@ final class HomeHelperPairingTests: XCTestCase {
     func testReplacesTheCodeAfterFiveFailedHandshakes() async throws {
         let code = try HomeHelperPairing.generateCode()
         let events = EventRecorder()
-        let server = HelperServer(backend: StaticHomeBackend(), credential: .code(code)) { await events.record($0) }
+        let server = HelperServer(
+            backend: StaticHomeBackend(),
+            credential: .code(code),
+            onEvent: { await events.record($0) }
+        )
         let port = try await server.start()
         let wrong = try HomeHelperPairing.pairingParameters(code: HomeHelperPairing.generateCode())
         for _ in 1 ... HomeHelperPairing.failedPairingLimit {
@@ -219,6 +231,92 @@ final class HomeHelperPairingTests: XCTestCase {
         XCTAssertFalse(HomeHelperPairing.usesCipherSuite(plain))
         let reply = try await exchange(Self.initialize, on: plain)
         XCTAssertNil(reply)
+        withExtendedLifetime(server) {}
+    }
+
+    func testRestartCancelsAConnectionThatIsBeingSetUp() async throws {
+        let key = HomeHelperPairing.generateKey()
+        let gate = Gate()
+        let server = HelperServer(
+            backend: StaticHomeBackend(),
+            credential: .key(key),
+            willStartSession: { await gate.pass() }
+        )
+        let port = try await server.start()
+        let old = NWConnection(host: .ipv4(.loopback), port: port, using: HomeHelperPairing.parameters(key: key))
+        defer { old.cancel() }
+        old.start(queue: .main)
+        // Restart while the server holds the old connection between its setup and its start.
+        try await gate.waitForArrival()
+        let newKey = HomeHelperPairing.generateKey()
+        let newPort = try await server.restart(credential: .key(newKey))
+        await gate.open()
+        let reply = try await exchange(Self.initialize, on: old)
+        XCTAssertNil(reply, "A connection with the old key answered after the restart.")
+
+        // A connection with the new key gets an answer, so the exchange itself works.
+        let current = NWConnection(
+            host: .ipv4(.loopback),
+            port: newPort,
+            using: HomeHelperPairing.parameters(key: newKey)
+        )
+        defer { current.cancel() }
+        current.start(queue: .main)
+        try await waitUntilReady(current)
+        let answer = try await exchange(Self.initialize, on: current)
+        XCTAssertTrue(answer?.contains("iMCP Helper") == true, answer ?? "no reply")
+        withExtendedLifetime(server) {}
+    }
+
+    func testRejectsAPairingRequestFromAnEndedSession() async throws {
+        let code = try HomeHelperPairing.generateCode()
+        let events = EventRecorder()
+        let server = HelperServer(
+            backend: StaticHomeBackend(),
+            credential: .code(code),
+            onEvent: { await events.record($0) }
+        )
+        let port = try await server.start()
+        // swift-sdk can run the handler after its session ended; such a session isn't registered.
+        do {
+            try await server.receivePairing(Data(count: 32), session: UUID(), code: code)
+            XCTFail("A pairing request from an ended session must fail.")
+        } catch {}
+        let stillAccepted = try await connectionFails(
+            port: port,
+            parameters: HomeHelperPairing.pairingParameters(code: code)
+        )
+        XCTAssertFalse(stillAccepted)
+        let reported = await events.count
+        XCTAssertEqual(reported, 0)
+        withExtendedLifetime(server) {}
+    }
+
+    func testReportsAPairingWhoseConnectionEndsWhileTheKeyIsStored() async throws {
+        let code = try HomeHelperPairing.generateCode()
+        let events = EventRecorder()
+        let gate = Gate()
+        let server = HelperServer(
+            backend: StaticHomeBackend(),
+            credential: .code(code),
+            storeKey: { _, _ in await gate.pass() },
+            onEvent: { await events.record($0) }
+        )
+        let port = try await server.start()
+        let client = try await connectClient(port: port, parameters: HomeHelperPairing.pairingParameters(code: code))
+        let key = HomeHelperPairing.generateKey()
+        let request = Task {
+            try await client.send(HomeHelperPairing.Pair.request(.init(key: Self.bytes(key)))).value
+        }
+        // End the connection while the helper stores the key, then let it finish storing.
+        try await gate.waitForArrival()
+        await client.disconnect()
+        try await Task.sleep(for: .milliseconds(300))
+        await gate.open()
+        let event = try await events.next()
+        guard case .paired(let reported, code: code) = event else { return XCTFail("\(event)") }
+        XCTAssertEqual(Self.bytes(reported), Self.bytes(key))
+        request.cancel()
         withExtendedLifetime(server) {}
     }
 
@@ -522,11 +620,41 @@ private final class MemoryKeyStore: HomeHelperKeyStore {
     func save(_ key: SymmetricKey) throws { self.key.withLock { $0 = key } }
 }
 
+/// Holds sessions at the server's `willStartSession` point until the test opens it.
+private actor Gate {
+    private var arrived = false
+    private var isOpen = false
+    private var waiting: [CheckedContinuation<Void, Never>] = []
+
+    func pass() async {
+        arrived = true
+        if isOpen { return }
+        await withCheckedContinuation { waiting.append($0) }
+    }
+
+    func open() {
+        isOpen = true
+        waiting.forEach { $0.resume() }
+        waiting = []
+    }
+
+    /// Waits up to five seconds for a session to reach the gate.
+    func waitForArrival() async throws {
+        for _ in 0 ..< 100 {
+            if arrived { return }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        throw HomeError("No session reached the gate.")
+    }
+}
+
 /// Collects the server's events in order.
 private actor EventRecorder {
     private var events: [HelperServer.Event] = []
 
     func record(_ event: HelperServer.Event) { events.append(event) }
+
+    var count: Int { events.count }
 
     /// Returns the oldest event that hasn't been returned, waiting up to five seconds for one.
     func next() async throws -> HelperServer.Event {

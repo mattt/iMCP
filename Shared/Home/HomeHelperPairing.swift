@@ -220,9 +220,12 @@ enum HomeHelperPairing {
             }
         }
 
-        func delete() {
+        func delete() throws {
             for dataProtection in [true, false] {
-                SecItemDelete(baseQuery(dataProtection: dataProtection) as CFDictionary)
+                let status = SecItemDelete(baseQuery(dataProtection: dataProtection) as CFDictionary)
+                guard [errSecSuccess, errSecItemNotFound, errSecMissingEntitlement].contains(status) else {
+                    throw HomeError("Cannot delete the iMCP Helper pairing key from the keychain (\(status)).")
+                }
             }
         }
 

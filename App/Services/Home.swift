@@ -104,7 +104,7 @@ actor HomeService: Service, HomeBackend {
     }
 
     /// Pairs with the helper that shows `code`:
-    /// sends a new key over a pairing connection and saves the key.
+    /// sends a new key over a pairing connection and saves the key once the helper accepts it.
     /// Call `activate()` or `reconnect()` afterward to connect with the key.
     func pair(code: String) async throws {
         let pid = try await launchHelper(overrideURL: helperURL, activates: true)
@@ -129,6 +129,9 @@ actor HomeService: Service, HomeBackend {
             if candidates.contains(where: { $0.processID == paired.processID && !$0.isPairing }) { return }
             try await Task.sleep(for: .milliseconds(200))
         }
+        throw HomeError(
+            "iMCP Helper accepted the pairing but didn't start using the new key. Check its window, then turn Home off and on again."
+        )
     }
 
     /// Quits a helper and waits until it has exited,
@@ -429,15 +432,14 @@ actor HomeService: Service, HomeBackend {
                 authorized = true
                 log.info("Connected to iMCP Helper")
             case .pair(let key):
-                // Save the key first: if the response is lost but the helper saved the key,
-                // iMCP still has it; if the helper didn't, the next connection asks for a new code.
-                try keyStore.save(key)
                 do {
                     let data = key.withUnsafeBytes { Data($0) }
                     _ = try await client.send(HomeHelperPairing.Pair.request(.init(key: data))).value
                 } catch {
                     throw HomeError("iMCP Helper didn't accept the pairing: \(error.localizedDescription)")
                 }
+                // The helper stored the key before it responded, so iMCP saves it only now.
+                try keyStore.save(key)
                 connection.cancel()
                 await client.disconnect()
                 log.info("Paired with iMCP Helper")

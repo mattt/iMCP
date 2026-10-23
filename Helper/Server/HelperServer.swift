@@ -25,25 +25,48 @@ actor HelperServer {
         case tooManyFailedPairings(code: String)
     }
 
+    /// A pairing that a connection started by sending a key.
+    private struct Pairing {
+        let id = UUID()
+        let session: UUID
+        let key: SymmetricKey
+        let code: String
+        /// Whether the helper stored the key, so the response can say so.
+        var stored = false
+        /// Whether the `paired` event was sent.
+        var reported = false
+    }
+
     private let backend: any HomeBackend
+    private let storeKey: @Sendable (SymmetricKey, _ code: String) async throws -> Void
     private let onEvent: @Sendable (Event) async -> Void
+    private let willStartSession: @Sendable () async -> Void
     private var credential: Credential
     private var listener: NWListener?
     private var sessions: [UUID: NWConnection] = [:]
     private var startup: CheckedContinuation<Void, Error>?
     private var failedPairings = 0
     /// Set when a pairing connection sends a key, so the code works only once.
-    private var pairing: (session: UUID, key: SymmetricKey, code: String)?
+    private var pairing: Pairing?
     private let log = Logger.service("helper.server")
 
+    /// Creates a server.
+    /// `storeKey` keeps a key from pairing before the helper acknowledges it,
+    /// and `onEvent` reports changes for the window to apply.
+    /// `willStartSession` runs where a session can be suspended before it starts;
+    /// tests use it to restart the server at that point.
     init(
         backend: any HomeBackend,
         credential: Credential,
-        onEvent: @escaping @Sendable (Event) async -> Void = { _ in }
+        storeKey: @escaping @Sendable (SymmetricKey, _ code: String) async throws -> Void = { _, _ in },
+        onEvent: @escaping @Sendable (Event) async -> Void = { _ in },
+        willStartSession: @escaping @Sendable () async -> Void = {}
     ) {
         self.backend = backend
         self.credential = credential
+        self.storeKey = storeKey
         self.onEvent = onEvent
+        self.willStartSession = willStartSession
     }
 
     /// Listens on an ephemeral loopback port and returns the port.
@@ -90,12 +113,17 @@ actor HelperServer {
     /// swift-sdk's `Server.stop()` doesn't cancel request handlers,
     /// and HomeKit mutations with several steps don't check the session between steps.
     func restart(credential: Credential) async throws -> NWEndpoint.Port {
-        stopListening()
-        for connection in sessions.values { connection.cancel() }
+        stop()
         self.credential = credential
         failedPairings = 0
         pairing = nil
         return try await start()
+    }
+
+    /// Stops listening and ends every session, including any in its TLS handshake.
+    func stop() {
+        stopListening()
+        for connection in sessions.values { connection.cancel() }
     }
 
     private func stopListening() {
@@ -138,6 +166,8 @@ actor HelperServer {
         }
         let id = UUID()
         let credential = self.credential
+        // Register before the first suspension, so a restart in between cancels this connection.
+        sessions[id] = connection
         let server: MCP.Server
         switch credential {
         case .code(let code):
@@ -168,7 +198,13 @@ actor HelperServer {
             reconnectionConfig: .disabled,
             bufferConfig: .unlimited
         )
-        sessions[id] = connection
+        await willStartSession()
+        // A restart while the handlers were registered replaced this connection's listener.
+        guard acceptor === listener, sessions[id] != nil else {
+            sessions.removeValue(forKey: id)
+            connection.cancel()
+            return
+        }
         // End a connection that doesn't complete the TLS handshake and initialize promptly.
         let deadline = Task {
             try await Task.sleep(for: .seconds(5))
@@ -194,10 +230,16 @@ actor HelperServer {
         await server.stop()
         sessions.removeValue(forKey: id)
         connection.cancel()
-        // Report a pairing once its connection ends, so iMCP receives the response first.
-        if let pairing, pairing.session == id {
-            await onEvent(.paired(pairing.key, code: pairing.code))
-        }
+        await reportPairing()
+    }
+
+    /// Reports a pairing once, after the helper stored the key and its connection ended,
+    /// so iMCP receives the response first.
+    private func reportPairing() async {
+        guard var pairing, pairing.stored, !pairing.reported, sessions[pairing.session] == nil else { return }
+        pairing.reported = true
+        self.pairing = pairing
+        await onEvent(.paired(pairing.key, code: pairing.code))
     }
 
     private func serveTools(on server: MCP.Server) async {
@@ -235,16 +277,30 @@ actor HelperServer {
         }
     }
 
-    /// Accepts the key from the first pairing connection that sends one.
-    private func receivePairing(_ key: Data, session: UUID, code: String) throws {
-        guard case .code(let current) = credential, current == code, pairing == nil else {
+    /// Accepts the key from the first pairing connection that sends one,
+    /// and stores it before the response acknowledges it.
+    func receivePairing(_ key: Data, session: UUID, code: String) async throws {
+        // swift-sdk runs handlers in their own tasks, so this can run after the session ended.
+        guard sessions[session] != nil, case .code(let current) = credential, current == code, pairing == nil else {
             throw MCPError.invalidRequest("This pairing code was already used.")
         }
         guard key.count == 32 else { throw MCPError.invalidParams("The pairing key must have 256 bits.") }
-        pairing = (session, SymmetricKey(data: key), code)
+        let claimed = Pairing(session: session, key: SymmetricKey(data: key), code: code)
+        pairing = claimed
+        do {
+            try await storeKey(claimed.key, code)
+        } catch {
+            if pairing?.id == claimed.id { pairing = nil }
+            throw MCPError.internalError("iMCP Helper couldn't store the pairing key: \(error.localizedDescription)")
+        }
+        // A restart while the key was stored replaced this pairing.
+        guard pairing?.id == claimed.id else { throw MCPError.invalidRequest("This pairing code was replaced.") }
+        pairing?.stored = true
         // The code works once: stop accepting it, and end the other pairing connections.
         stopListening()
         for (other, connection) in sessions where other != session { connection.cancel() }
+        // The session may have ended while the key was stored.
+        await reportPairing()
         // iMCP closes the connection after the response; end it if iMCP doesn't.
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(2))
