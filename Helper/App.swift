@@ -28,6 +28,7 @@ struct HelperApp: App {
                                 )
                             }
                             Button("New Code") { Task { await runtime.replacePairingCode() } }
+                                .disabled(runtime.isReplacingCode)
                         }
                     }
                 }
@@ -50,10 +51,12 @@ final class HelperRuntime: ObservableObject {
     @Published private(set) var canRetry = false
     @Published private(set) var status = "Starting HomeKit…"
     @Published private(set) var pairingCode: String?
+    @Published private(set) var isReplacingCode = false
     private let backend = HomeKitBackend()
     private let keychain = HomeHelperPairing.Keychain(service: "iMCP Helper pairing code")
     private var server: HelperServer?
     private var advertisement: HelperAdvertisement?
+    private var lastListenerChange: Task<Void, Error>?
     private var started = false
 
     func start() async {
@@ -70,7 +73,7 @@ final class HelperRuntime: ObservableObject {
             let server = self.server ?? HelperServer(backend: backend, code: code)
             self.server = server
             status = "Starting the local connection…"
-            try await advertise(port: server.start())
+            try await serialized { try await self.advertise(port: server.start()) }
             status = "Waiting for HomeKit access…"
             try await backend.store.ensureLoaded()
             status = "HomeKit is ready. \(backend.store.homes.count) homes available."
@@ -81,15 +84,32 @@ final class HelperRuntime: ObservableObject {
 
     /// Makes a new pairing code and ends the sessions that use the old one.
     func replacePairingCode() async {
+        guard !isReplacingCode else { return }
+        isReplacingCode = true
+        defer { isReplacingCode = false }
         do {
-            let code = try HomeHelperPairing.generateCode()
-            try keychain.save(code)
-            pairingCode = code
-            guard let server else { return }
-            try await advertise(port: server.restart(code: code))
+            try await serialized {
+                let code = try HomeHelperPairing.generateCode()
+                try self.keychain.save(code)
+                self.pairingCode = code
+                guard let server = self.server else { return }
+                try await self.advertise(port: server.restart(code: code))
+            }
         } catch {
             fail(error)
         }
+    }
+
+    /// Runs a listener and advertisement change after earlier ones finish,
+    /// so an earlier change can't advertise a port after a later one.
+    private func serialized(_ change: @escaping @MainActor () async throws -> Void) async throws {
+        let previous = lastListenerChange
+        let task = Task { @MainActor in
+            _ = await previous?.result
+            try await change()
+        }
+        lastListenerChange = task
+        try await task.value
     }
 
     private func fail(_ error: Error) {
