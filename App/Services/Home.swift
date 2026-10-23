@@ -172,39 +172,54 @@ actor HomeService: Service, HomeBackend {
         helperPID = pid
         guard let code = try pairingCode ?? keychain.read() else { throw PairingError.missing }
         let parameters = try HomeHelperPairing.parameters(code: code)
-        let deadline = Date().addingTimeInterval(15)
+        // One deadline bounds discovery, resolution, and every connection attempt.
+        let clock = ContinuousClock()
+        let deadline = clock.now + .seconds(15)
+        // The chosen helper's latest results, kept while it briefly stops advertising,
+        // as it does when the user makes a new code.
+        var chosenAttempts: [HelperAttempt] = []
         repeat {
             try await checkHelperIsRunning(pid)
             // Discover each time, because a new pairing code moves the helper to a new port.
-            let candidates = await HelperResolution.discover(timeout: .seconds(3))
+            let candidates = await HelperResolution.discover(until: deadline)
             // Try the helper that iMCP launched or found running first, then any other.
             // Only the TLS handshake decides whether a helper can be trusted.
             let ordered = candidates.filter { $0.processID == pid } + candidates.filter { $0.processID != pid }
-            var attempts: [(chosen: Bool, attempt: HelperAttempt)] = []
-            for candidate in ordered {
-                let chosen = candidate.processID == pid
-                guard candidate.protocolVersion == HomeHelperPairing.protocolVersion else {
-                    attempts.append((chosen, .outdated))
-                    continue
+            var roundChosenAttempts: [HelperAttempt] = []
+            var otherAttempts: [HelperAttempt] = []
+            for candidate in ordered where clock.now < deadline {
+                let attempt: HelperAttempt
+                if candidate.protocolVersion != HomeHelperPairing.protocolVersion {
+                    attempt = .outdated
+                } else {
+                    do {
+                        try await connect(
+                            to: .hostPort(host: .ipv4(.loopback), port: candidate.port),
+                            parameters: parameters,
+                            deadline: deadline
+                        )
+                        return
+                    } catch let error as HomeError {
+                        // The handshake succeeded, so this is a paired helper, and its error stands.
+                        throw error
+                    } catch PairingError.rejected {
+                        attempt = .rejected
+                    } catch {
+                        attempt = .unavailable
+                    }
                 }
-                do {
-                    try await connect(
-                        to: .hostPort(host: .ipv4(.loopback), port: candidate.port),
-                        parameters: parameters
-                    )
-                    return
-                } catch let error as HomeError {
-                    // The handshake succeeded, so this is a paired helper, and its error stands.
-                    throw error
-                } catch PairingError.rejected {
-                    attempts.append((chosen, .rejected))
-                } catch {
-                    attempts.append((chosen, .unavailable))
+                if candidate.processID == pid {
+                    roundChosenAttempts.append(attempt)
+                } else {
+                    otherAttempts.append(attempt)
                 }
             }
+            if !roundChosenAttempts.isEmpty { chosenAttempts = roundChosenAttempts }
             try await checkHelperIsRunning(pid)
-            if let failure = Self.connectionFailure(attempts, deadlinePassed: Date() >= deadline) { throw failure }
-            try await Task.sleep(for: .milliseconds(250))
+            let attempts =
+                chosenAttempts.map { (chosen: true, attempt: $0) } + otherAttempts.map { (chosen: false, attempt: $0) }
+            if let failure = Self.connectionFailure(attempts, deadlinePassed: clock.now >= deadline) { throw failure }
+            try await Task.sleep(until: min(clock.now + .milliseconds(250), deadline), clock: clock)
         } while true
     }
 
@@ -253,7 +268,12 @@ actor HomeService: Service, HomeBackend {
         }
     }
 
-    private func connect(to endpoint: NWEndpoint, parameters: NWParameters) async throws {
+    /// Connects to one helper, giving up at `deadline`.
+    func connect(
+        to endpoint: NWEndpoint,
+        parameters: NWParameters,
+        deadline: ContinuousClock.Instant
+    ) async throws {
         let connection = NWConnection(to: endpoint, using: parameters)
         let transport = NetworkTransport(
             connection: connection,
@@ -265,11 +285,13 @@ actor HomeService: Service, HomeBackend {
         let timeout = Task { () -> Bool in
             // NetworkTransport waits indefinitely in NWConnection.waiting.
             // Retry refused connections while the helper starts.
-            for tick in 1 ... 80 {
-                do { try await Task.sleep(for: .milliseconds(250)) } catch { return false }
+            let clock = ContinuousClock()
+            // A peer that doesn't finish the TLS handshake in five seconds isn't a working helper.
+            let handshakeDeadline = min(clock.now + .seconds(5), deadline)
+            while clock.now < deadline {
+                do { try await Task.sleep(for: .milliseconds(100)) } catch { return false }
                 if case .waiting = connection.state { break }
-                // A peer that doesn't finish the TLS handshake in five seconds isn't a working helper.
-                if tick == 20, connection.state != .ready { break }
+                if clock.now >= handshakeDeadline, connection.state != .ready { break }
             }
             let failedHandshake = Self.failedHandshake(connection.state)
             connection.cancel()
@@ -489,38 +511,54 @@ struct HelperCandidate: Equatable, Sendable {
 final class HelperResolution {
     private var continuation: CheckedContinuation<HelperCandidate, Error>?
 
-    /// Browses for helpers on this Mac and resolves each one.
-    /// Waits up to `timeout` for the first advertisement, then briefly for others.
-    static func discover(timeout: Duration) async -> [HelperCandidate] {
+    /// Browses for helpers on this Mac and resolves each one at the same time.
+    /// Waits up to three seconds for the first advertisement, then briefly for others,
+    /// and stops at `deadline`.
+    static func discover(until deadline: ContinuousClock.Instant) async -> [HelperCandidate] {
         let browser = NWBrowser(for: .bonjour(type: HomeHelperPairing.serviceType, domain: "local."), using: .tcp)
         defer { browser.cancel() }
         browser.start(queue: .main)
         let clock = ContinuousClock()
-        let deadline = clock.now + timeout
+        let browseDeadline = min(clock.now + .seconds(3), deadline)
         var firstSeen: ContinuousClock.Instant?
-        while clock.now < deadline {
+        while clock.now < browseDeadline {
             do { try await Task.sleep(for: .milliseconds(100)) } catch { break }
             guard browser.browseResults.contains(where: BonjourDiscovery.isLocal) else { continue }
             if let firstSeen, clock.now - firstSeen >= .milliseconds(300) { break }
             firstSeen = firstSeen ?? clock.now
         }
-        var candidates: [HelperCandidate] = []
-        for result in browser.browseResults where BonjourDiscovery.isLocal(result) {
-            guard case .service(let name, let type, let domain, _) = result.endpoint,
-                let candidate = try? await resolve(name: name, type: type, domain: domain)
-            else { continue }
-            candidates.append(candidate)
+        let services = browser.browseResults.filter(BonjourDiscovery.isLocal).compactMap {
+            result -> (name: String, type: String, domain: String)? in
+            guard case .service(let name, let type, let domain, _) = result.endpoint else { return nil }
+            return (name, type, domain)
         }
-        return candidates
+        return await withTaskGroup(of: HelperCandidate?.self) { group in
+            for service in services {
+                group.addTask {
+                    try? await resolve(name: service.name, type: service.type, domain: service.domain, until: deadline)
+                }
+            }
+            var candidates: [HelperCandidate] = []
+            for await candidate in group {
+                if let candidate { candidates.append(candidate) }
+            }
+            return candidates
+        }
     }
 
-    static func resolve(name: String, type: String, domain: String) async throws -> HelperCandidate {
+    /// Resolves one service, giving up after five seconds or at `deadline`.
+    static func resolve(
+        name: String,
+        type: String,
+        domain: String,
+        until deadline: ContinuousClock.Instant = .now + .seconds(5)
+    ) async throws -> HelperCandidate {
         let resolution = HelperResolution()
         var reference: DNSServiceRef?
         defer { if let reference { DNSServiceRefDeallocate(reference) } }
         let timeout = Task {
-            try await Task.sleep(for: .seconds(5))
-            resolution.finish(.failure(HomeError("iMCP Helper's Bonjour service didn't resolve within 5 seconds.")))
+            try await Task.sleep(until: min(.now + .seconds(5), deadline), clock: .continuous)
+            resolution.finish(.failure(HomeError("iMCP Helper's Bonjour service didn't resolve in time.")))
         }
         defer { timeout.cancel() }
         return try await withCheckedThrowingContinuation { continuation in

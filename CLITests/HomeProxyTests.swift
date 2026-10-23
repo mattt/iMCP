@@ -3,6 +3,7 @@ import MCP
 import Network
 import XCTest
 import dnssd
+import os
 
 final class HomeProxyTests: XCTestCase {
     @MainActor
@@ -170,9 +171,53 @@ final class HomeHelperPairingTests: XCTestCase {
             XCTAssertEqual(resolved, candidate)
         }
         // Discovery finds every local helper, not only the first one.
-        let discovered = await HelperResolution.discover(timeout: .seconds(3))
+        let discovered = await HelperResolution.discover(until: .now + .seconds(3))
         XCTAssertTrue(discovered.contains(current), "\(discovered)")
         XCTAssertTrue(discovered.contains(old), "\(discovered)")
+    }
+
+    func testDiscoveryResolutionAndConnectionStopAtTheDeadline() async throws {
+        let clock = ContinuousClock()
+        var start = clock.now
+        _ = await HelperResolution.discover(until: .now + .milliseconds(500))
+        XCTAssertLessThan(clock.now - start, .seconds(2))
+
+        start = clock.now
+        _ = try? await HelperResolution.resolve(
+            name: "No Such Helper \(UUID().uuidString.prefix(8))",
+            type: HomeHelperPairing.serviceType,
+            domain: "local.",
+            until: .now + .milliseconds(300)
+        )
+        XCTAssertLessThan(clock.now - start, .seconds(2))
+
+        // A peer that accepts TCP connections but never answers the TLS handshake.
+        let tcp = NWParameters.tcp
+        tcp.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)
+        let listener = try NWListener(using: tcp)
+        let stalled = OSAllocatedUnfairLock(initialState: [NWConnection]())
+        listener.newConnectionHandler = { connection in
+            stalled.withLock { $0.append(connection) }
+            connection.start(queue: .main)
+        }
+        listener.start(queue: .main)
+        defer {
+            listener.cancel()
+            stalled.withLock { $0.forEach { $0.cancel() } }
+        }
+        while listener.state != .ready { try await Task.sleep(for: .milliseconds(20)) }
+        start = clock.now
+        do {
+            try await HomeService().connect(
+                to: .hostPort(host: .ipv4(.loopback), port: try XCTUnwrap(listener.port)),
+                parameters: HomeHelperPairing.parameters(code: HomeHelperPairing.generateCode()),
+                deadline: .now + .seconds(1)
+            )
+            XCTFail("A stalled handshake must not connect.")
+        } catch {}
+        // The connection waits for the handshake until the deadline, and no longer.
+        XCTAssertGreaterThan(clock.now - start, .milliseconds(900))
+        XCTAssertLessThan(clock.now - start, .seconds(3))
     }
 
     func testReportsFailuresOnlyAfterEveryCandidateAnswers() {
