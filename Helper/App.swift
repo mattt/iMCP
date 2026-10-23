@@ -123,7 +123,10 @@ final class HelperRuntime: ObservableObject {
         }
     }
 
-    @Published private(set) var status = Status.starting
+    @Published private(set) var homeKitStatus = Status.starting
+    /// Why the listener stopped, which the window shows instead of the HomeKit status.
+    @Published private(set) var listenerFailure: Status?
+    var status: Status { listenerFailure ?? homeKitStatus }
     @Published private(set) var pairing: Pairing?
     /// Whether the listener is ready and advertised.
     @Published private(set) var isListening = false
@@ -197,7 +200,7 @@ final class HelperRuntime: ObservableObject {
             }
         } catch {
             isListening = false
-            status = .failed(error)
+            listenerFailure = .failed(error)
             canRetry = true
         }
     }
@@ -226,6 +229,7 @@ final class HelperRuntime: ObservableObject {
             try await advertisement.start(port: port.rawValue, pairing: false)
             pairing = .paired
         }
+        listenerFailure = nil
         isListening = true
     }
 
@@ -239,16 +243,16 @@ final class HelperRuntime: ObservableObject {
     private func loadHomeKit() {
         guard homeKit == nil else { return }
         homeKit = Task {
-            status = .waitingForHomeKit
+            homeKitStatus = .waitingForHomeKit
             do {
                 try await backend.store.ensureLoaded()
-                status = .ready(homes: backend.store.homes.count)
+                homeKitStatus = .ready(homes: backend.store.homes.count)
             } catch {
-                status = .failed(error)
+                homeKitStatus = .failed(error)
                 canRetry = true
                 homeKit = nil
             }
-            print(status.text)
+            print(homeKitStatus.text)
             fflush(stdout)
         }
     }
