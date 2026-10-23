@@ -20,6 +20,7 @@ struct HelperApp: App {
 /// A compact window with the helper's status and, until it is paired, the pairing code.
 struct HelperView: View {
     @ObservedObject var runtime: HelperRuntime
+    @State private var isConfirmingPairAgain = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -45,17 +46,51 @@ struct HelperView: View {
         .padding(20)
         .frame(width: 380, alignment: .leading)
         .fixedSize(horizontal: false, vertical: true)
+        .onAppear {
+            // The window fits its content, so it has nothing to zoom or show in full screen.
+            for scene in UIApplication.shared.connectedScenes {
+                (scene as? UIWindowScene)?.sizeRestrictions?.allowsFullScreen = false
+            }
+        }
+        .alert("Pair iMCP again?", isPresented: $isConfirmingPairAgain) {
+            Button("Pair Again", role: .destructive) { runtime.pairAgain() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("iMCP can't use Home until you enter the new code.")
+        }
     }
 
     private func codeSection(_ code: String) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("To pair iMCP with iMCP Helper:")
-                .foregroundStyle(.secondary)
+            Text("Enter this code in iMCP to pair.")
             // Not selectable, so copies go through the Copy Code button's restrictions.
             Text(code)
-                .font(.system(size: 34, weight: .semibold, design: .monospaced))
-                .accessibilityLabel(code.map(String.init).joined(separator: " "))
-            step(1, "Copy the code.") {
+                .font(.largeTitle.monospaced().weight(.semibold))
+                .accessibilityLabel(Self.spokenCode(code))
+            VStack(alignment: .leading, spacing: 4) {
+                Text("1. Copy the code.")
+                Text(
+                    runtime.canOpenIMCP
+                        ? "2. Open the pairing window in iMCP."
+                        : "2. In iMCP, open Settings > Services > Home, and click Pair…"
+                )
+                .fixedSize(horizontal: false, vertical: true)
+                Text("3. Paste the code, then click Pair.")
+            }
+            Text(
+                "This code works once. After \(HomeHelperPairing.failedPairingLimit) wrong codes, iMCP Helper shows a new one."
+            )
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Button("Get New Code") { runtime.pairAgain() }
+                    .buttonStyle(.bordered)
+                Spacer()
+                if runtime.canOpenIMCP {
+                    Button("Open iMCP…") { runtime.openIMCP() }
+                        .buttonStyle(.bordered)
+                }
                 Button("Copy Code") {
                     // Keep the code off other devices, and off the pasteboard after two minutes.
                     UIPasteboard.general.setItems(
@@ -66,46 +101,25 @@ struct HelperView: View {
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
             }
-            if runtime.canOpenIMCP {
-                step(2, "Open the pairing window in iMCP.") {
-                    Button("Open iMCP…") { runtime.openIMCP() }
-                        .buttonStyle(.bordered)
-                }
-            } else {
-                step(2, "In iMCP, open Settings > Services > Home, and click Pair…") { EmptyView() }
-            }
-            step(3, "Paste the code, then click Pair.") { EmptyView() }
-            Text(
-                "The code works once. After \(HomeHelperPairing.failedPairingLimit) wrong attempts, a new code replaces it."
-            )
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            Button("Get New Code") { runtime.pairAgain() }
-                .buttonStyle(.bordered)
         }
         .onAppear { runtime.findIMCP() }
     }
 
-    /// A numbered step with its text and an optional button.
-    private func step(_ number: Int, _ text: String, @ViewBuilder action: () -> some View) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text("\(number).")
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
-            Text(text)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 8)
-            action()
+    private var pairedSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label {
+                Text("Paired with iMCP.")
+            } icon: {
+                Image(systemName: "checkmark.seal.fill").foregroundStyle(.green)
+            }
+            Button("Pair Again…") { isConfirmingPairAgain = true }
+                .buttonStyle(.bordered)
         }
     }
 
-    private var pairedSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Paired with iMCP. To pair again, choose Pair Again, then enter the new code in iMCP.")
-                .foregroundStyle(.secondary)
-            Button("Pair Again") { runtime.pairAgain() }
-                .buttonStyle(.bordered)
-        }
+    /// The code as VoiceOver reads it: each group's characters, with a pause between the groups.
+    static func spokenCode(_ code: String) -> String {
+        code.split(separator: "-").map { $0.map(String.init).joined(separator: " ") }.joined(separator: ", ")
     }
 }
 
