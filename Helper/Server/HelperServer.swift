@@ -213,6 +213,8 @@ actor HelperServer {
         do {
             try await server.start(transport: transport) { _, _ in
                 // Network.framework also accepts its default PSK suites, which lack forward secrecy.
+                // Answering ping before this check is harmless: a peer needs the key to finish the handshake,
+                // and the TLS 1.2 Finished message covers the offered suites, so this isn't a downgrade path.
                 guard HomeHelperPairing.usesCipherSuite(connection) else {
                     connection.cancel()
                     throw MCPError.invalidRequest("iMCP Helper requires an ECDHE-PSK cipher suite.")

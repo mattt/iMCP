@@ -453,6 +453,9 @@ actor HomeService: Service, HomeBackend {
                 throw HomeError("The selected endpoint is not iMCP Helper.")
             }
             // Network.framework also accepts its default PSK suites, which lack forward secrecy.
+            // Checking after initialize is enough: initialize carries nothing secret,
+            // a peer needs the key to finish the handshake,
+            // and the TLS 1.2 Finished message covers the offered suites, so this isn't a downgrade path.
             guard HomeHelperPairing.usesCipherSuite(connection) else {
                 throw HomeError(
                     "iMCP Helper didn't use an ECDHE-PSK cipher suite. Rebuild it with Scripts/install-helper.sh."
