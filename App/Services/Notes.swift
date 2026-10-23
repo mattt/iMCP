@@ -179,6 +179,13 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
             if let nextCursor = result.nextCursor {
                 list["nextCursor"] = .string(nextCursor.description)
             }
+            // Without this, a search that skipped some contents looks complete.
+            if !result.unreadableNoteIDs.isEmpty {
+                list["unreadableNoteIDs"] = .array(result.unreadableNoteIDs.map { .string($0.description) })
+                list["description"] = .string(
+                    "The contents of the notes in unreadableNoteIDs could not be read, so the search matched them by title and preview alone. These notes can contain the query without appearing in the results."
+                )
+            }
             return list
         }
 
