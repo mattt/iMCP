@@ -5,14 +5,15 @@ import dnssd
 /// Publishes the helper only to processes on this Mac, without multicast discovery.
 ///
 /// The TXT record gives the protocol version, which iMCP checks before it connects,
-/// and the process ID, which lets iMCP try the helper it launched or chose first.
+/// the process ID, which lets iMCP try the helper it launched or chose first,
+/// and whether the helper shows a pairing code, so iMCP connects in the matching way.
 @MainActor
 final class HelperAdvertisement {
     private var reference: DNSServiceRef?
     private var permissionBrowser: NWBrowser?
     private var continuation: CheckedContinuation<Void, Error>?
 
-    func start(port: UInt16) async throws {
+    func start(port: UInt16, pairing: Bool) async throws {
         // Browsing also lets macOS present its local network permission prompt.
         let browser = NWBrowser(for: .bonjour(type: HomeHelperPairing.serviceType, domain: "local."), using: .tcp)
         permissionBrowser = browser
@@ -26,7 +27,8 @@ final class HelperAdvertisement {
         let record = [
             "\(HomeHelperPairing.protocolVersionTXTKey)=\(HomeHelperPairing.protocolVersion)",
             "\(HomeHelperPairing.processIDTXTKey)=\(ProcessInfo.processInfo.processIdentifier)",
-        ].flatMap { [UInt8($0.utf8.count)] + Array($0.utf8) }
+            pairing ? "\(HomeHelperPairing.pairingTXTKey)=1" : nil,
+        ].compactMap { $0 }.flatMap { [UInt8($0.utf8.count)] + Array($0.utf8) }
         try await withCheckedThrowingContinuation { continuation in
             self.continuation = continuation
             let result = DNSServiceRegister(

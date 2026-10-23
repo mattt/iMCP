@@ -1,35 +1,53 @@
+import CommonCrypto
 import CryptoKit
 import Foundation
+import MCP
 import Network
 import Security
 
-/// Pairs iMCP with iMCP Helper through a code that the helper shows in its window.
+/// Pairs iMCP with iMCP Helper through a one-time code that the helper shows in its window.
 ///
-/// The helper makes the code once and keeps it in its keychain.
-/// The user enters it in iMCP, which keeps it in its own keychain.
-/// Both apps derive a TLS pre-shared key from the code,
-/// so a connection without the code fails the TLS handshake,
-/// and a process that pretends to be the helper learns nothing that it can use.
+/// Until it is paired, the helper accepts only pairing connections,
+/// which use TLS with a pre-shared key derived from the code.
+/// On a pairing connection, iMCP sends a new random 256-bit key,
+/// and both apps keep that key in their keychains.
+/// Later connections use TLS with that key,
+/// so a connection without it fails the TLS handshake.
+///
+/// A process that pretends to be the helper while iMCP pairs
+/// receives a TLS `Finished` message that it can use to search for the code offline.
+/// The key derivation makes each guess slow,
+/// and the code stops working once iMCP pairs or after a few failed handshakes.
 enum HomeHelperPairing {
     /// The version of the protocol between iMCP and the helper.
     /// The helper declares it in its Info.plist and its Bonjour TXT record;
     /// helpers from before pairing declare neither.
-    static let protocolVersion = 2
+    static let protocolVersion = 3
     static let protocolVersionInfoKey = "iMCPHelperProtocolVersion"
     static let protocolVersionTXTKey = "protocol"
     static let processIDTXTKey = "pid"
+    /// Present with the value `1` while the helper shows a code.
+    static let pairingTXTKey = "pairing"
     static let serviceType = "_imcp-helper._tcp"
+
+    /// How many failed pairing handshakes the helper allows before it replaces the code.
+    static let failedPairingLimit = 5
+    /// PBKDF2-HMAC-SHA256 iterations, about half a second on Apple silicon.
+    static let keyDerivationIterations: UInt32 = 3_500_000
 
     /// Crockford's base32 alphabet, which leaves out I, L, O, and U.
     private static let alphabet = Array("0123456789ABCDEFGHJKMNPQRSTVWXYZ")
-    private static let groupCount = 4
-    private static let groupLength = 5
-    private static let keyLabel = Data("iMCP Helper TLS-PSK v2".utf8)
-    private static let keyIdentity = Data("iMCP Helper".utf8)
+    private static let codeLength = 8
+    private static let groupLength = 4
+    private static let keyDerivationSalt = Data("iMCP Helper pairing code v3".utf8)
+    private static let pairingIdentity = Data("iMCP Helper pairing v3".utf8)
+    private static let pairedIdentity = Data("iMCP Helper paired v3".utf8)
 
-    /// Makes a code of four groups of five characters, which holds 100 random bits.
+    // MARK: - Code
+
+    /// Makes a code of eight characters, which holds 40 random bits.
     static func generateCode() throws -> String {
-        var bytes = [UInt8](repeating: 0, count: groupCount * groupLength)
+        var bytes = [UInt8](repeating: 0, count: codeLength)
         guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else {
             throw HomeError("Cannot create a pairing code for iMCP Helper.")
         }
@@ -52,11 +70,11 @@ enum HomeHelperPairing {
             default: return nil
             }
         }
-        guard characters.count == groupCount * groupLength else { return nil }
+        guard characters.count == codeLength else { return nil }
         return String(characters)
     }
 
-    /// Formats a code in hyphen-separated groups, such as `0123A-BCDEF-GHJKM-NPQRS`.
+    /// Formats a code in two hyphen-separated groups, such as `0123-ABCD`.
     static func format(_ code: String) -> String {
         let characters = Array(normalize(code) ?? code)
         return stride(from: 0, to: characters.count, by: groupLength)
@@ -64,26 +82,52 @@ enum HomeHelperPairing {
             .joined(separator: "-")
     }
 
-    /// Derives the TLS pre-shared key from a code with HKDF-SHA256.
-    static func key(for code: String) throws -> SymmetricKey {
+    // MARK: - Keys
+
+    /// Derives the pairing connection's pre-shared key from a code with PBKDF2-HMAC-SHA256.
+    static func pairingKey(code: String) throws -> SymmetricKey {
         guard let code = normalize(code) else { throw HomeError("That isn't an iMCP Helper pairing code.") }
-        return HKDF<SHA256>.deriveKey(
-            inputKeyMaterial: SymmetricKey(data: Data(code.utf8)),
-            info: keyLabel,
-            outputByteCount: 32
-        )
+        let password = Array(code.utf8).map { CChar(bitPattern: $0) }
+        var key = [UInt8](repeating: 0, count: 32)
+        let status = keyDerivationSalt.withUnsafeBytes { salt in
+            CCKeyDerivationPBKDF(
+                CCPBKDFAlgorithm(kCCPBKDF2),
+                password,
+                password.count,
+                salt.bindMemory(to: UInt8.self).baseAddress,
+                salt.count,
+                CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA256),
+                keyDerivationIterations,
+                &key,
+                key.count
+            )
+        }
+        guard status == kCCSuccess else { throw HomeError("Cannot derive the iMCP Helper pairing key (\(status)).") }
+        return SymmetricKey(data: key)
+    }
+
+    /// Makes the random 256-bit key that iMCP sends when it pairs.
+    static func generateKey() -> SymmetricKey { SymmetricKey(size: .bits256) }
+
+    /// TCP parameters for a pairing connection, with the code's key.
+    static func pairingParameters(code: String) throws -> NWParameters {
+        parameters(key: try pairingKey(code: code), identity: pairingIdentity)
+    }
+
+    /// TCP parameters for a paired connection, with the key that iMCP sent when it paired.
+    static func parameters(key: SymmetricKey) -> NWParameters {
+        parameters(key: key, identity: pairedIdentity)
     }
 
     /// Returns TCP parameters for the loopback interface
-    /// with TLS 1.2 that uses only the code's pre-shared key.
-    static func parameters(code: String) throws -> NWParameters {
-        let key = try key(for: code)
+    /// with TLS 1.2 that uses only one pre-shared key.
+    private static func parameters(key: SymmetricKey, identity: Data) -> NWParameters {
         let tls = NWProtocolTLS.Options()
         let options = tls.securityProtocolOptions
         sec_protocol_options_add_pre_shared_key(
             options,
             key.withUnsafeBytes { DispatchData(bytes: $0) } as __DispatchData,
-            keyIdentity.withUnsafeBytes { DispatchData(bytes: $0) } as __DispatchData
+            identity.withUnsafeBytes { DispatchData(bytes: $0) } as __DispatchData
         )
         // PSK cipher suites exist only in TLS 1.2.
         sec_protocol_options_append_tls_ciphersuite(
@@ -100,22 +144,32 @@ enum HomeHelperPairing {
         return parameters
     }
 
+    /// The one request that a pairing connection accepts:
+    /// iMCP sends the key that both apps use from then on.
+    enum Pair: MCP.Method {
+        static let name = "imcp/pair"
+
+        struct Parameters: Hashable, Codable, Sendable {
+            let key: Data
+        }
+    }
+
     // MARK: - Keychain
 
-    /// Keeps a code as a generic password in this app's keychain.
+    /// Keeps the pairing key as a generic password in this app's keychain.
     struct Keychain: Sendable {
-        /// The helper's own code.
-        static let helper = Keychain(service: "iMCP Helper pairing code")
-        /// The code that the user entered in iMCP.
+        /// The helper's key.
+        static let helper = Keychain(service: "iMCP Helper pairing key")
+        /// iMCP's key.
         /// Its own service keeps the apps' items apart in the login keychain,
         /// which unsigned builds use.
-        static let app = Keychain(service: "iMCP pairing code for iMCP Helper")
+        static let app = Keychain(service: "iMCP pairing key for iMCP Helper")
 
         let service: String
-        private let account = "pairing-code"
+        private let account = "pairing-key"
 
-        /// Returns the stored code, or nil if there is none.
-        func read() throws -> String? {
+        /// Returns the stored key, or nil if there is none.
+        func read() throws -> SymmetricKey? {
             for dataProtection in [true, false] {
                 var query = baseQuery(dataProtection: dataProtection)
                 query[kSecReturnData as String] = true
@@ -124,24 +178,25 @@ enum HomeHelperPairing {
                 let status = SecItemCopyMatching(query as CFDictionary, &result)
                 switch status {
                 case errSecSuccess:
-                    return (result as? Data).map { String(decoding: $0, as: UTF8.self) }
+                    guard let data = result as? Data, data.count == 32 else { return nil }
+                    return SymmetricKey(data: data)
                 case errSecItemNotFound:
                     return nil
                 case errSecMissingEntitlement:
                     continue
                 default:
-                    throw HomeError("Cannot read the iMCP Helper pairing code from the keychain (\(status)).")
+                    throw HomeError("Cannot read the iMCP Helper pairing key from the keychain (\(status)).")
                 }
             }
             return nil
         }
 
-        func save(_ code: String) throws {
+        func save(_ key: SymmetricKey) throws {
             for dataProtection in [true, false] {
                 let query = baseQuery(dataProtection: dataProtection)
                 SecItemDelete(query as CFDictionary)
                 var item = query
-                item[kSecValueData as String] = Data(code.utf8)
+                item[kSecValueData as String] = key.withUnsafeBytes { Data($0) }
                 // The data protection keychain applies this attribute; the file-based keychain ignores it.
                 if dataProtection {
                     item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
@@ -151,7 +206,7 @@ enum HomeHelperPairing {
                 // Apps without an application identifier, such as unsigned Debug builds,
                 // can't use the data protection keychain.
                 if status != errSecMissingEntitlement {
-                    throw HomeError("Cannot save the iMCP Helper pairing code in the keychain (\(status)).")
+                    throw HomeError("Cannot save the iMCP Helper pairing key in the keychain (\(status)).")
                 }
             }
         }

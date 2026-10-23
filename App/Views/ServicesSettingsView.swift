@@ -73,20 +73,26 @@ struct ServicesSettingsView: View {
                 }
             }
             HStack {
-                Text("Pairing code")
+                Text("Pairing")
                 Spacer()
-                Text(homeHelperPaired ? "Entered" : "Not entered")
+                Text(homeHelperPaired ? "Paired" : "Not paired")
                     .foregroundStyle(.secondary)
-                Button("Enter Code…") {
+                Button("Pair…") {
                     Task {
-                        do {
-                            let message = "Enter the pairing code shown in iMCP Helper's window."
-                            guard try HomeService.shared.askForPairingCode(message: message) else { return }
-                            homeHelperPaired = true
-                            homeHelperError = nil
-                            if enabled { try await HomeService.shared.usePairingCode() }
-                        } catch {
-                            homeHelperError = error.localizedDescription
+                        var message = "Enter the code shown in iMCP Helper's window."
+                        while let code = await HomeService.shared.askForPairingCode(message: message) {
+                            do {
+                                try await HomeService.shared.pair(code: code)
+                                homeHelperPaired = true
+                                homeHelperError = nil
+                                if enabled { try await HomeService.shared.reconnect() }
+                                return
+                            } catch HomeService.PairingError.codeRejected {
+                                message = "That code didn't work. Enter the code shown in iMCP Helper's window."
+                            } catch {
+                                homeHelperError = error.localizedDescription
+                                return
+                            }
                         }
                     }
                 }
@@ -101,7 +107,7 @@ struct ServicesSettingsView: View {
         }
         .task {
             homeHelperPath = HomeService.shared.helperLocation()?.path
-            homeHelperPaired = HomeService.shared.hasPairingCode()
+            homeHelperPaired = HomeService.shared.hasPairingKey()
         }
     }
 

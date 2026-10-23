@@ -5,7 +5,7 @@
     <key>iMCPHelper</key>
     <true/>
     <key>iMCPHelperProtocolVersion</key>
-    <integer>2</integer>
+    <integer>3</integer>
     <key>LSMultipleInstancesProhibited</key>
     <true/>
     <key>NSBonjourServices</key>

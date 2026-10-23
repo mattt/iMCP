@@ -1,4 +1,5 @@
 import AppKit
+import CryptoKit
 import MCP
 import Network
 import OSLog
@@ -13,23 +14,43 @@ import dnssd
 /// and implements the same tool definitions from `HomeTools`.
 /// This service launches the helper if it isn't running, finds it with Bonjour,
 /// connects to it over the loopback interface with TLS
-/// that uses a key derived from the helper's pairing code,
+/// that uses the key that iMCP sent when it paired with the helper,
 /// and forwards each call as an MCP `tools/call` request.
+/// See `HomeHelperPairing` for how iMCP pairs with the helper.
 actor HomeService: Service, HomeBackend {
     static let shared = HomeService()
 
-    /// Thrown when iMCP has no pairing code for the helper, or the helper rejects it.
+    /// Thrown when iMCP isn't paired with the helper, or the helper rejects iMCP's key or code.
     enum PairingError: LocalizedError {
+        /// iMCP has no key.
         case missing
+        /// The helper rejected iMCP's key, or it shows a code because it isn't paired.
         case rejected
+        /// The helper rejected the pairing code.
+        case codeRejected
 
         var errorDescription: String? {
             switch self {
             case .missing:
-                "iMCP needs the pairing code from iMCP Helper's window. Enter it in Settings > Services > Home."
+                "iMCP isn't paired with iMCP Helper. Choose Pair… in Settings > Services > Home, then enter the code from the helper's window."
             case .rejected:
-                "iMCP Helper rejected the pairing code. Enter the code from its window in Settings > Services > Home."
+                "iMCP Helper doesn't accept iMCP's pairing key. Choose Pair… in Settings > Services > Home, then enter the code from the helper's window."
+            case .codeRejected:
+                "iMCP Helper didn't accept the code. Check the code in its window, then try again."
             }
+        }
+    }
+
+    /// What a connection to the helper is for.
+    enum ConnectionPurpose: Sendable {
+        /// Serve tool calls, with the key from pairing.
+        case serve
+        /// Send a new key over a pairing connection, with the key derived from the code.
+        case pair(SymmetricKey)
+
+        var isPairing: Bool {
+            if case .pair = self { return true }
+            return false
         }
     }
 
@@ -38,8 +59,7 @@ actor HomeService: Service, HomeBackend {
 
     private let log = Logger.service("home")
     private let helperURL: URL?
-    private let pairingCode: String?
-    private let keychain = HomeHelperPairing.Keychain.app
+    private let keyStore: any HomeHelperKeyStore
     private var client: MCP.Client?
     private var connection: NWConnection?
     private var connecting: Task<Void, Error>?
@@ -47,10 +67,10 @@ actor HomeService: Service, HomeBackend {
     private var helperPID: pid_t?
 
     /// Creates a service that uses `helperURL` instead of the helper that the user chose,
-    /// and `pairingCode` instead of the code in the keychain.
-    init(helperURL: URL? = nil, pairingCode: String? = nil) {
+    /// and keeps its pairing key in `keyStore`.
+    init(helperURL: URL? = nil, keyStore: any HomeHelperKeyStore = HomeHelperPairing.Keychain.app) {
         self.helperURL = helperURL
-        self.pairingCode = pairingCode
+        self.keyStore = keyStore
     }
 
     // MARK: - Service
@@ -78,9 +98,37 @@ actor HomeService: Service, HomeBackend {
         try await connect()
     }
 
-    /// Reconnects with the pairing code in the keychain.
-    func usePairingCode() async throws {
+    /// Reconnects with the pairing key in the keychain.
+    func reconnect() async throws {
         try await connect()
+    }
+
+    /// Pairs with the helper that shows `code`:
+    /// sends a new key over a pairing connection and saves the key.
+    /// Call `activate()` or `reconnect()` afterward to connect with the key.
+    func pair(code: String) async throws {
+        let pid = try await launchHelper(overrideURL: helperURL, activates: true)
+        helperPID = pid
+        let parameters = try HomeHelperPairing.pairingParameters(code: code)
+        let paired: HelperCandidate
+        do {
+            paired = try await connectToHelper(
+                pid: pid,
+                parameters: parameters,
+                purpose: .pair(HomeHelperPairing.generateKey())
+            )
+        } catch PairingError.rejected {
+            throw PairingError.codeRejected
+        }
+        // The helper listens with the key once the pairing connection ends.
+        // Until it advertises that, a connection would count as a rejected key.
+        let clock = ContinuousClock()
+        let deadline = clock.now + .seconds(5)
+        while clock.now < deadline {
+            let candidates = await HelperResolution.discover(until: min(clock.now + .seconds(1), deadline))
+            if candidates.contains(where: { $0.processID == paired.processID && !$0.isPairing }) { return }
+            try await Task.sleep(for: .milliseconds(200))
+        }
     }
 
     /// Quits a helper and waits until it has exited,
@@ -167,11 +215,22 @@ actor HomeService: Service, HomeBackend {
         connection?.cancel()
         connection = nil
         await old?.disconnect()
-        // Launch the helper even without a code, so its window shows the code.
-        let pid = try await launchHelper(overrideURL: helperURL)
+        let key = try keyStore.read()
+        // Launch the helper even without a key, and bring it forward, so its window shows the code.
+        let pid = try await launchHelper(overrideURL: helperURL, activates: key == nil)
         helperPID = pid
-        guard let code = try pairingCode ?? keychain.read() else { throw PairingError.missing }
-        let parameters = try HomeHelperPairing.parameters(code: code)
+        guard let key else { throw PairingError.missing }
+        try await connectToHelper(pid: pid, parameters: HomeHelperPairing.parameters(key: key), purpose: .serve)
+    }
+
+    /// Connects to the helper with `pid` or, failing that, to another helper on this Mac,
+    /// and returns the advertisement that it connected to.
+    @discardableResult
+    private func connectToHelper(
+        pid: pid_t,
+        parameters: NWParameters,
+        purpose: ConnectionPurpose
+    ) async throws -> HelperCandidate {
         // One deadline bounds discovery, resolution, and every connection attempt.
         let clock = ContinuousClock()
         let deadline = clock.now + .seconds(15)
@@ -186,17 +245,23 @@ actor HomeService: Service, HomeBackend {
             var chosenAttempts: [HelperAttempt] = []
             var otherAttempts: [String: HelperAttempt] = [:]
             for candidate in ordered where clock.now < deadline {
+                // Don't try a code again with a helper that rejected it, so it doesn't count as another failure.
+                if candidate.processID != pid, log.others[candidate.name] == .rejected { continue }
                 let attempt: HelperAttempt
                 if candidate.protocolVersion != HomeHelperPairing.protocolVersion {
                     attempt = .outdated
+                } else if candidate.isPairing != purpose.isPairing {
+                    // A helper that shows a code accepts only pairing, and a paired helper only its key.
+                    attempt = .rejected
                 } else {
                     do {
                         try await connect(
                             to: .hostPort(host: .ipv4(.loopback), port: candidate.port),
                             parameters: parameters,
-                            deadline: deadline
+                            deadline: deadline,
+                            purpose: purpose
                         )
-                        return
+                        return candidate
                     } catch let error as HomeError {
                         // The handshake succeeded, so this is a paired helper, and its error stands.
                         throw error
@@ -299,11 +364,12 @@ actor HomeService: Service, HomeBackend {
 
     /// Connects to one helper.
     /// The TLS handshake and `initialize` must finish by `deadline`;
-    /// the first HomeKit read then has its own limit.
+    /// the first HomeKit read, or the pairing request, then has its own limit.
     func connect(
         to endpoint: NWEndpoint,
         parameters: NWParameters,
-        deadline: ContinuousClock.Instant
+        deadline: ContinuousClock.Instant,
+        purpose: ConnectionPurpose = .serve
     ) async throws {
         let connection = NWConnection(to: endpoint, using: parameters)
         let transport = NetworkTransport(
@@ -337,22 +403,39 @@ actor HomeService: Service, HomeBackend {
             guard result.serverInfo.name == "iMCP Helper" else {
                 throw HomeError("The selected endpoint is not iMCP Helper.")
             }
-            // Only a helper with the pairing code gets past the handshake and initialize.
+            // Only a helper with the key or code gets past the handshake and initialize.
             // Its first HomeKit read can wait for a person to answer the HomeKit prompt,
             // which the helper ends after 10 seconds, so it has its own limit, not the shared deadline.
             timeout.cancel()
             _ = await timeout.value
+            let limit = purpose.isPairing ? Self.pairingLimit : Self.firstReadLimit
             probe = Task {
-                do { try await Task.sleep(for: Self.firstReadLimit) } catch { return false }
+                do { try await Task.sleep(for: limit) } catch { return false }
                 connection.cancel()
                 await client.disconnect()
                 return true
             }
-            _ = try await forward(client, "homes_list", [:])
-            self.client = client
-            self.connection = connection
-            authorized = true
-            log.info("Connected to iMCP Helper")
+            switch purpose {
+            case .serve:
+                _ = try await forward(client, "homes_list", [:])
+                self.client = client
+                self.connection = connection
+                authorized = true
+                log.info("Connected to iMCP Helper")
+            case .pair(let key):
+                // Save the key first: if the response is lost but the helper saved the key,
+                // iMCP still has it; if the helper didn't, the next connection asks for a new code.
+                try keyStore.save(key)
+                do {
+                    let data = key.withUnsafeBytes { Data($0) }
+                    _ = try await client.send(HomeHelperPairing.Pair.request(.init(key: data))).value
+                } catch {
+                    throw HomeError("iMCP Helper didn't accept the pairing: \(error.localizedDescription)")
+                }
+                connection.cancel()
+                await client.disconnect()
+                log.info("Paired with iMCP Helper")
+            }
         } catch {
             let failedHandshake = Self.failedHandshake(connection.state)
             timeout.cancel()
@@ -364,12 +447,17 @@ actor HomeService: Service, HomeBackend {
             if failedHandshake || timedOutInHandshake { throw PairingError.rejected }
             if timedOutInFirstRead {
                 throw HomeError(
-                    "iMCP Helper didn't answer within 20 seconds. Check its window for HomeKit access, then retry."
+                    purpose.isPairing
+                        ? "iMCP Helper didn't answer the pairing request. Check its window, then try again."
+                        : "iMCP Helper didn't answer within 20 seconds. Check its window for HomeKit access, then retry."
                 )
             }
             throw error
         }
     }
+
+    /// How long the pairing request can take after the handshake.
+    private static let pairingLimit = Duration.seconds(5)
 
     /// How long the first HomeKit read through a paired helper can take.
     private static let firstReadLimit = Duration.seconds(20)
@@ -458,61 +546,82 @@ actor HomeService: Service, HomeBackend {
 
     // MARK: - Pairing
 
-    /// Whether iMCP has a pairing code for the helper.
-    nonisolated func hasPairingCode() -> Bool {
-        pairingCode != nil || (try? keychain.read()) != nil
+    /// Whether iMCP has a pairing key for the helper.
+    nonisolated func hasPairingKey() -> Bool {
+        (try? keyStore.read()) != nil
     }
 
-    /// Asks for the pairing code from the helper's window and saves it in the keychain.
-    /// Returns false when the user cancels.
+    /// Asks for the code from the helper's window.
+    /// Returns nil when the user cancels.
     @MainActor
-    func askForPairingCode(message: String) throws -> Bool {
+    func askForPairingCode(message: String) async -> String? {
         let alert = NSAlert()
         alert.messageText = "Pair with iMCP Helper"
         alert.informativeText = message
         alert.addButton(withTitle: "Pair")
         alert.addButton(withTitle: "Cancel")
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
-        field.placeholderString = "XXXXX-XXXXX-XXXXX-XXXXX"
+        alert.addButton(withTitle: "Show iMCP Helper")
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
+        field.placeholderString = "XXXX-XXXX"
         alert.accessoryView = field
         alert.window.initialFirstResponder = field
-        while alert.runModal() == .alertFirstButtonReturn {
-            if let code = HomeHelperPairing.normalize(field.stringValue) {
-                try keychain.save(code)
-                return true
+        while true {
+            switch alert.runModal() {
+            case .alertFirstButtonReturn:
+                if let code = HomeHelperPairing.normalize(field.stringValue) { return code }
+                alert.informativeText =
+                    "That isn't a pairing code. A code has eight letters and digits, such as 7KQ2-M9XD."
+            case .alertThirdButtonReturn:
+                await showHelper()
+            default:
+                return nil
             }
-            alert.informativeText =
-                "That isn't a pairing code. Copy the code from iMCP Helper's window, then paste it here."
         }
-        return false
     }
 
     /// Turns Home on for the user:
     /// asks for the helper if none is installed,
-    /// then asks for the pairing code until the helper accepts one.
+    /// then asks for a code and pairs until the helper accepts iMCP's key.
     /// Tool calls and reconnects never ask.
     /// Returns false when the user cancels.
     @MainActor
     func activateAskingUser() async throws -> Bool {
         guard try promptForHelperIfMissing() else { return false }
-        var message = "Enter the pairing code shown in iMCP Helper's window."
+        var message = "Enter the code shown in iMCP Helper's window."
         while true {
             do {
                 try await activate()
                 return true
             } catch PairingError.missing {
             } catch PairingError.rejected {
-                message = "iMCP Helper rejected the pairing code. Enter the code shown in its window."
+                message =
+                    "iMCP Helper doesn't accept iMCP's pairing key. Enter the code shown in its window to pair again."
             }
-            guard try askForPairingCode(message: message) else { return false }
+            while true {
+                guard let code = await askForPairingCode(message: message) else { return false }
+                do {
+                    try await pair(code: code)
+                    break
+                } catch PairingError.codeRejected {
+                    message =
+                        "That code didn't work. Enter the code shown in iMCP Helper's window. After \(HomeHelperPairing.failedPairingLimit) wrong codes, it shows a new one."
+                }
+            }
         }
+    }
+
+    /// Brings the helper's window to the front, launching the helper if needed.
+    @MainActor
+    func showHelper() async {
+        _ = try? await launchHelper(overrideURL: helperURL, activates: true)
     }
 
     // MARK: - Helper Launch
 
     /// Returns the process ID of the running helper, after launching it if needed.
+    /// With `activates`, also brings the helper to the front.
     @MainActor
-    private func launchHelper(overrideURL: URL?) async throws -> pid_t {
+    private func launchHelper(overrideURL: URL?, activates: Bool) async throws -> pid_t {
         let url = overrideURL ?? helperLocation()
         let accessing = url?.startAccessingSecurityScopedResource() ?? false
         defer { if accessing { url?.stopAccessingSecurityScopedResource() } }
@@ -533,6 +642,7 @@ actor HomeService: Service, HomeBackend {
             guard try HomeHelperLocator.protocolVersion(at: bundleURL) == HomeHelperPairing.protocolVersion else {
                 throw HomeError(Self.outdatedHelperMessage)
             }
+            if activates { _ = running.activate(from: .current) }
             return running.processIdentifier
         }
         guard let url else {
@@ -544,7 +654,7 @@ actor HomeService: Service, HomeBackend {
             throw HomeError(Self.outdatedHelperMessage)
         }
         let configuration = NSWorkspace.OpenConfiguration()
-        configuration.activates = false
+        configuration.activates = activates
         // Xcode's native macOS debugger libraries cannot load in a Catalyst app.
         // Empty values override the launch environment; omitting the keys does not.
         // A sandboxed iMCP can't set the environment, but unsigned Debug builds aren't sandboxed.
@@ -564,7 +674,17 @@ struct HelperCandidate: Equatable, Sendable {
     let port: NWEndpoint.Port
     let protocolVersion: Int?
     let processID: pid_t?
+    /// Whether the helper shows a pairing code.
+    var isPairing = false
 }
+
+/// Where iMCP keeps its pairing key.
+protocol HomeHelperKeyStore: Sendable {
+    func read() throws -> SymmetricKey?
+    func save(_ key: SymmetricKey) throws
+}
+
+extension HomeHelperPairing.Keychain: HomeHelperKeyStore {}
 
 /// Finds and resolves the helpers' local-only Bonjour advertisements.
 ///
@@ -662,7 +782,8 @@ final class HelperResolution {
                                     name: resolution.name,
                                     port: port,
                                     protocolVersion: value(HomeHelperPairing.protocolVersionTXTKey).flatMap { Int($0) },
-                                    processID: value(HomeHelperPairing.processIDTXTKey).flatMap { pid_t($0) }
+                                    processID: value(HomeHelperPairing.processIDTXTKey).flatMap { pid_t($0) },
+                                    isPairing: value(HomeHelperPairing.pairingTXTKey) == "1"
                                 )
                             )
                         )

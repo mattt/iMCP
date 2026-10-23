@@ -1,3 +1,4 @@
+import CryptoKit
 import Network
 import SwiftUI
 import UIKit
@@ -9,120 +10,258 @@ struct HelperApp: App {
 
     var body: some Scene {
         WindowGroup {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("iMCP Helper").font(.title)
-                Text(runtime.status).textSelection(.enabled)
-                // Show the code once a client can use it, and hide New Code while the listener changes.
-                if let code = runtime.pairingCode, runtime.isListening {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Pairing code").font(.headline)
-                        // Not selectable, so copies go through the Copy button's restrictions.
-                        Text(code).font(.title2.monospaced())
-                        Text("Enter this code in iMCP to turn on Home. A new code disconnects iMCP until you enter it.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        HStack {
-                            Button("Copy") {
-                                // Keep the code off other devices, and off the pasteboard after two minutes.
-                                UIPasteboard.general.setItems(
-                                    [[UTType.utf8PlainText.identifier: code]],
-                                    options: [.localOnly: true, .expirationDate: Date().addingTimeInterval(120)]
-                                )
-                            }
-                            Button("New Code") { Task { await runtime.replacePairingCode() } }
-                                .disabled(runtime.isReplacingCode)
-                        }
-                    }
-                }
-                HStack {
-                    if runtime.canRetry {
-                        Button("Retry") { Task { await runtime.start() } }
-                            .disabled(runtime.isReplacingCode)
-                    }
-                    Button("Quit") { exit(0) }
+            HelperView(runtime: runtime)
+                .task { runtime.start() }
+        }
+        .windowResizability(.contentSize)
+    }
+}
+
+/// A compact window with the helper's status and, until it is paired, the pairing code.
+struct HelperView: View {
+    @ObservedObject var runtime: HelperRuntime
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Label {
+                Text(runtime.status.text).textSelection(.enabled)
+            } icon: {
+                Image(systemName: runtime.status.symbol).foregroundStyle(runtime.status.tint)
+            }
+            // Show the pairing controls once a client can connect, and hide them while the listener changes.
+            if runtime.isListening {
+                switch runtime.pairing {
+                case .code(let code): codeSection(code)
+                case .paired: pairedSection
+                case nil: EmptyView()
                 }
             }
-            .padding(24)
-            .frame(minWidth: 420, minHeight: 160)
-            .task { await runtime.start() }
+            if runtime.canRetry {
+                Button("Try Again") { runtime.retry() }
+                    .buttonStyle(.bordered)
+            }
+        }
+        .disabled(runtime.isChanging)
+        .padding(20)
+        .frame(width: 360, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func codeSection(_ code: String) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("To pair iMCP with iMCP Helper, enter this code in iMCP.")
+                .foregroundStyle(.secondary)
+            // Not selectable, so copies go through the Copy Code button's restrictions.
+            Text(code)
+                .font(.system(size: 34, weight: .semibold, design: .monospaced))
+                .accessibilityLabel(code.map(String.init).joined(separator: " "))
+            Text(
+                "The code works once. After \(HomeHelperPairing.failedPairingLimit) wrong attempts, a new code replaces it."
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            HStack {
+                Button("Copy Code") {
+                    // Keep the code off other devices, and off the pasteboard after two minutes.
+                    UIPasteboard.general.setItems(
+                        [[UTType.utf8PlainText.identifier: code]],
+                        options: [.localOnly: true, .expirationDate: Date().addingTimeInterval(120)]
+                    )
+                }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+                Button("Get New Code") { runtime.pairAgain() }
+                    .buttonStyle(.bordered)
+            }
+        }
+    }
+
+    private var pairedSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Paired with iMCP. To pair again, choose Pair Again, then enter the new code in iMCP.")
+                .foregroundStyle(.secondary)
+            Button("Pair Again") { runtime.pairAgain() }
+                .buttonStyle(.bordered)
         }
     }
 }
 
 @MainActor
 final class HelperRuntime: ObservableObject {
-    @Published private(set) var canRetry = false
-    @Published private(set) var status = "Starting HomeKit…"
-    @Published private(set) var pairingCode: String?
+    enum Pairing: Equatable {
+        /// The helper shows this one-time code.
+        case code(String)
+        /// The helper has a key from iMCP.
+        case paired
+    }
+
+    struct Status {
+        let text: String
+        let symbol: String
+        let tint: Color
+
+        static let starting = Status(text: "Starting…", symbol: "hourglass", tint: .secondary)
+        static let waitingForHomeKit = Status(
+            text: "Waiting for HomeKit access…",
+            symbol: "house",
+            tint: .secondary
+        )
+        static func ready(homes: Int) -> Status {
+            Status(
+                text: homes == 1
+                    ? "HomeKit is ready. 1 home is available." : "HomeKit is ready. \(homes) homes are available.",
+                symbol: "checkmark.circle.fill",
+                tint: .green
+            )
+        }
+        static func failed(_ error: Error) -> Status {
+            Status(
+                text: "iMCP Helper failed: \(homeErrorMessage(error))",
+                symbol: "exclamationmark.triangle.fill",
+                tint: .orange
+            )
+        }
+    }
+
+    @Published private(set) var status = Status.starting
+    @Published private(set) var pairing: Pairing?
     /// Whether the listener is ready and advertised.
     @Published private(set) var isListening = false
-    @Published private(set) var isReplacingCode = false
+    /// Whether a listener change is running.
+    @Published private(set) var isChanging = false
+    @Published private(set) var canRetry = false
+
+    /// A listener change. The runtime applies one at a time, in order.
+    private enum Change {
+        case start
+        case pairAgain
+        case paired(SymmetricKey, code: String)
+        case tooManyFailedPairings(code: String)
+    }
+
+    private let changes: AsyncStream<Change>.Continuation
     private let backend = HomeKitBackend()
     private let keychain = HomeHelperPairing.Keychain.helper
     private var server: HelperServer?
     private var advertisement: HelperAdvertisement?
-    private var started = false
+    private var homeKit: Task<Void, Never>?
 
-    func start() async {
-        guard !started, !isReplacingCode else { return }
-        started = true
+    init() {
+        let (stream, continuation) = AsyncStream.makeStream(of: Change.self)
+        changes = continuation
+        Task { [weak self] in
+            for await change in stream { await self?.apply(change) }
+        }
+    }
+
+    func start() { changes.yield(.start) }
+
+    func retry() {
         canRetry = false
-        defer {
-            print(status)
-            fflush(stdout)
-        }
+        changes.yield(.start)
+    }
+
+    /// Deletes the key, ends every session, and shows a new code.
+    func pairAgain() {
+        guard isListening, !isChanging else { return }
+        isChanging = true
+        changes.yield(.pairAgain)
+    }
+
+    private func apply(_ change: Change) async {
+        isChanging = true
+        defer { isChanging = false }
         do {
-            let code = try pairingCode ?? storedOrNewPairingCode()
-            pairingCode = code
-            let server = self.server ?? HelperServer(backend: backend, code: code)
-            self.server = server
-            status = "Starting the local connection…"
+            switch change {
+            case .start:
+                if !isListening {
+                    if let key = try keychain.read() {
+                        try await listen(.key(key))
+                    } else {
+                        try await listen(.code(HomeHelperPairing.generateCode()))
+                        bringToFront()
+                    }
+                }
+                loadHomeKit()
+            case .pairAgain:
+                keychain.delete()
+                try await listen(.code(HomeHelperPairing.generateCode()))
+            case .paired(let key, let code):
+                // Ignore a pairing with a code that the window no longer shows.
+                guard pairing == .code(code) else { return }
+                try keychain.save(key)
+                try await listen(.key(key))
+            case .tooManyFailedPairings(let code):
+                guard pairing == .code(code) else { return }
+                try await listen(.code(HomeHelperPairing.generateCode()))
+            }
+        } catch {
             isListening = false
-            try await advertise(port: server.start())
-            isListening = true
-            status = "Waiting for HomeKit access…"
-            try await backend.store.ensureLoaded()
-            status = "HomeKit is ready. \(backend.store.homes.count) homes available."
-        } catch {
-            fail(error)
+            status = .failed(error)
+            canRetry = true
         }
     }
 
-    /// Makes a new pairing code and ends the sessions that use the old one.
-    func replacePairingCode() async {
-        guard isListening, !isReplacingCode, let server else { return }
-        isReplacingCode = true
+    /// Listens with a credential and advertises the listener.
+    private func listen(_ credential: HelperServer.Credential) async throws {
         isListening = false
-        defer { isReplacingCode = false }
-        do {
-            let code = try HomeHelperPairing.generateCode()
-            try keychain.save(code)
-            pairingCode = code
-            try await advertise(port: server.restart(code: code))
-            isListening = true
-        } catch {
-            fail(error)
+        let port: NWEndpoint.Port
+        if let server {
+            port = try await server.restart(credential: credential)
+        } else {
+            let server = HelperServer(backend: backend, credential: credential) { [weak self] event in
+                await self?.receive(event)
+            }
+            self.server = server
+            port = try await server.start()
         }
-    }
-
-    private func fail(_ error: Error) {
-        status = "iMCP Helper failed: \(homeErrorMessage(error))"
-        started = false
-        canRetry = true
-    }
-
-    private func storedOrNewPairingCode() throws -> String {
-        if let code = try keychain.read(), HomeHelperPairing.normalize(code) != nil { return code }
-        let code = try HomeHelperPairing.generateCode()
-        try keychain.save(code)
-        return code
-    }
-
-    /// Advertises the listener's port, replacing any earlier advertisement.
-    private func advertise(port: NWEndpoint.Port) async throws {
         advertisement?.stop()
         let advertisement = HelperAdvertisement()
         self.advertisement = advertisement
-        try await advertisement.start(port: port.rawValue)
+        switch credential {
+        case .code(let code):
+            try await advertisement.start(port: port.rawValue, pairing: true)
+            pairing = .code(code)
+        case .key:
+            try await advertisement.start(port: port.rawValue, pairing: false)
+            pairing = .paired
+        }
+        isListening = true
+    }
+
+    private func receive(_ event: HelperServer.Event) {
+        switch event {
+        case .paired(let key, let code): changes.yield(.paired(key, code: code))
+        case .tooManyFailedPairings(let code): changes.yield(.tooManyFailedPairings(code: code))
+        }
+    }
+
+    private func loadHomeKit() {
+        guard homeKit == nil else { return }
+        homeKit = Task {
+            status = .waitingForHomeKit
+            do {
+                try await backend.store.ensureLoaded()
+                status = .ready(homes: backend.store.homes.count)
+            } catch {
+                status = .failed(error)
+                canRetry = true
+                homeKit = nil
+            }
+            print(status.text)
+            fflush(stdout)
+        }
+    }
+
+    /// Brings the window to the front, so the pairing code is visible.
+    /// UIKit on Mac Catalyst can't activate the app, so this asks AppKit's shared application.
+    private func bringToFront() {
+        guard
+            let application = (NSClassFromString("NSApplication") as AnyObject?)?
+                .perform(NSSelectorFromString("sharedApplication"))?
+                .takeUnretainedValue() as? NSObject
+        else { return }
+        let activate = NSSelectorFromString("activate")
+        if application.responds(to: activate) { application.perform(activate) }
     }
 }
