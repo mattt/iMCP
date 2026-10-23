@@ -63,6 +63,7 @@ enum ServiceRegistry {
             RemindersService.shared,
             ShortcutsService.shared,
             UtilitiesService.shared,
+            VoiceMemosService.shared,
         ]
         if VoicemailService.isSupported {
             services.append(VoicemailService.shared)
@@ -87,6 +88,7 @@ enum ServiceRegistry {
         remindersEnabled: Binding<Bool>,
         shortcutsEnabled: Binding<Bool>,
         utilitiesEnabled: Binding<Bool>,
+        voiceMemosEnabled: Binding<Bool>,
         voicemailEnabled: Binding<Bool>,
         weatherEnabled: Binding<Bool>
     ) -> [ServiceConfig] {
@@ -175,6 +177,13 @@ enum ServiceRegistry {
                 service: ShortcutsService.shared,
                 binding: shortcutsEnabled
             ),
+            ServiceConfig(
+                name: "Voice Memos",
+                iconName: "waveform",
+                color: .red,
+                service: VoiceMemosService.shared,
+                binding: voiceMemosEnabled
+            ),
         ]
         if VoicemailService.isSupported {
             configs.append(
@@ -229,6 +238,7 @@ final class ServerController: ObservableObject {
     @AppStorage("remindersEnabled") private var remindersEnabled = false
     @AppStorage("shortcutsEnabled") private var shortcutsEnabled = false
     @AppStorage("utilitiesEnabled") private var utilitiesEnabled = true  // Default enabled
+    @AppStorage("voiceMemosEnabled") private var voiceMemosEnabled = false
     @AppStorage("voicemailEnabled") private var voicemailEnabled = false
     @AppStorage("weatherEnabled") private var weatherEnabled = false
 
@@ -255,6 +265,7 @@ final class ServerController: ObservableObject {
             remindersEnabled: $remindersEnabled,
             shortcutsEnabled: $shortcutsEnabled,
             utilitiesEnabled: $utilitiesEnabled,
+            voiceMemosEnabled: $voiceMemosEnabled,
             voicemailEnabled: $voicemailEnabled,
             weatherEnabled: $weatherEnabled
         )
@@ -341,9 +352,11 @@ final class ServerController: ObservableObject {
         Task {
             if enabled, await !config.isActivated {
                 do {
-                    if config.service is HomeService, try !HomeService.shared.promptForHelperIfMissing() {
-                        self.objectWillChange.send()
-                        config.binding.wrappedValue = false
+                    if config.service is HomeService {
+                        if try await !HomeService.shared.activateAskingUser() {
+                            self.objectWillChange.send()
+                            config.binding.wrappedValue = false
+                        }
                     } else {
                         try await config.service.activate()
                     }
@@ -418,9 +431,10 @@ final class ServerController: ObservableObject {
         }
     }
 
-    func updateServiceBindings(_ bindings: [String: Binding<Bool>]) async {
-        // Called by the UI when service toggles change.
-        await networkManager.updateServiceBindings(bindings)
+    /// Sends every service's binding to the server, including Utilities, which has no toggle.
+    /// Called by the UI when service toggles change.
+    func updateServiceBindings() async {
+        await networkManager.updateServiceBindings(currentServiceBindings)
     }
 
     func startServer() async {
@@ -564,7 +578,7 @@ actor MCPConnectionManager {
             version: Bundle.main.shortVersionString ?? "unknown",
             instructions: """
                 Use iMCP for apps and data on the user's Mac: \
-                Calendar, Contacts, Location, Mail, Maps, Messages, Music, Phone, Reminders, Shortcuts, Voicemail, Weather, \
+                Calendar, Contacts, Location, Mail, Maps, Messages, Music, Phone, Reminders, Shortcuts, Voice Memos, Voicemail, Weather, \
                 and the camera, microphone, and screen. \
                 Only the services that the user turns on in iMCP have tools.
                 """,
@@ -1196,6 +1210,15 @@ actor ServerNetworkManager {
                 }
             }
 
+            // Say why no service answered, so that an intermittent failure can be traced.
+            if let owner = await self.services.first(where: { $0.tools.contains { $0.name == params.name } }) {
+                let serviceId = String(describing: type(of: owner))
+                let binding = await self.serviceBindings[serviceId]
+                let state = binding.map { $0.wrappedValue ? "on" : "off" } ?? "missing"
+                log.error(
+                    "Tool \(params.name, privacy: .public) belongs to \(serviceId, privacy: .public), whose binding is \(state, privacy: .public)"
+                )
+            }
             log.error("Tool not found or service not enabled: \(params.name)")
             return CallTool.Result(
                 content: [
@@ -1225,6 +1248,10 @@ actor ServerNetworkManager {
     // Update service bindings.
     func updateServiceBindings(_ newBindings: [String: Binding<Bool>]) async {
         self.serviceBindings = newBindings
+        let enabled = newBindings.filter { $0.value.wrappedValue }.keys.sorted()
+        log.notice(
+            "Updated service bindings: \(newBindings.count) services, on: \(enabled.joined(separator: ", "), privacy: .public)"
+        )
 
         // Notify clients that tool availability may have changed.
         Task {

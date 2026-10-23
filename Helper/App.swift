@@ -1,5 +1,9 @@
+import CryptoKit
 import Network
+import OSLog
 import SwiftUI
+import UIKit
+import UniformTypeIdentifiers
 
 @main
 struct HelperApp: App {
@@ -7,77 +11,481 @@ struct HelperApp: App {
 
     var body: some Scene {
         WindowGroup {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("iMCP Helper").font(.title)
-                Text(runtime.status).textSelection(.enabled)
-                if runtime.canRetry {
-                    Button("Retry") { Task { await runtime.start() } }
+            HelperView(runtime: runtime)
+                .task { runtime.start() }
+        }
+        .windowResizability(.contentSize)
+    }
+}
+
+/// A compact window with the helper's status and, until it is paired, the pairing code.
+struct HelperView: View {
+    @ObservedObject var runtime: HelperRuntime
+    @State private var isConfirmingPairAgain = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Label {
+                Text(runtime.status.text).textSelection(.enabled)
+            } icon: {
+                Image(systemName: runtime.status.symbol).foregroundStyle(runtime.status.tint)
+            }
+            // Show the pairing controls once a client can connect, and hide them while the listener changes.
+            if runtime.isListening {
+                switch runtime.pairing {
+                case .code(let code): codeSection(code)
+                case .paired: pairedSection
+                case nil: EmptyView()
                 }
             }
-            .padding(24)
-            .frame(minWidth: 420, minHeight: 160)
-            .task { await runtime.start() }
+            if runtime.canRetry {
+                Button("Try Again") { runtime.retry() }
+                    .buttonStyle(.bordered)
+            }
         }
+        .disabled(runtime.isChanging)
+        .padding(20)
+        .frame(width: 380, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
+        .onAppear {
+            // The window fits its content, so it has nothing to zoom or show in full screen.
+            for scene in UIApplication.shared.connectedScenes {
+                (scene as? UIWindowScene)?.sizeRestrictions?.allowsFullScreen = false
+            }
+        }
+        .alert("Pair iMCP again?", isPresented: $isConfirmingPairAgain) {
+            Button("Pair Again", role: .destructive) { runtime.pairAgain() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("iMCP can't use Home until you enter the new code.")
+        }
+    }
+
+    private func codeSection(_ code: String) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Enter this code in iMCP to pair.")
+            // Not selectable, so copies go through the Copy Code button's restrictions.
+            Text(code)
+                .font(.largeTitle.monospaced().weight(.semibold))
+                .accessibilityLabel(Self.spokenCode(code))
+            VStack(alignment: .leading, spacing: 4) {
+                Text("1. Copy the code.")
+                Text(
+                    runtime.canOpenIMCP
+                        ? "2. Open the pairing window in iMCP."
+                        : "2. In iMCP, open Settings > Services > Home, and click Pair…"
+                )
+                .fixedSize(horizontal: false, vertical: true)
+                Text("3. Paste the code, then click Pair.")
+            }
+            Text(
+                "This code works once. After \(HomeHelperPairing.failedPairingLimit) wrong codes, iMCP Helper shows a new one."
+            )
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Button("Get New Code") { runtime.pairAgain() }
+                    .buttonStyle(.bordered)
+                Spacer()
+                if runtime.canOpenIMCP {
+                    Button("Open iMCP…") { runtime.openIMCP() }
+                        .buttonStyle(.bordered)
+                }
+                Button("Copy Code") {
+                    // Keep the code off other devices, and off the pasteboard after two minutes.
+                    UIPasteboard.general.setItems(
+                        [[UTType.utf8PlainText.identifier: code]],
+                        options: [.localOnly: true, .expirationDate: Date().addingTimeInterval(120)]
+                    )
+                }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .onAppear { runtime.findIMCP() }
+        // iMCP may start, quit, or change while the helper is in the background.
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+            runtime.findIMCP()
+        }
+    }
+
+    private var pairedSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label {
+                Text("Paired with iMCP.")
+            } icon: {
+                Image(systemName: "checkmark.seal.fill").foregroundStyle(.green)
+            }
+            Button("Pair Again…") { isConfirmingPairAgain = true }
+                .buttonStyle(.bordered)
+        }
+    }
+
+    /// The code as VoiceOver reads it: each group's characters, with a pause between the groups.
+    static func spokenCode(_ code: String) -> String {
+        code.split(separator: "-").map { $0.map(String.init).joined(separator: " ") }.joined(separator: ", ")
     }
 }
 
 @MainActor
 final class HelperRuntime: ObservableObject {
-    @Published private(set) var canRetry = false
-    @Published private(set) var status = "Starting HomeKit…"
-    private let backend = HomeKitBackend()
-    private var server: HelperServer?
-    private var parentMonitor: DispatchSourceProcess?
-    private var started = false
+    enum Pairing: Equatable {
+        /// The helper shows this one-time code.
+        case code(String)
+        /// The helper has a key from iMCP.
+        case paired
+    }
 
-    func start() async {
-        guard !started else { return }
-        started = true
+    struct Status {
+        let text: String
+        let symbol: String
+        let tint: Color
+
+        static let starting = Status(text: "Starting…", symbol: "hourglass", tint: .secondary)
+        static let waitingForHomeKit = Status(
+            text: "Waiting for HomeKit access…",
+            symbol: "house",
+            tint: .secondary
+        )
+        static let ready = Status(text: "HomeKit is ready.", symbol: "checkmark.circle.fill", tint: .green)
+        static func failed(_ error: Error) -> Status {
+            Status(
+                text: "iMCP Helper failed: \(homeErrorMessage(error))",
+                symbol: "exclamationmark.triangle.fill",
+                tint: .orange
+            )
+        }
+    }
+
+    @Published private(set) var homeKitStatus = Status.starting
+    /// Why the listener stopped, which the window shows instead of the HomeKit status.
+    @Published private(set) var listenerFailure: Status?
+    var status: Status { listenerFailure ?? homeKitStatus }
+    @Published private(set) var pairing: Pairing?
+    /// Whether the listener is ready and advertised.
+    @Published private(set) var isListening = false
+    /// Whether a listener change is running.
+    @Published private(set) var isChanging = false
+    @Published private(set) var canRetry = false
+    /// Whether the window can open iMCP's pairing window.
+    @Published private(set) var canOpenIMCP = false
+
+    /// A listener change. The runtime applies one at a time, in order.
+    private enum Change {
+        case start
+        case pairAgain
+        case paired(SymmetricKey, code: String)
+        case tooManyFailedPairings(code: String)
+    }
+
+    private let changes: AsyncStream<Change>.Continuation
+    private let backend = HomeKitBackend()
+    private let keychain = HomeHelperPairing.Keychain.helper
+    private var server: HelperServer?
+    private var advertisement: HelperAdvertisement?
+    private var homeKit: Task<Void, Never>?
+    /// The change that failed, which Try Again repeats.
+    private var failedChange: Change?
+
+    init() {
+        let (stream, continuation) = AsyncStream.makeStream(of: Change.self)
+        changes = continuation
+        Task { [weak self] in
+            for await change in stream { await self?.apply(change) }
+        }
+    }
+
+    func start() { changes.yield(.start) }
+
+    func retry() {
         canRetry = false
+        changes.yield(failedChange ?? .start)
+        failedChange = nil
+    }
+
+    /// Deletes the key, ends every session, and shows a new code.
+    func pairAgain() {
+        guard isListening, !isChanging else { return }
+        isChanging = true
+        changes.yield(.pairAgain)
+    }
+
+    private func apply(_ change: Change) async {
+        isChanging = true
+        defer { isChanging = false }
         do {
-            try monitorParent()
-            let server = try self.server ?? HelperServer(backend: backend, port: requestedPort())
-            self.server = server
-            status = "Starting the local connection…"
-            try await server.start()
-            status = "Waiting for HomeKit access…"
-            try await backend.store.ensureLoaded()
-            status = "HomeKit is ready. \(backend.store.homes.count) homes available."
+            switch change {
+            case .start:
+                if !isListening {
+                    if let key = try keychain.read() {
+                        try await listen(.key(key))
+                    } else {
+                        try await listen(.code(HomeHelperPairing.generateCode()))
+                        bringToFront()
+                    }
+                }
+                loadHomeKit()
+            case .pairAgain:
+                try await showNewCode()
+            case .paired(let key, let code):
+                // Ignore a pairing with a code that the window no longer shows.
+                // `storeKey(_:code:)` already saved the key.
+                guard pairing == .code(code) else { return }
+                try await listen(.key(key))
+            case .tooManyFailedPairings(let code):
+                guard pairing == .code(code) else { return }
+                try await showNewCode()
+            }
         } catch {
-            status = "iMCP Helper failed: \(homeErrorMessage(error))"
-            started = false
+            isListening = false
+            listenerFailure = .failed(error)
+            // A replacement whose code check passed is retried without the check,
+            // which fails now that the code is cleared.
+            if case .tooManyFailedPairings = change {
+                failedChange = .pairAgain
+            } else {
+                failedChange = change
+            }
             canRetry = true
         }
-        print(status)
-        fflush(stdout)
     }
 
-    private func requestedPort() throws -> NWEndpoint.Port? {
-        guard let index = CommandLine.arguments.firstIndex(of: "--port") else { return nil }
-        guard CommandLine.arguments.indices.contains(index + 1),
-            let number = UInt16(CommandLine.arguments[index + 1]), number > 0,
-            let port = NWEndpoint.Port(rawValue: number)
-        else {
-            throw HomeError("--port requires a TCP port between 1 and 65535.")
+    /// Replaces the code or key with a new code.
+    /// Clears the shown code first, so `storeKey(_:code:)` refuses a key from a pairing with the old code,
+    /// then deletes any key that such a pairing stored before.
+    private func showNewCode() async throws {
+        pairing = nil
+        isListening = false
+        do {
+            try keychain.delete()
+        } catch {
+            // Don't show a new code while the old key would still work after a relaunch.
+            await server?.stop()
+            throw error
         }
-        return port
+        try await listen(.code(HomeHelperPairing.generateCode()))
     }
 
-    private func monitorParent() throws {
-        guard parentMonitor == nil else { return }
-        guard let index = CommandLine.arguments.firstIndex(of: "--parent-pid") else { return }
-        guard CommandLine.arguments.indices.contains(index + 1),
-            let pid = Int32(CommandLine.arguments[index + 1]), pid > 1
-        else {
-            throw HomeError("--parent-pid requires a valid process ID.")
+    /// Saves a key from pairing, if the window still shows the code that it came with.
+    private func storeKey(_ key: SymmetricKey, code: String) throws {
+        guard pairing == .code(code) else { throw HomeError("The pairing code was replaced.") }
+        try keychain.save(key)
+    }
+
+    /// Listens with a credential and advertises the listener.
+    private func listen(_ credential: HelperServer.Credential) async throws {
+        isListening = false
+        let port: NWEndpoint.Port
+        if let server {
+            port = try await server.restart(credential: credential)
+        } else {
+            let server = HelperServer(
+                backend: backend,
+                credential: credential,
+                storeKey: { [weak self] key, code in
+                    guard let self else { throw HomeError("iMCP Helper stopped.") }
+                    try await self.storeKey(key, code: code)
+                },
+                onEvent: { [weak self] event in await self?.receive(event) }
+            )
+            self.server = server
+            port = try await server.start()
         }
-        #if targetEnvironment(macCatalyst)
-            let monitor = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: .main)
-            monitor.setEventHandler { exit(0) }
-            parentMonitor = monitor
-            monitor.resume()
-            // Close the race where the parent exits before the source is installed.
-            if kill(pid, 0) == -1 && errno == ESRCH { exit(0) }
-        #endif
+        advertisement?.stop()
+        let advertisement = HelperAdvertisement()
+        self.advertisement = advertisement
+        switch credential {
+        case .code(let code):
+            try await advertisement.start(port: port.rawValue, pairing: true)
+            pairing = .code(code)
+        case .key:
+            try await advertisement.start(port: port.rawValue, pairing: false)
+            pairing = .paired
+        }
+        listenerFailure = nil
+        isListening = true
+    }
+
+    private func receive(_ event: HelperServer.Event) {
+        switch event {
+        case .paired(let key, let code): changes.yield(.paired(key, code: code))
+        case .tooManyFailedPairings(let code): changes.yield(.tooManyFailedPairings(code: code))
+        }
+    }
+
+    private func loadHomeKit() {
+        guard homeKit == nil else { return }
+        homeKit = Task {
+            homeKitStatus = .waitingForHomeKit
+            do {
+                try await backend.store.ensureLoaded()
+                homeKitStatus = .ready
+            } catch {
+                homeKitStatus = .failed(error)
+                canRetry = true
+                homeKit = nil
+            }
+            print(homeKitStatus.text)
+            fflush(stdout)
+        }
+    }
+
+    /// Finds iMCP by its bundle identifier.
+    func findIMCP() {
+        Task {
+            canOpenIMCP = await Self.iMCPURL() != nil
+            Self.log.info("Open iMCP… is \(self.canOpenIMCP ? "available" : "unavailable", privacy: .public).")
+        }
+    }
+
+    /// Opens iMCP's pairing window.
+    /// Opens the URL with iMCP itself, found by its bundle identifier,
+    /// not with whichever app claims the scheme,
+    /// so another app can't show a fake pairing window and capture the code.
+    /// UIKit on Mac Catalyst can't do this, so it uses AppKit's shared workspace.
+    func openIMCP() {
+        Task {
+            guard let application = await Self.iMCPURL() else {
+                canOpenIMCP = false
+                return
+            }
+            open(application)
+        }
+    }
+
+    private func open(_ application: URL) {
+        guard
+            let workspace = Self.workspace,
+            let configurationClass = NSClassFromString("NSWorkspaceOpenConfiguration") as? NSObject.Type
+        else {
+            canOpenIMCP = false
+            return
+        }
+        let open = NSSelectorFromString("openURLs:withApplicationAtURL:configuration:completionHandler:")
+        guard workspace.responds(to: open) else {
+            canOpenIMCP = false
+            return
+        }
+        // With cooperative activation, iMCP comes forward only if the helper yields to it.
+        if let shared = Self.sharedApplication {
+            if let running = Self.runningIMCP() {
+                shared.perform(NSSelectorFromString("yieldActivationToApplication:"), with: running)
+            } else {
+                shared.perform(
+                    NSSelectorFromString("yieldActivationToApplicationWithBundleIdentifier:"),
+                    with: HomeHelperPairing.appBundleIdentifier
+                )
+            }
+        }
+        Self.log.info("Opening imcp://pair with \(application.path, privacy: .private).")
+        typealias Open = @convention(c) (NSObject, Selector, NSArray, NSURL, NSObject, AnyObject?) -> Void
+        unsafeBitCast(workspace.method(for: open), to: Open.self)(
+            workspace,
+            open,
+            [HomeHelperPairing.appPairingURL] as NSArray,
+            application as NSURL,
+            configurationClass.init(),
+            nil
+        )
+    }
+
+    private static var sharedApplication: NSObject? {
+        (NSClassFromString("NSApplication") as AnyObject?)?
+            .perform(NSSelectorFromString("sharedApplication"))?
+            .takeUnretainedValue() as? NSObject
+    }
+
+    private static var workspace: NSObject? {
+        (NSClassFromString("NSWorkspace") as AnyObject?)?
+            .perform(NSSelectorFromString("sharedWorkspace"))?
+            .takeUnretainedValue() as? NSObject
+    }
+
+    /// The running iMCP, if any.
+    private static func runningIMCP() -> NSObject? {
+        let applications =
+            (NSClassFromString("NSRunningApplication") as AnyObject?)?
+            .perform(
+                NSSelectorFromString("runningApplicationsWithBundleIdentifier:"),
+                with: HomeHelperPairing.appBundleIdentifier
+            )?
+            .takeUnretainedValue() as? [NSObject]
+        return applications?.first
+    }
+
+    private static let log = Logger.service("helper.open-imcp")
+
+    /// The copy of iMCP to open: the running one, or else the one that LaunchServices finds,
+    /// if it declares the pairing URL's scheme.
+    /// An older iMCP doesn't declare it, and LaunchServices refuses to open the URL with it.
+    private static func iMCPURL() async -> URL? {
+        guard let workspace else {
+            log.error("Can't find iMCP: AppKit's shared workspace isn't available.")
+            return nil
+        }
+        if let running = runningIMCP()?.perform(NSSelectorFromString("bundleURL"))?.takeUnretainedValue() as? URL {
+            log.info("Found the running iMCP at \(running.path, privacy: .private).")
+            switch await declaresPairingScheme(running) {
+            case false?:
+                log.info("The running iMCP doesn't declare the imcp scheme.")
+                return nil
+            case true?:
+                return running
+            case nil:
+                // LaunchServices lists only one copy for each bundle ID, so it can't vouch for this one.
+                log.info("Can't read the running iMCP's Info.plist; using it anyway.")
+                return running
+            }
+        }
+        guard
+            let installed = workspace.perform(
+                NSSelectorFromString("URLForApplicationWithBundleIdentifier:"),
+                with: HomeHelperPairing.appBundleIdentifier
+            )?
+            .takeUnretainedValue() as? URL
+        else {
+            log.info("iMCP isn't running, and LaunchServices found no app with its bundle ID.")
+            return nil
+        }
+        log.info("Found iMCP at \(installed.path, privacy: .private), which isn't running.")
+        if let declares = await declaresPairingScheme(installed) {
+            if !declares { log.info("That iMCP doesn't declare the imcp scheme.") }
+            return declares ? installed : nil
+        }
+        // Without its Info.plist, ask LaunchServices whether this copy handles the URL.
+        let handlers =
+            workspace.perform(
+                NSSelectorFromString("URLsForApplicationsToOpenURL:"),
+                with: HomeHelperPairing.appPairingURL
+            )?
+            .takeUnretainedValue() as? [URL] ?? []
+        let path = installed.resolvingSymlinksInPath().path
+        let handles = handlers.contains { $0.resolvingSymlinksInPath().path == path }
+        log.info(
+            "Can't read that iMCP's Info.plist; LaunchServices \(handles ? "lists" : "doesn't list", privacy: .public) it for imcp://pair."
+        )
+        return handles ? installed : nil
+    }
+
+    /// Whether the app at `url` declares the pairing URL's scheme, or nil if its Info.plist can't be read.
+    /// Reads the file off the main actor, so a slow volume doesn't stall the window.
+    private nonisolated static func declaresPairingScheme(_ url: URL) async -> Bool? {
+        let plist = url.appendingPathComponent("Contents/Info.plist")
+        guard
+            let data = try? Data(contentsOf: plist),
+            let info = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
+        else { return nil }
+        let types = info["CFBundleURLTypes"] as? [[String: Any]] ?? []
+        let schemes = types.flatMap { $0["CFBundleURLSchemes"] as? [String] ?? [] }
+        return schemes.contains { $0.lowercased() == HomeHelperPairing.appPairingURL.scheme }
+    }
+
+    /// Brings the window to the front, so the pairing code is visible.
+    /// UIKit on Mac Catalyst can't activate the app, so this asks AppKit's shared application.
+    private func bringToFront() {
+        guard let application = Self.sharedApplication else { return }
+        let activate = NSSelectorFromString("activate")
+        if application.responds(to: activate) { application.perform(activate) }
     }
 }

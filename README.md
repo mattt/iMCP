@@ -86,6 +86,13 @@ and a [growing list of clients][mcp-clients] that support the
   </tr>
   <tr>
     <th>
+      <img src="Assets/voice-memos.svg" width="48" height="48" alt="" role="presentation"/>
+    </th>
+    <td><strong>Voice Memos</strong></td>
+    <td>Fetch recordings from Voice Memos, with transcripts and audio, filtering by title, folder, or date, or reading Recently Deleted. Needs <a href="#voice-memos-library-access">access to your Voice Memos folder</a>.</td>
+  </tr>
+  <tr>
+    <th>
       <img src="Assets/reminders.svg" width="48" height="48" alt="" role="presentation"/>
     </th>
     <td><strong>Reminders</strong></td>
@@ -584,6 +591,21 @@ The store is a write-ahead log database, and the message audio sits in an `Asset
 tree beside it, so the Voicemail service asks you to open the `Data Store` folder
 rather than the file alone.
 
+### Voice Memos Library Access
+
+Voice Memos keeps its library in a SQLite database at
+`~/Library/Group Containers/group.com.apple.VoiceMemos.shared/Recordings/CloudRecordings.db`.
+The audio files sit beside the database,
+so the Voice Memos service asks you to open the `Recordings` folder
+rather than the file alone.
+Voice Memos writes each transcript into the audio file of its recording,
+so a recording has a transcript only when its audio is on your Mac.
+
+For this project, we created [TSRP][tsrp]:
+a Swift package for reading your Voice Memos library.
+It reads transcripts from both `.m4a` and `.qta` files,
+which keep them in different places.
+
 ### JSON-LD for Tool Results
 
 The tools provided by iMCP return results as
@@ -640,11 +662,74 @@ If you installed it somewhere else,
 iMCP asks you to choose it when you turn on Home,
 or you can choose it in Settings > Services > Home.
 When you enable Home,
-iMCP launches the helper and the helper asks for HomeKit access.
-The helper exits when iMCP exits,
-and its status window reports startup and permission errors.
+iMCP launches the helper if it isn't running,
+and the helper asks for HomeKit access.
+The first time, the helper's window shows an eight-character pairing code,
+such as `7KQ2-M9XD`, and numbered steps:
+click Copy Code,
+click Open iMCP… to open iMCP's Pair with iMCP Helper window,
+then paste the code and click Pair.
+The button opens the URL `imcp://pair`, which carries no data;
+iMCP only opens its pairing window for it.
+The helper opens that URL only with the app that has iMCP's bundle ID, `co.dododo.iMCP`,
+preferring the running copy, and not with a copy that doesn't declare the `imcp` scheme;
+otherwise, for example if you built iMCP with another bundle ID,
+the helper tells you to choose Pair… in Settings > Services > Home instead.
+If the helper's window is behind other windows,
+click Open iMCP Helper… in iMCP's window.
+The code works once:
+when you pair, iMCP sends the helper a new random key,
+and both apps keep that key in their keychains.
+After five wrong codes, the helper shows a new one.
+To pair again, click Pair Again… in the helper's window and confirm;
+the helper ends iMCP's connection and shows a new code and the same steps.
+The helper keeps running after iMCP quits;
+choose Quit iMCP Helper from its app menu, or press Command-Q, to stop it.
+The window also reports startup and permission errors.
 The Mac's iCloud account must have access to the home,
 and writes can require the owner or administrator role.
+
+Sparkle updates iMCP but not the helper.
+After an iMCP update,
+rebuild the helper from the tag that matches the new version:
+
+```console
+git fetch --tags
+git checkout <version>
+Scripts/install-helper.sh
+```
+
+A helper from an older version may not match the app's Home tools.
+
+The helper's development certificate and provisioning profile expire.
+Each is usually valid for one year,
+but the certificate can expire first.
+To read the profile's expiration date, run:
+
+```console
+security cms -D -i "/Applications/iMCP Helper.app/Contents/embedded.provisionprofile" |
+  plutil -extract ExpirationDate raw -o - -
+```
+
+To read the certificate's expiration date, run:
+
+```console
+codesign -d --extract-certificates=/tmp/imcp-helper-cert "/Applications/iMCP Helper.app"
+openssl x509 -inform DER -in /tmp/imcp-helper-cert0 -noout -enddate
+```
+
+After the earlier of the two dates, the helper may stop launching.
+Run `Scripts/install-helper.sh` again to renew it;
+the script lets Xcode create a new certificate and profile
+when the old ones have expired.
+
+On the first run, provisioning can fail with "PLA Update available".
+The team's Account Holder must accept the latest Program License Agreement
+in the Apple Developer account.
+If you can't write to `/Applications` (for example, as a non-admin user),
+the install can fail with a permission error.
+Run the script with `--destination ~/Applications` instead.
+iMCP then asks you to choose the helper.
 
 Both apps compile the same tool definitions from
 [`Shared/Home/HomeTools.swift`](/Shared/Home/HomeTools.swift).
@@ -658,14 +743,23 @@ After a lost connection, read-only calls retry once.
 Writes are not repeated, because HomeKit may have applied them already;
 the error asks the caller to inspect the home before retrying.
 
-iMCP passes an ephemeral loopback port to the helper it launches.
-A helper started some other way (for example, from Xcode)
-advertises "\_imcp-helper.\_tcp" on the local-only DNS-SD interface instead.
-If iMCP can't find such a helper, quit it and let iMCP launch its own.
-To point `imcp-server` (and so the MCP Inspector) at a running helper directly,
-set `IMCP_SERVICE_TYPE=_imcp-helper._tcp`.
+The helper advertises "\_imcp-helper.\_tcp" on the local-only DNS-SD interface,
+and iMCP finds it there, whether or not iMCP launched it.
+If more than one helper is running,
+iMCP tries the one at the chosen location first, then the others.
+Connections use TLS with the key from pairing as a pre-shared key,
+so a connection without the key fails the TLS handshake.
+The cipher suite adds an ECDHE key exchange,
+so a recorded connection stays secret even if the key or code is found later.
+The pairing connection uses a key derived from the code with PBKDF2,
+which makes each guess slow for a process
+that advertises itself as the helper while you pair.
+If you built the helper with an earlier version of iMCP,
+quit it and rebuild it with `Scripts/install-helper.sh`;
+iMCP refuses a helper that doesn't declare the current protocol version.
+With Home turned on in iMCP,
 `uv run Scripts/check-home.py <path-to-imcp-server>` runs a read-only
-integration check against it.
+integration check through iMCP.
 
 #### Building the helper
 
@@ -805,4 +899,5 @@ This project is not affiliated with, endorsed, or sponsored by Apple Inc.
 [ontology]: https://github.com/mattt/Ontology
 [schema.org]: https://schema.org
 [swift-sdk]: https://github.com/modelcontextprotocol/swift-sdk
+[tsrp]: https://github.com/mattt/TSRP
 [typedstream-blog-post]: https://chrissardegna.com/blog/reverse-engineering-apples-typedstream-format/

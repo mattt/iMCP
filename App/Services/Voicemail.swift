@@ -333,12 +333,23 @@ final class VoicemailService: NSObject, Service, NSOpenSavePanelDelegate {
         }
 
         var isStale = false
-        return try URL(
+        let url = try URL(
             resolvingBookmarkData: bookmarkData,
             options: .withSecurityScope,
             relativeTo: nil,
             bookmarkDataIsStale: &isStale
         )
+        if isStale {
+            // A stale bookmark still resolves, but it must be recreated and stored again.
+            // If that fails, this resolution still works, so keep it and retry next time.
+            log.debug("Renewing the stale voicemail store bookmark")
+            do {
+                try withSecurityScopedAccess(url, storeBookmark)
+            } catch {
+                log.error("Failed to renew the voicemail store bookmark: \(error.localizedDescription)")
+            }
+        }
+        return url
     }
 
     private func withSecurityScopedAccess<T>(_ url: URL, _ operation: (URL) throws -> T) throws -> T {
@@ -350,8 +361,14 @@ final class VoicemailService: NSObject, Service, NSOpenSavePanelDelegate {
         return try operation(url)
     }
 
+    /// Runs an operation on the store inside the grant for the bookmarked folder,
+    /// or at the default path when nothing is bookmarked.
+    ///
+    /// The bookmark comes first whenever one exists: while another call holds the grant,
+    /// the default path is readable too, but it stops being readable when that call ends,
+    /// so each call holds a grant of its own.
     private func withStore<T>(_ operation: (VoicemailStore) throws -> T) throws -> T {
-        if canAccessStoreAtDefaultPath {
+        guard UserDefaults.standard.data(forKey: dataStoreBookmarkKey) != nil else {
             return try operation(VoicemailStore(directoryPath: dataStoreDirectoryPath))
         }
 

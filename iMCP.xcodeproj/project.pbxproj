@@ -20,6 +20,8 @@
 		A30000000000000000000020 /* HomeToolsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000010 /* HomeToolsTests.swift */; };
 		A30000000000000000000021 /* ../Shared/Home/HomeBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000011 /* ../Shared/Home/HomeBackend.swift */; };
 		A30000000000000000000022 /* ../Shared/Home/HomeError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000012 /* ../Shared/Home/HomeError.swift */; };
+		A60000000000000000000021 /* ../Shared/Home/HomeHelperPairing.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000011 /* ../Shared/Home/HomeHelperPairing.swift */; };
+		A60000000000000000000022 /* ../Helper/Server/HelperServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000012 /* ../Helper/Server/HelperServer.swift */; };
 		A30000000000000000000023 /* ../Shared/Home/HomeInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000013 /* ../Shared/Home/HomeInput.swift */; };
 		A30000000000000000000024 /* ../Shared/Home/HomeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000014 /* ../Shared/Home/HomeTools.swift */; };
 		A30000000000000000000025 /* ../Shared/Models/Tool.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000015 /* ../Shared/Models/Tool.swift */; };
@@ -60,6 +62,7 @@
 		F8F1D2F82D6F9E0C00F6323D /* MCP in Frameworks */ = {isa = PBXBuildFile; productRef = F8F44E9C2D5903F70075D79C /* MCP */; };
 		F9E9902DC72D90F6C423EFE2 /* Logging in Frameworks */ = {isa = PBXBuildFile; productRef = 48ABEE9E6903427DD79096A1 /* Logging */; };
 		AA0011000000000000000001 /* Envelope in Frameworks */ = {isa = PBXBuildFile; productRef = AA0011000000000000000002 /* Envelope */; };
+		AB0055000000000000000001 /* TSRP in Frameworks */ = {isa = PBXBuildFile; productRef = AB0055000000000000000002 /* TSRP */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -92,6 +95,8 @@
 		A30000000000000000000010 /* HomeToolsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeToolsTests.swift; sourceTree = "<group>"; };
 		A30000000000000000000011 /* ../Shared/Home/HomeBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Home/HomeBackend.swift; sourceTree = "<group>"; };
 		A30000000000000000000012 /* ../Shared/Home/HomeError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Home/HomeError.swift; sourceTree = "<group>"; };
+		A60000000000000000000011 /* ../Shared/Home/HomeHelperPairing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Home/HomeHelperPairing.swift; sourceTree = "<group>"; };
+		A60000000000000000000012 /* ../Helper/Server/HelperServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Helper/Server/HelperServer.swift; sourceTree = "<group>"; };
 		A30000000000000000000013 /* ../Shared/Home/HomeInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Home/HomeInput.swift; sourceTree = "<group>"; };
 		A30000000000000000000014 /* ../Shared/Home/HomeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Home/HomeTools.swift; sourceTree = "<group>"; };
 		A30000000000000000000015 /* ../Shared/Models/Tool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Models/Tool.swift; sourceTree = "<group>"; };
@@ -197,6 +202,7 @@
 			files = (
 				F809556E2D7888920055B911 /* TypedStream in Frameworks */,
 				AA0011000000000000000001 /* Envelope in Frameworks */,
+				AB0055000000000000000001 /* TSRP in Frameworks */,
 				158948D22D0E610E83A4433C /* Sparkle in Frameworks */,
 				F873F48D2D712BCF0035CD0A /* Ontology in Frameworks */,
 				F8D7C31A2DCBD32100A4775F /* MCP in Frameworks */,
@@ -247,6 +253,8 @@
 				A30000000000000000000010 /* HomeToolsTests.swift */,
 				A30000000000000000000011 /* ../Shared/Home/HomeBackend.swift */,
 				A30000000000000000000012 /* ../Shared/Home/HomeError.swift */,
+				A60000000000000000000011 /* ../Shared/Home/HomeHelperPairing.swift */,
+				A60000000000000000000012 /* ../Helper/Server/HelperServer.swift */,
 				A30000000000000000000013 /* ../Shared/Home/HomeInput.swift */,
 				A30000000000000000000014 /* ../Shared/Home/HomeTools.swift */,
 				A30000000000000000000015 /* ../Shared/Models/Tool.swift */,
@@ -374,6 +382,7 @@
 				F873F48C2D712BCF0035CD0A /* Ontology */,
 				F809556D2D7888920055B911 /* TypedStream */,
 				AA0011000000000000000002 /* Envelope */,
+				AB0055000000000000000002 /* TSRP */,
 				F809556F2D7888920055B911 /* iMessage */,
 				F8A7DE3D2DCB76F700530587 /* MCP */,
 				F8D7C3162DCBD30500A4775F /* MCP */,
@@ -453,6 +462,7 @@
 			mainGroup = F8F44E642D59038D0075D79C;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				AB0055000000000000000003 /* XCRemoteSwiftPackageReference "TSRP" */,
 				AA0011000000000000000003 /* XCRemoteSwiftPackageReference "Envelope" */,
 				F88358352D64A085000317CD /* XCRemoteSwiftPackageReference "swift-log" */,
 				F873F48B2D712BCF0035CD0A /* XCRemoteSwiftPackageReference "Ontology" */,
@@ -543,6 +553,8 @@
 				A30000000000000000000020 /* HomeToolsTests.swift in Sources */,
 				A30000000000000000000021 /* ../Shared/Home/HomeBackend.swift in Sources */,
 				A30000000000000000000022 /* ../Shared/Home/HomeError.swift in Sources */,
+				A60000000000000000000021 /* ../Shared/Home/HomeHelperPairing.swift in Sources */,
+				A60000000000000000000022 /* ../Helper/Server/HelperServer.swift in Sources */,
 				A30000000000000000000023 /* ../Shared/Home/HomeInput.swift in Sources */,
 				A30000000000000000000024 /* ../Shared/Home/HomeTools.swift in Sources */,
 				A30000000000000000000025 /* ../Shared/Models/Tool.swift in Sources */,
@@ -623,7 +635,6 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				HELPER_BUNDLE_IDENTIFIER = co.dododo.iMCP.Helper;
 				INFOPLIST_FILE = Helper/Info.plist;
-				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHomeKitUsageDescription = "iMCP uses HomeKit to inspect and organize your homes, accessories, scenes, and automations.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "iMCP connects to iMCP Helper on this Mac.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -643,7 +654,7 @@
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = "1,2,6";
 			};
 			name = Debug;
 		};
@@ -663,7 +674,6 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				HELPER_BUNDLE_IDENTIFIER = co.dododo.iMCP.Helper;
 				INFOPLIST_FILE = Helper/Info.plist;
-				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHomeKitUsageDescription = "iMCP uses HomeKit to inspect and organize your homes, accessories, scenes, and automations.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "iMCP connects to iMCP Helper on this Mac.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -684,7 +694,7 @@
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = "1,2,6";
 			};
 			name = Release;
 		};
@@ -1101,6 +1111,14 @@
 				minimumVersion = 1.3.0;
 			};
 		};
+		AB0055000000000000000003 /* XCRemoteSwiftPackageReference "TSRP" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/mattt/TSRP";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.1.1;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -1206,6 +1224,7 @@
 			package = AA0011000000000000000003 /* XCRemoteSwiftPackageReference "Envelope" */;
 			productName = Envelope;
 		};
+		AB0055000000000000000002 /* TSRP */ = {isa = XCSwiftPackageProductDependency; package = AB0055000000000000000003 /* XCRemoteSwiftPackageReference "TSRP" */; productName = TSRP; };
 /* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = F8F44E652D59038D0075D79C /* Project object */;

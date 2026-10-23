@@ -18,6 +18,7 @@ ET.register_namespace("", SVG)
 # Each entry pairs an asset name with its dark appearance background color.
 SERVICES = (
     ("calendar", "#ff453a"),
+    ("voice-memos", "#ff453a"),
     ("contacts", "#ac8e68"),
     ("reminders", "#ff9f0a"),
     ("home", "#ff9f0a"),
@@ -67,7 +68,7 @@ def generate(theme: str) -> None:
         icon.set("y", f"{y - ICON_SIZE / 2:.3f}")
         icon.set("width", str(ICON_SIZE))
         icon.set("height", str(ICON_SIZE))
-        ET.SubElement(icon, f"{{{SVG}}}title").text = name.capitalize()
+        ET.SubElement(icon, f"{{{SVG}}}title").text = name.replace("-", " ").title()
         if theme == "dark":
             icon.find(f"{{{SVG}}}circle").set("fill", dark_color)
         root.append(icon)
