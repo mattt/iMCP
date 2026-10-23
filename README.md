@@ -633,9 +633,17 @@ If you installed it somewhere else,
 iMCP asks you to choose it when you turn on Home,
 or you can choose it in Settings > Services > Home.
 When you enable Home,
-iMCP launches the helper and the helper asks for HomeKit access.
-The helper exits when iMCP exits,
-and its status window reports startup and permission errors.
+iMCP launches the helper if it isn't running,
+and the helper asks for HomeKit access.
+The helper's window shows a pairing code;
+copy it, and enter it when iMCP asks for it.
+iMCP keeps the code in its keychain, so you enter it once.
+To pair again, choose New Code in the helper's window,
+which disconnects iMCP,
+then choose Enter Code… in Settings > Services > Home.
+The helper keeps running after iMCP quits;
+choose Quit in its window to stop it.
+The window also reports startup and permission errors.
 The Mac's iCloud account must have access to the home,
 and writes can require the owner or administrator role.
 
@@ -651,13 +659,15 @@ After a lost connection, read-only calls retry once.
 Writes are not repeated, because HomeKit may have applied them already;
 the error asks the caller to inspect the home before retrying.
 
-iMCP passes an ephemeral loopback port and a new secret
-to each helper it launches in the helper's launch environment,
-which only the helper and root can read, unlike its arguments.
-The helper serves only connections that present this secret,
-and exits if it can't listen on the port.
-A helper started some other way (for example, from Xcode)
-accepts no connections; quit it and let iMCP launch its own.
+The helper advertises "\_imcp-helper.\_tcp" on the local-only DNS-SD interface,
+and iMCP finds it there, whether or not iMCP launched it.
+The connection uses TLS with a pre-shared key
+that both apps derive from the pairing code,
+so a connection without the code fails the TLS handshake,
+and a process that advertises itself as the helper learns nothing that it can use.
+If you built the helper with an earlier version of iMCP,
+quit it and rebuild it with `Scripts/install-helper.sh`;
+iMCP refuses a helper that doesn't declare the current protocol version.
 With Home turned on in iMCP,
 `uv run Scripts/check-home.py <path-to-imcp-server>` runs a read-only
 integration check through iMCP.
