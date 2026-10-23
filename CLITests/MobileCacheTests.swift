@@ -188,6 +188,7 @@ final class MobileCacheTests: XCTestCase {
         XCTAssertTrue(stale(.health, nil))
         XCTAssertFalse(stale(.health, 60))
         XCTAssertTrue(stale(.health, MobileEnvelope.staleAfter[.health]! + 1))
+        XCTAssertFalse(stale(.finance, MobileEnvelope.staleAfter[.health]! + 1))
         XCTAssertTrue(stale(.alarms, MobileEnvelope.staleAfter[.alarms]! + 1))
     }
 

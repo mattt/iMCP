@@ -37,6 +37,13 @@ and a [growing list of clients][mcp-clients] that support the
   </tr>
   <tr>
     <th>
+      <img src="Assets/finance.svg" width="48" height="48" alt="" role="presentation"/>
+    </th>
+    <td><strong>Finance</strong></td>
+    <td>Read Apple Card, Apple Cash, and Apple Savings accounts, balances, and transactions from Wallet on your iPhone or iPad. Needs iMCP for iOS, which you <a href="#imcp-for-iphone-and-ipad">build with your own Apple Developer account</a>. Also needs the FinanceKit entitlement, which Apple grants only after review.</td>
+  </tr>
+  <tr>
+    <th>
       <img src="Assets/health.svg" width="48" height="48" alt="" role="presentation"/>
     </th>
     <td><strong>Health</strong></td>
@@ -172,7 +179,7 @@ Click "Allow Full Access" to continue.
 > [!IMPORTANT]
 > iMCP **does not** collect your data.
 > The only data it stores is a copy of what a paired iPhone or iPad sends
-> for the Health and Alarms services,
+> for the Health, Finance, and Alarms services,
 > as described in [iMCP for iPhone and iPad](#imcp-for-iphone-and-ipad).
 > AI apps like Claude and ChatGPT _do_ send
 > your data off device as part of tool calls.
@@ -718,8 +725,8 @@ xcodebuild -scheme iMCP -configuration Debug -destination "platform=macOS" \
 
 ### iMCP for iPhone and iPad
 
-HealthKit and AlarmKit data stays on the iPhone or iPad,
-so the Health and Alarms services get it from iMCP for iOS,
+HealthKit, FinanceKit, and AlarmKit data stays on the iPhone or iPad,
+so the Health, Finance, and Alarms services get it from iMCP for iOS,
 an app in [`iOS`](/iOS/).
 Build and install it with your own Apple Developer account:
 
@@ -782,7 +789,7 @@ which advertises "\_imcp-mobile.\_tcp" with Bonjour,
 and serves the tools as an MCP server on that connection;
 iMCP is the MCP client.
 The Mac listens and advertises only while a pairing code is on screen,
-or while a device is paired and Health or Alarms is on.
+or while a device is paired and Health, Finance, or Alarms is on.
 The connection uses TLS 1.2 with pre-shared keys:
 the one-time secret in the QR code for pairing,
 and a key for each device after that.
@@ -799,7 +806,7 @@ so the device key never crosses the network.
 Someone who saw the QR code and recorded the pairing still can't derive it.
 
 Read results include `source` (`live` or `cache`), `synced_at`, and `stale`.
-Cached data is stale after 4 hours for Health
+Cached data is stale after 4 hours for Health, 26 hours for Finance,
 and 1 hour for Alarms.
 After a lost connection, a read is retried once when the device reconnects
 and otherwise answers from the cache.
@@ -822,7 +829,14 @@ A running timer shows as a Live Activity from the
 [`iOSWidgets`](/iOSWidgets/) extension.
 The iOS app lists the alarms that AI apps created and can cancel them.
 
-With Health or Alarms on,
+FinanceKit needs a managed entitlement that Apple grants
+to organization account holders after review.
+Self-signed builds don't include it, so the Finance tools say they're unavailable.
+With the entitlement, build with `Scripts/install-ios.sh --finance`.
+A background delivery extension, [`iOSFinance`](/iOSFinance/),
+queues Wallet changes while the app isn't running.
+
+With Health, Finance, or Alarms on,
 `uv run Scripts/check-ios.py <path-to-imcp-server>`
 runs read-only checks of the tools, their schemas, and their sync status.
 CI builds the app unsigned,

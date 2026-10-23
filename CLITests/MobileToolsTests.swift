@@ -16,10 +16,11 @@ final class MobileToolsTests: XCTestCase {
             Set(calls),
             [
                 "health_fetch", "health_statistics", "workouts_fetch", "clinical_records_fetch",
+                "finance_accounts_list", "finance_balances_fetch", "finance_transactions_fetch",
                 "alarms_list", "alarms_create", "timers_create", "alarms_cancel", "mobile_status",
             ]
         )
-        XCTAssertEqual(calls.count, 9)
+        XCTAssertEqual(calls.count, 12)
     }
 
     func testEachServiceHasItsToolsAndTheStatusTool() {
@@ -31,16 +32,22 @@ final class MobileToolsTests: XCTestCase {
             ["health_fetch", "health_statistics", "workouts_fetch", "clinical_records_fetch", "mobile_status"]
         )
         XCTAssertEqual(
+            names(.finance),
+            ["finance_accounts_list", "finance_balances_fetch", "finance_transactions_fetch", "mobile_status"]
+        )
+        XCTAssertEqual(
             names(.alarms),
             ["alarms_list", "alarms_create", "timers_create", "alarms_cancel", "mobile_status"]
         )
         XCTAssertEqual(MobileTools.domain(of: "timers_create"), .alarms)
+        XCTAssertEqual(MobileTools.domain(of: "finance_accounts_list"), .finance)
         XCTAssertNil(MobileTools.domain(of: "mobile_status"))
     }
 
     func testAnnotationsAreExplicit() {
         let reads: Set<String> = [
             "health_fetch", "health_statistics", "workouts_fetch", "clinical_records_fetch",
+            "finance_accounts_list", "finance_balances_fetch", "finance_transactions_fetch",
             "alarms_list", "mobile_status",
         ]
         for tool in MobileTools.all(backend: backend) {
@@ -68,6 +75,7 @@ final class MobileToolsTests: XCTestCase {
         XCTAssertThrowsError(try validate("health_fetch", ["type": "stepCount", "limit": 5000]))
         XCTAssertThrowsError(try validate("health_statistics", ["type": "stepCount", "interval": "fortnight"]))
         XCTAssertThrowsError(try validate("clinical_records_fetch", ["type": "photoRecord"]))
+        XCTAssertThrowsError(try validate("finance_transactions_fetch", ["status": "lost"]))
         XCTAssertThrowsError(try validate("alarms_cancel", [:]))
         XCTAssertThrowsError(try validate("timers_create", ["title": "Tea", "duration_seconds": 0]))
         XCTAssertThrowsError(try validate("timers_create", ["title": "Tea", "duration_seconds": 1.5]))
