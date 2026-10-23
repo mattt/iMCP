@@ -15,105 +15,105 @@ and a [growing list of clients][mcp-clients] that support the
 
 <table>
   <tr>
-    <th>
+    <th width="48">
       <img src="Assets/calendar.svg" width="48" height="48" alt="" role="presentation"/>
     </th>
     <td><strong>Calendar</strong></td>
     <td>View and manage calendar events, including creating new events with customizable settings like recurrence, alarms, and availability status.</td>
   </tr>
   <tr>
-    <th>
+    <th width="48">
       <img src="Assets/contacts.svg" width="48" height="48" alt="" role="presentation"/>
     </th>
     <td><strong>Contacts</strong></td>
     <td>Access contact information about yourself and search your contacts by name, phone number, or email address.</td>
   </tr>
   <tr>
-    <th>
+    <th width="48">
       <img src="Assets/home.svg" width="48" height="48" alt="" role="presentation"/>
     </th>
     <td><strong>Home</strong></td>
     <td>Find homes, rooms, accessories, scenes, and automations, read and control accessories, and organize rooms and zones. Needs a helper app that you <a href="#imcp-helper">build with your own Apple Developer account</a>.</td>
   </tr>
   <tr>
-    <th>
+    <th width="48">
       <img src="Assets/location.svg" width="48" height="48" alt="" role="presentation"/>
     </th>
     <td><strong>Location</strong></td>
     <td>Access current location data and convert between addresses and geographic coordinates.</td>
   </tr>
   <tr>
-    <th>
+    <th width="48">
       <img src="Assets/mail.svg" width="48" height="48" alt="" role="presentation"/>
     </th>
     <td><strong>Mail</strong></td>
     <td>List mailboxes, search messages by sender, subject, mailbox, date, or read status, read messages stored on your Mac, and open new drafts in your default email app. Reading mail needs <a href="#mail-access-and-search">access to your Mail folder</a>.</td>
   </tr>
   <tr>
-    <th>
+    <th width="48">
       <img src="Assets/maps.svg" width="48" height="48" alt="" role="presentation"/>
     </th>
     <td><strong>Maps</strong></td>
     <td>Provides location services including place search, directions, points of interest lookup, travel time estimation, and static map image generation.</td>
   </tr>
   <tr>
-    <th>
+    <th width="48">
       <img src="Assets/messages.svg" width="48" height="48" alt="" role="presentation"/>
     </th>
     <td><strong>Messages</strong></td>
     <td>Access message history with specific participants within customizable date ranges.</td>
   </tr>
   <tr>
-    <th>
+    <th width="48">
       <img src="Assets/music.svg" width="48" height="48" alt="" role="presentation"/>
     </th>
     <td><strong>Music</strong></td>
     <td>See what's playing in the Music app, control playback, and search the Apple Music catalog. Playback tools need Automation permission for Music; catalog search needs Apple Music access.</td>
   </tr>
   <tr>
-    <th>
+    <th width="48">
       <img src="Assets/notes.svg" width="48" height="48" alt="" role="presentation"/>
     </th>
     <td><strong>Notes</strong></td>
     <td>Search notes by text, folder, or date, and read them as Markdown with their checklists, tables, and links.</td>
   </tr>
   <tr>
-    <th>
+    <th width="48">
       <img src="Assets/phone.svg" width="48" height="48" alt="" role="presentation"/>
     </th>
     <td><strong>Phone</strong></td>
     <td>View call history synced from your iPhone, filter calls by participant, date, or call type, and start calls with system confirmation.</td>
   </tr>
   <tr>
-    <th>
-      <img src="Assets/voicemail.svg" width="48" height="48" alt="" role="presentation"/>
-    </th>
-    <td><strong>Voicemail</strong></td>
-    <td>Fetch voicemails synced from your iPhone, with transcripts and audio, filtering by sender, date, message type, or mailbox (inbox, blocked, or deleted).</td>
-  </tr>
-  <tr>
-    <th>
-      <img src="Assets/voice-memos.svg" width="48" height="48" alt="" role="presentation"/>
-    </th>
-    <td><strong>Voice Memos</strong></td>
-    <td>Fetch recordings from Voice Memos, with transcripts and audio, filtering by title, folder, or date, or reading Recently Deleted. Needs <a href="#voice-memos-library-access">access to your Voice Memos folder</a>.</td>
-  </tr>
-  <tr>
-    <th>
+    <th width="48">
       <img src="Assets/reminders.svg" width="48" height="48" alt="" role="presentation"/>
     </th>
     <td><strong>Reminders</strong></td>
     <td>View, create, edit, and delete reminders with customizable due dates, recurrence, priorities, and alerts across different reminder lists, and manage the lists themselves.</td>
   </tr>
   <tr>
-    <th>
+    <th width="48">
       <img src="Assets/shortcuts.svg" width="48" height="48" alt="" role="presentation"/>
     </th>
     <td><strong>Shortcuts</strong></td>
     <td>List and run shortcuts on your Mac, with optional text input.</td>
   </tr>
   <tr>
-    <th>
+    <th width="48">
+      <img src="Assets/voice-memos.svg" width="48" height="48" alt="" role="presentation"/>
+    </th>
+    <td><strong>Voice Memos</strong></td>
+    <td>Fetch recordings from Voice Memos, with transcripts and audio, filtering by title, folder, or date, or reading Recently Deleted. Needs <a href="#voice-memos-library-access">access to your Voice Memos folder</a>.</td>
+  </tr>
+  <tr>
+    <th width="48">
+      <img src="Assets/voicemail.svg" width="48" height="48" alt="" role="presentation"/>
+    </th>
+    <td><strong>Voicemail</strong></td>
+    <td>Fetch voicemails synced from your iPhone, with transcripts and audio, filtering by sender, date, message type, or mailbox (inbox, blocked, or deleted).</td>
+  </tr>
+  <tr>
+    <th width="48">
       <img src="Assets/weather.svg" width="48" height="48" alt="" role="presentation"/>
     </th>
     <td><strong>Weather</strong></td>
