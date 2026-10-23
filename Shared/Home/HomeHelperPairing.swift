@@ -30,6 +30,18 @@ enum HomeHelperPairing {
     static let pairingTXTKey = "pairing"
     static let serviceType = "_imcp-helper._tcp"
 
+    /// iMCP's bundle identifier, which the helper uses to find iMCP and open its pairing window.
+    static let appBundleIdentifier = "co.dododo.iMCP"
+    /// The URL that opens iMCP's pairing window.
+    /// It carries no data: iMCP reads only its scheme and host.
+    static let appPairingURL = URL(string: "imcp://pair")!
+
+    /// Whether `url` asks iMCP to open its pairing window.
+    /// Ignores every other part of the URL, so a link can't pass a code or any other data.
+    static func isPairingURL(_ url: URL) -> Bool {
+        url.scheme?.lowercased() == appPairingURL.scheme && url.host()?.lowercased() == appPairingURL.host()
+    }
+
     /// How many failed pairing handshakes the helper allows before it replaces the code.
     static let failedPairingLimit = 5
     /// PBKDF2-HMAC-SHA256 iterations, about half a second on Apple silicon.

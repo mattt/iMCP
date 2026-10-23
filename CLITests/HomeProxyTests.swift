@@ -73,6 +73,27 @@ final class HomeHelperPairingTests: XCTestCase {
         XCTAssertEqual(HomeHelperPairing.format("abcdefgh"), "ABCD-EFGH")
     }
 
+    func testRecognizesOnlyThePairingURLAndIgnoresItsOtherParts() throws {
+        for text in ["imcp://pair", "IMCP://PAIR", "imcp://pair/extra?code=0123-ABCD#fragment"] {
+            XCTAssertTrue(HomeHelperPairing.isPairingURL(try XCTUnwrap(URL(string: text))), text)
+        }
+        for text in ["imcp://settings", "https://pair", "imcp:pair", "imcp://", "pair://imcp"] {
+            XCTAssertFalse(HomeHelperPairing.isPairingURL(try XCTUnwrap(URL(string: text))), text)
+        }
+    }
+
+    func testAppInfoPlistDeclaresThePairingURLScheme() throws {
+        let plist = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .appendingPathComponent("../App/Info.plist")
+        let info = try XCTUnwrap(
+            PropertyListSerialization.propertyList(from: Data(contentsOf: plist), format: nil) as? [String: Any]
+        )
+        let types = try XCTUnwrap(info["CFBundleURLTypes"] as? [[String: Any]])
+        let schemes = types.flatMap { $0["CFBundleURLSchemes"] as? [String] ?? [] }
+        XCTAssertEqual(schemes, [HomeHelperPairing.appPairingURL.scheme])
+    }
+
     func testAppsKeepTheirKeysUnderDifferentServices() {
         XCTAssertNotEqual(HomeHelperPairing.Keychain.app.service, HomeHelperPairing.Keychain.helper.service)
     }

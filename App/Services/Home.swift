@@ -646,6 +646,14 @@ actor HomeService: Service, HomeBackend {
         )
     }
 
+    /// Opens the pairing window for `imcp://pair`, as Pair… in Settings does,
+    /// and reconnects if Home is on.
+    @MainActor
+    func pairFromURL() async {
+        guard await pairAskingUser(message: "Enter the code shown in iMCP Helper's window.") else { return }
+        if UserDefaults.standard.bool(forKey: "homeEnabled") { try? await reconnect() }
+    }
+
     /// Turns Home on for the user:
     /// asks for the helper if none is installed,
     /// then asks for a code and pairs until the helper accepts iMCP's key.
