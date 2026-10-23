@@ -238,6 +238,8 @@ actor HomeService: Service, HomeBackend {
     /// The results from the chosen helper decide as soon as all of them are final,
     /// and at the deadline if it advertised at all;
     /// other helpers' results decide only at the deadline, and only if it didn't.
+    /// Then an outdated helper comes first, because a helper from before pairing
+    /// doesn't advertise its process ID, so it may be the chosen one.
     nonisolated static func connectionFailure(
         _ attempts: [(chosen: Bool, attempt: HelperAttempt)],
         deadlinePassed: Bool
@@ -247,9 +249,15 @@ actor HomeService: Service, HomeBackend {
             return chosen.contains(.rejected) ? PairingError.rejected : HomeError(outdatedHelperMessage)
         }
         guard deadlinePassed else { return nil }
-        let decisive = chosen.isEmpty ? attempts.map(\.attempt) : chosen
-        if decisive.contains(.rejected) { return PairingError.rejected }
-        if decisive.contains(.outdated) { return HomeError(outdatedHelperMessage) }
+        if chosen.isEmpty {
+            let others = attempts.map(\.attempt)
+            if others.contains(.outdated) { return HomeError(outdatedHelperMessage) }
+            if others.contains(.rejected) { return PairingError.rejected }
+        } else if chosen.contains(.rejected) {
+            return PairingError.rejected
+        } else if chosen.contains(.outdated) {
+            return HomeError(outdatedHelperMessage)
+        }
         if attempts.isEmpty {
             return HomeError(
                 "iMCP Helper didn't appear on this Mac. Check its window, and allow it in System Settings > Privacy & Security > Local Network."
@@ -460,6 +468,8 @@ actor HomeService: Service, HomeBackend {
     @MainActor
     private func launchHelper(overrideURL: URL?) async throws -> pid_t {
         let url = overrideURL ?? helperLocation()
+        let accessing = url?.startAccessingSecurityScopedResource() ?? false
+        defer { if accessing { url?.stopAccessingSecurityScopedResource() } }
         if let running = NSWorkspace.shared.runningApplications.first(where: { application in
             !application.isTerminated
                 && HomeHelperLocator.isRunningHelper(
@@ -469,7 +479,11 @@ actor HomeService: Service, HomeBackend {
                     isHelper: HomeHelperLocator.isHelper(at:)
                 )
         }) {
-            // Discovery checks the running helper's protocol version in its TXT record.
+            // A helper from before pairing doesn't advertise its process ID,
+            // so check its Info.plist instead of waiting for its advertisement.
+            guard let bundleURL = running.bundleURL,
+                HomeHelperLocator.protocolVersion(at: bundleURL) == HomeHelperPairing.protocolVersion
+            else { throw HomeError(Self.outdatedHelperMessage) }
             return running.processIdentifier
         }
         guard let url else {
@@ -477,8 +491,6 @@ actor HomeService: Service, HomeBackend {
                 "iMCP Helper isn't installed. Build it with Scripts/install-helper.sh, then turn Home on again."
             )
         }
-        let accessing = url.startAccessingSecurityScopedResource()
-        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
         guard HomeHelperLocator.protocolVersion(at: url) == HomeHelperPairing.protocolVersion else {
             throw HomeError(Self.outdatedHelperMessage)
         }

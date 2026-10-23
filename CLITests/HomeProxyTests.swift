@@ -234,8 +234,12 @@ final class HomeHelperPairingTests: XCTestCase {
         XCTAssertEqual(failure([(true, .rejected), (false, .outdated)]), rejected)
         XCTAssertEqual(failure([(true, .outdated), (true, .rejected)]), rejected)
         XCTAssertTrue(failure([(true, .outdated)])?.contains("Scripts/install-helper.sh") == true)
-        // After the deadline, any helper's answer decides, a rejection first.
-        XCTAssertEqual(failure([(false, .outdated), (false, .rejected)], deadlinePassed: true), rejected)
+        // After the deadline, other helpers' answers decide if the chosen one never advertised,
+        // an outdated helper first, because it may be the chosen one without a process ID.
+        XCTAssertTrue(
+            failure([(false, .outdated), (false, .rejected)], deadlinePassed: true)?.contains("install-helper") == true
+        )
+        XCTAssertEqual(failure([(false, .rejected)], deadlinePassed: true), rejected)
         XCTAssertTrue(failure([(false, .outdated)], deadlinePassed: true)?.contains("install-helper") == true)
         XCTAssertTrue(failure([], deadlinePassed: true)?.contains("didn't appear") == true)
         XCTAssertTrue(failure([(true, .unavailable)], deadlinePassed: true)?.contains("15 seconds") == true)
