@@ -643,8 +643,9 @@ choose Open iMCP… to open iMCP's Pair with iMCP Helper window,
 then paste the code and click Pair.
 The button opens the URL `imcp://pair`, which carries no data;
 iMCP only opens its pairing window for it.
-The helper opens that URL only with the app that has iMCP's bundle ID, `co.dododo.iMCP`;
-if you built iMCP with another bundle ID,
+The helper opens that URL only with the app that has iMCP's bundle ID, `co.dododo.iMCP`,
+preferring the running copy, and only if that copy can open the URL;
+otherwise, for example if you built iMCP with another bundle ID,
 the helper tells you to choose Pair… in Settings > Services > Home instead.
 If the helper's window is behind other windows,
 choose Show iMCP Helper in iMCP's window.

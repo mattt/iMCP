@@ -336,6 +336,17 @@ final class HelperRuntime: ObservableObject {
             canOpenIMCP = false
             return
         }
+        // With cooperative activation, iMCP comes forward only if the helper yields to it.
+        if let shared = Self.sharedApplication {
+            if let running = Self.runningIMCP() {
+                shared.perform(NSSelectorFromString("yieldActivationToApplication:"), with: running)
+            } else {
+                shared.perform(
+                    NSSelectorFromString("yieldActivationToApplicationWithBundleIdentifier:"),
+                    with: HomeHelperPairing.appBundleIdentifier
+                )
+            }
+        }
         typealias Open = @convention(c) (NSObject, Selector, NSArray, NSURL, NSObject, AnyObject?) -> Void
         unsafeBitCast(workspace.method(for: open), to: Open.self)(
             workspace,
@@ -347,29 +358,57 @@ final class HelperRuntime: ObservableObject {
         )
     }
 
+    private static var sharedApplication: NSObject? {
+        (NSClassFromString("NSApplication") as AnyObject?)?
+            .perform(NSSelectorFromString("sharedApplication"))?
+            .takeUnretainedValue() as? NSObject
+    }
+
     private static var workspace: NSObject? {
         (NSClassFromString("NSWorkspace") as AnyObject?)?
             .perform(NSSelectorFromString("sharedWorkspace"))?
             .takeUnretainedValue() as? NSObject
     }
 
-    private static func iMCPURL() -> URL? {
-        workspace?
+    /// The running iMCP, if any.
+    private static func runningIMCP() -> NSObject? {
+        let applications =
+            (NSClassFromString("NSRunningApplication") as AnyObject?)?
             .perform(
+                NSSelectorFromString("runningApplicationsWithBundleIdentifier:"),
+                with: HomeHelperPairing.appBundleIdentifier
+            )?
+            .takeUnretainedValue() as? [NSObject]
+        return applications?.first
+    }
+
+    /// The copy of iMCP to open: the running one, or else the one that LaunchServices finds,
+    /// but only if it can open the pairing URL.
+    /// An older iMCP doesn't declare the scheme, and LaunchServices refuses to open the URL with it.
+    private static func iMCPURL() -> URL? {
+        guard let workspace else { return nil }
+        let running = runningIMCP()?.perform(NSSelectorFromString("bundleURL"))?.takeUnretainedValue() as? URL
+        let installed =
+            workspace.perform(
                 NSSelectorFromString("URLForApplicationWithBundleIdentifier:"),
                 with: HomeHelperPairing.appBundleIdentifier
             )?
             .takeUnretainedValue() as? URL
+        guard let candidate = running ?? installed else { return nil }
+        let handlers =
+            workspace.perform(
+                NSSelectorFromString("URLsForApplicationsToOpenURL:"),
+                with: HomeHelperPairing.appPairingURL
+            )?
+            .takeUnretainedValue() as? [URL] ?? []
+        guard handlers.contains(where: { $0.standardizedFileURL == candidate.standardizedFileURL }) else { return nil }
+        return candidate
     }
 
     /// Brings the window to the front, so the pairing code is visible.
     /// UIKit on Mac Catalyst can't activate the app, so this asks AppKit's shared application.
     private func bringToFront() {
-        guard
-            let application = (NSClassFromString("NSApplication") as AnyObject?)?
-                .perform(NSSelectorFromString("sharedApplication"))?
-                .takeUnretainedValue() as? NSObject
-        else { return }
+        guard let application = Self.sharedApplication else { return }
         let activate = NSSelectorFromString("activate")
         if application.responds(to: activate) { application.perform(activate) }
     }
