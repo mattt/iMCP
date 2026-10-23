@@ -380,28 +380,37 @@ final class VoiceMemosService: NSObject, Service, NSOpenSavePanelDelegate {
     ///
     /// Each store call finishes its database and file work before it returns,
     /// so the grant must stay open until the operation returns.
+    /// Errors from TSRP are rethrown as `StoreError`, which describes them for the client.
     private func withStore<T>(_ operation: (TSRP.Store) async throws -> T) async throws -> T {
-        if canAccessStoreAtDefaultPath {
-            return try await operation(TSRP.Store(root: defaultRecordingsDirectory))
-        }
+        do {
+            if canAccessStoreAtDefaultPath {
+                return try await operation(TSRP.Store(root: defaultRecordingsDirectory))
+            }
 
-        let directory = try resolveBookmarkedRecordingsDirectory()
-        guard directory.startAccessingSecurityScopedResource() else {
-            log.error("Failed to start accessing security-scoped resource")
-            throw RecordingsAccessError.securityScopeAccessFailed
+            let directory = try resolveBookmarkedRecordingsDirectory()
+            guard directory.startAccessingSecurityScopedResource() else {
+                log.error("Failed to start accessing security-scoped resource")
+                throw RecordingsAccessError.securityScopeAccessFailed
+            }
+            defer { directory.stopAccessingSecurityScopedResource() }
+            return try await operation(TSRP.Store(root: directory))
+        } catch let error as TSRP.VoiceMemosError {
+            throw StoreError(underlying: error)
         }
-        defer { directory.stopAccessingSecurityScopedResource() }
-        return try await operation(TSRP.Store(root: directory))
     }
 
     // MARK: - Errors
 
-    private enum RecordingsAccessError: LocalizedError {
+    // The server reports a tool's error by interpolating it,
+    // so each error type describes itself with its readable message.
+    private enum RecordingsAccessError: LocalizedError, CustomStringConvertible {
         case noBookmarkFound
         case securityScopeAccessFailed
         case userDeclinedAccess
         case invalidFolderSelected
         case fileNotReadable
+
+        var description: String { localizedDescription }
 
         var errorDescription: String? {
             switch self {
@@ -420,8 +429,10 @@ final class VoiceMemosService: NSObject, Service, NSOpenSavePanelDelegate {
         }
     }
 
-    private enum ArgumentError: LocalizedError {
+    private enum ArgumentError: LocalizedError, CustomStringConvertible {
         case invalid(String)
+
+        var description: String { localizedDescription }
 
         var errorDescription: String? {
             switch self {
@@ -431,11 +442,13 @@ final class VoiceMemosService: NSObject, Service, NSOpenSavePanelDelegate {
         }
     }
 
-    private enum RecordingError: LocalizedError {
+    private enum RecordingError: LocalizedError, CustomStringConvertible {
         case folderNotFound(String, [String])
         case notTranscribed(TSRP.Recording.ID)
         case unsupportedFormat(TSRP.Recording.ID, String)
         case tooLarge(TSRP.Recording.ID, Int, Int)
+
+        var description: String { localizedDescription }
 
         var errorDescription: String? {
             switch self {
@@ -452,6 +465,33 @@ final class VoiceMemosService: NSObject, Service, NSOpenSavePanelDelegate {
             case .tooLarge(let id, let size, let maxBytes):
                 return
                     "The audio of the recording with identifier \(id) is \(size) bytes, which is more than maxBytes (\(maxBytes))"
+            }
+        }
+    }
+
+    /// An error from TSRP, with a description for the client.
+    /// TSRP's errors conform only to `LocalizedError`,
+    /// so interpolating one would show its case name instead of its message.
+    private struct StoreError: LocalizedError, CustomStringConvertible {
+        let underlying: TSRP.VoiceMemosError
+
+        var description: String { localizedDescription }
+
+        var errorDescription: String? {
+            switch underlying {
+            case .storeNotFound:
+                return
+                    "The selected folder has no Voice Memos library; switch Voice Memos off and on in the iMCP menu and select the Recordings folder"
+            case .storeNotReadable:
+                return
+                    "The Voice Memos library or its write-ahead log files cannot be read; switch Voice Memos off and on in the iMCP menu to grant the Recordings folder again"
+            case .audioFileNotFound(let id):
+                return
+                    "The audio file of the recording with identifier \(id) is not on this Mac; open the recording in Voice Memos to download it"
+            case .invalidLimit:
+                return "Invalid argument: \(underlying.localizedDescription)"
+            default:
+                return underlying.localizedDescription
             }
         }
     }
