@@ -1,5 +1,6 @@
 import CryptoKit
 import Network
+import OSLog
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
@@ -103,6 +104,10 @@ struct HelperView: View {
             }
         }
         .onAppear { runtime.findIMCP() }
+        // iMCP may start, quit, or change while the helper is in the background.
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+            runtime.findIMCP()
+        }
     }
 
     private var pairedSection: some View {
@@ -329,6 +334,7 @@ final class HelperRuntime: ObservableObject {
     /// Finds iMCP by its bundle identifier.
     func findIMCP() {
         canOpenIMCP = Self.iMCPURL() != nil
+        Self.log.info("Open iMCP… is \(self.canOpenIMCP ? "available" : "unavailable", privacy: .public).")
     }
 
     /// Opens iMCP's pairing window.
@@ -361,6 +367,7 @@ final class HelperRuntime: ObservableObject {
                 )
             }
         }
+        Self.log.info("Opening imcp://pair with \(application.path, privacy: .public).")
         typealias Open = @convention(c) (NSObject, Selector, NSArray, NSURL, NSObject, AnyObject?) -> Void
         unsafeBitCast(workspace.method(for: open), to: Open.self)(
             workspace,
@@ -396,27 +403,70 @@ final class HelperRuntime: ObservableObject {
         return applications?.first
     }
 
+    private static let log = Logger.service("helper.open-imcp")
+
     /// The copy of iMCP to open: the running one, or else the one that LaunchServices finds,
-    /// but only if it can open the pairing URL.
-    /// An older iMCP doesn't declare the scheme, and LaunchServices refuses to open the URL with it.
+    /// if it declares the pairing URL's scheme.
+    /// An older iMCP doesn't declare it, and LaunchServices refuses to open the URL with it.
     private static func iMCPURL() -> URL? {
-        guard let workspace else { return nil }
-        let running = runningIMCP()?.perform(NSSelectorFromString("bundleURL"))?.takeUnretainedValue() as? URL
-        let installed =
-            workspace.perform(
+        guard let workspace else {
+            log.error("Can't find iMCP: AppKit's shared workspace isn't available.")
+            return nil
+        }
+        if let running = runningIMCP()?.perform(NSSelectorFromString("bundleURL"))?.takeUnretainedValue() as? URL {
+            log.info("Found the running iMCP at \(running.path, privacy: .public).")
+            switch declaresPairingScheme(running) {
+            case false?:
+                log.info("The running iMCP doesn't declare the imcp scheme.")
+                return nil
+            case true?:
+                return running
+            case nil:
+                // LaunchServices lists only one copy for each bundle ID, so it can't vouch for this one.
+                log.info("Can't read the running iMCP's Info.plist; using it anyway.")
+                return running
+            }
+        }
+        guard
+            let installed = workspace.perform(
                 NSSelectorFromString("URLForApplicationWithBundleIdentifier:"),
                 with: HomeHelperPairing.appBundleIdentifier
             )?
             .takeUnretainedValue() as? URL
-        guard let candidate = running ?? installed else { return nil }
+        else {
+            log.info("iMCP isn't running, and LaunchServices found no app with its bundle ID.")
+            return nil
+        }
+        log.info("Found iMCP at \(installed.path, privacy: .public), which isn't running.")
+        if let declares = declaresPairingScheme(installed) {
+            if !declares { log.info("That iMCP doesn't declare the imcp scheme.") }
+            return declares ? installed : nil
+        }
+        // Without its Info.plist, ask LaunchServices whether this copy handles the URL.
         let handlers =
             workspace.perform(
                 NSSelectorFromString("URLsForApplicationsToOpenURL:"),
                 with: HomeHelperPairing.appPairingURL
             )?
             .takeUnretainedValue() as? [URL] ?? []
-        guard handlers.contains(where: { $0.standardizedFileURL == candidate.standardizedFileURL }) else { return nil }
-        return candidate
+        let path = installed.resolvingSymlinksInPath().path
+        let handles = handlers.contains { $0.resolvingSymlinksInPath().path == path }
+        log.info(
+            "Can't read that iMCP's Info.plist; LaunchServices \(handles ? "lists" : "doesn't list", privacy: .public) it for imcp://pair."
+        )
+        return handles ? installed : nil
+    }
+
+    /// Whether the app at `url` declares the pairing URL's scheme, or nil if its Info.plist can't be read.
+    private static func declaresPairingScheme(_ url: URL) -> Bool? {
+        let plist = url.appendingPathComponent("Contents/Info.plist")
+        guard
+            let data = try? Data(contentsOf: plist),
+            let info = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
+        else { return nil }
+        let types = info["CFBundleURLTypes"] as? [[String: Any]] ?? []
+        let schemes = types.flatMap { $0["CFBundleURLSchemes"] as? [String] ?? [] }
+        return schemes.contains { $0.lowercased() == HomeHelperPairing.appPairingURL.scheme }
     }
 
     /// Brings the window to the front, so the pairing code is visible.
