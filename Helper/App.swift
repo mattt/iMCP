@@ -43,24 +43,19 @@ struct HelperView: View {
         }
         .disabled(runtime.isChanging)
         .padding(20)
-        .frame(width: 360, alignment: .leading)
+        .frame(width: 380, alignment: .leading)
         .fixedSize(horizontal: false, vertical: true)
     }
 
     private func codeSection(_ code: String) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("To pair iMCP with iMCP Helper, enter this code in iMCP.")
+            Text("To pair iMCP with iMCP Helper:")
                 .foregroundStyle(.secondary)
             // Not selectable, so copies go through the Copy Code button's restrictions.
             Text(code)
                 .font(.system(size: 34, weight: .semibold, design: .monospaced))
                 .accessibilityLabel(code.map(String.init).joined(separator: " "))
-            Text(
-                "The code works once. After \(HomeHelperPairing.failedPairingLimit) wrong attempts, a new code replaces it."
-            )
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            HStack {
+            step(1, "Copy the code.") {
                 Button("Copy Code") {
                     // Keep the code off other devices, and off the pasteboard after two minutes.
                     UIPasteboard.general.setItems(
@@ -70,9 +65,37 @@ struct HelperView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
-                Button("Get New Code") { runtime.pairAgain() }
-                    .buttonStyle(.bordered)
             }
+            if runtime.canOpenIMCP {
+                step(2, "Open the pairing window in iMCP.") {
+                    Button("Open iMCP…") { runtime.openIMCP() }
+                        .buttonStyle(.bordered)
+                }
+            } else {
+                step(2, "In iMCP, open Settings > Services > Home, and click Pair…") { EmptyView() }
+            }
+            step(3, "Paste the code, then click Pair.") { EmptyView() }
+            Text(
+                "The code works once. After \(HomeHelperPairing.failedPairingLimit) wrong attempts, a new code replaces it."
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            Button("Get New Code") { runtime.pairAgain() }
+                .buttonStyle(.bordered)
+        }
+        .onAppear { runtime.findIMCP() }
+    }
+
+    /// A numbered step with its text and an optional button.
+    private func step(_ number: Int, _ text: String, @ViewBuilder action: () -> some View) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text("\(number).")
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+            Text(text)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 8)
+            action()
         }
     }
 
@@ -126,6 +149,8 @@ final class HelperRuntime: ObservableObject {
     /// Whether a listener change is running.
     @Published private(set) var isChanging = false
     @Published private(set) var canRetry = false
+    /// Whether the window can open iMCP's pairing window.
+    @Published private(set) var canOpenIMCP = false
 
     /// A listener change. The runtime applies one at a time, in order.
     private enum Change {
@@ -285,6 +310,56 @@ final class HelperRuntime: ObservableObject {
             print(homeKitStatus.text)
             fflush(stdout)
         }
+    }
+
+    /// Finds iMCP by its bundle identifier.
+    func findIMCP() {
+        canOpenIMCP = Self.iMCPURL() != nil
+    }
+
+    /// Opens iMCP's pairing window.
+    /// Opens the URL with iMCP itself, found by its bundle identifier,
+    /// not with whichever app claims the scheme,
+    /// so another app can't show a fake pairing window and capture the code.
+    /// UIKit on Mac Catalyst can't do this, so it uses AppKit's shared workspace.
+    func openIMCP() {
+        guard
+            let workspace = Self.workspace,
+            let application = Self.iMCPURL(),
+            let configurationClass = NSClassFromString("NSWorkspaceOpenConfiguration") as? NSObject.Type
+        else {
+            canOpenIMCP = false
+            return
+        }
+        let open = NSSelectorFromString("openURLs:withApplicationAtURL:configuration:completionHandler:")
+        guard workspace.responds(to: open) else {
+            canOpenIMCP = false
+            return
+        }
+        typealias Open = @convention(c) (NSObject, Selector, NSArray, NSURL, NSObject, AnyObject?) -> Void
+        unsafeBitCast(workspace.method(for: open), to: Open.self)(
+            workspace,
+            open,
+            [HomeHelperPairing.appPairingURL] as NSArray,
+            application as NSURL,
+            configurationClass.init(),
+            nil
+        )
+    }
+
+    private static var workspace: NSObject? {
+        (NSClassFromString("NSWorkspace") as AnyObject?)?
+            .perform(NSSelectorFromString("sharedWorkspace"))?
+            .takeUnretainedValue() as? NSObject
+    }
+
+    private static func iMCPURL() -> URL? {
+        workspace?
+            .perform(
+                NSSelectorFromString("URLForApplicationWithBundleIdentifier:"),
+                with: HomeHelperPairing.appBundleIdentifier
+            )?
+            .takeUnretainedValue() as? URL
     }
 
     /// Brings the window to the front, so the pairing code is visible.

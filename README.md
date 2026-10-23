@@ -637,7 +637,15 @@ iMCP launches the helper if it isn't running,
 and the helper asks for HomeKit access.
 The first time, the helper's window shows an eight-character pairing code,
 such as `7KQ2-M9XD`;
-choose Copy Code, and paste the code in iMCP's Pair with iMCP Helper window.
+and numbered steps:
+choose Copy Code,
+choose Open iMCP… to open iMCP's Pair with iMCP Helper window,
+then paste the code and click Pair.
+The button opens the URL `imcp://pair`, which carries no data;
+iMCP only opens its pairing window for it.
+The helper opens that URL only with the app that has iMCP's bundle ID, `co.dododo.iMCP`;
+if you built iMCP with another bundle ID,
+the helper tells you to choose Pair… in Settings > Services > Home instead.
 If the helper's window is behind other windows,
 choose Show iMCP Helper in iMCP's window.
 The code works once:
@@ -645,8 +653,7 @@ when you pair, iMCP sends the helper a new random key,
 and both apps keep that key in their keychains.
 After five wrong codes, the helper shows a new one.
 To pair again, choose Pair Again in the helper's window,
-which ends iMCP's connection and shows a new code,
-then choose Pair… in Settings > Services > Home.
+which ends iMCP's connection and shows a new code and the same steps.
 The helper keeps running after iMCP quits;
 choose Quit iMCP Helper from its app menu, or press Command-Q, to stop it.
 The window also reports startup and permission errors.
