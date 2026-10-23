@@ -891,7 +891,8 @@ private final class PairingWindow: NSObject, NSWindowDelegate {
     private let pair: (String) async throws -> Void
     private let showHelper: () async -> Void
     private var window: NSWindow?
-    private var continuation: CheckedContinuation<Bool, Never>?
+    /// Every caller that waits for this window's result.
+    private var continuations: [CheckedContinuation<Bool, Never>] = []
 
     private init(message: String, pair: @escaping (String) async throws -> Void, showHelper: @escaping () async -> Void)
     {
@@ -900,7 +901,8 @@ private final class PairingWindow: NSObject, NSWindowDelegate {
         self.showHelper = showHelper
     }
 
-    /// Shows the window and returns whether the user paired, or false if a pairing window is already open.
+    /// Shows the window and returns whether the user paired.
+    /// If the window is already open, brings it to the front and returns its result.
     static func run(
         message: String,
         pair: @escaping (String) async throws -> Void,
@@ -909,13 +911,12 @@ private final class PairingWindow: NSObject, NSWindowDelegate {
         if let current {
             current.window?.makeKeyAndOrderFront(nil)
             NSApp.activate()
-            return false
+            return await withCheckedContinuation { current.continuations.append($0) }
         }
         let controller = PairingWindow(message: message, pair: pair, showHelper: showHelper)
         current = controller
-        defer { current = nil }
         return await withCheckedContinuation { continuation in
-            controller.continuation = continuation
+            controller.continuations.append(continuation)
             controller.show()
         }
     }
@@ -924,7 +925,7 @@ private final class PairingWindow: NSObject, NSWindowDelegate {
         let view = PairingView(
             model: model,
             pair: { [weak self] in self?.submit() },
-            cancel: { [weak self] in self?.finish(paired: false) },
+            cancel: { [weak self] in self?.cancel() },
             showHelper: { [weak self] in
                 guard let self else { return }
                 Task { await self.showHelper() }
@@ -954,9 +955,15 @@ private final class PairingWindow: NSObject, NSWindowDelegate {
             return
         }
         model.error = nil
+        // Until the attempt ends, the window can't be cancelled or closed,
+        // so its result is the attempt's result.
         model.isPairing = true
+        window?.standardWindowButton(.closeButton)?.isEnabled = false
         Task {
-            defer { model.isPairing = false }
+            defer {
+                model.isPairing = false
+                window?.standardWindowButton(.closeButton)?.isEnabled = true
+            }
             do {
                 try await pair(code)
                 finish(paired: true)
@@ -969,12 +976,23 @@ private final class PairingWindow: NSObject, NSWindowDelegate {
         }
     }
 
+    private func cancel() {
+        guard !model.isPairing else { return }
+        finish(paired: false)
+    }
+
     private func finish(paired: Bool) {
-        guard let continuation else { return }
-        self.continuation = nil
+        guard Self.current === self else { return }
+        Self.current = nil
         window?.delegate = nil
         window?.close()
-        continuation.resume(returning: paired)
+        let waiting = continuations
+        continuations = []
+        for continuation in waiting { continuation.resume(returning: paired) }
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        !model.isPairing
     }
 
     func windowWillClose(_ notification: Foundation.Notification) {
@@ -1010,6 +1028,7 @@ private struct PairingView: View {
                 if model.isPairing { ProgressView().controlSize(.small) }
                 Button("Cancel", role: .cancel, action: cancel)
                     .keyboardShortcut(.cancelAction)
+                    .disabled(model.isPairing)
                 Button("Pair", action: pair)
                     .keyboardShortcut(.defaultAction)
                     .disabled(model.isPairing)
