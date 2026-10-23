@@ -175,9 +175,7 @@ actor HomeService: Service, HomeBackend {
         // One deadline bounds discovery, resolution, and every connection attempt.
         let clock = ContinuousClock()
         let deadline = clock.now + .seconds(15)
-        // The chosen helper's latest results, kept while it briefly stops advertising,
-        // as it does when the user makes a new code.
-        var chosenAttempts: [HelperAttempt] = []
+        var log = HelperAttemptLog()
         repeat {
             try await checkHelperIsRunning(pid)
             // Discover each time, because a new pairing code moves the helper to a new port.
@@ -185,8 +183,8 @@ actor HomeService: Service, HomeBackend {
             // Try the helper that iMCP launched or found running first, then any other.
             // Only the TLS handshake decides whether a helper can be trusted.
             let ordered = candidates.filter { $0.processID == pid } + candidates.filter { $0.processID != pid }
-            var roundChosenAttempts: [HelperAttempt] = []
-            var otherAttempts: [HelperAttempt] = []
+            var chosenAttempts: [HelperAttempt] = []
+            var otherAttempts: [String: HelperAttempt] = [:]
             for candidate in ordered where clock.now < deadline {
                 let attempt: HelperAttempt
                 if candidate.protocolVersion != HomeHelperPairing.protocolVersion {
@@ -209,18 +207,41 @@ actor HomeService: Service, HomeBackend {
                     }
                 }
                 if candidate.processID == pid {
-                    roundChosenAttempts.append(attempt)
+                    chosenAttempts.append(attempt)
                 } else {
-                    otherAttempts.append(attempt)
+                    otherAttempts[candidate.name] = attempt
                 }
             }
-            if !roundChosenAttempts.isEmpty { chosenAttempts = roundChosenAttempts }
+            log.record(chosen: chosenAttempts, others: otherAttempts)
             try await checkHelperIsRunning(pid)
-            let attempts =
-                chosenAttempts.map { (chosen: true, attempt: $0) } + otherAttempts.map { (chosen: false, attempt: $0) }
-            if let failure = Self.connectionFailure(attempts, deadlinePassed: clock.now >= deadline) { throw failure }
+            if let failure = log.failure(deadlinePassed: false) { throw failure }
             try await Task.sleep(until: min(clock.now + .milliseconds(250), deadline), clock: clock)
-        } while true
+        } while clock.now < deadline
+        // Decide from the stored results instead of starting a pass after the deadline.
+        throw log.failure(deadlinePassed: true) ?? HomeError("iMCP Helper didn't accept a connection.")
+    }
+
+    /// The latest results from each helper during one connection operation.
+    struct HelperAttemptLog {
+        /// The chosen helper's latest results, kept while it briefly stops advertising,
+        /// as it does when the user makes a new code.
+        private(set) var chosen: [HelperAttempt] = []
+        /// Other helpers' latest results by Bonjour service name.
+        private(set) var others: [String: HelperAttempt] = [:]
+
+        /// Records one discovery pass.
+        /// Results replace older ones from the same helper, and helpers that didn't appear keep theirs.
+        mutating func record(chosen roundChosen: [HelperAttempt], others roundOthers: [String: HelperAttempt]) {
+            if !roundChosen.isEmpty { chosen = roundChosen }
+            others.merge(roundOthers) { _, new in new }
+        }
+
+        func failure(deadlinePassed: Bool) -> Error? {
+            HomeService.connectionFailure(
+                chosen.map { (chosen: true, attempt: $0) } + others.values.map { (chosen: false, attempt: $0) },
+                deadlinePassed: deadlinePassed
+            )
+        }
     }
 
     /// What happened when iMCP tried one helper advertisement.
@@ -535,6 +556,8 @@ actor HomeService: Service, HomeBackend {
 
 /// A helper's local-only Bonjour advertisement, resolved to its port and TXT record.
 struct HelperCandidate: Equatable, Sendable {
+    /// The Bonjour service name, which identifies the helper between discovery passes.
+    let name: String
     let port: NWEndpoint.Port
     let protocolVersion: Int?
     let processID: pid_t?
@@ -546,7 +569,10 @@ struct HelperCandidate: Equatable, Sendable {
 /// so this browses without them and resolves each service with DNS-SD.
 @MainActor
 final class HelperResolution {
+    private let name: String
     private var continuation: CheckedContinuation<HelperCandidate, Error>?
+
+    private init(name: String) { self.name = name }
 
     /// Browses for helpers on this Mac and resolves each one at the same time.
     /// Waits up to three seconds for the first advertisement, then briefly for others,
@@ -590,7 +616,7 @@ final class HelperResolution {
         domain: String,
         until deadline: ContinuousClock.Instant = .now + .seconds(5)
     ) async throws -> HelperCandidate {
-        let resolution = HelperResolution()
+        let resolution = HelperResolution(name: name)
         var reference: DNSServiceRef?
         defer { if let reference { DNSServiceRefDeallocate(reference) } }
         let timeout = Task {
@@ -630,6 +656,7 @@ final class HelperResolution {
                         resolution.finish(
                             .success(
                                 HelperCandidate(
+                                    name: resolution.name,
                                     port: port,
                                     protocolVersion: value(HomeHelperPairing.protocolVersionTXTKey).flatMap { Int($0) },
                                     processID: value(HomeHelperPairing.processIDTXTKey).flatMap { pid_t($0) }

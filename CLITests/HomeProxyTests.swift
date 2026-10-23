@@ -141,12 +141,18 @@ final class HomeHelperPairingTests: XCTestCase {
 
     @MainActor
     func testResolvesAndDiscoversLocalOnlyServices() async throws {
-        let current = HelperCandidate(port: 54321, protocolVersion: 2, processID: 4242)
-        let old = HelperCandidate(port: 54322, protocolVersion: nil, processID: nil)
+        let suffix = UUID().uuidString.prefix(8)
+        let current = HelperCandidate(
+            name: "iMCP Helper Test \(suffix)",
+            port: 54321,
+            protocolVersion: 2,
+            processID: 4242
+        )
+        let old = HelperCandidate(name: "iMCP Helper Old \(suffix)", port: 54322, protocolVersion: nil, processID: nil)
         var registrations: [DNSServiceRef] = []
         defer { registrations.forEach(DNSServiceRefDeallocate) }
         for (entries, candidate) in [(["protocol=2", "pid=4242"], current), ([], old)] {
-            let name = "iMCP Helper Test \(UUID().uuidString.prefix(8))"
+            let name = candidate.name
             let record = entries.flatMap { [UInt8($0.utf8.count)] + Array($0.utf8) }
             var reference: DNSServiceRef?
             let status = DNSServiceRegister(
@@ -235,6 +241,27 @@ final class HomeHelperPairingTests: XCTestCase {
             deadline: .now + .seconds(1)
         )
         withExtendedLifetime(server) {}
+    }
+
+    func testKeepsEachHelpersLatestResultAcrossPasses() {
+        let rejected = HomeService.PairingError.rejected.localizedDescription
+        // The chosen helper runs without advertising while another helper rejects the code,
+        // and the last pass, at the deadline, finds nothing.
+        var log = HomeService.HelperAttemptLog()
+        log.record(chosen: [], others: ["iMCP Helper (2)": .rejected])
+        XCTAssertNil(log.failure(deadlinePassed: false))
+        log.record(chosen: [], others: [:])
+        XCTAssertEqual(log.failure(deadlinePassed: true)?.localizedDescription, rejected)
+
+        // A helper's newer result replaces its older one.
+        log.record(chosen: [], others: ["iMCP Helper (2)": .unavailable])
+        XCTAssertTrue(log.failure(deadlinePassed: true)?.localizedDescription.contains("15 seconds") == true)
+
+        // The chosen helper's results stay while it stops advertising, and decide at the deadline.
+        var chosen = HomeService.HelperAttemptLog()
+        chosen.record(chosen: [.unavailable], others: [:])
+        chosen.record(chosen: [], others: ["iMCP Helper (2)": .rejected])
+        XCTAssertTrue(chosen.failure(deadlinePassed: true)?.localizedDescription.contains("15 seconds") == true)
     }
 
     func testReportsFailuresOnlyAfterEveryCandidateAnswers() {
