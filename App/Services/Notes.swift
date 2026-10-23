@@ -3,7 +3,7 @@ import OSLog
 import TopoText
 
 private let log = Logger.service("notes")
-private let notesContainerURL = Store.defaultRoot
+private let notesContainerURL = TopoText.Store.defaultRoot
 private let notesDatabaseName = "NoteStore.sqlite"
 private let notesDatabasePath = notesContainerURL.appendingPathComponent(notesDatabaseName).path
 private let notesContainerBookmarkKey: String = "me.mattt.iMCP.notesContainerBookmark"
@@ -86,9 +86,9 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
                     ),
                     "limit": .integer(
                         description: "Maximum notes to return",
-                        default: .int(Note.FetchRequest.defaultLimit),
+                        default: .int(TopoText.Note.FetchRequest.defaultLimit),
                         minimum: 1,
-                        maximum: Note.FetchRequest.maximumLimit
+                        maximum: TopoText.Note.FetchRequest.maximumLimit
                     ),
                     "cursor": .string(
                         description: "The nextCursor of a previous result, to fetch the notes after it"
@@ -104,7 +104,7 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
         ) { arguments in
             log.debug("Starting notes fetch with arguments: \(arguments)")
 
-            var request = Note.FetchRequest()
+            var request = TopoText.Note.FetchRequest()
             request.query = try self.argument("query", in: arguments, as: \.stringValue)
             if let limit = try self.argument("limit", in: arguments, as: \.intValue) {
                 request.limit = limit
@@ -136,7 +136,7 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
                 )
             }
             if let cursor = try self.argument("cursor", in: arguments, as: \.stringValue) {
-                guard let cursor = Note.FetchRequest.Cursor(cursor) else {
+                guard let cursor = TopoText.Note.FetchRequest.Cursor(cursor) else {
                     throw ArgumentError.invalid("cursor must be the nextCursor of a previous result")
                 }
                 request.cursor = cursor
@@ -208,7 +208,7 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
         ) { arguments in
             guard
                 let argument = try self.argument("id", in: arguments, as: \.stringValue),
-                let id = Note.ID(argument.trimmingCharacters(in: .whitespacesAndNewlines))
+                let id = TopoText.Note.ID(argument.trimmingCharacters(in: .whitespacesAndNewlines))
             else {
                 throw ArgumentError.invalid("id must be the @id of a note")
             }
@@ -266,7 +266,7 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
         }
 
         // The picker grants access to the folder for as long as the app runs.
-        try await Store(root: selectedURL).checkAccess()
+        try await TopoText.Store(root: selectedURL).checkAccess()
 
         try storeBookmark(for: selectedURL)
         log.debug("Granted access to Notes database")
@@ -351,10 +351,10 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
     /// Runs an operation on the store, inside the grant for the bookmarked folder
     /// unless the database is readable at the default path.
     /// Errors from TopoText are rethrown as `StoreError`, which describes them for the client.
-    private func withStore<T>(_ operation: (Store) async throws -> T) async throws -> T {
+    private func withStore<T>(_ operation: (TopoText.Store) async throws -> T) async throws -> T {
         do {
             if canAccessDatabaseAtDefaultPath {
-                return try await operation(Store(root: notesContainerURL))
+                return try await operation(TopoText.Store(root: notesContainerURL))
             }
 
             let directory = try resolveBookmarkedContainer()
@@ -366,10 +366,10 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
                 throw DatabaseAccessError.securityScopeAccessFailed
             }
             defer { directory.stopAccessingSecurityScopedResource() }
-            return try await operation(Store(root: directory))
-        } catch let error as NotesError {
+            return try await operation(TopoText.Store(root: directory))
+        } catch let error as TopoText.NotesError {
             throw StoreError(underlying: error)
-        } catch let error as Note.FetchRequest.ValidationError {
+        } catch let error as TopoText.Note.FetchRequest.ValidationError {
             throw StoreError(underlying: error)
         }
     }
@@ -432,13 +432,13 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
 
         var errorDescription: String? {
             switch underlying {
-            case NotesError.storeNotFound:
+            case TopoText.NotesError.storeNotFound:
                 return
                     "The Notes folder has no Notes database; switch Notes off and on in the iMCP menu and select the group.com.apple.notes folder"
-            case NotesError.storeNotReadable:
+            case TopoText.NotesError.storeNotReadable:
                 return
                     "The Notes database or its write-ahead log files cannot be read; switch Notes off and on in the iMCP menu to grant the Notes folder again"
-            case is Note.FetchRequest.ValidationError:
+            case is TopoText.Note.FetchRequest.ValidationError:
                 return "Invalid argument: \(underlying.localizedDescription)"
             default:
                 return underlying.localizedDescription
@@ -515,7 +515,7 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
 
 // MARK: -
 
-extension Folder {
+extension TopoText.Folder {
     /// Whether the folder has the given identifier or name (ignoring case and diacritics).
     fileprivate func matches(_ nameOrIdentifier: String) -> Bool {
         let argument = nameOrIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -524,7 +524,7 @@ extension Folder {
     }
 
     /// The folder as a JSON object for tool output.
-    fileprivate func value(in folders: [Folder]) -> Value {
+    fileprivate func value(in folders: [TopoText.Folder]) -> Value {
         var object: [String: Value] = [
             "@id": .string(id.description),
             "name": .string(name),
@@ -546,9 +546,9 @@ extension Folder {
     }
 }
 
-extension Note {
+extension TopoText.Note {
     /// The note's metadata as the properties of a JSON object for tool output.
-    fileprivate func properties(in folders: [Folder]) -> [String: Value] {
+    fileprivate func properties(in folders: [TopoText.Folder]) -> [String: Value] {
         var object: [String: Value] = [
             "@type": "NoteDigitalDocument",
             "@id": .string(id.description),
