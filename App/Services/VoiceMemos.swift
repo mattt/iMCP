@@ -358,12 +358,23 @@ final class VoiceMemosService: NSObject, Service, NSOpenSavePanelDelegate {
         }
 
         var isStale = false
-        return try URL(
+        let url = try URL(
             resolvingBookmarkData: bookmarkData,
             options: .withSecurityScope,
             relativeTo: nil,
             bookmarkDataIsStale: &isStale
         )
+        if isStale {
+            // A stale bookmark still resolves, but it must be recreated and stored again.
+            // If that fails, this resolution still works, so keep it and retry next time.
+            log.debug("Renewing the stale Voice Memos folder bookmark")
+            do {
+                try withSecurityScopedAccess(url, storeBookmark)
+            } catch {
+                log.error("Failed to renew the Voice Memos folder bookmark: \(error.localizedDescription)")
+            }
+        }
+        return url
     }
 
     private func withSecurityScopedAccess<T>(_ url: URL, _ operation: (URL) throws -> T) throws -> T {
@@ -375,15 +386,18 @@ final class VoiceMemosService: NSObject, Service, NSOpenSavePanelDelegate {
         return try operation(url)
     }
 
-    /// Runs an operation on a store for the library at the default path,
-    /// or inside the grant for the bookmarked folder.
+    /// Runs an operation on a store inside the grant for the bookmarked folder,
+    /// or for the library at the default path when nothing is bookmarked.
     ///
+    /// The bookmark comes first whenever one exists: while another call holds the grant,
+    /// the default path is readable too, but it stops being readable when that call ends,
+    /// so each call holds a grant of its own.
     /// Each store call finishes its database and file work before it returns,
     /// so the grant must stay open until the operation returns.
     /// Errors from TSRP are rethrown as `StoreError`, which describes them for the client.
     private func withStore<T>(_ operation: (TSRP.Store) async throws -> T) async throws -> T {
         do {
-            if canAccessStoreAtDefaultPath {
+            guard UserDefaults.standard.data(forKey: recordingsBookmarkKey) != nil else {
                 return try await operation(TSRP.Store(root: defaultRecordingsDirectory))
             }
 
