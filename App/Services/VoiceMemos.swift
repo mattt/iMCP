@@ -579,8 +579,8 @@ extension TSRP.Recording {
         if let date {
             object["date"] = .string(date.formatted(.iso8601))
         }
-        if let duration {
-            let totalSeconds = Int(duration.rounded())
+        // A damaged file or database can hold a duration too large for an integer.
+        if let duration, let totalSeconds = Int(exactly: duration.rounded()) {
             let hours = totalSeconds / 3600
             let minutes = totalSeconds % 3600 / 60
             let seconds = totalSeconds % 60
