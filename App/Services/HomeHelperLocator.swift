@@ -25,8 +25,15 @@ enum HomeHelperLocator {
 
     /// The protocol version that the helper at `url` declares,
     /// or nil for a helper from before pairing.
-    static func protocolVersion(at url: URL) -> Int? {
-        info(at: url)?[HomeHelperPairing.protocolVersionInfoKey] as? Int
+    /// Throws if its Info.plist can't be read,
+    /// which the sandbox can cause outside `/Applications`.
+    static func protocolVersion(at url: URL) throws -> Int? {
+        guard let info = info(at: url) else {
+            throw HomeError(
+                "iMCP can't read the Info.plist of iMCP Helper at \(url.path). Choose the helper again in Settings > Services > Home, then retry."
+            )
+        }
+        return info[HomeHelperPairing.protocolVersionInfoKey] as? Int
     }
 
     private static func info(at url: URL) -> [String: Any]? {

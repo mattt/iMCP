@@ -527,9 +527,12 @@ actor HomeService: Service, HomeBackend {
         }) {
             // A helper from before pairing doesn't advertise its process ID,
             // so check its Info.plist instead of waiting for its advertisement.
-            guard let bundleURL = running.bundleURL,
-                HomeHelperLocator.protocolVersion(at: bundleURL) == HomeHelperPairing.protocolVersion
-            else { throw HomeError(Self.outdatedHelperMessage) }
+            guard let bundleURL = running.bundleURL else {
+                throw HomeError("iMCP can't find the running iMCP Helper's app bundle. Quit iMCP Helper, then retry.")
+            }
+            guard try HomeHelperLocator.protocolVersion(at: bundleURL) == HomeHelperPairing.protocolVersion else {
+                throw HomeError(Self.outdatedHelperMessage)
+            }
             return running.processIdentifier
         }
         guard let url else {
@@ -537,7 +540,7 @@ actor HomeService: Service, HomeBackend {
                 "iMCP Helper isn't installed. Build it with Scripts/install-helper.sh, then turn Home on again."
             )
         }
-        guard HomeHelperLocator.protocolVersion(at: url) == HomeHelperPairing.protocolVersion else {
+        guard try HomeHelperLocator.protocolVersion(at: url) == HomeHelperPairing.protocolVersion else {
             throw HomeError(Self.outdatedHelperMessage)
         }
         let configuration = NSWorkspace.OpenConfiguration()

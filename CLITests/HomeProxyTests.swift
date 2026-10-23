@@ -482,8 +482,16 @@ final class HomeHelperLocatorTests: XCTestCase {
             "Current",
             [HomeHelperLocator.markerKey: true, HomeHelperPairing.protocolVersionInfoKey: 2]
         )
-        XCTAssertEqual(HomeHelperLocator.protocolVersion(at: current), 2)
-        XCTAssertNil(HomeHelperLocator.protocolVersion(at: try app("Old", [HomeHelperLocator.markerKey: true])))
+        XCTAssertEqual(try HomeHelperLocator.protocolVersion(at: current), 2)
+        XCTAssertNil(try HomeHelperLocator.protocolVersion(at: try app("Old", [HomeHelperLocator.markerKey: true])))
+        // A missing or unreadable Info.plist is an error, not an outdated helper.
+        XCTAssertThrowsError(try HomeHelperLocator.protocolVersion(at: directory.appendingPathComponent("Missing.app")))
+        let broken = directory.appendingPathComponent("Broken.app/Contents", isDirectory: true)
+        try FileManager.default.createDirectory(at: broken, withIntermediateDirectories: true)
+        try Data("not a property list".utf8).write(to: broken.appendingPathComponent("Info.plist"))
+        XCTAssertThrowsError(try HomeHelperLocator.protocolVersion(at: broken.deletingLastPathComponent())) { error in
+            XCTAssertTrue(error.localizedDescription.contains("can't read"))
+        }
     }
 
     func testHelperInfoPlistDeclaresTheCurrentProtocolVersion() throws {
