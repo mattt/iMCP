@@ -1,6 +1,6 @@
 import Network
-import OSLog
 import SwiftUI
+import UIKit
 
 @main
 struct HelperApp: App {
@@ -11,8 +11,24 @@ struct HelperApp: App {
             VStack(alignment: .leading, spacing: 16) {
                 Text("iMCP Helper").font(.title)
                 Text(runtime.status).textSelection(.enabled)
-                if runtime.canRetry {
-                    Button("Retry") { Task { await runtime.start() } }
+                if let code = runtime.pairingCode {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Pairing code").font(.headline)
+                        Text(code).font(.title2.monospaced()).textSelection(.enabled)
+                        Text("Enter this code in iMCP to turn on Home. A new code disconnects iMCP until you enter it.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        HStack {
+                            Button("Copy") { UIPasteboard.general.string = code }
+                            Button("New Code") { Task { await runtime.replacePairingCode() } }
+                        }
+                    }
+                }
+                HStack {
+                    if runtime.canRetry {
+                        Button("Retry") { Task { await runtime.start() } }
+                    }
+                    Button("Quit") { exit(0) }
                 }
             }
             .padding(24)
@@ -26,10 +42,11 @@ struct HelperApp: App {
 final class HelperRuntime: ObservableObject {
     @Published private(set) var canRetry = false
     @Published private(set) var status = "Starting HomeKit…"
+    @Published private(set) var pairingCode: String?
     private let backend = HomeKitBackend()
-    private let log = Logger.service("helper")
+    private let keychain = HomeHelperPairing.Keychain(service: "iMCP Helper pairing code")
     private var server: HelperServer?
-    private var parentMonitor: DispatchSourceProcess?
+    private var advertisement: HelperAdvertisement?
     private var started = false
 
     func start() async {
@@ -41,60 +58,51 @@ final class HelperRuntime: ObservableObject {
             fflush(stdout)
         }
         do {
-            try monitorParent()
-            // iMCP passes the port and a new secret in the environment.
-            // Without the secret, no client can prove that iMCP launched this helper.
-            let environment = ProcessInfo.processInfo.environment
-            guard let port = try requestedPort(environment),
-                let secret = environment[HomeHelperSecret.secretEnvironmentKey], !secret.isEmpty
-            else {
-                status =
-                    "iMCP Helper accepts connections only when iMCP launches it. Quit iMCP Helper, then turn Home on in iMCP."
-                return
-            }
-            let server = self.server ?? HelperServer(backend: backend, port: port, secret: secret)
+            let code = try pairingCode ?? storedOrNewPairingCode()
+            pairingCode = code
+            let server = self.server ?? HelperServer(backend: backend, code: code)
             self.server = server
             status = "Starting the local connection…"
-            do { try await server.start() } catch {
-                // Another process may hold the port and have received iMCP's secret.
-                // Exit instead of listening later with that secret,
-                // so iMCP launches a new helper with a new port and secret.
-                log.error("iMCP Helper couldn't listen on its port: \(homeErrorMessage(error), privacy: .public)")
-                exit(1)
-            }
+            try await advertise(port: server.start())
             status = "Waiting for HomeKit access…"
             try await backend.store.ensureLoaded()
             status = "HomeKit is ready. \(backend.store.homes.count) homes available."
         } catch {
-            status = "iMCP Helper failed: \(homeErrorMessage(error))"
-            started = false
-            canRetry = true
+            fail(error)
         }
     }
 
-    private func requestedPort(_ environment: [String: String]) throws -> NWEndpoint.Port? {
-        guard let value = environment[HomeHelperSecret.portEnvironmentKey] else { return nil }
-        guard let number = UInt16(value), number > 0, let port = NWEndpoint.Port(rawValue: number) else {
-            throw HomeError("\(HomeHelperSecret.portEnvironmentKey) requires a TCP port between 1 and 65535.")
+    /// Makes a new pairing code and ends the sessions that use the old one.
+    func replacePairingCode() async {
+        do {
+            let code = try HomeHelperPairing.generateCode()
+            try keychain.save(code)
+            pairingCode = code
+            guard let server else { return }
+            try await advertise(port: server.restart(code: code))
+        } catch {
+            fail(error)
         }
-        return port
     }
 
-    private func monitorParent() throws {
-        guard parentMonitor == nil else { return }
-        guard let index = CommandLine.arguments.firstIndex(of: "--parent-pid") else { return }
-        guard CommandLine.arguments.indices.contains(index + 1),
-            let pid = Int32(CommandLine.arguments[index + 1]), pid > 1
-        else {
-            throw HomeError("--parent-pid requires a valid process ID.")
-        }
-        #if targetEnvironment(macCatalyst)
-            let monitor = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: .main)
-            monitor.setEventHandler { exit(0) }
-            parentMonitor = monitor
-            monitor.resume()
-            // Close the race where the parent exits before the source is installed.
-            if kill(pid, 0) == -1 && errno == ESRCH { exit(0) }
-        #endif
+    private func fail(_ error: Error) {
+        status = "iMCP Helper failed: \(homeErrorMessage(error))"
+        started = false
+        canRetry = true
+    }
+
+    private func storedOrNewPairingCode() throws -> String {
+        if let code = try keychain.read(), HomeHelperPairing.normalize(code) != nil { return code }
+        let code = try HomeHelperPairing.generateCode()
+        try keychain.save(code)
+        return code
+    }
+
+    /// Advertises the listener's port, replacing any earlier advertisement.
+    private func advertise(port: NWEndpoint.Port) async throws {
+        advertisement?.stop()
+        let advertisement = HelperAdvertisement()
+        self.advertisement = advertisement
+        try await advertisement.start(port: port.rawValue)
     }
 }

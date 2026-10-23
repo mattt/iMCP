@@ -2,14 +2,18 @@ import AppKit
 import MCP
 import Network
 import XCTest
+import dnssd
 
 final class HomeProxyTests: XCTestCase {
     @MainActor
     func testLiveLaunchAndRecovery() async throws {
-        guard let path = ProcessInfo.processInfo.environment["IMCP_HELPER_PATH"] else {
-            throw XCTSkip("Set IMCP_HELPER_PATH to run the signed helper integration test.")
+        let environment = ProcessInfo.processInfo.environment
+        guard let path = environment["IMCP_HELPER_PATH"], let code = environment["IMCP_HELPER_CODE"] else {
+            throw XCTSkip(
+                "Set IMCP_HELPER_PATH and IMCP_HELPER_CODE (the helper's pairing code) to run the signed helper integration test."
+            )
         }
-        let backend = HomeService(helperURL: URL(fileURLWithPath: path))
+        let backend = HomeService(helperURL: URL(fileURLWithPath: path), pairingCode: code)
         let initial = await backend.isActivated
         XCTAssertFalse(initial)
         try await backend.activate()
@@ -42,58 +46,52 @@ final class HomeProxyTests: XCTestCase {
     }
 }
 
-final class HomeHelperSecretTests: XCTestCase {
-    func testGeneratesDistinctSecretsOf32Bytes() throws {
-        let first = try HomeHelperSecret.generate()
-        let second = try HomeHelperSecret.generate()
-        XCTAssertEqual(Data(base64Encoded: first)?.count, 32)
-        XCTAssertNotEqual(first, second)
+final class HomeHelperPairingTests: XCTestCase {
+    func testGeneratesCodesOfFourGroupsOfFive() throws {
+        let code = try HomeHelperPairing.generateCode()
+        XCTAssertEqual(code.split(separator: "-").map(\.count), [5, 5, 5, 5])
+        XCTAssertEqual(HomeHelperPairing.normalize(code)?.count, 20)
+        XCTAssertNotEqual(code, try HomeHelperPairing.generateCode())
     }
 
-    func testMatchesOnlyTheSameSecret() throws {
-        let secret = try HomeHelperSecret.generate()
-        XCTAssertTrue(HomeHelperSecret.matches(secret, secret))
-        XCTAssertFalse(HomeHelperSecret.matches(nil, secret))
-        XCTAssertFalse(HomeHelperSecret.matches("", secret))
-        XCTAssertFalse(HomeHelperSecret.matches(String(secret.dropLast()), secret))
-        XCTAssertFalse(HomeHelperSecret.matches(secret + "A", secret))
-        XCTAssertFalse(HomeHelperSecret.matches(try HomeHelperSecret.generate(), secret))
-        XCTAssertFalse(HomeHelperSecret.matches("", ""))
+    func testNormalizesSeparatorsCaseAndCrockfordSubstitutes() {
+        XCTAssertEqual(HomeHelperPairing.normalize("abcde-fghjk-mnpqr-stvwx"), "ABCDEFGHJKMNPQRSTVWX")
+        XCTAssertEqual(HomeHelperPairing.normalize("ABCDE FGHJK MNPQR STVWX"), "ABCDEFGHJKMNPQRSTVWX")
+        XCTAssertEqual(HomeHelperPairing.normalize("ABCDEFGHJKMNPQRSTVWX"), "ABCDEFGHJKMNPQRSTVWX")
+        XCTAssertEqual(HomeHelperPairing.normalize("oOiIl-LABCD-EFGHJ-KMNPQ"), "00111" + "1ABCDEFGHJKMNPQ")
+        XCTAssertNil(HomeHelperPairing.normalize("ABCDE-FGHJK-MNPQR-STVWU"))
+        XCTAssertNil(HomeHelperPairing.normalize("ABCDE-FGHJK-MNPQR-STVW"))
+        XCTAssertNil(HomeHelperPairing.normalize("ABCDE-FGHJK-MNPQR-STVWXY"))
+        XCTAssertNil(HomeHelperPairing.normalize(""))
+        XCTAssertEqual(HomeHelperPairing.format("abcdefghjkmnpqrstvwx"), "ABCDE-FGHJK-MNPQR-STVWX")
     }
 
-    func testHelperServesOnlyClientsWithTheSecret() async throws {
-        let secret = try HomeHelperSecret.generate()
-        let (server, port) = try await startServer(secret: secret)
-
-        // Strict mode drops requests before initialize,
-        // and the helper ends a connection that doesn't present the secret.
-        let early = try await exchange(#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#, port: port)
-        XCTAssertNil(early)
-
-        // A wrong or missing secret ends the connection without a reply.
-        for capabilities in [#"{"experimental":{"app.imcp.helper.secret":"wrong"}}"#, "{}"] {
-            let reply = try await exchange(
-                #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","#
-                    + #""clientInfo":{"name":"iMCP","version":"1"},"capabilities":"# + capabilities + "}}",
-                port: port
-            )
-            XCTAssertNil(reply, capabilities)
+    func testDerivesTheSameKeyForEveryFormOfACode() throws {
+        func bytes(_ code: String) throws -> Data {
+            try HomeHelperPairing.key(for: code).withUnsafeBytes { Data($0) }
         }
+        // HKDF-SHA256 with an empty salt; both apps must derive these bytes.
+        XCTAssertEqual(
+            try bytes("01234-56789-ABCDE-FGHJK").map { String(format: "%02x", $0) }.joined(),
+            "e9f79abfdb8a9b8342ab0af7f4aac9c98e77fa9f6979bf52679a0f85621a5591"
+        )
+        XCTAssertEqual(try bytes("o1234 56789 abcde fghjk"), try bytes("0123456789ABCDEFGHJK"))
+        XCTAssertNotEqual(try bytes("0123456789ABCDEFGHJK"), try bytes("0123456789ABCDEFGHJM"))
+        XCTAssertThrowsError(try HomeHelperPairing.key(for: "not a code"))
+    }
 
-        let connection = NWConnection(host: .ipv4(.loopback), port: NWEndpoint.Port(rawValue: port)!, using: .tcp)
-        let client = MCP.Client(
-            name: "iMCP",
-            version: "1",
-            capabilities: .init(experimental: [HomeHelperSecret.capabilityKey: secret])
-        )
-        let result = try await client.connect(
-            transport: NetworkTransport(
-                connection: connection,
-                heartbeatConfig: .init(enabled: false),
-                reconnectionConfig: .disabled
-            )
-        )
-        XCTAssertEqual(result.serverInfo.name, "iMCP Helper")
+    func testRightCodeCompletesASessionAndWrongCodeFailsTheHandshake() async throws {
+        let code = try HomeHelperPairing.generateCode()
+        let server = HelperServer(backend: StaticHomeBackend(), code: code)
+        let port = try await server.start()
+
+        let wrongCodeFails = try await handshakeFails(port: port, code: HomeHelperPairing.generateCode())
+        XCTAssertTrue(wrongCodeFails)
+        // Without TLS, the helper sends at most a TLS alert, then closes the connection.
+        let plaintext = try await plaintextReply(#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#, port: port)
+        XCTAssertFalse(plaintext?.contains("jsonrpc") ?? false, plaintext ?? "")
+
+        let client = try await connectClient(port: port, code: code)
         let tools = try await client.listTools().tools
         XCTAssertEqual(tools.count, 28)
         let call = try await client.callTool(name: "homes_list")
@@ -102,31 +100,124 @@ final class HomeHelperSecretTests: XCTestCase {
         withExtendedLifetime(server) {}
     }
 
-    /// Starts a helper server on a free loopback port.
-    /// Another socket can take the selected port before the listener binds it,
-    /// so this selects a new port if that happens.
-    private func startServer(secret: String) async throws -> (HelperServer, UInt16) {
-        for attempt in 1 ... 3 {
-            let port = try HomeService().availableLoopbackPort()
-            let server = HelperServer(
-                backend: StaticHomeBackend(),
-                port: try XCTUnwrap(NWEndpoint.Port(rawValue: port)),
-                secret: secret
-            )
-            do {
-                try await server.start()
-                return (server, port)
-            } catch {
-                if attempt == 3 { throw error }
+    func testNewCodeEndsSessionsAndReplacesTheKey() async throws {
+        let old = try HomeHelperPairing.generateCode()
+        let new = try HomeHelperPairing.generateCode()
+        let server = HelperServer(backend: StaticHomeBackend(), code: old)
+        let oldPort = try await server.start()
+        let session = NWConnection(
+            host: .ipv4(.loopback),
+            port: oldPort,
+            using: try HomeHelperPairing.parameters(code: old)
+        )
+        defer { session.cancel() }
+        session.start(queue: .main)
+        try await waitUntilReady(session)
+
+        let start = ContinuousClock.now
+        let port = try await server.restart(code: new)
+        let ended = await withCheckedContinuation { continuation in
+            session.receive(minimumIncompleteLength: 1, maximumLength: 65536) { _, _, isComplete, error in
+                continuation.resume(returning: isComplete || error != nil)
             }
         }
-        throw HomeError("No free loopback port for the helper server.")
+        // The server ends sessions that don't initialize after five seconds; the restart must be sooner.
+        XCTAssertTrue(ended)
+        XCTAssertLessThan(ContinuousClock.now - start, .seconds(3))
+
+        let oldCodeFails = try await handshakeFails(port: port, code: old)
+        XCTAssertTrue(oldCodeFails)
+        let client = try await connectClient(port: port, code: new)
+        let tools = try await client.listTools().tools
+        XCTAssertEqual(tools.count, 28)
+        await client.disconnect()
+        withExtendedLifetime(server) {}
     }
 
-    /// Sends one JSON-RPC message and returns the first line of the reply,
-    /// or nil if the helper closes the connection first.
-    private func exchange(_ message: String, port: UInt16) async throws -> String? {
-        let connection = NWConnection(host: .ipv4(.loopback), port: NWEndpoint.Port(rawValue: port)!, using: .tcp)
+    @MainActor
+    func testResolvesTheProtocolVersionOfALocalOnlyService() async throws {
+        for (record, expected) in [("protocol=2", 2), (nil, nil)] as [(String?, Int?)] {
+            let name = "iMCP Helper Test \(UUID().uuidString.prefix(8))"
+            let entry = record.map { [UInt8($0.utf8.count)] + Array($0.utf8) } ?? []
+            var reference: DNSServiceRef?
+            let status = DNSServiceRegister(
+                &reference,
+                0,
+                kDNSServiceInterfaceIndexLocalOnly,
+                name,
+                HomeHelperPairing.serviceType,
+                "local.",
+                "localhost.",
+                UInt16(54321).bigEndian,
+                UInt16(entry.count),
+                entry,
+                nil,
+                nil
+            )
+            XCTAssertEqual(status, DNSServiceErrorType(kDNSServiceErr_NoError))
+            let registration = try XCTUnwrap(reference)
+            defer { DNSServiceRefDeallocate(registration) }
+            DNSServiceSetDispatchQueue(registration, .main)
+            let service = try await HelperResolution.resolve(
+                name: name,
+                type: HomeHelperPairing.serviceType,
+                domain: "local."
+            )
+            XCTAssertEqual(service.port, 54321)
+            XCTAssertEqual(service.protocolVersion, expected)
+        }
+    }
+
+    private func connectClient(port: NWEndpoint.Port, code: String) async throws -> MCP.Client {
+        let connection = NWConnection(
+            host: .ipv4(.loopback),
+            port: port,
+            using: try HomeHelperPairing.parameters(code: code)
+        )
+        let client = MCP.Client(name: "iMCP", version: "1")
+        let result = try await client.connect(
+            transport: NetworkTransport(
+                connection: connection,
+                heartbeatConfig: .init(enabled: false),
+                reconnectionConfig: .disabled
+            )
+        )
+        XCTAssertEqual(result.serverInfo.name, "iMCP Helper")
+        return client
+    }
+
+    private func waitUntilReady(_ connection: NWConnection) async throws {
+        for _ in 0 ..< 50 {
+            if connection.state == .ready { return }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        throw HomeError("The connection didn't become ready: \(connection.state)")
+    }
+
+    /// Whether a connection with `code` fails its TLS handshake with the server.
+    private func handshakeFails(port: NWEndpoint.Port, code: String) async throws -> Bool {
+        let connection = NWConnection(
+            host: .ipv4(.loopback),
+            port: port,
+            using: try HomeHelperPairing.parameters(code: code)
+        )
+        defer { connection.cancel() }
+        connection.start(queue: .main)
+        for _ in 0 ..< 50 {
+            try await Task.sleep(for: .milliseconds(100))
+            switch connection.state {
+            case .ready: return false
+            case .waiting(.tls), .failed(.tls): return true
+            default: continue
+            }
+        }
+        throw HomeError("The handshake neither completed nor failed: \(connection.state)")
+    }
+
+    /// Sends one JSON-RPC message without TLS and returns the first line of the reply,
+    /// or what arrived before the helper closed the connection, or nil if nothing did.
+    private func plaintextReply(_ message: String, port: NWEndpoint.Port) async throws -> String? {
+        let connection = NWConnection(host: .ipv4(.loopback), port: port, using: .tcp)
         defer { connection.cancel() }
         connection.start(queue: .main)
         connection.send(content: Data((message + "\n").utf8), completion: .idempotent)
@@ -240,6 +331,36 @@ final class HomeHelperLocatorTests: XCTestCase {
                 isHelper: HomeHelperLocator.isHelper(at:)
             )
         )
+    }
+
+    func testReadsTheProtocolVersion() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        func app(_ name: String, _ info: [String: Any]) throws -> URL {
+            let url = directory.appendingPathComponent("\(name).app")
+            let contents = url.appendingPathComponent("Contents", isDirectory: true)
+            try FileManager.default.createDirectory(at: contents, withIntermediateDirectories: true)
+            let data = try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
+            try data.write(to: contents.appendingPathComponent("Info.plist"))
+            return url
+        }
+        let current = try app(
+            "Current",
+            [HomeHelperLocator.markerKey: true, HomeHelperPairing.protocolVersionInfoKey: 2]
+        )
+        XCTAssertEqual(HomeHelperLocator.protocolVersion(at: current), 2)
+        XCTAssertNil(HomeHelperLocator.protocolVersion(at: try app("Old", [HomeHelperLocator.markerKey: true])))
+    }
+
+    func testHelperInfoPlistDeclaresTheCurrentProtocolVersion() throws {
+        let plist = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .appendingPathComponent("../Helper/Info.plist")
+        let info = try XCTUnwrap(
+            PropertyListSerialization.propertyList(from: Data(contentsOf: plist), format: nil) as? [String: Any]
+        )
+        XCTAssertEqual(info[HomeHelperPairing.protocolVersionInfoKey] as? Int, HomeHelperPairing.protocolVersion)
     }
 
     func testInstallLocations() {

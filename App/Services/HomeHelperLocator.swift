@@ -20,11 +20,19 @@ enum HomeHelperLocator {
 
     /// Whether the app at `url` declares itself as iMCP Helper.
     static func isHelper(at url: URL) -> Bool {
+        info(at: url)?[markerKey] as? Bool == true
+    }
+
+    /// The protocol version that the helper at `url` declares,
+    /// or nil for a helper from before pairing.
+    static func protocolVersion(at url: URL) -> Int? {
+        info(at: url)?[HomeHelperPairing.protocolVersionInfoKey] as? Int
+    }
+
+    private static func info(at url: URL) -> [String: Any]? {
         let plist = url.appendingPathComponent("Contents/Info.plist")
-        guard let data = try? Data(contentsOf: plist),
-            let info = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
-        else { return false }
-        return info[markerKey] as? Bool == true
+        guard let data = try? Data(contentsOf: plist) else { return nil }
+        return try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
     }
 
     /// Whether a running app is the helper that iMCP should use.

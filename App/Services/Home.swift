@@ -1,9 +1,9 @@
 import AppKit
-import Darwin
 import MCP
 import Network
 import OSLog
 import UniformTypeIdentifiers
+import dnssd
 
 /// Serves the Home tools by proxying to the Catalyst helper that holds HomeKit access.
 ///
@@ -11,26 +11,47 @@ import UniformTypeIdentifiers
 /// so the helper runs as a separate Catalyst app,
 /// which developers build and sign with `Scripts/install-helper.sh`,
 /// and implements the same tool definitions from `HomeTools`.
-/// This service launches the helper, connects to it over the loopback interface,
+/// This service launches the helper if it isn't running, finds it with Bonjour,
+/// connects to it over the loopback interface with TLS
+/// that uses a key derived from the helper's pairing code,
 /// and forwards each call as an MCP `tools/call` request.
 actor HomeService: Service, HomeBackend {
     static let shared = HomeService()
 
+    /// Thrown when iMCP has no pairing code for the helper, or the helper rejects it.
+    enum PairingError: LocalizedError {
+        case missing
+        case rejected
+
+        var errorDescription: String? {
+            switch self {
+            case .missing:
+                "iMCP needs the pairing code from iMCP Helper's window. Enter it in Settings > Services > Home."
+            case .rejected:
+                "iMCP Helper rejected the pairing code. Enter the code from its window in Settings > Services > Home."
+            }
+        }
+    }
+
+    private static let outdatedHelperMessage =
+        "iMCP Helper doesn't match this version of iMCP. Quit iMCP Helper, then rebuild it with Scripts/install-helper.sh."
+
     private let log = Logger.service("home")
     private let helperURL: URL?
+    private let pairingCode: String?
+    private let keychain = HomeHelperPairing.Keychain(service: "iMCP Helper pairing code")
     private var client: MCP.Client?
     private var connection: NWConnection?
     private var connecting: Task<Void, Error>?
     private var authorized = false
-    private var launchedHelper: LaunchedHelper?
+    private var helperPID: pid_t?
 
-    private struct LaunchedHelper: Sendable {
-        let pid: pid_t
-        let endpoint: NWEndpoint
-        let secret: String
+    /// Creates a service that uses `helperURL` instead of the helper that the user chose,
+    /// and `pairingCode` instead of the code in the keychain.
+    init(helperURL: URL? = nil, pairingCode: String? = nil) {
+        self.helperURL = helperURL
+        self.pairingCode = pairingCode
     }
-
-    init(helperURL: URL? = nil) { self.helperURL = helperURL }
 
     // MARK: - Service
 
@@ -48,17 +69,22 @@ actor HomeService: Service, HomeBackend {
     }
 
     /// Switches an active Home service to a newly chosen helper.
-    /// Quits the helper that iMCP launched, then reconnects,
+    /// Quits the running helper, then reconnects,
     /// which launches the chosen one.
     func useChosenHelper() async throws {
         guard isActivated else { return }
-        if let pid = launchedHelper?.pid { try await quitHelper(pid: pid) }
-        launchedHelper = nil
+        if let helperPID { try await quitHelper(pid: helperPID) }
+        helperPID = nil
+        try await connect()
+    }
+
+    /// Reconnects with the pairing code in the keychain.
+    func usePairingCode() async throws {
         try await connect()
     }
 
     /// Quits a helper and waits until it has exited,
-    /// so a reconnect doesn't reuse it without the new port.
+    /// so a reconnect doesn't find it instead of the chosen one.
     @MainActor
     private func quitHelper(pid: pid_t) async throws {
         guard let application = NSRunningApplication(processIdentifier: pid), !application.isTerminated else {
@@ -141,21 +167,20 @@ actor HomeService: Service, HomeBackend {
         connection?.cancel()
         connection = nil
         await old?.disconnect()
-        let parameters = NWParameters.tcp
-        parameters.acceptLocalOnly = true
-        parameters.requiredInterfaceType = .loopback
-        parameters.includePeerToPeer = false
-        if let ip = parameters.defaultProtocolStack.internetProtocol as? NWProtocolIP.Options { ip.version = .v4 }
-        let helper = try await launchHelper(previous: launchedHelper, overrideURL: helperURL)
-        launchedHelper = helper
+        // Launch the helper even without a code, so its window shows the code.
+        let pid = try await launchHelper(overrideURL: helperURL)
+        helperPID = pid
+        guard let code = try pairingCode ?? keychain.read() else { throw PairingError.missing }
+        let parameters = try HomeHelperPairing.parameters(code: code)
         let deadline = Date().addingTimeInterval(15)
         repeat {
-            try await checkHelperIsRunning(helper)
+            try await checkHelperIsRunning(pid)
             do {
-                try await connect(to: helper.endpoint, secret: helper.secret, parameters: parameters)
+                // Discover each time, because a new pairing code moves the helper to a new port.
+                try await connect(to: discoverHelper(), parameters: parameters)
                 return
-            } catch let error as HomeError { throw error } catch {
-                try await checkHelperIsRunning(helper)
+            } catch let error as HomeError { throw error } catch let error as PairingError { throw error } catch {
+                try await checkHelperIsRunning(pid)
                 guard Date() < deadline else {
                     throw HomeError(
                         "iMCP Helper did not accept a local connection within 15 seconds. Check its status window, then retry."
@@ -166,7 +191,41 @@ actor HomeService: Service, HomeBackend {
         } while true
     }
 
-    private func connect(to endpoint: NWEndpoint, secret: String, parameters: NWParameters) async throws {
+    /// Finds the helper's loopback endpoint in its local-only Bonjour advertisement,
+    /// and checks the protocol version in its TXT record.
+    private func discoverHelper() async throws -> NWEndpoint {
+        let browser = NWBrowser(for: .bonjour(type: HomeHelperPairing.serviceType, domain: "local."), using: .tcp)
+        let endpoint: NWEndpoint
+        do {
+            endpoint = try await BonjourDiscovery.discoverEndpoint(
+                using: browser,
+                timeout: .seconds(15),
+                preferring: { String(describing: $0.endpoint).contains("iMCP Helper") }
+            )
+        } catch {
+            throw HomeError(
+                "iMCP Helper didn't appear on this Mac. Check its window, and allow it in System Settings > Privacy & Security > Local Network. \(error.localizedDescription)"
+            )
+        }
+        guard case .service(let name, let type, let domain, _) = endpoint else {
+            throw HomeError("iMCP Helper's Bonjour service has no name.")
+        }
+        let service = try await HelperResolution.resolve(name: name, type: type, domain: domain)
+        guard service.protocolVersion == HomeHelperPairing.protocolVersion else {
+            throw HomeError(Self.outdatedHelperMessage)
+        }
+        return .hostPort(host: .ipv4(.loopback), port: service.port)
+    }
+
+    /// Whether a connection failed its TLS handshake, which means the pairing codes differ.
+    private nonisolated static func failedHandshake(_ state: NWConnection.State) -> Bool {
+        switch state {
+        case .waiting(.tls), .failed(.tls): true
+        default: false
+        }
+    }
+
+    private func connect(to endpoint: NWEndpoint, parameters: NWParameters) async throws {
         let connection = NWConnection(to: endpoint, using: parameters)
         let transport = NetworkTransport(
             connection: connection,
@@ -174,20 +233,18 @@ actor HomeService: Service, HomeBackend {
             reconnectionConfig: .disabled,
             bufferConfig: .unlimited
         )
-        let client = MCP.Client(
-            name: "iMCP",
-            version: Bundle.main.shortVersionString ?? "unknown",
-            capabilities: .init(experimental: [HomeHelperSecret.capabilityKey: secret])
-        )
-        let timeout = Task {
+        let client = MCP.Client(name: "iMCP", version: Bundle.main.shortVersionString ?? "unknown")
+        let timeout = Task { () -> Bool in
             // NetworkTransport waits indefinitely in NWConnection.waiting.
             // Retry refused connections while the helper starts.
             for _ in 0 ..< 80 {
-                do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
+                do { try await Task.sleep(for: .milliseconds(250)) } catch { return false }
                 if case .waiting = connection.state { break }
             }
+            let failedHandshake = Self.failedHandshake(connection.state)
             connection.cancel()
             await client.disconnect()
+            return failedHandshake
         }
         defer { timeout.cancel() }
         do {
@@ -201,8 +258,12 @@ actor HomeService: Service, HomeBackend {
             authorized = true
             log.info("Connected to iMCP Helper")
         } catch {
+            let failedHandshake = Self.failedHandshake(connection.state)
+            timeout.cancel()
+            let timedOutInHandshake = await timeout.value
             connection.cancel()
             await client.disconnect()
+            if failedHandshake || timedOutInHandshake { throw PairingError.rejected }
             throw error
         }
     }
@@ -210,13 +271,13 @@ actor HomeService: Service, HomeBackend {
     // MARK: - Helper Launch
 
     @MainActor
-    private func checkHelperIsRunning(_ helper: LaunchedHelper) throws {
-        guard helper.pid > 0,
-            let application = NSRunningApplication(processIdentifier: helper.pid),
+    private func checkHelperIsRunning(_ pid: pid_t) throws {
+        guard pid > 0,
+            let application = NSRunningApplication(processIdentifier: pid),
             !application.isTerminated
         else {
             throw HomeError(
-                "iMCP Helper exited before the connection was ready. Check its log messages and crash reports in Console, then retry."
+                "iMCP Helper exited before the connection was ready. Check its crash report in Console, then retry."
             )
         }
     }
@@ -289,8 +350,63 @@ actor HomeService: Service, HomeBackend {
         return try chooseHelper() != nil
     }
 
+    // MARK: - Pairing
+
+    /// Whether iMCP has a pairing code for the helper.
+    nonisolated func hasPairingCode() -> Bool {
+        pairingCode != nil || (try? keychain.read()) != nil
+    }
+
+    /// Asks for the pairing code from the helper's window and saves it in the keychain.
+    /// Returns false when the user cancels.
     @MainActor
-    private func launchHelper(previous: LaunchedHelper?, overrideURL: URL?) async throws -> LaunchedHelper {
+    func askForPairingCode(message: String) throws -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "Pair with iMCP Helper"
+        alert.informativeText = message
+        alert.addButton(withTitle: "Pair")
+        alert.addButton(withTitle: "Cancel")
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        field.placeholderString = "XXXXX-XXXXX-XXXXX-XXXXX"
+        alert.accessoryView = field
+        alert.window.initialFirstResponder = field
+        while alert.runModal() == .alertFirstButtonReturn {
+            if let code = HomeHelperPairing.normalize(field.stringValue) {
+                try keychain.save(code)
+                return true
+            }
+            alert.informativeText =
+                "That isn't a pairing code. Copy the code from iMCP Helper's window, then paste it here."
+        }
+        return false
+    }
+
+    /// Turns Home on for the user:
+    /// asks for the helper if none is installed,
+    /// then asks for the pairing code until the helper accepts one.
+    /// Tool calls and reconnects never ask.
+    /// Returns false when the user cancels.
+    @MainActor
+    func activateAskingUser() async throws -> Bool {
+        guard try promptForHelperIfMissing() else { return false }
+        var message = "Enter the pairing code shown in iMCP Helper's window."
+        while true {
+            do {
+                try await activate()
+                return true
+            } catch PairingError.missing {
+            } catch PairingError.rejected {
+                message = "iMCP Helper rejected the pairing code. Enter the code shown in its window."
+            }
+            guard try askForPairingCode(message: message) else { return false }
+        }
+    }
+
+    // MARK: - Helper Launch
+
+    /// Returns the process ID of the running helper, after launching it if needed.
+    @MainActor
+    private func launchHelper(overrideURL: URL?) async throws -> pid_t {
         let url = overrideURL ?? helperLocation()
         if let running = NSWorkspace.shared.runningApplications.first(where: { application in
             !application.isTerminated
@@ -301,11 +417,8 @@ actor HomeService: Service, HomeBackend {
                     isHelper: HomeHelperLocator.isHelper(at:)
                 )
         }) {
-            // Only the helper that this instance launched has its port and secret.
-            if let previous, previous.pid == running.processIdentifier { return previous }
-            throw HomeError(
-                "iMCP Helper is already running, but iMCP didn't launch it. Quit iMCP Helper, then turn Home off and on again."
-            )
+            // Discovery checks the running helper's protocol version in its TXT record.
+            return running.processIdentifier
         }
         guard let url else {
             throw HomeError(
@@ -314,54 +427,98 @@ actor HomeService: Service, HomeBackend {
         }
         let accessing = url.startAccessingSecurityScopedResource()
         defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-        let port = try availableLoopbackPort()
-        let secret = try HomeHelperSecret.generate()
+        guard HomeHelperLocator.protocolVersion(at: url) == HomeHelperPairing.protocolVersion else {
+            throw HomeError(Self.outdatedHelperMessage)
+        }
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = false
         // Xcode's native macOS debugger libraries cannot load in a Catalyst app.
         // Empty values override the launch environment; omitting the keys does not.
-        // The port and secret go in the environment because other processes can read the arguments.
-        // A process that learned the port could bind it first and receive the secret.
+        // A sandboxed iMCP can't set the environment, but unsigned Debug builds aren't sandboxed.
         configuration.environment = [
             "DYLD_INSERT_LIBRARIES": "",
             "DYLD_LIBRARY_PATH": "",
             "DYLD_FRAMEWORK_PATH": "",
-            HomeHelperSecret.portEnvironmentKey: String(port),
-            HomeHelperSecret.secretEnvironmentKey: secret,
         ]
-        configuration.arguments = ["--parent-pid", String(getpid())]
-        let application = try await NSWorkspace.shared.openApplication(at: url, configuration: configuration)
-        // LaunchServices returns the running helper without the new arguments and environment,
-        // so keep the port and secret it was launched with.
-        if let previous, previous.pid == application.processIdentifier { return previous }
-        return LaunchedHelper(
-            pid: application.processIdentifier,
-            endpoint: .hostPort(host: .ipv4(.loopback), port: NWEndpoint.Port(rawValue: port)!),
-            secret: secret
-        )
+        return try await NSWorkspace.shared.openApplication(at: url, configuration: configuration).processIdentifier
     }
+}
 
-    /// Selects an ephemeral loopback port for the child process.
-    /// The helper exits if another process takes it before the helper listens.
-    nonisolated func availableLoopbackPort() throws -> UInt16 {
-        let descriptor = socket(AF_INET, SOCK_STREAM, 0)
-        guard descriptor >= 0 else { throw HomeError("Cannot allocate a socket for iMCP Helper.") }
-        defer { close(descriptor) }
-        var address = sockaddr_in()
-        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
-        address.sin_family = sa_family_t(AF_INET)
-        address.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
-        let result = withUnsafePointer(to: &address) { pointer in
-            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                bind(descriptor, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+/// Resolves the helper's local-only Bonjour service to its port and protocol version.
+///
+/// `NWBrowser` doesn't report local-only services when it asks for TXT records,
+/// so this resolves the service with DNS-SD.
+@MainActor
+final class HelperResolution {
+    private var continuation: CheckedContinuation<(port: NWEndpoint.Port, protocolVersion: Int?), Error>?
+
+    static func resolve(
+        name: String,
+        type: String,
+        domain: String
+    ) async throws -> (port: NWEndpoint.Port, protocolVersion: Int?) {
+        let resolution = HelperResolution()
+        var reference: DNSServiceRef?
+        defer { if let reference { DNSServiceRefDeallocate(reference) } }
+        let timeout = Task {
+            try await Task.sleep(for: .seconds(5))
+            resolution.finish(.failure(HomeError("iMCP Helper's Bonjour service didn't resolve within 5 seconds.")))
+        }
+        defer { timeout.cancel() }
+        return try await withCheckedThrowingContinuation { continuation in
+            resolution.continuation = continuation
+            let status = DNSServiceResolve(
+                &reference,
+                0,
+                kDNSServiceInterfaceIndexLocalOnly,
+                name,
+                type,
+                domain,
+                { _, _, _, error, _, _, port, length, record, context in
+                    guard let context else { return }
+                    MainActor.assumeIsolated {
+                        let resolution = Unmanaged<HelperResolution>.fromOpaque(context).takeUnretainedValue()
+                        guard error == kDNSServiceErr_NoError,
+                            let port = NWEndpoint.Port(rawValue: UInt16(bigEndian: port))
+                        else {
+                            resolution.finish(
+                                .failure(HomeError("iMCP Helper's Bonjour service didn't resolve (\(error))."))
+                            )
+                            return
+                        }
+                        var valueLength: UInt8 = 0
+                        let value = TXTRecordGetValuePtr(
+                            length,
+                            record,
+                            HomeHelperPairing.protocolVersionTXTKey,
+                            &valueLength
+                        )
+                        let version = value.flatMap {
+                            Int(
+                                String(
+                                    decoding: UnsafeRawBufferPointer(start: $0, count: Int(valueLength)),
+                                    as: UTF8.self
+                                )
+                            )
+                        }
+                        resolution.finish(.success((port, version)))
+                    }
+                },
+                Unmanaged.passUnretained(resolution).toOpaque()
+            )
+            guard status == kDNSServiceErr_NoError, let reference else {
+                resolution.finish(.failure(HomeError("iMCP Helper's Bonjour service didn't resolve (\(status)).")))
+                return
+            }
+            let queueStatus = DNSServiceSetDispatchQueue(reference, .main)
+            if queueStatus != kDNSServiceErr_NoError {
+                resolution.finish(.failure(HomeError("iMCP Helper's Bonjour service didn't resolve (\(queueStatus)).")))
             }
         }
-        guard result == 0 else { throw HomeError("Cannot bind a socket for iMCP Helper.") }
-        var length = socklen_t(MemoryLayout<sockaddr_in>.size)
-        let nameResult = withUnsafeMutablePointer(to: &address) { pointer in
-            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(descriptor, $0, &length) }
-        }
-        guard nameResult == 0 else { throw HomeError("Cannot select a port for iMCP Helper.") }
-        return UInt16(bigEndian: address.sin_port)
+    }
+
+    private func finish(_ result: Result<(port: NWEndpoint.Port, protocolVersion: Int?), Error>) {
+        continuation?.resume(with: result)
+        continuation = nil
     }
 }

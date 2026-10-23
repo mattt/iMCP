@@ -330,9 +330,11 @@ final class ServerController: ObservableObject {
         Task {
             if enabled, await !config.isActivated {
                 do {
-                    if config.service is HomeService, try !HomeService.shared.promptForHelperIfMissing() {
-                        self.objectWillChange.send()
-                        config.binding.wrappedValue = false
+                    if config.service is HomeService {
+                        if try await !HomeService.shared.activateAskingUser() {
+                            self.objectWillChange.send()
+                            config.binding.wrappedValue = false
+                        }
                     } else {
                         try await config.service.activate()
                     }

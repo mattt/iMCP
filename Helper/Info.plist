@@ -4,7 +4,13 @@
 <dict>
     <key>iMCPHelper</key>
     <true/>
+    <key>iMCPHelperProtocolVersion</key>
+    <integer>2</integer>
     <key>LSMultipleInstancesProhibited</key>
     <true/>
+    <key>NSBonjourServices</key>
+    <array>
+        <string>_imcp-helper._tcp</string>
+    </array>
 </dict>
 </plist>

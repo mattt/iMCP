@@ -4,48 +4,59 @@ import Network
 import OSLog
 import Ontology
 
+/// Serves the Home tools over TLS with the pairing code's pre-shared key.
 actor HelperServer {
     private let backend: any HomeBackend
-    private let port: NWEndpoint.Port
-    private let secret: String
+    private var code: String
     private var listener: NWListener?
-    private var sessions: [UUID: MCP.Server] = [:]
+    private var sessions: [UUID: NWConnection] = [:]
     private var startup: CheckedContinuation<Void, Error>?
     private let log = Logger.service("helper.server")
 
-    init(backend: any HomeBackend, port: NWEndpoint.Port, secret: String) {
+    init(backend: any HomeBackend, code: String) {
         self.backend = backend
-        self.port = port
-        self.secret = secret
+        self.code = code
     }
 
-    func start() async throws {
-        guard listener == nil else { return }
-        let parameters = NWParameters.tcp
-        parameters.acceptLocalOnly = true
-        parameters.requiredInterfaceType = .loopback
-        parameters.includePeerToPeer = false
-        parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: port)
-        if let ip = parameters.defaultProtocolStack.internetProtocol as? NWProtocolIP.Options { ip.version = .v4 }
+    /// Listens on an ephemeral loopback port and returns the port.
+    func start() async throws -> NWEndpoint.Port {
+        if let port = listener?.port { return port }
+        let parameters = try HomeHelperPairing.parameters(code: code)
+        parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)
         let listener = try NWListener(using: parameters)
         self.listener = listener
-        listener.newConnectionHandler = { [weak self] connection in
-            Task { await self?.accept(connection) }
+        listener.newConnectionHandler = { [weak self, weak listener] connection in
+            Task { await self?.accept(connection, from: listener) }
         }
-        listener.stateUpdateHandler = { [weak self] state in
-            Task { await self?.stateChanged(state) }
+        listener.stateUpdateHandler = { [weak self, weak listener] state in
+            Task { await self?.stateChanged(state, of: listener) }
         }
         try await withCheckedThrowingContinuation { continuation in
             startup = continuation
             listener.start(queue: .main)
-            Task { [weak self] in
+            Task { [weak self, weak listener] in
                 try? await Task.sleep(for: .seconds(10))
-                await self?.startupTimedOut()
+                await self?.startupTimedOut(listener)
             }
         }
+        guard let port = listener.port else { throw HomeError("iMCP Helper has no TCP port.") }
+        return port
     }
 
-    private func stateChanged(_ state: NWListener.State) {
+    /// Ends every session, including any in its TLS handshake,
+    /// and listens again with a new pairing code.
+    /// Returns the new port.
+    func restart(code: String) async throws -> NWEndpoint.Port {
+        listener?.cancel()
+        listener = nil
+        for connection in sessions.values { connection.cancel() }
+        self.code = code
+        return try await start()
+    }
+
+    private func stateChanged(_ state: NWListener.State, of changed: NWListener?) {
+        // Ignore a listener that a restart replaced.
+        guard let changed, changed === listener else { return }
         switch state {
         case .ready:
             startup?.resume()
@@ -59,21 +70,27 @@ actor HelperServer {
         default: break
         }
     }
-    private func startupTimedOut() {
-        guard let startup else { return }
+
+    private func startupTimedOut(_ timedOut: NWListener?) {
+        guard let startup, let timedOut, timedOut === listener else { return }
         self.startup = nil
         listener?.cancel()
         listener = nil
         startup.resume(throwing: HomeError("The iMCP Helper listener did not start within 10 seconds."))
     }
 
-    private func accept(_ connection: NWConnection) async {
+    private func accept(_ connection: NWConnection, from acceptor: NWListener?) async {
+        // A listener that a restart replaced still uses the old pairing code.
+        guard let acceptor, acceptor === listener else {
+            connection.cancel()
+            return
+        }
         let id = UUID()
         let server = MCP.Server(
             name: "iMCP Helper",
             version: Bundle.main.shortVersionString ?? "1.0",
             capabilities: .init(tools: .init(listChanged: false)),
-            // Strict mode refuses every request but ping until the initialize hook accepts the secret.
+            // Strict mode refuses every request but ping before initialize.
             configuration: .strict
         )
         let tools = HomeKitService(backend: backend).tools
@@ -83,7 +100,7 @@ actor HelperServer {
             reconnectionConfig: .disabled,
             bufferConfig: .unlimited
         )
-        sessions[id] = server
+        sessions[id] = connection
         await server.withMethodHandler(ListTools.self) { _ in
             try ListTools.Result(
                 tools: tools.map { tool in
@@ -115,21 +132,13 @@ actor HelperServer {
                 )
             }
         }
-        let secret = self.secret
-        // End a connection that doesn't present the secret promptly.
+        // End a connection that doesn't complete the TLS handshake and initialize promptly.
         let deadline = Task {
             try await Task.sleep(for: .seconds(5))
-            await transport.disconnect()
+            connection.cancel()
         }
         do {
-            try await server.start(transport: transport) { _, capabilities in
-                guard HomeHelperSecret.matches(capabilities.experimental?[HomeHelperSecret.capabilityKey], secret)
-                else {
-                    await transport.disconnect()
-                    throw MCPError.invalidRequest("iMCP Helper serves only the iMCP app that launched it.")
-                }
-                deadline.cancel()
-            }
+            try await server.start(transport: transport) { _, _ in deadline.cancel() }
             await server.waitUntilCompleted()
         } catch { log.error("Home connection failed: \(error.localizedDescription)") }
         deadline.cancel()
