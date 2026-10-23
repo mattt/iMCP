@@ -82,20 +82,14 @@ struct ServicesSettingsView: View {
                     homeHelperPairing = true
                     Task {
                         defer { homeHelperPairing = false }
-                        var message = "Enter the code shown in iMCP Helper's window."
-                        while let code = await HomeService.shared.askForPairingCode(message: message) {
-                            do {
-                                try await HomeService.shared.pair(code: code)
-                                homeHelperPaired = true
-                                homeHelperError = nil
-                                if enabled { try await HomeService.shared.reconnect() }
-                                return
-                            } catch HomeService.PairingError.codeRejected {
-                                message = "That code didn't work. Enter the code shown in iMCP Helper's window."
-                            } catch {
-                                homeHelperError = error.localizedDescription
-                                return
-                            }
+                        let message = "Enter the code shown in iMCP Helper's window."
+                        guard await HomeService.shared.pairAskingUser(message: message) else { return }
+                        homeHelperPaired = true
+                        homeHelperError = nil
+                        do {
+                            if enabled { try await HomeService.shared.reconnect() }
+                        } catch {
+                            homeHelperError = error.localizedDescription
                         }
                     }
                 }

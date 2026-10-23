@@ -3,6 +3,7 @@ import CryptoKit
 import MCP
 import Network
 import OSLog
+import SwiftUI
 import UniformTypeIdentifiers
 import dnssd
 
@@ -633,32 +634,16 @@ actor HomeService: Service, HomeBackend {
         (try? keyStore.read()) != nil || (try? pendingKeyStore.read()) != nil
     }
 
-    /// Asks for the code from the helper's window.
-    /// Returns nil when the user cancels.
+    /// Shows the pairing window, and pairs with each code that the user enters
+    /// until the helper accepts one.
+    /// Returns false when the user cancels.
     @MainActor
-    func askForPairingCode(message: String) async -> String? {
-        let alert = NSAlert()
-        alert.messageText = "Pair with iMCP Helper"
-        alert.informativeText = message
-        alert.addButton(withTitle: "Pair")
-        alert.addButton(withTitle: "Cancel")
-        alert.addButton(withTitle: "Show iMCP Helper")
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
-        field.placeholderString = "XXXX-XXXX"
-        alert.accessoryView = field
-        alert.window.initialFirstResponder = field
-        while true {
-            switch alert.runModal() {
-            case .alertFirstButtonReturn:
-                if let code = HomeHelperPairing.normalize(field.stringValue) { return code }
-                alert.informativeText =
-                    "That isn't a pairing code. A code has eight letters and digits, such as 7KQ2-M9XD."
-            case .alertThirdButtonReturn:
-                await showHelper()
-            default:
-                return nil
-            }
-        }
+    func pairAskingUser(message: String) async -> Bool {
+        await PairingWindow.run(
+            message: message,
+            pair: { code in try await self.pair(code: code) },
+            showHelper: { await self.showHelper() }
+        )
     }
 
     /// Turns Home on for the user:
@@ -679,16 +664,7 @@ actor HomeService: Service, HomeBackend {
                 message =
                     "iMCP Helper doesn't accept iMCP's pairing key. Enter the code shown in its window to pair again."
             }
-            while true {
-                guard let code = await askForPairingCode(message: message) else { return false }
-                do {
-                    try await pair(code: code)
-                    break
-                } catch PairingError.codeRejected {
-                    message =
-                        "That code didn't work. Enter the code shown in iMCP Helper's window. After \(HomeHelperPairing.failedPairingLimit) wrong codes, it shows a new one."
-                }
-            }
+            guard await pairAskingUser(message: message) else { return false }
         }
     }
 
@@ -888,5 +864,158 @@ final class HelperResolution {
     private func finish(_ result: Result<HelperCandidate, Error>) {
         continuation?.resume(with: result)
         continuation = nil
+    }
+}
+
+// MARK: - Pairing Window
+
+/// A small window for the helper's pairing code.
+///
+/// It stays at the normal window level, unlike a modal alert,
+/// so the helper's window comes in front of it when the user switches to the helper.
+/// It opens to the left of the screen's center, where the helper's window opens.
+@MainActor
+private final class PairingWindow: NSObject, NSWindowDelegate {
+    final class Model: ObservableObject {
+        @Published var code = ""
+        @Published var message: String
+        @Published var error: String?
+        @Published var isPairing = false
+
+        init(message: String) { self.message = message }
+    }
+
+    private static var current: PairingWindow?
+
+    private let model: Model
+    private let pair: (String) async throws -> Void
+    private let showHelper: () async -> Void
+    private var window: NSWindow?
+    private var continuation: CheckedContinuation<Bool, Never>?
+
+    private init(message: String, pair: @escaping (String) async throws -> Void, showHelper: @escaping () async -> Void)
+    {
+        model = Model(message: message)
+        self.pair = pair
+        self.showHelper = showHelper
+    }
+
+    /// Shows the window and returns whether the user paired, or false if a pairing window is already open.
+    static func run(
+        message: String,
+        pair: @escaping (String) async throws -> Void,
+        showHelper: @escaping () async -> Void
+    ) async -> Bool {
+        if let current {
+            current.window?.makeKeyAndOrderFront(nil)
+            NSApp.activate()
+            return false
+        }
+        let controller = PairingWindow(message: message, pair: pair, showHelper: showHelper)
+        current = controller
+        defer { current = nil }
+        return await withCheckedContinuation { continuation in
+            controller.continuation = continuation
+            controller.show()
+        }
+    }
+
+    private func show() {
+        let view = PairingView(
+            model: model,
+            pair: { [weak self] in self?.submit() },
+            cancel: { [weak self] in self?.finish(paired: false) },
+            showHelper: { [weak self] in
+                guard let self else { return }
+                Task { await self.showHelper() }
+            }
+        )
+        let window = NSWindow(contentViewController: NSHostingController(rootView: view))
+        window.title = "Pair with iMCP Helper"
+        window.styleMask = [.titled, .closable]
+        window.isReleasedWhenClosed = false
+        window.delegate = self
+        window.layoutIfNeeded()
+        if let screen = NSScreen.main?.visibleFrame {
+            // Leave the center of the screen for the helper's window.
+            let size = window.frame.size
+            let x = max(screen.minX + 20, screen.midX - size.width - 220)
+            window.setFrameOrigin(NSPoint(x: x, y: screen.midY - size.height / 2))
+        }
+        self.window = window
+        NSApp.activate()
+        window.makeKeyAndOrderFront(nil)
+    }
+
+    private func submit() {
+        guard !model.isPairing else { return }
+        guard let code = HomeHelperPairing.normalize(model.code) else {
+            model.error = "That isn't a pairing code. A code has eight letters and digits, such as 7KQ2-M9XD."
+            return
+        }
+        model.error = nil
+        model.isPairing = true
+        Task {
+            defer { model.isPairing = false }
+            do {
+                try await pair(code)
+                finish(paired: true)
+            } catch HomeService.PairingError.codeRejected {
+                model.error =
+                    "That code didn't work. Check the code in iMCP Helper's window. After \(HomeHelperPairing.failedPairingLimit) wrong codes, it shows a new one."
+            } catch {
+                model.error = error.localizedDescription
+            }
+        }
+    }
+
+    private func finish(paired: Bool) {
+        guard let continuation else { return }
+        self.continuation = nil
+        window?.delegate = nil
+        window?.close()
+        continuation.resume(returning: paired)
+    }
+
+    func windowWillClose(_ notification: Foundation.Notification) {
+        finish(paired: false)
+    }
+}
+
+private struct PairingView: View {
+    @ObservedObject var model: PairingWindow.Model
+    let pair: () -> Void
+    let cancel: () -> Void
+    let showHelper: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(model.message)
+                .fixedSize(horizontal: false, vertical: true)
+            TextField("Pairing Code", text: $model.code, prompt: Text("XXXX-XXXX"))
+                .labelsHidden()
+                .textFieldStyle(.roundedBorder)
+                .font(.system(.title3, design: .monospaced))
+                .disabled(model.isPairing)
+                .onSubmit(pair)
+            if let error = model.error {
+                Text(error)
+                    .font(.callout)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            HStack {
+                Button("Show iMCP Helper", action: showHelper)
+                Spacer()
+                if model.isPairing { ProgressView().controlSize(.small) }
+                Button("Cancel", role: .cancel, action: cancel)
+                    .keyboardShortcut(.cancelAction)
+                Button("Pair", action: pair)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(model.isPairing)
+            }
+        }
+        .padding(20)
+        .frame(width: 380)
     }
 }

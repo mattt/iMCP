@@ -637,9 +637,9 @@ iMCP launches the helper if it isn't running,
 and the helper asks for HomeKit access.
 The first time, the helper's window shows an eight-character pairing code,
 such as `7KQ2-M9XD`;
-choose Copy Code, and paste the code when iMCP asks for it.
-If the window is behind other windows,
-choose Show iMCP Helper in iMCP's alert.
+choose Copy Code, and paste the code in iMCP's Pair with iMCP Helper window.
+If the helper's window is behind other windows,
+choose Show iMCP Helper in iMCP's window.
 The code works once:
 when you pair, iMCP sends the helper a new random key,
 and both apps keep that key in their keychains.
