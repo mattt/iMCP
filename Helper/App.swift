@@ -190,17 +190,7 @@ final class HelperRuntime: ObservableObject {
                 }
                 loadHomeKit()
             case .pairAgain:
-                // Refuse a key that a pairing in progress tries to store from now on.
-                pairing = nil
-                isListening = false
-                do {
-                    try keychain.delete()
-                } catch {
-                    // Don't show a new code while the old key would still work after a relaunch.
-                    await server?.stop()
-                    throw error
-                }
-                try await listen(.code(HomeHelperPairing.generateCode()))
+                try await showNewCode()
             case .paired(let key, let code):
                 // Ignore a pairing with a code that the window no longer shows.
                 // `storeKey(_:code:)` already saved the key.
@@ -208,7 +198,7 @@ final class HelperRuntime: ObservableObject {
                 try await listen(.key(key))
             case .tooManyFailedPairings(let code):
                 guard pairing == .code(code) else { return }
-                try await listen(.code(HomeHelperPairing.generateCode()))
+                try await showNewCode()
             }
         } catch {
             isListening = false
@@ -216,6 +206,22 @@ final class HelperRuntime: ObservableObject {
             failedChange = change
             canRetry = true
         }
+    }
+
+    /// Replaces the code or key with a new code.
+    /// Clears the shown code first, so `storeKey(_:code:)` refuses a key from a pairing with the old code,
+    /// then deletes any key that such a pairing stored before.
+    private func showNewCode() async throws {
+        pairing = nil
+        isListening = false
+        do {
+            try keychain.delete()
+        } catch {
+            // Don't show a new code while the old key would still work after a relaunch.
+            await server?.stop()
+            throw error
+        }
+        try await listen(.code(HomeHelperPairing.generateCode()))
     }
 
     /// Saves a key from pairing, if the window still shows the code that it came with.
