@@ -660,6 +660,48 @@ The window also reports startup and permission errors.
 The Mac's iCloud account must have access to the home,
 and writes can require the owner or administrator role.
 
+Sparkle updates iMCP but not the helper.
+After an iMCP update,
+rebuild the helper from the tag that matches the new version:
+
+```console
+git fetch --tags
+git checkout <version>
+Scripts/install-helper.sh
+```
+
+A helper from an older version may not match the app's Home tools.
+
+The helper's development certificate and provisioning profile expire.
+Each is usually valid for one year,
+but the certificate can expire first.
+To read the profile's expiration date, run:
+
+```console
+security cms -D -i "/Applications/iMCP Helper.app/Contents/embedded.provisionprofile" |
+  plutil -extract ExpirationDate raw -o - -
+```
+
+To read the certificate's expiration date, run:
+
+```console
+codesign -d --extract-certificates=/tmp/imcp-helper-cert "/Applications/iMCP Helper.app"
+openssl x509 -inform DER -in /tmp/imcp-helper-cert0 -noout -enddate
+```
+
+After the earlier of the two dates, the helper may stop launching.
+Run `Scripts/install-helper.sh` again to renew it;
+the script lets Xcode create a new certificate and profile
+when the old ones have expired.
+
+On the first run, provisioning can fail with "PLA Update available".
+The team's Account Holder must accept the latest Program License Agreement
+in the Apple Developer account.
+If you can't write to `/Applications` (for example, as a non-admin user),
+the install can fail with a permission error.
+Run the script with `--destination ~/Applications` instead.
+iMCP then asks you to choose the helper.
+
 Both apps compile the same tool definitions from
 [`Shared/Home/HomeTools.swift`](/Shared/Home/HomeTools.swift).
 The helper implements them with HomeKit;
