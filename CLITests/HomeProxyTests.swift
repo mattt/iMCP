@@ -63,13 +63,7 @@ final class HomeHelperSecretTests: XCTestCase {
 
     func testHelperServesOnlyClientsWithTheSecret() async throws {
         let secret = try HomeHelperSecret.generate()
-        let port = try HomeService().availableLoopbackPort()
-        let server = HelperServer(
-            backend: StaticHomeBackend(),
-            port: try XCTUnwrap(NWEndpoint.Port(rawValue: port)),
-            secret: secret
-        )
-        try await server.start()
+        let (server, port) = try await startServer(secret: secret)
 
         // Strict mode drops requests before initialize,
         // and the helper ends a connection that doesn't present the secret.
@@ -105,6 +99,28 @@ final class HomeHelperSecretTests: XCTestCase {
         let call = try await client.callTool(name: "homes_list")
         XCTAssertEqual(call.isError, false)
         await client.disconnect()
+        withExtendedLifetime(server) {}
+    }
+
+    /// Starts a helper server on a free loopback port.
+    /// Another socket can take the selected port before the listener binds it,
+    /// so this selects a new port if that happens.
+    private func startServer(secret: String) async throws -> (HelperServer, UInt16) {
+        for attempt in 1 ... 3 {
+            let port = try HomeService().availableLoopbackPort()
+            let server = HelperServer(
+                backend: StaticHomeBackend(),
+                port: try XCTUnwrap(NWEndpoint.Port(rawValue: port)),
+                secret: secret
+            )
+            do {
+                try await server.start()
+                return (server, port)
+            } catch {
+                if attempt == 3 { throw error }
+            }
+        }
+        throw HomeError("No free loopback port for the helper server.")
     }
 
     /// Sends one JSON-RPC message and returns the first line of the reply,
