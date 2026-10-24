@@ -186,7 +186,7 @@ final class MailService: NSObject, Service, NSOpenSavePanelDelegate, Sendable {
         Tool(
             name: "mail_messages_read",
             description:
-                "Read local MIME content by a returned message identifier. HTML is returned as labeled data; remote content is never loaded.",
+                "Read local MIME content by a returned message identifier. HTML is returned as labeled data; remote content is never loaded. Attachments are listed without their content; isStoredSeparately marks parts that Mail keeps outside the message file.",
             inputSchema: .object(
                 properties: [
                     "id": .string(
@@ -543,7 +543,19 @@ extension Envelope.Content {
             "headers": .array(headers.map { ["name": .string($0.name), "value": .string($0.value)] }),
             "text": .string(body),
             "encodingFormat": .string(mediaType),
-            "attachment": .array(attachmentFilenames.map { ["@type": "MediaObject", "name": .string($0)] }),
+            "attachment": .array(attachments.map(\.value)),
+        ]
+    }
+}
+
+extension Envelope.Content.Attachment {
+    /// The attachment as a JSON object for tool output.
+    var value: Value {
+        [
+            "@type": "MediaObject",
+            "name": filename.map(Value.string) ?? .null,
+            "encodingFormat": .string(mediaType),
+            "isStoredSeparately": .bool(isStoredSeparately),
         ]
     }
 }

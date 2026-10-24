@@ -218,11 +218,65 @@ final class MailIndexTests: XCTestCase {
         XCTAssertEqual(content["text"], "The draft budget is attached.")
         XCTAssertEqual(content["encodingFormat"], "text/plain")
         XCTAssertEqual(
-            content["attachment"]?.arrayValue?.compactMap { $0.objectValue?["name"]?.stringValue },
-            ["budget.csv"]
+            content["attachment"]?.arrayValue,
+            [["@type": "MediaObject", "name": "budget.csv", "encodingFormat": "text/csv", "isStoredSeparately": false]]
         )
         let headers = try XCTUnwrap(content["headers"]?.arrayValue)
         XCTAssertTrue(headers.contains(["name": "Subject", "value": "Quarterly budget"]))
+    }
+
+    func testReadReturnsTheTextOfAPartialMessage() async throws {
+        // Mail leaves the body of each part that it stores separately empty,
+        // and records the original length in X-Apple-Content-Length.
+        try fixture.writeMessage(
+            rowID: 1,
+            mime: """
+                Message-ID: <message-1@example.com>
+                Subject: Quarterly budget
+                MIME-Version: 1.0
+                Content-Type: multipart/mixed; boundary=b
+
+                --b
+                Content-Type: multipart/related; boundary=r
+
+                --r
+                Content-Type: text/html; charset=utf-8
+
+                <p>The draft budget is attached.</p><img src="cid:logo">
+                --r
+                Content-Type: image/png
+                Content-Disposition: inline
+                Content-Transfer-Encoding: base64
+                Content-ID: <logo>
+                X-Apple-Content-Length: 2978
+
+                --r--
+
+                --b
+                Content-Type: application/pdf; name=budget.pdf
+                Content-Disposition: attachment; filename=budget.pdf
+                Content-Transfer-Encoding: base64
+                X-Apple-Content-Length: 59336
+
+                --b--
+                """,
+            isPartial: true
+        )
+
+        let result = try await call("mail_messages_read", ["id": "V10:1:1"])
+        let content = try XCTUnwrap(result.objectValue)
+        XCTAssertEqual(content["text"], #"<p>The draft budget is attached.</p><img src="cid:logo">"#)
+        XCTAssertEqual(content["encodingFormat"], "text/html")
+        XCTAssertEqual(
+            content["attachment"]?.arrayValue,
+            [
+                ["@type": "MediaObject", "name": .null, "encodingFormat": "image/png", "isStoredSeparately": true],
+                [
+                    "@type": "MediaObject", "name": "budget.pdf", "encodingFormat": "application/pdf",
+                    "isStoredSeparately": true,
+                ],
+            ]
+        )
     }
 
     func testReadFailsForAnotherMessageOrAMissingFile() async throws {
@@ -377,10 +431,13 @@ private final class MailFixture {
     }
 
     /// Writes the `.emlx` file of an inbox message: a byte count, the MIME message, and a property list.
-    func writeMessage(rowID: Int64, mime: String) throws {
+    /// - Parameter isPartial: Whether to write a `.partial.emlx` file, as Mail does
+    ///   when it stores some parts of the message in separate files.
+    func writeMessage(rowID: Int64, mime: String, isPartial: Bool = false) throws {
         let payload = Data(mime.utf8)
         let data = Data("\(payload.count)\n".utf8) + payload + Data("\n<plist version=\"1.0\"><dict/></plist>\n".utf8)
-        try data.write(to: inbox.appendingPathComponent("Data/Messages/\(rowID).emlx"))
+        let name = isPartial ? "\(rowID).partial.emlx" : "\(rowID).emlx"
+        try data.write(to: inbox.appendingPathComponent("Data/Messages/\(name)"))
     }
 
     private func execute(_ sql: String) throws {

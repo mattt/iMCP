@@ -1056,7 +1056,7 @@
 			repositoryURL = "https://github.com/mattt/Envelope";
 			requirement = {
 				kind = upToNextMajorVersion;
-				minimumVersion = 0.3.1;
+				minimumVersion = 0.4.0;
 			};
 		};
 		26120478122FBFCB2B073DE5 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
