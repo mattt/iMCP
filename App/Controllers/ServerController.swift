@@ -320,6 +320,7 @@ final class ServerController: ObservableObject {
             (try? JSONDecoder().decode(Set<String>.self, from: trustedClientsData)) ?? []
         }
         set {
+            objectWillChange.send()
             trustedClientsData = (try? JSONEncoder().encode(newValue)) ?? Data()
         }
     }
