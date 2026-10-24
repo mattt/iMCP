@@ -30,7 +30,7 @@ enum HomeHelperLocator {
     static func protocolVersion(at url: URL) throws -> Int? {
         guard let info = info(at: url) else {
             throw HomeError(
-                "iMCP can't read the Info.plist of iMCP Helper at \(url.path). Choose the helper again in Settings > Services > Home, then retry."
+                "iMCP can't read the Info.plist of iMCP Helper at \(url.path). Choose the helper again in Settings > Home, then retry."
             )
         }
         return info[HomeHelperPairing.protocolVersionInfoKey] as? Int

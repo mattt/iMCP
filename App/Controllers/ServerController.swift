@@ -20,6 +20,8 @@ private let log = Logger.server
 struct ServiceConfig: Identifiable {
     let id: String
     let name: String
+    /// What clients can do with the service, as Settings describes it.
+    let summary: String
     let iconName: String
     let color: Color
     let service: any Service
@@ -33,6 +35,7 @@ struct ServiceConfig: Identifiable {
 
     init(
         name: String,
+        summary: String,
         iconName: String,
         color: Color,
         service: any Service,
@@ -40,6 +43,7 @@ struct ServiceConfig: Identifiable {
     ) {
         self.id = String(describing: type(of: service))
         self.name = name
+        self.summary = summary
         self.iconName = iconName
         self.color = color
         self.service = service
@@ -97,6 +101,7 @@ enum ServiceRegistry {
         var configs: [ServiceConfig] = [
             ServiceConfig(
                 name: "Calendar",
+                summary: "View, create, update, and delete calendar events.",
                 iconName: "calendar",
                 color: .red,
                 service: CalendarService.shared,
@@ -104,6 +109,7 @@ enum ServiceRegistry {
             ),
             ServiceConfig(
                 name: "Capture",
+                summary: "Take pictures with the camera, record audio, and take screenshots.",
                 iconName: "camera.on.rectangle.fill",
                 color: .gray.mix(with: .black, by: 0.7),
                 service: CaptureService.shared,
@@ -111,6 +117,7 @@ enum ServiceRegistry {
             ),
             ServiceConfig(
                 name: "Contacts",
+                summary: "Look up your own contact card, and search, create, and update contacts.",
                 iconName: "person.crop.square.filled.and.at.rectangle.fill",
                 color: .brown,
                 service: ContactsService.shared,
@@ -118,6 +125,7 @@ enum ServiceRegistry {
             ),
             ServiceConfig(
                 name: "Home",
+                summary: "Control HomeKit accessories, scenes, and automations, and organize rooms and zones.",
                 iconName: "house.fill",
                 color: .orange,
                 service: HomeService.shared,
@@ -125,6 +133,7 @@ enum ServiceRegistry {
             ),
             ServiceConfig(
                 name: "Location",
+                summary: "Get your current location, and convert between addresses and coordinates.",
                 iconName: "location.fill",
                 color: .blue,
                 service: LocationService.shared,
@@ -132,6 +141,7 @@ enum ServiceRegistry {
             ),
             ServiceConfig(
                 name: "Maps",
+                summary: "Search for places, get directions and travel times, and generate map images.",
                 iconName: "mappin.and.ellipse",
                 color: .purple,
                 service: MapsService.shared,
@@ -139,6 +149,7 @@ enum ServiceRegistry {
             ),
             ServiceConfig(
                 name: "Mail",
+                summary: "Search and read the mail stored on your Mac, and open new drafts in your email app.",
                 iconName: "envelope.fill",
                 color: .blue,
                 service: MailService.shared,
@@ -146,6 +157,7 @@ enum ServiceRegistry {
             ),
             ServiceConfig(
                 name: "Messages",
+                summary: "Read your message history with specific people, including attachments.",
                 iconName: "message.fill",
                 color: .green,
                 service: MessageService.shared,
@@ -153,6 +165,7 @@ enum ServiceRegistry {
             ),
             ServiceConfig(
                 name: "Music",
+                summary: "See what's playing in Music, control playback, and search the Apple Music catalog.",
                 iconName: "music.note",
                 color: .black,
                 service: MusicService.shared,
@@ -160,6 +173,7 @@ enum ServiceRegistry {
             ),
             ServiceConfig(
                 name: "Notes",
+                summary: "Search notes by text, folder, or date, and read them as Markdown.",
                 iconName: "note.text",
                 color: .yellow,
                 service: NotesService.shared,
@@ -167,6 +181,7 @@ enum ServiceRegistry {
             ),
             ServiceConfig(
                 name: "Phone",
+                summary: "View the call history synced from your iPhone, and start calls with confirmation.",
                 iconName: "phone.fill",
                 color: .green,
                 service: PhoneService.shared,
@@ -174,6 +189,7 @@ enum ServiceRegistry {
             ),
             ServiceConfig(
                 name: "Reminders",
+                summary: "View, create, update, and delete reminders and reminder lists.",
                 iconName: "list.bullet",
                 color: .orange,
                 service: RemindersService.shared,
@@ -181,6 +197,7 @@ enum ServiceRegistry {
             ),
             ServiceConfig(
                 name: "Shortcuts",
+                summary: "List and run the shortcuts on your Mac, with optional text input.",
                 iconName: "square.2.layers.3d",
                 color: .indigo,
                 service: ShortcutsService.shared,
@@ -188,6 +205,7 @@ enum ServiceRegistry {
             ),
             ServiceConfig(
                 name: "Voice Memos",
+                summary: "Fetch recordings from Voice Memos, with their transcripts and audio.",
                 iconName: "waveform",
                 color: .red,
                 service: VoiceMemosService.shared,
@@ -198,6 +216,7 @@ enum ServiceRegistry {
             configs.append(
                 ServiceConfig(
                     name: "Voicemail",
+                    summary: "Fetch the voicemails synced from your iPhone, with their transcripts and audio.",
                     iconName: "recordingtape",
                     color: .green,
                     service: VoicemailService.shared,
@@ -209,6 +228,7 @@ enum ServiceRegistry {
             configs.append(
                 ServiceConfig(
                     name: "Weather",
+                    summary: "Get current weather and daily, hourly, and minute-by-minute forecasts.",
                     iconName: "cloud.sun.fill",
                     color: .cyan,
                     service: WeatherService.shared,
@@ -300,6 +320,7 @@ final class ServerController: ObservableObject {
             (try? JSONDecoder().decode(Set<String>.self, from: trustedClientsData)) ?? []
         }
         set {
+            objectWillChange.send()
             trustedClientsData = (try? JSONEncoder().encode(newValue)) ?? Data()
         }
     }
@@ -321,7 +342,7 @@ final class ServerController: ObservableObject {
     }
 
     func getTrustedClients() -> [String] {
-        Array(trustedClients).sorted()
+        trustedClients.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
 
     func resetTrustedClients() {
@@ -375,6 +396,9 @@ final class ServerController: ObservableObject {
                     self.objectWillChange.send()
                     config.binding.wrappedValue = false
                 }
+                // Settings stays behind other windows after a permission prompt closes,
+                // so bring iMCP back to the front.
+                NSApp.activate(ignoringOtherApps: true)
             }
             await networkManager.updateServiceBindings(self.currentServiceBindings)
         }

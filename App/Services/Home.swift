@@ -33,9 +33,9 @@ actor HomeService: Service, HomeBackend {
         var errorDescription: String? {
             switch self {
             case .missing:
-                "iMCP isn't paired with iMCP Helper. Choose Pair… in Settings > Services > Home, then enter the code from the helper's window."
+                "iMCP isn't paired with iMCP Helper. Choose Pair… in Settings > Home, then enter the code from the helper's window."
             case .rejected:
-                "iMCP Helper no longer recognizes iMCP. In Settings > Services > Home, click Pair…, then enter the code shown in iMCP Helper."
+                "iMCP Helper no longer recognizes iMCP. In Settings > Home, click Pair…, then enter the code shown in iMCP Helper."
             case .codeRejected:
                 "That code didn't work. Check the code shown in iMCP Helper, then try again."
             }
