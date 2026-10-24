@@ -42,20 +42,23 @@ struct SettingsView: View {
             }
             .toolbar(removing: .sidebarToggle)
             .navigationSplitViewColumnWidth(200)
-            .background(NonCollapsibleSidebar())
         } detail: {
-            switch selection {
-            case .general:
-                GeneralSettingsView(isMenuBarExtraInserted: isMenuBarExtraInserted)
-            case .clients:
-                ClientsSettingsView(serverController: serverController)
-            case .service(let id):
-                if let config = configs.first(where: { $0.id == id }) {
-                    ServiceSettingsView(serverController: serverController, config: config)
-                        // Each service starts at the top, with its own state.
-                        .id(id)
+            Group {
+                switch selection {
+                case .general:
+                    GeneralSettingsView(isMenuBarExtraInserted: isMenuBarExtraInserted)
+                case .clients:
+                    ClientsSettingsView(serverController: serverController)
+                case .service(let id):
+                    if let config = configs.first(where: { $0.id == id }) {
+                        ServiceSettingsView(serverController: serverController, config: config)
+                            // Each service starts at the top, with its own state.
+                            .id(id)
+                    }
                 }
             }
+            // The detail column is always loaded, unlike a sidebar that the window restores collapsed.
+            .background(NonCollapsibleSidebar())
         }
         .frame(width: 715, height: 560)
     }
@@ -93,7 +96,7 @@ private struct NonCollapsibleSidebar: NSViewRepresentable {
             else { return }
             for item in controller.splitViewItems where item.behavior == .sidebar {
                 item.canCollapse = false
-                // The window can restore a sidebar that was collapsed before.
+                // The window can restore a sidebar that was collapsed before this change.
                 if item.isCollapsed {
                     DispatchQueue.main.async { item.isCollapsed = false }
                 }
