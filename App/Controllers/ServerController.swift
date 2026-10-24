@@ -395,6 +395,9 @@ final class ServerController: ObservableObject {
                     self.objectWillChange.send()
                     config.binding.wrappedValue = false
                 }
+                // Settings stays behind other windows after a permission prompt closes,
+                // so bring iMCP back to the front.
+                NSApp.activate(ignoringOtherApps: true)
             }
             await networkManager.updateServiceBindings(self.currentServiceBindings)
         }
