@@ -198,7 +198,7 @@ so iMCP can access only the data that you allow.
 To turn off a service, click its icon again.
 To turn off individual tools in a service,
 click <img style="display: inline" width="20" height="16" src="/Assets/icon.svg" />
-\> "Settings", and then click "Services".
+\> "Settings", and then click the service in the sidebar.
 
 <br clear="all">
 
@@ -215,7 +215,7 @@ To skip this dialog next time, select "Always trust this client";
 iMCP then shows a notification each time the app connects.
 You can remove trusted clients in
 <img style="display: inline" width="20" height="16" src="/Assets/icon.svg" />
-\> "Settings" > "General".
+\> "Settings" > "Clients".
 
 <br clear="all">
 
@@ -696,7 +696,7 @@ Then turn on Home in iMCP.
 iMCP finds the helper in `/Applications`.
 If you installed it somewhere else,
 iMCP asks you to choose it when you turn on Home,
-or you can choose it in Settings > Services > Home.
+or you can choose it in Settings > Home.
 When you enable Home,
 iMCP launches the helper if it isn't running,
 and the helper asks for HomeKit access.
@@ -710,7 +710,7 @@ iMCP only opens its pairing window for it.
 The helper opens that URL only with the app that has iMCP's bundle ID, `co.dododo.iMCP`,
 preferring the running copy, and not with a copy that doesn't declare the `imcp` scheme;
 otherwise, for example if you built iMCP with another bundle ID,
-the helper tells you to choose Pair… in Settings > Services > Home instead.
+the helper tells you to choose Pair… in Settings > Home instead.
 If the helper's window is behind other windows,
 click Open iMCP Helper… in iMCP's window.
 The code works once:

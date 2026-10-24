@@ -73,7 +73,7 @@ struct HelperView: View {
                 Text(
                     runtime.canOpenIMCP
                         ? "2. Open the pairing window in iMCP."
-                        : "2. In iMCP, open Settings > Services > Home, and click Pair…"
+                        : "2. In iMCP, open Settings > Home, and click Pair…"
                 )
                 .fixedSize(horizontal: false, vertical: true)
                 Text("3. Paste the code, then click Pair.")
