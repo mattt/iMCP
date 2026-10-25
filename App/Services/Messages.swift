@@ -880,7 +880,7 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
     private func openDatabase() throws -> DatabaseAccess {
         if canAccessDatabaseAtDefaultPath {
             return DatabaseAccess(
-                database: try iMessage.Database(),
+                database: try iMessage.Database(path: messagesDatabasePath),
                 path: messagesDatabasePath,
                 scopedURL: nil
             )
