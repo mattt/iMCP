@@ -1,5 +1,18 @@
 import Foundation
 
+extension FileManager {
+    /// The user's home folder, read from the password database.
+    ///
+    /// In the App Sandbox,
+    /// `NSHomeDirectory()` and `homeDirectoryForCurrentUser` return the app's container,
+    /// and the home folder is not always `/Users/<name>`:
+    /// it can be moved, for example to another volume.
+    static let userHomeDirectoryURL = URL(
+        fileURLWithPath: getpwuid(getuid())?.pointee.pw_dir.map { String(cString: $0) } ?? "/Users/\(NSUserName())",
+        isDirectory: true
+    )
+}
+
 extension ISO8601DateFormatter {
     /// Attempts to parse a date string using common ISO 8601 variants,
     /// falling back to local-time parsing when no timezone is present.

@@ -5,7 +5,7 @@ import SQLite3
 import iMessage
 
 private let log = Logger.service("messages")
-private let messagesDirectoryPath = "/Users/\(NSUserName())/Library/Messages"
+private let messagesDirectoryPath = FileManager.userHomeDirectoryURL.appendingPathComponent("Library/Messages").path
 private let messagesDatabasePath = messagesDirectoryPath + "/chat.db"
 private let messagesDatabaseBookmarkKey: String = "me.mattt.iMCP.messagesDatabaseBookmark"
 private let messagesAttachmentsBookmarkKey: String = "me.mattt.iMCP.messagesAttachmentsBookmark"
@@ -471,7 +471,7 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
         guard let found else { throw AttachmentError.notFound(id) }
         guard var path = found.filename, !path.isEmpty else { throw AttachmentError.noFile(id) }
         if path.hasPrefix("~/") {
-            path = "/Users/\(NSUserName())" + path.dropFirst(1)
+            path = FileManager.userHomeDirectoryURL.appendingPathComponent(String(path.dropFirst(2))).path
         }
         // Only what sits in the Messages folder is served: that is what the grant covers, and
         // an arbitrary path in chat.db must not turn this tool into a file reader. Symlinks
@@ -880,7 +880,7 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
     private func openDatabase() throws -> DatabaseAccess {
         if canAccessDatabaseAtDefaultPath {
             return DatabaseAccess(
-                database: try iMessage.Database(),
+                database: try iMessage.Database(path: messagesDatabasePath),
                 path: messagesDatabasePath,
                 scopedURL: nil
             )
