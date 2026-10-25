@@ -4,11 +4,8 @@ import Envelope
 import OSLog
 
 private let log = Logger.service("mail")
-// In the App Sandbox, `NSHomeDirectoryForUser(_:)` returns the app's container,
-// so the folder picker would open there; the password database has the real home folder.
-private let defaultMailDirectoryURL = URL(
-    fileURLWithPath: getpwuid(getuid())?.pointee.pw_dir.map { String(cString: $0) } ?? "/Users/\(NSUserName())"
-).appendingPathComponent("Library/Mail")
+private let defaultMailDirectoryURL = URL(fileURLWithPath: FileManager.userHomeDirectoryPath)
+    .appendingPathComponent("Library/Mail")
 private let mailDirectoryBookmarkKey = "me.mattt.iMCP.mailDirectoryBookmark"
 private let defaultLimit = 30
 private let maximumLimit = 100

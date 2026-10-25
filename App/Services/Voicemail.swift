@@ -3,7 +3,8 @@ import OSLog
 
 private let log = Logger.service("voicemail")
 private let dataStoreDirectoryPath =
-    "/Users/\(NSUserName())/Library/Group Containers/group.com.apple.FaceTime/com.apple.facetimemessagestored/Data Store"
+    FileManager.userHomeDirectoryPath
+    + "/Library/Group Containers/group.com.apple.FaceTime/com.apple.facetimemessagestored/Data Store"
 private let dataStoreBookmarkKey: String = "me.mattt.iMCP.voicemailDataStoreBookmark"
 private let defaultLimit = 30
 
