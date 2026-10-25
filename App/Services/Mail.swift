@@ -4,8 +4,7 @@ import Envelope
 import OSLog
 
 private let log = Logger.service("mail")
-private let defaultMailDirectoryURL = URL(fileURLWithPath: FileManager.userHomeDirectoryPath)
-    .appendingPathComponent("Library/Mail")
+private let defaultMailDirectoryURL = FileManager.userHomeDirectoryURL.appendingPathComponent("Library/Mail")
 private let mailDirectoryBookmarkKey = "me.mattt.iMCP.mailDirectoryBookmark"
 private let defaultLimit = 30
 private let maximumLimit = 100

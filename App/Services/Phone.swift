@@ -4,8 +4,8 @@ import Ontology
 import SQLite3
 
 private let log = Logger.service("phone")
-private let callHistoryDirectoryPath =
-    FileManager.userHomeDirectoryPath + "/Library/Application Support/CallHistoryDB"
+private let callHistoryDirectoryPath = FileManager.userHomeDirectoryURL
+    .appendingPathComponent("Library/Application Support/CallHistoryDB").path
 private let callHistoryDatabaseName = "CallHistory.storedata"
 private let callHistoryDatabasePath = callHistoryDirectoryPath + "/" + callHistoryDatabaseName
 private let callHistoryDatabaseBookmarkKey: String = "me.mattt.iMCP.callHistoryDatabaseBookmark"
