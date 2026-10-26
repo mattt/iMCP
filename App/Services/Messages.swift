@@ -401,6 +401,54 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
             }
             return try self.readAttachment(id: id, maxBytes: maxBytes)
         }
+
+        Tool(
+            name: "messages_send",
+            description:
+                "Send a text message with the Messages app, to a phone number or email address, or to an existing conversation by the @id that messages_fetch reports in isPartOf. iMCP shows the user the recipient, the service, and the full text, and sends only if they click Send. If they cancel or do not answer within \(Int(Self.sendConfirmationTimeout.components.seconds)) seconds, the call fails and nothing is sent. Success means Messages accepted the message for sending, not that it was delivered.",
+            inputSchema: .object(
+                properties: [
+                    "recipient": .string(
+                        description:
+                            "Phone number (E.164 format preferred) or email address. Give either recipient or chatId"
+                    ),
+                    "chatId": .string(
+                        description:
+                            "Conversation @id, as reported in a message's isPartOf. Give either recipient or chatId"
+                    ),
+                    "text": .string(description: "The message text, sent exactly as given"),
+                    "service": .string(
+                        description:
+                            "Service for a message to recipient; defaults to iMessage. SMS and RCS need an iPhone with Text Message Forwarding. Not allowed with chatId, which keeps the conversation's own service",
+                        enum: SendService.allCases.map { .string($0.rawValue) }
+                    ),
+                ],
+                required: ["text"],
+                additionalProperties: false
+            ),
+            annotations: .init(
+                title: "Send Message",
+                readOnlyHint: false,
+                destructiveHint: true,
+                idempotentHint: false,
+                openWorldHint: true
+            )
+        ) { arguments in
+            let request = try SendRequest(arguments: arguments)
+            let confirmation = try self.confirmation(for: request)
+            try Self.checkAutomationPermission()
+            return try await Self.send(
+                request,
+                confirm: {
+                    await Self.askForConfirmation(timeout: Self.sendConfirmationTimeout) { answer in
+                        MessageSendConfirmationWindowController.shared.show(confirmation, onAnswer: answer)
+                    }
+                },
+                deliver: { request in
+                    try await Self.deliver(request)
+                }
+            )
+        }
     }
 
     /// The attachments of the given messages (by guid), keyed by message guid, in chat.db
@@ -1062,5 +1110,466 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
             "File selection panel: \(shouldEnable ? "enabling" : "disabling") URL: \(url.path)"
         )
         return shouldEnable
+    }
+}
+
+// MARK: - Sending
+
+private let messagesBundleIdentifier = "com.apple.MobileSMS"
+
+extension MessageService {
+    /// How long the user has to answer a send confirmation.
+    /// MCP clients commonly give up on a request after 60 seconds,
+    /// so the confirmation ends first
+    /// and the client learns that nothing was sent.
+    static let sendConfirmationTimeout: Duration = .seconds(50)
+
+    /// The service that a message to a phone number or email address goes out on.
+    enum SendService: String, CaseIterable, Sendable {
+        case iMessage
+        case SMS
+        case RCS
+
+        /// The code of the matching `service type` enumerator
+        /// in the Messages scripting dictionary.
+        var serviceTypeCode: FourCharCode {
+            switch self {
+            case .iMessage: return fourCharCode("sims")
+            case .SMS: return fourCharCode("ssms")
+            case .RCS: return fourCharCode("srcs")
+            }
+        }
+    }
+
+    /// A validated `messages_send` call: where the message goes and what it says.
+    struct SendRequest: Equatable, Sendable {
+        enum Destination: Equatable, Sendable {
+            /// A phone number or email address, on the given service.
+            case recipient(String, SendService)
+            /// An existing conversation, by its chat.db guid.
+            /// The conversation keeps the service it already uses.
+            case chat(String)
+        }
+
+        let destination: Destination
+        let text: String
+
+        init(destination: Destination, text: String) {
+            self.destination = destination
+            self.text = text
+        }
+
+        /// Validates the arguments of a `messages_send` call.
+        /// The input schema is advertised, not enforced,
+        /// so every argument is checked here.
+        init(arguments: [String: Value]) throws {
+            func string(_ name: String) throws -> String? {
+                guard let value = arguments[name], !value.isNull else { return nil }
+                guard let string = value.stringValue else {
+                    throw SendError.invalidArgument("\(name) must be a string")
+                }
+                return string
+            }
+
+            guard let text = try string("text"),
+                !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            else {
+                throw SendError.invalidArgument("text is required and must not be blank")
+            }
+
+            let recipient = try string("recipient")
+            let chatID = try string("chatId")
+            let service = try string("service")
+
+            switch (recipient, chatID) {
+            case (nil, nil):
+                throw SendError.invalidArgument("give either recipient or chatId")
+            case (.some, .some):
+                throw SendError.invalidArgument("give either recipient or chatId, not both")
+            case (let recipient?, nil):
+                guard let handle = SendRequest.normalizedRecipient(recipient) else {
+                    throw SendError.invalidArgument(
+                        "recipient must be a phone number or an email address"
+                    )
+                }
+                var sendService = SendService.iMessage
+                if let service {
+                    guard
+                        let match = SendService.allCases.first(where: {
+                            $0.rawValue.caseInsensitiveCompare(service) == .orderedSame
+                        })
+                    else {
+                        let expected = SendService.allCases.map(\.rawValue).joined(separator: ", ")
+                        throw SendError.invalidArgument("service must be one of: \(expected)")
+                    }
+                    sendService = match
+                }
+                self.init(destination: .recipient(handle, sendService), text: text)
+            case (nil, let chatID?):
+                guard service == nil else {
+                    throw SendError.invalidArgument(
+                        "service applies only to recipient; a conversation keeps its own service"
+                    )
+                }
+                let chatID = chatID.trimmingCharacters(in: .whitespacesAndNewlines)
+                // chat.db guids look like `iMessage;-;+15551234567` or `any;+;chat123456`.
+                guard chatID.range(of: #"^[^;\s]+;[-+];\S+$"#, options: .regularExpression) != nil
+                else {
+                    throw SendError.invalidArgument(
+                        "chatId must be a conversation @id from messages_fetch, such as iMessage;-;+15551234567"
+                    )
+                }
+                self.init(destination: .chat(chatID), text: text)
+            }
+        }
+
+        /// Returns the recipient as Messages expects a handle,
+        /// or `nil` when it is neither a phone number nor an email address.
+        /// Phone numbers lose their formatting and keep a leading plus sign;
+        /// email addresses are kept as given.
+        static func normalizedRecipient(_ recipient: String) -> String? {
+            let trimmed = recipient.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.contains("@") {
+                let isEmail =
+                    trimmed.range(of: #"^[^@\s]+@[^@\s]+\.[^@\s]+$"#, options: .regularExpression) != nil
+                return isEmail ? trimmed : nil
+            }
+            guard trimmed.range(of: #"^\+?[0-9 ().-]+$"#, options: .regularExpression) != nil else {
+                return nil
+            }
+            let digits = trimmed.filter(\.isASCII).filter(\.isNumber)
+            // Short codes have as few as three digits; E.164 allows fifteen.
+            guard (3 ... 15).contains(digits.count) else { return nil }
+            return (trimmed.hasPrefix("+") ? "+" : "") + digits
+        }
+
+        /// The service shown in the confirmation.
+        /// A conversation's guid starts with its service,
+        /// or with `any` when Messages chooses one for each message.
+        var serviceDescription: String {
+            switch destination {
+            case .recipient(_, let service):
+                return service.rawValue
+            case .chat(let id):
+                let prefix = id.prefix(while: { $0 != ";" })
+                if let service = SendService.allCases.first(where: { $0.rawValue == prefix }) {
+                    return service.rawValue
+                }
+                return "Chosen by Messages"
+            }
+        }
+
+        /// The Apple event that calls a handler in ``MessageService/sendScriptSource``.
+        /// The text and the recipient travel as typed descriptors,
+        /// so they never become AppleScript source.
+        var handlerEvent: NSAppleEventDescriptor {
+            switch destination {
+            case .recipient(let handle, let service):
+                return MessageService.handlerEvent(
+                    named: "sendToParticipant",
+                    parameters: [
+                        NSAppleEventDescriptor(string: text),
+                        NSAppleEventDescriptor(string: handle),
+                        NSAppleEventDescriptor(enumCode: service.serviceTypeCode),
+                    ]
+                )
+            case .chat(let id):
+                return MessageService.handlerEvent(
+                    named: "sendToChat",
+                    parameters: [
+                        NSAppleEventDescriptor(string: text),
+                        NSAppleEventDescriptor(string: id),
+                    ]
+                )
+            }
+        }
+
+        /// What `messages_send` returns once Messages accepts the message.
+        var result: [String: Value] {
+            var result: [String: Value] = [
+                "@context": "https://schema.org",
+                "@type": "SendAction",
+                "actionStatus": "CompletedActionStatus",
+                "object": [
+                    "@type": "Message",
+                    "text": .string(text),
+                ],
+            ]
+            switch destination {
+            case .recipient(let handle, let service):
+                result["recipient"] = ["@id": .string(handle)]
+                result["instrument"] = ["name": .string(service.rawValue)]
+            case .chat(let id):
+                result["recipient"] = ["@type": "Conversation", "@id": .string(id)]
+            }
+            return result
+        }
+    }
+
+    /// The handlers that send a message.
+    /// The source is fixed; ``SendRequest/handlerEvent`` supplies the values.
+    /// The service type arrives as an enumerator code rather than a term,
+    /// so the script compiles on systems whose dictionary lacks `RCS`.
+    static let sendScriptSource = """
+        on sendToParticipant(messageText, recipientHandle, serviceType)
+            tell application id "\(messagesBundleIdentifier)"
+                set targetAccount to first account whose service type is serviceType
+                send messageText to participant recipientHandle of targetAccount
+            end tell
+        end sendToParticipant
+
+        on sendToChat(messageText, chatID)
+            tell application id "\(messagesBundleIdentifier)"
+                send messageText to chat id chatID
+            end tell
+        end sendToChat
+        """
+
+    /// Builds an Apple event that calls an AppleScript handler with positional parameters.
+    /// AppleScript matches handler names without regard to case,
+    /// and expects the name in the event in lowercase.
+    /// The codes are `kASAppleScriptSuite`, `kASSubroutineEvent`, and `keyASSubroutineName`
+    /// from Carbon's `ASRegistry.h`.
+    static func handlerEvent(
+        named name: String,
+        parameters: [NSAppleEventDescriptor]
+    ) -> NSAppleEventDescriptor {
+        let event = NSAppleEventDescriptor.appleEvent(
+            withEventClass: fourCharCode("ascr"),
+            eventID: fourCharCode("psbr"),
+            targetDescriptor: .currentProcess(),
+            returnID: AEReturnID(kAutoGenerateReturnID),
+            transactionID: AETransactionID(kAnyTransactionID)
+        )
+        event.setDescriptor(
+            NSAppleEventDescriptor(string: name.lowercased()),
+            forKeyword: fourCharCode("snam")
+        )
+        let list = NSAppleEventDescriptor.list()
+        for (index, parameter) in parameters.enumerated() {
+            list.insert(parameter, at: index + 1)
+        }
+        event.setParam(list, forKeyword: keyDirectObject)
+        return event
+    }
+
+    /// The user's answer to a send confirmation.
+    enum SendConfirmationAnswer: Equatable, Sendable {
+        case send
+        case cancel
+        case timeout
+    }
+
+    /// Sends a message only after `confirm` reports that the user chose Send.
+    /// Any other answer throws, and `deliver` is never called.
+    static func send(
+        _ request: SendRequest,
+        confirm: () async -> SendConfirmationAnswer,
+        deliver: (SendRequest) async throws -> Void
+    ) async throws -> [String: Value] {
+        switch await confirm() {
+        case .send:
+            break
+        case .cancel:
+            log.notice("The user declined to send a message")
+            throw SendError.declined
+        case .timeout:
+            log.notice("A message was not sent because its confirmation timed out")
+            throw SendError.timedOut
+        }
+        try await deliver(request)
+        log.notice("Messages accepted a message for sending")
+        return request.result
+    }
+
+    /// Asks the user to confirm a send and waits for the answer.
+    ///
+    /// `present` puts the question on screen.
+    /// It receives a closure to call with the answer, `true` for Send,
+    /// and returns a closure that takes the question off screen.
+    /// When no answer comes within `timeout`, or the calling task is cancelled,
+    /// the question is taken off screen and the answer is not Send.
+    @MainActor
+    static func askForConfirmation(
+        timeout: Duration,
+        present: @MainActor (@escaping @MainActor (Bool) -> Void) -> @MainActor () -> Void
+    ) async -> SendConfirmationAnswer {
+        let pending = PendingSendConfirmation()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                MainActor.assumeIsolated {
+                    pending.continuation = continuation
+                    let dismiss = present { approved in
+                        pending.finish(approved ? .send : .cancel)
+                    }
+                    guard pending.isWaiting else { return }
+                    pending.dismiss = dismiss
+                    pending.timeoutTask = Task { @MainActor in
+                        try? await Task.sleep(for: timeout)
+                        guard !Task.isCancelled else { return }
+                        pending.finish(.timeout)
+                    }
+                }
+            }
+        } onCancel: {
+            Task { @MainActor in pending.finish(.cancel) }
+        }
+    }
+
+    /// The state of one confirmation, so that the first answer wins
+    /// and the others are ignored.
+    @MainActor
+    private final class PendingSendConfirmation {
+        var continuation: CheckedContinuation<SendConfirmationAnswer, Never>?
+        var dismiss: (@MainActor () -> Void)?
+        var timeoutTask: Task<Void, Never>?
+
+        var isWaiting: Bool { continuation != nil }
+
+        func finish(_ answer: SendConfirmationAnswer) {
+            guard let continuation else { return }
+            self.continuation = nil
+            timeoutTask?.cancel()
+            timeoutTask = nil
+            dismiss?()
+            dismiss = nil
+            continuation.resume(returning: answer)
+        }
+    }
+
+    /// What the confirmation window shows for a request.
+    /// For a conversation, the participants come from chat.db when iMCP can read it;
+    /// a conversation that chat.db does not have is an error.
+    fileprivate func confirmation(for request: SendRequest) throws -> MessageSendConfirmation {
+        switch request.destination {
+        case .recipient(let handle, _):
+            return MessageSendConfirmation(
+                recipient: handle,
+                conversationID: nil,
+                service: request.serviceDescription,
+                text: request.text
+            )
+        case .chat(let id):
+            var recipient = id
+            if let access = try? openDatabase() {
+                defer { access.stop() }
+                let chatID = Chat.ID(rawValue: id)
+                guard
+                    let chat = try access.database.fetch(FetchRequest<Chat>(predicate: .id(chatID), limit: 1))
+                        .first
+                else {
+                    throw SendError.unknownChat(id)
+                }
+                let participants = chat.participants.map(\.rawValue).joined(separator: ", ")
+                if let name = chat.displayName, !name.isEmpty {
+                    recipient = participants.isEmpty ? name : "\(name) (\(participants))"
+                } else if !participants.isEmpty {
+                    recipient = participants
+                }
+            }
+            return MessageSendConfirmation(
+                recipient: recipient,
+                conversationID: id,
+                service: request.serviceDescription,
+                text: request.text
+            )
+        }
+    }
+
+    /// Fails before the confirmation when the user has already refused
+    /// to let iMCP control Messages,
+    /// so they are not asked to approve a message that cannot go out.
+    /// When macOS has not asked yet, or Messages is not running,
+    /// the answer is unknown and the send goes ahead;
+    /// macOS asks for permission when the Apple event goes out.
+    fileprivate static func checkAutomationPermission() throws {
+        let target = NSAppleEventDescriptor(bundleIdentifier: messagesBundleIdentifier)
+        let status = AEDeterminePermissionToAutomateTarget(
+            target.aeDesc,
+            AEEventClass(typeWildCard),
+            AEEventID(typeWildCard),
+            false
+        )
+        if status == errAEEventNotPermitted {
+            throw SendError.notAuthorized
+        }
+    }
+
+    /// Hands the message to Messages.
+    @MainActor
+    fileprivate static func deliver(_ request: SendRequest) throws {
+        guard let script = NSAppleScript(source: sendScriptSource) else {
+            throw SendError.appleScript(number: nil, message: "the send script could not be loaded")
+        }
+        var errorInfo: NSDictionary?
+        guard script.compileAndReturnError(&errorInfo) else {
+            throw SendError(errorInfo: errorInfo, request: request)
+        }
+        errorInfo = nil
+        script.executeAppleEvent(request.handlerEvent, error: &errorInfo)
+        if errorInfo != nil {
+            throw SendError(errorInfo: errorInfo, request: request)
+        }
+    }
+
+    enum SendError: LocalizedError, Equatable {
+        case invalidArgument(String)
+        case declined
+        case timedOut
+        case notAuthorized
+        case unknownChat(String)
+        case noAccountOrRecipient(String, SendService)
+        case appleScript(number: Int?, message: String)
+
+        /// Describes an error that AppleScript reports for a send.
+        init(errorInfo: NSDictionary?, request: SendRequest) {
+            let number = (errorInfo?[NSAppleScript.errorNumber] as? NSNumber)?.intValue
+            let message =
+                errorInfo?[NSAppleScript.errorMessage] as? String
+                ?? errorInfo.map { String(describing: $0) }
+                ?? "unknown error"
+            switch (number, request.destination) {
+            case (Int(errAEEventNotPermitted), _):
+                self = .notAuthorized
+            case (Int(errAENoSuchObject), .chat(let id)):
+                self = .unknownChat(id)
+            case (Int(errAENoSuchObject), .recipient(let handle, let service)),
+                (Int(errAEIllegalIndex), .recipient(let handle, let service)):
+                self = .noAccountOrRecipient(handle, service)
+            default:
+                self = .appleScript(number: number, message: message)
+            }
+        }
+
+        var errorDescription: String? {
+            switch self {
+            case .invalidArgument(let message):
+                return "Invalid argument: \(message)"
+            case .declined:
+                return "The user declined to send the message in iMCP. Nothing was sent."
+            case .timedOut:
+                let seconds = MessageService.sendConfirmationTimeout.components.seconds
+                return
+                    "The user declined to send the message: iMCP got no answer within \(seconds) seconds. Nothing was sent."
+            case .notAuthorized:
+                return
+                    "iMCP is not allowed to control Messages. Allow iMCP to control Messages in System Settings > Privacy & Security > Automation. Nothing was sent."
+            case .unknownChat(let id):
+                return "Messages has no conversation \(id). Nothing was sent."
+            case .noAccountOrRecipient(let handle, let service):
+                return
+                    "Messages could not send to \(handle) over \(service.rawValue): no signed-in \(service.rawValue) account, or the recipient is not reachable on it. Nothing was sent."
+            case .appleScript(let number, let message):
+                let code = number.map { " (error \($0))" } ?? ""
+                return "Messages could not send the message: \(message)\(code)"
+            }
+        }
+    }
+}
+
+/// Packs four ASCII characters into an Apple event code.
+private func fourCharCode(_ string: StaticString) -> FourCharCode {
+    string.withUTF8Buffer { bytes in
+        bytes.reduce(0) { $0 << 8 | FourCharCode($1) }
     }
 }
