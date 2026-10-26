@@ -430,8 +430,10 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                 The user must confirm the recipient, service, and full text in iMCP. \
                 Canceling or leaving the confirmation unanswered for \(Int(Self.sendConfirmationTimeout.components.seconds)) seconds sends nothing. \
                 Success means Messages accepted the message, not that it was delivered. \
-                To check delivery, call messages_fetch with the same chatId or the recipient in participants. \
-                Match the outgoing message by recipient, text, and time before reading isDelivered and error. \
+                When iMCP finds the sent message in the Messages database, \
+                the result's object has its @id, createdAt, and conversation (isPartOf). \
+                To check delivery, call messages_fetch with that chatId and start set to createdAt, \
+                then read isDelivered and error on the message with that @id. \
                 Missing status doesn't confirm delivery.
                 """,
             inputSchema: .object(
@@ -474,6 +476,16 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                 },
                 deliver: { request in
                     try await Self.deliver(request)
+                },
+                locate: { request, start in
+                    await Self.awaitSentMessage(
+                        for: request,
+                        sentAfter: start,
+                        timeout: Self.sentMessageLookupTimeout,
+                        interval: .milliseconds(250)
+                    ) {
+                        try self.outgoingMessages(since: start)
+                    }
                 }
             )
         }
@@ -1343,17 +1355,58 @@ extension MessageService {
             }
         }
 
+        /// Whether a chat in chat.db is where this request sends:
+        /// the requested conversation,
+        /// or the one-to-one conversation with the recipient,
+        /// whose guid ends with the recipient's handle.
+        /// Messages adds a country code to a phone number given without one,
+        /// so a phone number also matches the end of a longer one.
+        func isDestination(ofChat chatID: String?) -> Bool {
+            guard let chatID else { return false }
+            switch destination {
+            case .chat(let id):
+                return chatID == id
+            case .recipient(let handle, _):
+                let parts = chatID.split(separator: ";", maxSplits: 2, omittingEmptySubsequences: false)
+                guard parts.count == 3, parts[1] == "-" else { return false }
+                let chatHandle = String(parts[2])
+                if handle.contains("@") {
+                    return chatHandle.caseInsensitiveCompare(handle) == .orderedSame
+                }
+                let digits = handle.filter(\.isNumber)
+                let chatDigits = chatHandle.filter(\.isNumber)
+                guard !chatHandle.contains("@"), !digits.isEmpty else { return false }
+                return chatDigits == digits || (digits.count >= 7 && chatDigits.hasSuffix(digits))
+            }
+        }
+
         /// What `messages_send` returns once Messages accepts the message.
-        var result: [String: Value] {
+        /// The sent message's @id, date, and conversation are included
+        /// when it was found in chat.db.
+        func result(sentMessage: OutgoingMessage?) -> [String: Value] {
+            var object: [String: Value] = [
+                "@type": "Message",
+                "text": .string(text),
+            ]
+            if let sentMessage {
+                object["@id"] = .string(sentMessage.id)
+                object["createdAt"] = .string(sentMessage.date.formatted(.iso8601))
+                if let chatID = sentMessage.chatID {
+                    object["isPartOf"] = ["@type": "Conversation", "@id": .string(chatID)]
+                }
+            }
             var result: [String: Value] = [
                 "@context": "https://schema.org",
                 "@type": "SendAction",
                 "actionStatus": "CompletedActionStatus",
-                "object": [
-                    "@type": "Message",
-                    "text": .string(text),
-                ],
+                "object": .object(object),
             ]
+            if sentMessage == nil {
+                let seconds = MessageService.sentMessageLookupTimeout.components.seconds
+                result["description"] = .string(
+                    "Messages accepted the message, but iMCP couldn't find it in the Messages database within \(seconds) seconds, so it has no @id."
+                )
+            }
             switch destination {
             case .recipient(let handle, let service):
                 result["recipient"] = ["@id": .string(handle)]
@@ -1421,10 +1474,14 @@ extension MessageService {
 
     /// Sends a message only after `confirm` reports that the user chose Send.
     /// Any other answer throws, and `deliver` is never called.
+    /// After the send, `locate` looks for the message in chat.db,
+    /// given the time just before the send started;
+    /// not finding it leaves the result without an @id but doesn't fail the send.
     static func send(
         _ request: SendRequest,
         confirm: () async -> SendConfirmationAnswer,
-        deliver: (SendRequest) async throws -> Void
+        deliver: (SendRequest) async throws -> Void,
+        locate: (SendRequest, Date) async -> OutgoingMessage?
     ) async throws -> [String: Value] {
         switch await confirm() {
         case .send:
@@ -1436,9 +1493,99 @@ extension MessageService {
             log.notice("A message was not sent because its confirmation timed out")
             throw SendError.timedOut
         }
+        let start = Date()
         try await deliver(request)
         log.notice("Messages accepted a message for sending")
-        return request.result
+        let sentMessage = await locate(request, start)
+        if sentMessage == nil {
+            log.notice("The sent message didn't appear in the Messages database in time")
+        }
+        return request.result(sentMessage: sentMessage)
+    }
+
+    // MARK: Finding the sent message
+
+    /// How long `messages_send` waits for the sent message to appear in chat.db.
+    /// Messages records it asynchronously, usually within a second.
+    static let sentMessageLookupTimeout: Duration = .seconds(5)
+
+    /// A message from chat.db, with what's needed to match it to a send.
+    struct OutgoingMessage: Equatable, Sendable {
+        /// The message's guid, which messages_fetch reports as its @id.
+        let id: String
+        let chatID: String?
+        let text: String
+        let date: Date
+        let isFromMe: Bool
+    }
+
+    /// Returns the message that a send posted:
+    /// the newest message from me, dated at or after `start`,
+    /// in the request's conversation, with the request's text.
+    /// Text is compared without surrounding whitespace,
+    /// which Messages may trim.
+    static func sentMessage(
+        for request: SendRequest,
+        sentAfter start: Date,
+        among messages: [OutgoingMessage]
+    ) -> OutgoingMessage? {
+        let text = request.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return
+            messages
+            .filter { message in
+                message.isFromMe
+                    && message.date >= start
+                    && message.text.trimmingCharacters(in: .whitespacesAndNewlines) == text
+                    && request.isDestination(ofChat: message.chatID)
+            }
+            .max { $0.date < $1.date }
+    }
+
+    /// Reads messages with `read` until one matches the send or `timeout` passes.
+    /// `read` returns `nil` when chat.db can't be read, which ends the search;
+    /// an error from one read is retried with the next.
+    static func awaitSentMessage(
+        for request: SendRequest,
+        sentAfter start: Date,
+        timeout: Duration,
+        interval: Duration,
+        read: () throws -> [OutgoingMessage]?
+    ) async -> OutgoingMessage? {
+        let clock = ContinuousClock()
+        let deadline = clock.now + timeout
+        while true {
+            do {
+                guard let messages = try read() else { return nil }
+                if let message = sentMessage(for: request, sentAfter: start, among: messages) {
+                    return message
+                }
+            } catch {
+                log.debug("Reading sent messages failed: \(error.localizedDescription, privacy: .public)")
+            }
+            guard clock.now < deadline else { return nil }
+            try? await Task.sleep(for: min(interval, deadline - clock.now))
+        }
+    }
+
+    /// The messages dated at or after `start`,
+    /// or `nil` when chat.db can't be read without asking the user.
+    fileprivate func outgoingMessages(since start: Date) throws -> [OutgoingMessage]? {
+        guard let access = try? openDatabase() else { return nil }
+        defer { access.stop() }
+        // chat.db stores dates as Int64 nanoseconds since 2001, so the open end uses a date that fits.
+        let request = FetchRequest<Message>(
+            predicate: .dateRange(start ..< Date(timeIntervalSinceReferenceDate: 9_000_000_000)),
+            limit: 100
+        )
+        return try access.database.fetch(request).map { message in
+            OutgoingMessage(
+                id: message.id.description,
+                chatID: message.chatID?.rawValue,
+                text: message.text,
+                date: message.date,
+                isFromMe: message.isFromMe
+            )
+        }
     }
 
     /// Waits for the user's send confirmation.
