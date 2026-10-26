@@ -2,6 +2,11 @@ import AppKit
 import SwiftUI
 
 /// What the user sees before iMCP sends a message.
+///
+/// The client name, recipient, conversation ID, and service come from outside iMCP,
+/// so they are shown on one line each and shortened:
+/// a client or a group chat's name can't add lines that look like the To line.
+/// The text is shown as it will be sent, in its own scrolling box.
 struct MessageSendConfirmation: Equatable {
     /// The name that the MCP client gave when it connected, if known.
     let clientName: String?
@@ -13,12 +18,56 @@ struct MessageSendConfirmation: Equatable {
     let service: String
     /// The full text, exactly as it will be sent.
     let text: String
+
+    init(clientName: String?, recipient: String, conversationID: String?, service: String, text: String) {
+        let clientName = clientName.map { Self.sanitized($0, maxLength: 60) }
+        self.clientName = clientName?.isEmpty == false ? clientName : nil
+        self.recipient = Self.sanitized(recipient, maxLength: 600)
+        self.conversationID = conversationID.map { Self.sanitized($0, maxLength: 200) }
+        self.service = Self.sanitized(service, maxLength: 40)
+        self.text = text
+    }
+
+    /// Returns `string` as one line of at most `maxLength` characters.
+    ///
+    /// Line breaks, tabs, and other whitespace become single spaces;
+    /// other control characters and the Unicode bidirectional controls
+    /// (embeddings, overrides, isolates, and marks) are removed,
+    /// so the text can't reorder or reflow what is shown around it.
+    /// A longer result ends with an ellipsis.
+    static func sanitized(_ string: String, maxLength: Int) -> String {
+        var scalars = String.UnicodeScalarView()
+        var pendingSpace = false
+        for scalar in string.unicodeScalars {
+            let properties = scalar.properties
+            if properties.isWhitespace {
+                pendingSpace = !scalars.isEmpty
+            } else if properties.generalCategory == .control || properties.isBidiControl {
+                continue
+            } else {
+                if pendingSpace {
+                    scalars.append(" ")
+                    pendingSpace = false
+                }
+                scalars.append(scalar)
+            }
+        }
+        let line = String(scalars)
+        guard line.count > maxLength else { return line }
+        return line.prefix(max(maxLength - 1, 0)) + "…"
+    }
 }
 
 struct MessageSendConfirmationView: View {
+    /// How long Send stays disabled after the window appears,
+    /// so a click aimed at something else as it appears can't send.
+    static let sendDelay: Duration = .milliseconds(500)
+
     let confirmation: MessageSendConfirmation
     let onSend: () -> Void
     let onCancel: () -> Void
+
+    @State private var isSendEnabled = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -101,12 +150,17 @@ struct MessageSendConfirmationView: View {
                     onSend()
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(!isSendEnabled)
             }
         }
         .padding(24)
         .frame(width: 440)
         .fixedSize()
         .background(Color(NSColor.windowBackgroundColor))
+        .task {
+            try? await Task.sleep(for: Self.sendDelay)
+            isSendEnabled = true
+        }
     }
 }
 
@@ -114,10 +168,23 @@ struct MessageSendConfirmationView: View {
 final class MessageSendConfirmationWindowController: NSObject, NSWindowDelegate {
     static let shared = MessageSendConfirmationWindowController()
 
-    /// A separate confirmation window for each request.
+    /// Whether windows are put on screen; tests build them without showing them.
+    private let showsWindows: Bool
+    /// Confirmation windows by request.
+    /// `MessageService.askForConfirmation` shows one at a time.
     private var windows: [UUID: NSWindow] = [:]
     /// Handlers for unanswered confirmations.
     private var answerHandlers: [UUID: (Bool) -> Void] = [:]
+
+    init(showsWindows: Bool = true) {
+        self.showsWindows = showsWindows
+    }
+
+    /// The requests whose windows are open.
+    var openConfirmationIDs: [UUID] { Array(windows.keys) }
+
+    /// The window for a request, while it is open.
+    func window(for id: UUID) -> NSWindow? { windows[id] }
 
     /// Shows a confirmation window for one message.
     ///
@@ -142,26 +209,21 @@ final class MessageSendConfirmationWindowController: NSObject, NSWindowDelegate 
         window.isMovableByWindowBackground = false
         window.delegate = self
 
-        // Offset additional windows so each remains visible.
-        let cascadeIndex = windows.count
         windows[id] = window
         answerHandlers[id] = onAnswer
 
-        window.center()
-        if cascadeIndex > 0 {
-            let offset = CGFloat(cascadeIndex) * 24
-            window.setFrameOrigin(
-                NSPoint(x: window.frame.origin.x + offset, y: window.frame.origin.y - offset)
-            )
+        if showsWindows {
+            window.center()
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
         }
-
-        NSApp.activate(ignoringOtherApps: true)
-        window.makeKeyAndOrderFront(nil)
 
         return { [weak self] in self?.close(id) }
     }
 
-    private func answer(_ id: UUID, _ approved: Bool) {
+    /// Answers a confirmation, as its Send and Cancel buttons do.
+    /// Only the first answer counts.
+    func answer(_ id: UUID, _ approved: Bool) {
         guard let handler = answerHandlers.removeValue(forKey: id) else { return }
         close(id)
         handler(approved)
