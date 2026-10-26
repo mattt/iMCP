@@ -1223,6 +1223,7 @@ actor ServerNetworkManager {
                             let encoder = JSONEncoder()
                             encoder.userInfo[Ontology.DateTime.timeZoneOverrideKey] =
                                 TimeZone.current
+                            encoder.userInfo[JSONLD.omitsNestedTypesKey] = true
                             encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
 
                             let data = try encoder.encode(value)
