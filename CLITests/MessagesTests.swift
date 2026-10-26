@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import os
 import XCTest
 
 final class MessagesTests: XCTestCase {
@@ -29,7 +30,6 @@ final class MessagesTests: XCTestCase {
         let request = try SendRequest(arguments: ["recipient": "+1 555 123 4567", "text": "Hi"])
         XCTAssertEqual(request.destination, .recipient("+15551234567", .iMessage))
         XCTAssertEqual(request.text, "Hi")
-        XCTAssertEqual(request.serviceDescription, "iMessage")
     }
 
     func testServiceIsMatchedWithoutRegardToCase() throws {
@@ -49,19 +49,55 @@ final class MessagesTests: XCTestCase {
         XCTAssertEqual(request.text, text)
     }
 
-    func testChatIDKeepsTheConversationsService() throws {
-        let request = try SendRequest(arguments: ["chatId": "iMessage;-;+15551234567", "text": "Hi"])
-        XCTAssertEqual(request.destination, .chat("iMessage;-;+15551234567"))
-        XCTAssertEqual(request.serviceDescription, "iMessage")
+    func testChatIDIsKept() throws {
+        let request = try SendRequest(arguments: ["chatId": "any;+;chat123456", "text": "Hi"])
+        XCTAssertEqual(request.destination, .chat("any;+;chat123456"))
+    }
 
+    // MARK: - Confirmation details
+
+    func testRecipientTargetShowsTheHandleAndService() throws {
+        let request = SendRequest(destination: .recipient("+15551234567", .SMS), text: "Hi")
         XCTAssertEqual(
-            try SendRequest(arguments: ["chatId": "SMS;-;+15551234567", "text": "Hi"]).serviceDescription,
-            "SMS"
+            try MessageService.resolvedTarget(for: request, chat: nil),
+            .init(recipient: "+15551234567", conversationID: nil, service: "SMS")
+        )
+    }
+
+    func testChatTargetShowsItsParticipantsAndService() throws {
+        let request = SendRequest(destination: .chat("any;+;chat123456"), text: "Hi")
+        let chat = MessageService.ChatDetails(
+            displayName: "Book Club",
+            participants: ["+15551234567", "jane@example.com"],
+            service: "iMessage"
         )
         XCTAssertEqual(
-            try SendRequest(arguments: ["chatId": "any;+;chat123456", "text": "Hi"]).serviceDescription,
-            "Chosen by Messages"
+            try MessageService.resolvedTarget(for: request, chat: chat),
+            .init(
+                recipient: "Book Club (+15551234567, jane@example.com)",
+                conversationID: "any;+;chat123456",
+                service: "iMessage"
+            )
         )
+    }
+
+    func testUnresolvedChatsAreBlockedBeforeConfirmation() {
+        let request = SendRequest(destination: .chat("any;+;chat123456"), text: "Hi")
+        let unresolved: [MessageService.ChatDetails?] = [
+            nil,
+            .init(displayName: "Book Club", participants: [], service: "iMessage"),
+            .init(displayName: nil, participants: ["+15551234567"], service: nil),
+            .init(displayName: nil, participants: ["+15551234567"], service: ""),
+        ]
+        for chat in unresolved {
+            XCTAssertThrowsError(
+                try MessageService.resolvedTarget(for: request, chat: chat),
+                "\(String(describing: chat))"
+            ) { error in
+                XCTAssertEqual(error as? SendError, .chatUnresolved("any;+;chat123456"))
+                XCTAssertTrue(error.localizedDescription.contains("Nothing was sent"), error.localizedDescription)
+            }
+        }
     }
 
     func testInvalidArgumentsAreErrors() {
@@ -150,6 +186,10 @@ final class MessagesTests: XCTestCase {
                 _ = try await MessageService.send(
                     request,
                     confirm: { answer },
+                    baseline: {
+                        XCTFail("read a baseline after \(answer)")
+                        return nil
+                    },
                     deliver: { _ in XCTFail("delivered after \(answer)") },
                     locate: { _, _ in
                         XCTFail("looked for a message after \(answer)")
@@ -168,12 +208,12 @@ final class MessagesTests: XCTestCase {
 
     func testConfirmedSendDeliversOnceAndReportsTheSentMessage() async throws {
         let request = SendRequest(destination: .chat("iMessage;-;+15551234567"), text: "Hi")
-        var delivered: [SendRequest] = []
-        var lookupStart: Date?
-        let before = Date()
+        var events: [String] = []
         let sent = OutgoingMessage(
+            rowID: 101,
             id: "B6E1F0C2-0000-4000-8000-000000000001",
             chatID: "iMessage;-;+15551234567",
+            service: "iMessage",
             text: "Hi",
             date: Date(timeIntervalSinceReferenceDate: 800_000_000),
             isFromMe: true
@@ -182,16 +222,23 @@ final class MessagesTests: XCTestCase {
         let result = try await MessageService.send(
             request,
             confirm: { .send },
-            deliver: { delivered.append($0) },
-            locate: { located, start in
+            baseline: {
+                events.append("baseline")
+                return 100
+            },
+            deliver: {
+                XCTAssertEqual($0, request)
+                events.append("deliver")
+            },
+            locate: { located, baseline in
                 XCTAssertEqual(located, request)
-                lookupStart = start
+                events.append("locate after \(baseline)")
                 return sent
-            }
+            },
+            inFlight: MessageService.InFlightSends()
         )
 
-        XCTAssertEqual(delivered, [request])
-        XCTAssertGreaterThanOrEqual(try XCTUnwrap(lookupStart), before)
+        XCTAssertEqual(events, ["baseline", "deliver", "locate after 100"])
         XCTAssertEqual(result["@type"], "SendAction")
         XCTAssertEqual(result["recipient"], ["@type": "Conversation", "@id": "iMessage;-;+15551234567"])
         XCTAssertEqual(
@@ -210,72 +257,154 @@ final class MessagesTests: XCTestCase {
     func testSendWithoutAFoundMessageSucceedsWithoutAnID() async throws {
         let request = SendRequest(destination: .recipient("+15551234567", .SMS), text: "Hi")
 
-        let result = try await MessageService.send(
-            request,
-            confirm: { .send },
-            deliver: { _ in },
-            locate: { _, _ in nil }
-        )
+        for baseline: Int64? in [nil, 100] {
+            var looked = false
+            let result = try await MessageService.send(
+                request,
+                confirm: { .send },
+                baseline: { baseline },
+                deliver: { _ in },
+                locate: { _, _ in
+                    looked = true
+                    return nil
+                },
+                inFlight: MessageService.InFlightSends()
+            )
 
-        XCTAssertEqual(result["object"], ["@type": "Message", "text": "Hi"])
-        XCTAssertEqual(result["recipient"], ["@id": "+15551234567"])
-        XCTAssertTrue(result["description"]?.stringValue?.contains("no @id") == true)
+            // Without a baseline there's nothing to compare rows with, so there's no lookup.
+            XCTAssertEqual(looked, baseline != nil)
+            XCTAssertEqual(result["object"], ["@type": "Message", "text": "Hi"])
+            XCTAssertEqual(result["recipient"], ["@id": "+15551234567"])
+            XCTAssertTrue(result["description"]?.stringValue?.contains("no @id") == true)
+        }
+    }
+
+    func testIdenticalOverlappingSendsGetNoID() async throws {
+        let request = SendRequest(destination: .chat("any;-;+15551234567"), text: "On my way")
+        let other = SendRequest(destination: .chat("any;-;+15551234567"), text: "Running late")
+        let inFlight = MessageService.InFlightSends()
+        func send(_ request: SendRequest, during: () async throws -> Void = {}) async throws -> [String: Value] {
+            try await MessageService.send(
+                request,
+                confirm: { .send },
+                baseline: { 100 },
+                deliver: { _ in try await during() },
+                locate: { request, _ in
+                    OutgoingMessage(
+                        rowID: 101,
+                        id: "found",
+                        chatID: "any;-;+15551234567",
+                        service: "SMS",
+                        text: request.text,
+                        date: .now,
+                        isFromMe: true
+                    )
+                },
+                inFlight: inFlight
+            )
+        }
+
+        // The second send starts and finishes while the first is delivering.
+        var inner: [String: Value]?
+        let outer = try await send(request) {
+            inner = try await send(request)
+        }
+        XCTAssertNil(outer["object"]?.objectValue?["@id"])
+        XCTAssertNil(try XCTUnwrap(inner)["object"]?.objectValue?["@id"])
+
+        // Different text doesn't overlap, and a later identical send doesn't either.
+        var different: [String: Value]?
+        let first = try await send(request) {
+            different = try await send(other)
+        }
+        XCTAssertEqual(first["object"]?.objectValue?["@id"], "found")
+        XCTAssertEqual(try XCTUnwrap(different)["object"]?.objectValue?["@id"], "found")
+        let later = try await send(request)
+        XCTAssertEqual(later["object"]?.objectValue?["@id"], "found")
     }
 
     // MARK: - Finding the sent message
 
-    private let sendStart = Date(timeIntervalSinceReferenceDate: 800_000_000)
-
     private func message(
         _ id: String,
+        rowID: Int64 = 101,
         chat: String? = "any;-;+15551234567",
+        service: String? = "SMS",
         text: String = "On my way",
-        secondsAfterStart: TimeInterval = 1,
         fromMe: Bool = true
     ) -> OutgoingMessage {
         OutgoingMessage(
+            rowID: rowID,
             id: id,
             chatID: chat,
+            service: service,
             text: text,
-            date: sendStart.addingTimeInterval(secondsAfterStart),
+            date: Date(timeIntervalSinceReferenceDate: 800_000_000),
             isFromMe: fromMe
         )
     }
 
-    func testSameTextSentTwiceMatchesTheNewestAfterTheSend() {
+    private func match(
+        _ request: SendRequest,
+        service: String = "SMS",
+        _ messages: [OutgoingMessage]
+    ) -> MessageService.SentMessageMatch {
+        MessageService.sentMessage(for: request, service: service, after: 100, among: messages)
+    }
+
+    func testOnlyRowsNewerThanTheBaselineMatch() {
         let request = SendRequest(destination: .recipient("+15551234567", .SMS), text: "On my way")
-        let messages = [
-            message("before", secondsAfterStart: -30),
-            message("first", secondsAfterStart: 0),
-            message("second", secondsAfterStart: 2),
-        ]
+        XCTAssertEqual(match(request, [message("old", rowID: 99), message("baseline", rowID: 100)]), .none)
         XCTAssertEqual(
-            MessageService.sentMessage(for: request, sentAfter: sendStart, among: messages)?.id,
-            "second"
+            match(request, [message("old", rowID: 99), message("new", rowID: 101)]),
+            .one(message("new", rowID: 101))
         )
     }
 
-    func testMessagesFromOthersBeforeTheSendOrElsewhereDoNotMatch() {
+    func testSameTextSentTwiceIsAmbiguous() {
+        let request = SendRequest(destination: .recipient("+15551234567", .SMS), text: "On my way")
+        XCTAssertEqual(
+            match(request, [message("first", rowID: 101), message("second", rowID: 102)]),
+            .ambiguous
+        )
+    }
+
+    func testMatchesRequireTheService() {
+        let request = SendRequest(destination: .recipient("+15551234567", .SMS), text: "On my way")
+        XCTAssertEqual(
+            match(request, [message("iMessage", service: "iMessage"), message("none", service: nil)]),
+            .none
+        )
+        XCTAssertEqual(match(request, [message("sms", service: "sms")]), .one(message("sms", service: "sms")))
+
+        let chat = SendRequest(destination: .chat("any;-;+15551234567"), text: "On my way")
+        XCTAssertEqual(match(chat, service: "iMessage", [message("sms", service: "SMS")]), .none)
+        XCTAssertEqual(
+            match(chat, service: "iMessage", [message("imessage", service: "iMessage")]),
+            .one(message("imessage", service: "iMessage"))
+        )
+    }
+
+    func testMessagesFromOthersOrElsewhereDoNotMatch() {
         let request = SendRequest(destination: .recipient("+15551234567", .SMS), text: "On my way")
         let messages = [
             message("from them", fromMe: false),
-            message("before", secondsAfterStart: -1),
             message("other text", text: "On my way!"),
             message("other chat", chat: "any;-;+15557654321"),
             message("group chat", chat: "any;+;chat123456"),
             message("no chat", chat: nil),
         ]
-        XCTAssertNil(MessageService.sentMessage(for: request, sentAfter: sendStart, among: messages))
+        XCTAssertEqual(match(request, messages), .none)
     }
 
-    func testRecipientsMatchTheirOneToOneConversation() {
+    func testRecipientsMatchTheirOneToOneConversationExactly() {
         func matches(_ handle: String, _ chat: String) -> Bool {
             SendRequest(destination: .recipient(handle, .iMessage), text: "Hi").isDestination(ofChat: chat)
         }
         XCTAssertTrue(matches("+15551234567", "any;-;+15551234567"))
-        XCTAssertTrue(matches("5551234567", "SMS;-;+15551234567"))
         XCTAssertTrue(matches("Jane@Example.com", "iMessage;-;jane@example.com"))
         XCTAssertTrue(matches("12345", "SMS;-;12345"))
+        XCTAssertFalse(matches("5551234567", "SMS;-;+15551234567"))
         XCTAssertFalse(matches("12345", "SMS;-;912345"))
         XCTAssertFalse(matches("+15551234567", "any;+;+15551234567"))
         XCTAssertFalse(matches("jane@example.com", "any;-;+15551234567"))
@@ -287,21 +416,27 @@ final class MessagesTests: XCTestCase {
 
     func testTextIsMatchedWithoutSurroundingWhitespace() {
         let request = SendRequest(destination: .chat("any;-;+15551234567"), text: "On my way\n")
-        XCTAssertEqual(
-            MessageService.sentMessage(for: request, sentAfter: sendStart, among: [message("sent")])?.id,
-            "sent"
+        XCTAssertEqual(match(request, [message("sent")]), .one(message("sent")))
+    }
+
+    private func awaitSentMessage(
+        timeout: Duration = .seconds(5),
+        interval: Duration = .milliseconds(1),
+        read: () throws -> [OutgoingMessage]?
+    ) async -> OutgoingMessage? {
+        await MessageService.awaitSentMessage(
+            for: SendRequest(destination: .chat("any;-;+15551234567"), text: "On my way"),
+            service: "SMS",
+            after: 100,
+            timeout: timeout,
+            interval: interval,
+            read: read
         )
     }
 
     func testLookupWaitsForTheMessageToAppear() async {
-        let request = SendRequest(destination: .chat("any;-;+15551234567"), text: "On my way")
         var reads = 0
-        let found = await MessageService.awaitSentMessage(
-            for: request,
-            sentAfter: sendStart,
-            timeout: .seconds(5),
-            interval: .milliseconds(1)
-        ) {
+        let found = await awaitSentMessage {
             reads += 1
             if reads == 2 { throw CocoaError(.fileReadUnknown) }
             return reads < 3 ? [] : [message("sent")]
@@ -311,16 +446,10 @@ final class MessagesTests: XCTestCase {
     }
 
     func testLookupGivesUpWithoutAMatchWithinTheTimeout() async {
-        let request = SendRequest(destination: .chat("any;-;+15551234567"), text: "On my way")
         let clock = ContinuousClock()
         let started = clock.now
         var reads = 0
-        let found = await MessageService.awaitSentMessage(
-            for: request,
-            sentAfter: sendStart,
-            timeout: .milliseconds(100),
-            interval: .milliseconds(10)
-        ) {
+        let found = await awaitSentMessage(timeout: .milliseconds(100), interval: .milliseconds(10)) {
             reads += 1
             return [message("other", text: "Something else")]
         }
@@ -329,20 +458,52 @@ final class MessagesTests: XCTestCase {
         XCTAssertLessThan(clock.now - started, .seconds(2))
     }
 
-    func testLookupStopsWhenTheDatabaseIsUnreadable() async {
-        let request = SendRequest(destination: .chat("any;-;+15551234567"), text: "On my way")
+    func testLookupStopsWhenTheDatabaseIsUnreadableOrTheMatchIsAmbiguous() async {
         var reads = 0
-        let found = await MessageService.awaitSentMessage(
-            for: request,
-            sentAfter: sendStart,
-            timeout: .seconds(5),
-            interval: .milliseconds(1)
-        ) {
+        let unreadable = await awaitSentMessage {
             reads += 1
             return nil
         }
-        XCTAssertNil(found)
+        XCTAssertNil(unreadable)
         XCTAssertEqual(reads, 1)
+
+        reads = 0
+        let ambiguous = await awaitSentMessage {
+            reads += 1
+            return [message("first", rowID: 101), message("second", rowID: 102)]
+        }
+        XCTAssertNil(ambiguous)
+        XCTAssertEqual(reads, 1)
+    }
+
+    func testLookupStopsWhenCancelled() async {
+        let reads = OSAllocatedUnfairLock(initialState: 0)
+        let firstRead = expectation(description: "first read")
+        let task = Task {
+            await MessageService.awaitSentMessage(
+                for: SendRequest(destination: .chat("any;-;+15551234567"), text: "On my way"),
+                service: "SMS",
+                after: 100,
+                timeout: .seconds(30),
+                interval: .seconds(10)
+            ) {
+                if reads.withLock({ count in
+                    count += 1
+                    return count
+                }) == 1 {
+                    firstRead.fulfill()
+                }
+                return []
+            }
+        }
+        await fulfillment(of: [firstRead], timeout: 5)
+        let clock = ContinuousClock()
+        let cancelled = clock.now
+        task.cancel()
+        let found = await task.value
+        XCTAssertNil(found)
+        XCTAssertEqual(reads.withLock { $0 }, 1)
+        XCTAssertLessThan(clock.now - cancelled, .seconds(2))
     }
 
     @MainActor
@@ -437,6 +598,37 @@ final class MessagesTests: XCTestCase {
             calling: MessageService.handlerEvent(named: "doubleIt", parameters: [NSAppleEventDescriptor(int32: 21)])
         )
         XCTAssertEqual(doubled.int32Value, 42)
+    }
+
+    func testCancelledTasksRunNoScript() async {
+        let task = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await NSAppleScript.execute("return 2").int32Value
+        }
+        do {
+            _ = try await task.value
+            XCTFail("expected a cancellation")
+        } catch {
+            XCTAssertTrue(error is CancellationError, "\(error)")
+        }
+    }
+
+    func testCancellingAQueuedScriptStopsItBeforeItRuns() async throws {
+        // The queue runs one script at a time, so the second waits behind the first.
+        let blocker = Task { try await NSAppleScript.execute("delay 0.5\nreturn 1").int32Value }
+        try await Task.sleep(for: .milliseconds(100))
+        let queued = Task { try await NSAppleScript.execute("return 2").int32Value }
+        try await Task.sleep(for: .milliseconds(50))
+        queued.cancel()
+
+        do {
+            let result = try await queued.value
+            XCTFail("the queued script ran and returned \(result)")
+        } catch {
+            XCTAssertTrue(error is CancellationError, "\(error)")
+        }
+        let blocked = try await blocker.value
+        XCTAssertEqual(blocked, 1)
     }
 
     func testScriptErrorsKeepTheirNumberAndMessage() async {

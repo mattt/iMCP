@@ -465,7 +465,14 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
             )
         ) { arguments in
             let request = try SendRequest(arguments: arguments)
-            let confirmation = try self.confirmation(for: request, clientName: ToolCallContext.clientName)
+            let target = try Self.resolvedTarget(for: request, chat: try self.chatDetails(for: request))
+            let confirmation = MessageSendConfirmation(
+                clientName: ToolCallContext.clientName,
+                recipient: target.recipient,
+                conversationID: target.conversationID,
+                service: target.service,
+                text: request.text
+            )
             try Self.checkAutomationPermission()
             return try await Self.send(
                 request,
@@ -474,17 +481,21 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                         MessageSendConfirmationWindowController.shared.show(confirmation, onAnswer: answer)
                     }
                 },
+                baseline: {
+                    self.latestMessageRowID()
+                },
                 deliver: { request in
                     try await Self.deliver(request)
                 },
-                locate: { request, start in
+                locate: { request, baseline in
                     await Self.awaitSentMessage(
                         for: request,
-                        sentAfter: start,
+                        service: target.service,
+                        after: baseline,
                         timeout: Self.sentMessageLookupTimeout,
                         interval: .milliseconds(250)
                     ) {
-                        try self.outgoingMessages(since: start)
+                        try self.outgoingMessages(after: baseline)
                     }
                 }
             )
@@ -1316,21 +1327,6 @@ extension MessageService {
             return (trimmed.hasPrefix("+") ? "+" : "") + digits
         }
 
-        /// The service from the request or conversation ID.
-        /// Displays "Chosen by Messages" for unrecognized prefixes, including `any`.
-        var serviceDescription: String {
-            switch destination {
-            case .recipient(_, let service):
-                return service.rawValue
-            case .chat(let id):
-                let prefix = id.prefix(while: { $0 != ";" })
-                if let service = SendService.allCases.first(where: { $0.rawValue == prefix }) {
-                    return service.rawValue
-                }
-                return "Chosen by Messages"
-            }
-        }
-
         /// The Apple event that calls a handler in ``MessageService/sendScriptSource``.
         /// Passes text and recipient as typed descriptors, never as script source.
         var handlerEvent: NSAppleEventDescriptor {
@@ -1357,10 +1353,10 @@ extension MessageService {
 
         /// Whether a chat in chat.db is where this request sends:
         /// the requested conversation,
-        /// or the one-to-one conversation with the recipient,
-        /// whose guid ends with the recipient's handle.
-        /// Messages adds a country code to a phone number given without one,
-        /// so a phone number also matches the end of a longer one.
+        /// or the one-to-one conversation whose guid ends with the recipient's handle.
+        /// Handles must match exactly, apart from the case of an email address:
+        /// a phone number given without its country code matches no conversation,
+        /// so its message gets no @id rather than a guess.
         func isDestination(ofChat chatID: String?) -> Bool {
             guard let chatID else { return false }
             switch destination {
@@ -1369,14 +1365,7 @@ extension MessageService {
             case .recipient(let handle, _):
                 let parts = chatID.split(separator: ";", maxSplits: 2, omittingEmptySubsequences: false)
                 guard parts.count == 3, parts[1] == "-" else { return false }
-                let chatHandle = String(parts[2])
-                if handle.contains("@") {
-                    return chatHandle.caseInsensitiveCompare(handle) == .orderedSame
-                }
-                let digits = handle.filter(\.isNumber)
-                let chatDigits = chatHandle.filter(\.isNumber)
-                guard !chatHandle.contains("@"), !digits.isEmpty else { return false }
-                return chatDigits == digits || (digits.count >= 7 && chatDigits.hasSuffix(digits))
+                return String(parts[2]).caseInsensitiveCompare(handle) == .orderedSame
             }
         }
 
@@ -1474,14 +1463,16 @@ extension MessageService {
 
     /// Sends a message only after `confirm` reports that the user chose Send.
     /// Any other answer throws, and `deliver` is never called.
-    /// After the send, `locate` looks for the message in chat.db,
-    /// given the time just before the send started;
-    /// not finding it leaves the result without an @id but doesn't fail the send.
+    /// Before delivery, `baseline` reads the newest message row in chat.db;
+    /// after it, `locate` looks for the sent message among newer rows.
+    /// Not finding it leaves the result without an @id but doesn't fail the send.
     static func send(
         _ request: SendRequest,
         confirm: () async -> SendConfirmationAnswer,
+        baseline: () -> Int64?,
         deliver: (SendRequest) async throws -> Void,
-        locate: (SendRequest, Date) async -> OutgoingMessage?
+        locate: (SendRequest, Int64) async -> OutgoingMessage?,
+        inFlight: InFlightSends = .shared
     ) async throws -> [String: Value] {
         switch await confirm() {
         case .send:
@@ -1493,14 +1484,61 @@ extension MessageService {
             log.notice("A message was not sent because its confirmation timed out")
             throw SendError.timedOut
         }
-        let start = Date()
+        let token = inFlight.begin(request)
+        // Ends the send when delivery throws; ending it again below returns false.
+        defer { _ = inFlight.end(token) }
+        let rowID = baseline()
         try await deliver(request)
         log.notice("Messages accepted a message for sending")
-        let sentMessage = await locate(request, start)
-        if sentMessage == nil {
-            log.notice("The sent message didn't appear in the Messages database in time")
+        var sentMessage: OutgoingMessage?
+        if let rowID {
+            sentMessage = await locate(request, rowID)
+        }
+        // An identical send that overlapped this one could have posted the message found,
+        // so neither gets an @id.
+        if inFlight.end(token) {
+            log.notice("An identical send overlapped this one, so its message has no @id")
+            sentMessage = nil
+        } else if sentMessage == nil {
+            log.notice("The sent message wasn't found in the Messages database")
         }
         return request.result(sentMessage: sentMessage)
+    }
+
+    /// The sends in progress, so that identical sends at once get no @id:
+    /// chat.db can't tell their messages apart.
+    final class InFlightSends: Sendable {
+        static let shared = InFlightSends()
+
+        private struct Send {
+            let key: String
+            var overlapped: Bool
+        }
+
+        private let sends = OSAllocatedUnfairLock<[UUID: Send]>(initialState: [:])
+
+        init() {}
+
+        /// Registers a send and marks it and any identical send in progress as overlapped.
+        func begin(_ request: SendRequest) -> UUID {
+            let key = "\(request.destination)\u{0}\(request.text.trimmingCharacters(in: .whitespacesAndNewlines))"
+            let token = UUID()
+            sends.withLock { sends in
+                var overlapped = false
+                for (id, send) in sends where send.key == key {
+                    sends[id]?.overlapped = true
+                    overlapped = true
+                }
+                sends[token] = Send(key: key, overlapped: overlapped)
+            }
+            return token
+        }
+
+        /// Removes a send and returns whether an identical send overlapped it.
+        /// Ending a send twice returns `false` the second time.
+        func end(_ token: UUID) -> Bool {
+            sends.withLock { $0.removeValue(forKey: token)?.overlapped ?? false }
+        }
     }
 
     // MARK: Finding the sent message
@@ -1511,79 +1549,167 @@ extension MessageService {
 
     /// A message from chat.db, with what's needed to match it to a send.
     struct OutgoingMessage: Equatable, Sendable {
+        /// The message's row in chat.db, which grows with each new message.
+        let rowID: Int64
         /// The message's guid, which messages_fetch reports as its @id.
         let id: String
         let chatID: String?
+        /// The service that the message went out on, such as `iMessage` or `SMS`.
+        let service: String?
         let text: String
         let date: Date
         let isFromMe: Bool
     }
 
-    /// Returns the message that a send posted:
-    /// the newest message from me, dated at or after `start`,
-    /// in the request's conversation, with the request's text.
-    /// Text is compared without surrounding whitespace,
-    /// which Messages may trim.
-    static func sentMessage(
-        for request: SendRequest,
-        sentAfter start: Date,
-        among messages: [OutgoingMessage]
-    ) -> OutgoingMessage? {
-        let text = request.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return
-            messages
-            .filter { message in
-                message.isFromMe
-                    && message.date >= start
-                    && message.text.trimmingCharacters(in: .whitespacesAndNewlines) == text
-                    && request.isDestination(ofChat: message.chatID)
-            }
-            .max { $0.date < $1.date }
+    /// How a send's message was found among chat.db rows.
+    enum SentMessageMatch: Equatable, Sendable {
+        case none
+        case one(OutgoingMessage)
+        /// More than one row could be the message, so none is reported.
+        case ambiguous
     }
 
-    /// Reads messages with `read` until one matches the send or `timeout` passes.
-    /// `read` returns `nil` when chat.db can't be read, which ends the search;
+    /// Finds the message that a send posted:
+    /// a message from me, in a row newer than `baseline`,
+    /// in the request's conversation, on `service`, with the request's text.
+    /// Text is compared without surrounding whitespace, which Messages may trim.
+    static func sentMessage(
+        for request: SendRequest,
+        service: String,
+        after baseline: Int64,
+        among messages: [OutgoingMessage]
+    ) -> SentMessageMatch {
+        let text = request.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let matches = messages.filter { message in
+            message.isFromMe
+                && message.rowID > baseline
+                && message.service?.caseInsensitiveCompare(service) == .orderedSame
+                && message.text.trimmingCharacters(in: .whitespacesAndNewlines) == text
+                && request.isDestination(ofChat: message.chatID)
+        }
+        switch matches.count {
+        case 0: return .none
+        case 1: return .one(matches[0])
+        default: return .ambiguous
+        }
+    }
+
+    /// Reads messages with `read` until one matches the send,
+    /// `timeout` passes, or the task is cancelled.
+    /// `read` returns `nil` when chat.db can't be read, which ends the search,
+    /// as does an ambiguous match;
     /// an error from one read is retried with the next.
     static func awaitSentMessage(
         for request: SendRequest,
-        sentAfter start: Date,
+        service: String,
+        after baseline: Int64,
         timeout: Duration,
         interval: Duration,
         read: () throws -> [OutgoingMessage]?
     ) async -> OutgoingMessage? {
         let clock = ContinuousClock()
         let deadline = clock.now + timeout
-        while true {
+        while !Task.isCancelled {
             do {
                 guard let messages = try read() else { return nil }
-                if let message = sentMessage(for: request, sentAfter: start, among: messages) {
+                switch sentMessage(for: request, service: service, after: baseline, among: messages) {
+                case .one(let message):
                     return message
+                case .ambiguous:
+                    log.notice("More than one message matches the send, so it has no @id")
+                    return nil
+                case .none:
+                    break
                 }
             } catch {
                 log.debug("Reading sent messages failed: \(error.localizedDescription, privacy: .public)")
             }
             guard clock.now < deadline else { return nil }
-            try? await Task.sleep(for: min(interval, deadline - clock.now))
+            do {
+                try await Task.sleep(for: min(interval, deadline - clock.now))
+            } catch {
+                return nil
+            }
         }
+        return nil
     }
 
-    /// The messages dated at or after `start`,
+    /// The newest message row in chat.db,
     /// or `nil` when chat.db can't be read without asking the user.
-    fileprivate func outgoingMessages(since start: Date) throws -> [OutgoingMessage]? {
+    fileprivate func latestMessageRowID() -> Int64? {
         guard let access = try? openDatabase() else { return nil }
         defer { access.stop() }
-        // chat.db stores dates as Int64 nanoseconds since 2001, so the open end uses a date that fits.
-        let request = FetchRequest<Message>(
-            predicate: .dateRange(start ..< Date(timeIntervalSinceReferenceDate: 9_000_000_000)),
-            limit: 100
-        )
-        return try access.database.fetch(request).map { message in
-            OutgoingMessage(
-                id: message.id.description,
-                chatID: message.chatID?.rawValue,
+        var rowID: Int64?
+        do {
+            let raw = try RawDatabase(access)
+            defer { raw.close() }
+            try raw.query("SELECT IFNULL(MAX(ROWID), 0) FROM message", bindings: []) { stmt in
+                rowID = sqlite3_column_int64(stmt, 0)
+            }
+        } catch {
+            log.error("Could not read the newest message row: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+        return rowID
+    }
+
+    /// My messages in rows newer than `baseline`,
+    /// or `nil` when chat.db can't be read without asking the user.
+    fileprivate func outgoingMessages(after baseline: Int64) throws -> [OutgoingMessage]? {
+        guard let access = try? openDatabase() else { return nil }
+        defer { access.stop() }
+
+        struct Row {
+            let rowID: Int64
+            let guid: String
+            let service: String?
+            let chatID: String
+        }
+        var rows: [Row] = []
+        let raw = try RawDatabase(access)
+        defer { raw.close() }
+        try raw.query(
+            """
+            SELECT m.ROWID, m.guid, m.service, c.guid
+            FROM message m
+            JOIN chat_message_join j ON j.message_id = m.ROWID
+            JOIN chat c ON c.ROWID = j.chat_id
+            WHERE m.ROWID > CAST(? AS INTEGER) AND m.is_from_me = 1
+            ORDER BY m.ROWID
+            LIMIT 200
+            """,
+            bindings: [String(baseline)]
+        ) { stmt in
+            guard let guid = RawDatabase.text(stmt, 1), let chatID = RawDatabase.text(stmt, 3) else { return }
+            rows.append(
+                Row(
+                    rowID: sqlite3_column_int64(stmt, 0),
+                    guid: guid,
+                    service: RawDatabase.text(stmt, 2),
+                    chatID: chatID
+                )
+            )
+        }
+
+        // The text comes from the iMessage package,
+        // which decodes the attributed body that newer messages store instead of plain text.
+        var messages: [String: Message] = [:]
+        for chatID in Set(rows.map(\.chatID)) {
+            let request = FetchRequest<Message>(predicate: .chatID(Chat.ID(rawValue: chatID)), limit: 50)
+            for message in try access.database.fetch(request) {
+                messages[message.id.rawValue] = message
+            }
+        }
+        return rows.compactMap { row in
+            guard let message = messages[row.guid] else { return nil }
+            return OutgoingMessage(
+                rowID: row.rowID,
+                id: row.guid,
+                chatID: row.chatID,
+                service: row.service,
                 text: message.text,
                 date: message.date,
-                isFromMe: message.isFromMe
+                isFromMe: true
             )
         }
     }
@@ -1642,45 +1768,68 @@ extension MessageService {
 
     /// Builds the confirmation, adding conversation details when chat.db is readable.
     /// A readable database must contain the requested conversation.
-    fileprivate func confirmation(
-        for request: SendRequest,
-        clientName: String?
-    ) throws -> MessageSendConfirmation {
+    /// Who and what the confirmation shows, and the service the message goes out on.
+    struct SendTarget: Equatable, Sendable {
+        /// The phone number or email address,
+        /// or the name and participants of a conversation.
+        let recipient: String
+        let conversationID: String?
+        let service: String
+    }
+
+    /// A conversation's details from chat.db.
+    struct ChatDetails: Equatable, Sendable {
+        let displayName: String?
+        let participants: [String]
+        /// The conversation's service, such as `iMessage` or `SMS`.
+        let service: String?
+    }
+
+    /// Resolves what the confirmation shows.
+    /// A conversation must have readable participants and a service,
+    /// so that the user can see who would receive the message;
+    /// `chat` is `nil` when chat.db can't be read.
+    static func resolvedTarget(for request: SendRequest, chat: ChatDetails?) throws -> SendTarget {
         switch request.destination {
-        case .recipient(let handle, _):
-            return MessageSendConfirmation(
-                clientName: clientName,
-                recipient: handle,
-                conversationID: nil,
-                service: request.serviceDescription,
-                text: request.text
-            )
+        case .recipient(let handle, let service):
+            return SendTarget(recipient: handle, conversationID: nil, service: service.rawValue)
         case .chat(let id):
-            var recipient = id
-            if let access = try? openDatabase() {
-                defer { access.stop() }
-                let chatID = Chat.ID(rawValue: id)
-                guard
-                    let chat = try access.database.fetch(FetchRequest<Chat>(predicate: .id(chatID), limit: 1))
-                        .first
-                else {
-                    throw SendError.unknownChat(id)
-                }
-                let participants = chat.participants.map(\.rawValue).joined(separator: ", ")
-                if let name = chat.displayName, !name.isEmpty {
-                    recipient = participants.isEmpty ? name : "\(name) (\(participants))"
-                } else if !participants.isEmpty {
-                    recipient = participants
-                }
+            guard let chat, !chat.participants.isEmpty,
+                let service = chat.service, !service.isEmpty
+            else {
+                throw SendError.chatUnresolved(id)
             }
-            return MessageSendConfirmation(
-                clientName: clientName,
-                recipient: recipient,
-                conversationID: id,
-                service: request.serviceDescription,
-                text: request.text
-            )
+            let participants = chat.participants.joined(separator: ", ")
+            var recipient = participants
+            if let name = chat.displayName, !name.isEmpty {
+                recipient = "\(name) (\(participants))"
+            }
+            return SendTarget(recipient: recipient, conversationID: id, service: service)
         }
+    }
+
+    /// Reads a conversation's details from chat.db without asking the user,
+    /// or returns `nil` when it can't be read or the request names no conversation.
+    /// A conversation that chat.db doesn't have is an error.
+    fileprivate func chatDetails(for request: SendRequest) throws -> ChatDetails? {
+        guard case .chat(let id) = request.destination else { return nil }
+        guard let access = try? openDatabase() else { return nil }
+        defer { access.stop() }
+        let fetch = FetchRequest<Chat>(predicate: .id(Chat.ID(rawValue: id)), limit: 1)
+        guard let chat = try access.database.fetch(fetch).first else {
+            throw SendError.unknownChat(id)
+        }
+        var service: String?
+        let raw = try RawDatabase(access)
+        defer { raw.close() }
+        try raw.query("SELECT service_name FROM chat WHERE guid = ? LIMIT 1", bindings: [id]) { stmt in
+            service = RawDatabase.text(stmt, 0)
+        }
+        return ChatDetails(
+            displayName: chat.displayName,
+            participants: chat.participants.map(\.rawValue),
+            service: service
+        )
     }
 
     /// Rejects a known Automation denial before confirmation.
@@ -1714,6 +1863,7 @@ extension MessageService {
         case timedOut
         case notAuthorized
         case unknownChat(String)
+        case chatUnresolved(String)
         case noAccountOrRecipient(String, SendService)
         case appleScript(number: Int?, message: String)
 
@@ -1747,6 +1897,9 @@ extension MessageService {
                     "Allow iMCP to control Messages in System Settings > Privacy & Security > Automation. Nothing was sent."
             case .unknownChat(let id):
                 return "Conversation \(id) wasn't found. Nothing was sent."
+            case .chatUnresolved(let id):
+                return
+                    "iMCP couldn't read the participants and service of conversation \(id) from the Messages database, so it can't show who would receive the message. Turn on Messages in iMCP and grant the Messages folder, or send to a recipient instead. Nothing was sent."
             case .noAccountOrRecipient(let handle, let service):
                 return
                     "Messages couldn't find a signed-in \(service.rawValue) account or recipient \(handle). Nothing was sent."
