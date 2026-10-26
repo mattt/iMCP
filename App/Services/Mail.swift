@@ -502,7 +502,6 @@ extension Envelope.Mailbox {
     var value: Value {
         [
             "@id": .string(id.description),
-            "@type": "Collection",
             "name": name.map(Value.string) ?? .null,
             "url": url.map(Value.string) ?? .null,
             "account": account?.value ?? .null,
@@ -514,14 +513,12 @@ extension Envelope.Message {
     /// The record as a JSON object for tool output.
     var value: Value {
         [
-            "@type": "EmailMessage",
             "@id": .string(id.description),
             // The string form of the home mailbox's `Mailbox.ID`, `store:rowID`.
             "mailbox": .string("\(id.store):\(id.mailboxID)"),
             "subject": subject.map(Value.string) ?? .null,
             "sender": [
-                "@type": "Person",
-                "email": sender.map(Value.string) ?? .null,
+                "email": sender.map(Value.string) ?? .null
             ],
             "dateReceived": .string(date.formatted(.iso8601)),
             "isRead": .bool(isRead),
@@ -548,7 +545,6 @@ extension Envelope.Content.Attachment {
     /// The attachment as a JSON object for tool output.
     var value: Value {
         [
-            "@type": "MediaObject",
             "name": filename.map(Value.string) ?? .null,
             "encodingFormat": .string(mediaType),
             "isStoredSeparately": .bool(isStoredSeparately),
