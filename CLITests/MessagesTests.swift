@@ -904,6 +904,7 @@ final class MessagesTests: XCTestCase {
         XCTAssertTrue(tool.description.contains("50 seconds"), tool.description)
         XCTAssertTrue(tool.description.contains("isDelivered"), tool.description)
         XCTAssertTrue(tool.description.contains("with that @id"), tool.description)
+        XCTAssertTrue(tool.description.contains("best match found"), tool.description)
         XCTAssertFalse(tool.description.contains("by recipient, text, and time"), tool.description)
 
         let fetch = try XCTUnwrap(MessageService.shared.tools.first { $0.name == "messages_fetch" })

@@ -432,6 +432,8 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                 Success means Messages accepted the message, not that it was delivered. \
                 When iMCP finds the sent message in the Messages database, \
                 the result's object has its @id, createdAt, and conversation (isPartOf). \
+                The @id is the best match found in the Messages database, not a guarantee: \
+                an identical message sent elsewhere at the same moment can make it wrong or missing. \
                 To check delivery, call messages_fetch with that chatId and start set to createdAt, \
                 then read isDelivered and error on the message with that @id. \
                 Missing status doesn't confirm delivery.
