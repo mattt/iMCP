@@ -40,3 +40,38 @@ public struct Tool: Sendable {
         try await implementation(input)
     }
 }
+
+/// A JSON-LD document that lists values in `@graph` under one `@context`.
+///
+/// Return a list as a graph so that its values keep their Schema.org context
+/// without each value repeating it.
+public struct JSONLDGraph<Element: Encodable>: Encodable {
+    /// The values in the graph.
+    public var elements: [Element]
+
+    /// Properties of the document that apply to every value, such as attribution.
+    public var properties: [String: Value]
+
+    public init(_ elements: [Element], properties: [String: Value] = [:]) {
+        self.elements = elements
+        self.properties = properties
+    }
+
+    private struct Key: CodingKey {
+        var stringValue: String
+        var intValue: Int? { nil }
+
+        init(_ stringValue: String) { self.stringValue = stringValue }
+        init?(stringValue: String) { self.stringValue = stringValue }
+        init?(intValue: Int) { nil }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: Key.self)
+        try container.encode("https://schema.org", forKey: Key("@context"))
+        try container.encode(elements, forKey: Key("@graph"))
+        for (key, value) in properties {
+            try container.encode(value, forKey: Key(key))
+        }
+    }
+}

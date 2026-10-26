@@ -440,7 +440,7 @@ final class RemindersService: Service {
                 }
             }
 
-            return try filteredReminders.map { try self.payload(for: $0, isListItem: true) }
+            return JSONLDGraph(try filteredReminders.map { try self.payload(for: $0, isListItem: true) })
         }
 
         Tool(
@@ -1191,8 +1191,8 @@ final class RemindersService: Service {
     /// Encodes a reminder as a PlanAction, layering on recurrence and completion
     /// details that the schema.org representation does not carry.
     ///
-    /// A list item is encoded as an array element, as the items of other list results are,
-    /// so that it doesn't repeat the `@context` of a root value.
+    /// A list item is encoded as an array element, without the `@context` of a root value,
+    /// so that the list can give the context once.
     private func payload(for reminder: EKReminder, isListItem: Bool = false) throws -> Value {
         let encoder = JSONEncoder()
         encoder.userInfo[Ontology.DateTime.timeZoneOverrideKey] = TimeZone.current
