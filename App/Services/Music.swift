@@ -177,30 +177,6 @@ extension MusicService {
         return min(max(position, 0), upperBound)
     }
 
-    /// The script for a seek.
-    ///
-    /// It reads the current track's duration and sets the position in one script,
-    /// with no suspension in iMCP between them,
-    /// so a track change can't come between reading one track's duration
-    /// and seeking in another.
-    /// The position is clamped to zero and ``maximumSeekPosition`` here,
-    /// and to the track's duration in the script when Music knows it.
-    ///
-    /// - Throws: An error when `position` isn't finite.
-    static func seekScript(position: Double) throws -> String {
-        let position = try seekPosition(position, duration: nil)
-        return """
-            tell application "Music"
-                set targetPosition to \(appleScriptNumber(position))
-                try
-                    set trackDuration to duration of current track
-                    if trackDuration > 0 and targetPosition > trackDuration then set targetPosition to trackDuration
-                end try
-                set player position to targetPosition
-            end tell
-            """
-    }
-
     /// Formats a finite number as an AppleScript real literal.
     ///
     /// The result uses plain decimal notation with a period as the separator,
@@ -344,12 +320,22 @@ extension MusicService {
         }
     }
 
-    /// Runs a script that sends Apple events to Music, off the main thread.
-    private func executeAppleScript(_ source: String) async throws -> NSAppleEventDescriptor {
-        do {
-            return try await NSAppleScript.execute(source)
-        } catch let error as NSAppleScript.ExecutionError {
-            if error.number == Int(errAEEventNotPermitted) {
+    @MainActor
+    private func executeAppleScript(_ source: String) throws -> NSAppleEventDescriptor {
+        var errorInfo: NSDictionary?
+        guard let script = NSAppleScript(source: source) else {
+            throw NSError(
+                domain: "MusicServiceError",
+                code: 3,
+                userInfo: [NSLocalizedDescriptionKey: "Failed to create AppleScript"]
+            )
+        }
+
+        let result = script.executeAndReturnError(&errorInfo)
+        if let errorInfo {
+            if let errorNumber = errorInfo[NSAppleScript.errorNumber] as? NSNumber,
+                errorNumber.intValue == -1743
+            {
                 throw NSError(
                     domain: "MusicServiceError",
                     code: 4,
@@ -362,9 +348,11 @@ extension MusicService {
             throw NSError(
                 domain: "MusicServiceError",
                 code: 8,
-                userInfo: [NSLocalizedDescriptionKey: error.message]
+                userInfo: [NSLocalizedDescriptionKey: String(describing: errorInfo)]
             )
         }
+
+        return result
     }
 
     private func listItems(from descriptor: NSAppleEventDescriptor) -> [NSAppleEventDescriptor] {
@@ -377,7 +365,8 @@ extension MusicService {
         }
     }
 
-    private func fetchNowPlaying() async throws -> [String: Value] {
+    @MainActor
+    private func fetchNowPlaying() throws -> [String: Value] {
         let script = """
             tell application "Music"
                 if player state is stopped then
@@ -393,7 +382,7 @@ extension MusicService {
             end tell
             """
 
-        let descriptor = try await executeAppleScript(script)
+        let descriptor = try executeAppleScript(script)
         let items = listItems(from: descriptor)
         guard items.count >= 6 else {
             throw NSError(
@@ -420,7 +409,8 @@ extension MusicService {
         ]
     }
 
-    private func performControlAction(_ action: ControlAction, position: Double?) async throws {
+    @MainActor
+    private func performControlAction(_ action: ControlAction, position: Double?) throws {
         let script: String
         switch action {
         case .play:
@@ -443,11 +433,34 @@ extension MusicService {
                     userInfo: [NSLocalizedDescriptionKey: "Seek position required"]
                 )
             }
-            script = try Self.seekScript(position: position)
+            let seekPosition = try Self.seekPosition(position, duration: currentTrackDuration())
+            script =
+                "tell application \"Music\" to set player position to \(Self.appleScriptNumber(seekPosition))"
         }
 
         log.debug("Executing Music control action: \(action.rawValue)")
-        _ = try await executeAppleScript(script)
+        _ = try executeAppleScript(script)
+    }
+
+    /// Returns the duration of the current track in seconds,
+    /// or `nil` when there's no current track or its duration is unknown.
+    @MainActor
+    private func currentTrackDuration() -> Double? {
+        let script = """
+            tell application "Music"
+                try
+                    return duration of current track
+                on error
+                    return -1
+                end try
+            end tell
+            """
+
+        guard let descriptor = try? executeAppleScript(script) else {
+            return nil
+        }
+        let duration = descriptor.doubleValue
+        return duration.isFinite && duration > 0 ? duration : nil
     }
 
     private func searchCatalog(with arguments: [String: Value]) async throws -> [MusicCatalogResult] {
