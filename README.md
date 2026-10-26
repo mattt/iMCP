@@ -660,6 +660,13 @@ Here's how an object of that type is encoded as JSON-LD:
 }
 ```
 
+A tool that returns a list, such as `contacts_search`,
+returns a JSON-LD document that holds the list in `@graph`
+under a single `@context`.
+To keep results short,
+values nested in another value, including the values in a graph,
+leave out `@type`.
+
 [Schema.org][schema.org] provides standard vocabularies for
 people, postal addresses, events, and many other objects we want to represent.
 And JSON-LD is a convenient encoding format for

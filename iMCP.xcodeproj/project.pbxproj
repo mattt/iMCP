@@ -1096,7 +1096,7 @@
 			repositoryURL = "https://github.com/mattt/Ontology";
 			requirement = {
 				kind = upToNextMajorVersion;
-				minimumVersion = 0.10.0;
+				minimumVersion = 0.11.0;
 			};
 		};
 		F88358352D64A085000317CD /* XCRemoteSwiftPackageReference "swift-log" */ = {

@@ -42,8 +42,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/mattt/Ontology",
       "state" : {
-        "revision" : "8c57a9162cbe0a27d84d63428fcb697e2fa22a3a",
-        "version" : "0.10.0"
+        "revision" : "7e3937c46057ec9afcfb347da2241033d311bd34",
+        "version" : "0.11.0"
       }
     },
     {

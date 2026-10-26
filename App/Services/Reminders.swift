@@ -1196,6 +1196,7 @@ final class RemindersService: Service {
     private func payload(for reminder: EKReminder, isListItem: Bool = false) throws -> Value {
         let encoder = JSONEncoder()
         encoder.userInfo[Ontology.DateTime.timeZoneOverrideKey] = TimeZone.current
+        encoder.userInfo[JSONLD.omitsNestedTypesKey] = true
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
 
         let base =

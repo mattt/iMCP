@@ -435,7 +435,7 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
             try raw.query(sql, bindings: chunk) { stmt in
                 guard let messageGuid = RawDatabase.text(stmt, 0), let id = RawDatabase.text(stmt, 1)
                 else { return }
-                var part: [String: Value] = ["@type": "MediaObject", "@id": .string(id)]
+                var part: [String: Value] = ["@id": .string(id)]
                 let filename = RawDatabase.text(stmt, 2)
                 if let name = RawDatabase.text(stmt, 3) ?? filename.map({ ($0 as NSString).lastPathComponent }),
                     !name.isEmpty
@@ -737,8 +737,7 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
         in db: iMessage.Database
     ) throws -> [String: Value] {
         var conversation: [String: Value] = [
-            "@type": "Conversation",
-            "@id": .string(chatID.rawValue),
+            "@id": .string(chatID.rawValue)
         ]
 
         let request = FetchRequest<Chat>(predicate: .id(chatID), limit: 1)

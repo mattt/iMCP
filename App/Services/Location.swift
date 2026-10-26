@@ -244,7 +244,6 @@ final class LocationService: NSObject, Service, CLLocationManagerDelegate {
                         "@context": .string("https://schema.org"),
                         "@type": .string("Place"),
                         "geo": .object([
-                            "@type": .string("GeoCoordinates"),
                             "latitude": .double(location.coordinate.latitude),
                             "longitude": .double(location.coordinate.longitude),
                         ]),
@@ -255,9 +254,7 @@ final class LocationService: NSObject, Service, CLLocationManagerDelegate {
                         result["name"] = .string(name)
                     }
 
-                    var addressComponents: [String: Value] = [
-                        "@type": .string("PostalAddress")
-                    ]
+                    var addressComponents: [String: Value] = [:]
 
                     if let thoroughfare = placemark.thoroughfare {
                         addressComponents["streetAddress"] = .string(thoroughfare)
@@ -279,7 +276,7 @@ final class LocationService: NSObject, Service, CLLocationManagerDelegate {
                         addressComponents["addressCountry"] = .string(country)
                     }
 
-                    if addressComponents.count > 1 {  // More than just the @type
+                    if !addressComponents.isEmpty {
                         result["address"] = .object(addressComponents)
                     }
 
@@ -343,7 +340,6 @@ final class LocationService: NSObject, Service, CLLocationManagerDelegate {
                         "@context": .string("https://schema.org"),
                         "@type": .string("Place"),
                         "geo": .object([
-                            "@type": .string("GeoCoordinates"),
                             "latitude": .double(latitude),
                             "longitude": .double(longitude),
                         ]),
@@ -354,9 +350,7 @@ final class LocationService: NSObject, Service, CLLocationManagerDelegate {
                         result["name"] = .string(name)
                     }
 
-                    var addressComponents: [String: Value] = [
-                        "@type": .string("PostalAddress")
-                    ]
+                    var addressComponents: [String: Value] = [:]
 
                     if let thoroughfare = placemark.thoroughfare {
                         addressComponents["streetAddress"] = .string(thoroughfare)
@@ -378,7 +372,7 @@ final class LocationService: NSObject, Service, CLLocationManagerDelegate {
                         addressComponents["addressCountry"] = .string(country)
                     }
 
-                    if addressComponents.count > 1 {  // More than just the @type
+                    if !addressComponents.isEmpty {
                         result["address"] = .object(addressComponents)
                     }
 

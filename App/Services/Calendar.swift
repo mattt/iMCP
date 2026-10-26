@@ -226,11 +226,13 @@ final class CalendarService: Service {
                 events = events.filter { ($0.hasRecurrenceRules) == isRecurring }
             }
 
-            return events.map { event -> Event in
-                var e = Event(event)
-                e.identifier = event.eventIdentifier
-                return e
-            }
+            return JSONLDGraph(
+                events.map { event -> Event in
+                    var e = Event(event)
+                    e.identifier = event.eventIdentifier
+                    return e
+                }
+            )
         }
         Tool(
             name: "events_create",
