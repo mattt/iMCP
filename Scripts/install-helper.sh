@@ -18,6 +18,8 @@ development certificate, and installs it so iMCP can enable Home.
   --destination DIR  Install directory. Default: /Applications.
 
 Requires Xcode signed in to an Apple Developer account (Xcode > Settings > Accounts).
+If this Mac isn't registered with the team yet, the build registers it
+as a development device, which counts toward the team's device limit.
 EOF
 }
 
@@ -112,6 +114,7 @@ build_helper() {
 }
 
 echo "Building iMCP Helper for team $team as $bundle_id..."
+echo "If this Mac isn't registered with team $team, Xcode registers it as a development device."
 first_log="$build_dir/catalyst.log"
 if ! build_helper 'platform=macOS,variant=Mac Catalyst' >"$first_log" 2>&1; then
     if ! grep -q "Entitlement com.apple.developer.homekit not found" "$first_log"; then
