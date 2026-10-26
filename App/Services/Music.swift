@@ -179,10 +179,11 @@ extension MusicService {
 
     /// The script for a seek.
     ///
-    /// It reads the current track's duration and sets the position in one script,
-    /// with no suspension in iMCP between them,
-    /// so a track change can't come between reading one track's duration
-    /// and seeking in another.
+    /// It reads the current track's duration and sets the position in one script.
+    /// Scripts run one at a time on iMCP's queue,
+    /// so no other iMCP script can run between the two.
+    /// They are still separate Apple events,
+    /// and Music can move to another track between them on its own.
     /// The position is clamped to zero and ``maximumSeekPosition`` here,
     /// and to the track's duration in the script when Music knows it.
     ///
