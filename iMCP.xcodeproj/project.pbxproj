@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		485454500000000000000020 /* RemoteAccessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 485454500000000000000010 /* RemoteAccessTests.swift */; };
+		485454500000000000000021 /* ../App/Shared/HTTPMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 485454500000000000000011 /* ../App/Shared/HTTPMessage.swift */; };
+		485454500000000000000022 /* ../App/Models/AccessToken.swift in Sources */ = {isa = PBXBuildFile; fileRef = 485454500000000000000012 /* ../App/Models/AccessToken.swift */; };
 		158948D22D0E610E83A4433C /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = B75D49165A453E912E36DBFE /* Sparkle */; };
 		76F80A6E3EDBFB02048A6ED8 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E0E66768348853754D32208C /* Cocoa.framework */; };
 		826C0834A5B647F8A918E54D /* ServiceLifecycle in Frameworks */ = {isa = PBXBuildFile; productRef = DCE061F8A68D0CD546D919E2 /* ServiceLifecycle */; };
@@ -90,6 +93,9 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		485454500000000000000010 /* RemoteAccessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteAccessTests.swift; sourceTree = "<group>"; };
+		485454500000000000000011 /* ../App/Shared/HTTPMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../App/Shared/HTTPMessage.swift; sourceTree = "<group>"; };
+		485454500000000000000012 /* ../App/Models/AccessToken.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../App/Models/AccessToken.swift; sourceTree = "<group>"; };
 		6A5CFBBEC66BC8CDA9D65496 /* imcp-serverTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "imcp-serverTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		75E148EAC5AC8B3263C5AA13 /* ServiceGroupConfigurationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ServiceGroupConfigurationTests.swift; sourceTree = "<group>"; };
 		A10000000000000000000001 /* iMCP Helper.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; path = "iMCP Helper.app"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -267,6 +273,9 @@
 				B0D1DEADBEEF000000000007 /* MCPServiceLoopTests.swift */,
 				B0D1DEADBEEF000000000009 /* MCPInitializeCompatibility.swift */,
 				B0D1DEADBEEF00000000000B /* MCPInitializeCompatibilityTests.swift */,
+				485454500000000000000010 /* RemoteAccessTests.swift */,
+				485454500000000000000011 /* ../App/Shared/HTTPMessage.swift */,
+				485454500000000000000012 /* ../App/Models/AccessToken.swift */,
 				B0D1DEADBEEF000000000005 /* MCPServiceLoop.swift */,
 			);
 			path = CLITests;
@@ -570,6 +579,9 @@
 				B0D1DEADBEEF000000000006 /* MCPServiceLoop.swift in Sources */,
 				B0D1DEADBEEF00000000000A /* MCPInitializeCompatibility.swift in Sources */,
 				B0D1DEADBEEF00000000000C /* MCPInitializeCompatibilityTests.swift in Sources */,
+				485454500000000000000020 /* RemoteAccessTests.swift in Sources */,
+				485454500000000000000021 /* ../App/Shared/HTTPMessage.swift in Sources */,
+				485454500000000000000022 /* ../App/Models/AccessToken.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
