@@ -133,3 +133,74 @@ extension Calendar {
         return self.date(byAdding: .day, value: 1, to: startOfDay) ?? startOfDay
     }
 }
+
+extension NSAppleScript {
+    /// An error that AppleScript reports when it compiles or runs a script.
+    struct ExecutionError: Error, Equatable, Sendable {
+        /// The AppleScript error number, such as -1743 when the user has not allowed
+        /// iMCP to send Apple events to the target app.
+        let number: Int?
+        let message: String
+
+        init(number: Int?, message: String) {
+            self.number = number
+            self.message = message
+        }
+
+        init(errorInfo: NSDictionary?) {
+            number = (errorInfo?[NSAppleScript.errorNumber] as? NSNumber)?.intValue
+            message =
+                errorInfo?[NSAppleScript.errorMessage] as? String
+                ?? errorInfo.map { String(describing: $0) }
+                ?? "unknown error"
+        }
+    }
+
+    /// The queue that compiles and runs every script in iMCP.
+    /// AppleScript has been thread-safe since Mac OS X 10.6,
+    /// provided that one script object is not used on several threads at once.
+    /// Each script is created and run in one block on this serial queue,
+    /// so the main thread stays free while the target app answers.
+    private static let executionQueue = DispatchQueue(label: "me.mattt.iMCP.AppleScript")
+
+    /// Compiles `source` and runs it,
+    /// or, when `event` is given, calls the handler that the event names.
+    ///
+    /// - Returns: The result of the script or the handler.
+    /// - Throws: ``ExecutionError`` when the script does not compile or fails.
+    static func execute(
+        _ source: String,
+        calling event: NSAppleEventDescriptor? = nil
+    ) async throws -> NSAppleEventDescriptor {
+        // Callers build the event for this call alone and do not use it again,
+        // so handing it to the queue does not share it.
+        nonisolated(unsafe) let event = event
+        return try await withCheckedThrowingContinuation { continuation in
+            executionQueue.async {
+                guard let script = NSAppleScript(source: source) else {
+                    continuation.resume(
+                        throwing: ExecutionError(number: nil, message: "the script could not be loaded")
+                    )
+                    return
+                }
+                var errorInfo: NSDictionary?
+                guard script.compileAndReturnError(&errorInfo) else {
+                    continuation.resume(throwing: ExecutionError(errorInfo: errorInfo))
+                    return
+                }
+                errorInfo = nil
+                let result =
+                    if let event {
+                        script.executeAppleEvent(event, error: &errorInfo)
+                    } else {
+                        script.executeAndReturnError(&errorInfo)
+                    }
+                if errorInfo != nil {
+                    continuation.resume(throwing: ExecutionError(errorInfo: errorInfo))
+                } else {
+                    continuation.resume(returning: result)
+                }
+            }
+        }
+    }
+}

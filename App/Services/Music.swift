@@ -320,22 +320,12 @@ extension MusicService {
         }
     }
 
-    @MainActor
-    private func executeAppleScript(_ source: String) throws -> NSAppleEventDescriptor {
-        var errorInfo: NSDictionary?
-        guard let script = NSAppleScript(source: source) else {
-            throw NSError(
-                domain: "MusicServiceError",
-                code: 3,
-                userInfo: [NSLocalizedDescriptionKey: "Failed to create AppleScript"]
-            )
-        }
-
-        let result = script.executeAndReturnError(&errorInfo)
-        if let errorInfo {
-            if let errorNumber = errorInfo[NSAppleScript.errorNumber] as? NSNumber,
-                errorNumber.intValue == -1743
-            {
+    /// Runs a script that sends Apple events to Music, off the main thread.
+    private func executeAppleScript(_ source: String) async throws -> NSAppleEventDescriptor {
+        do {
+            return try await NSAppleScript.execute(source)
+        } catch let error as NSAppleScript.ExecutionError {
+            if error.number == Int(errAEEventNotPermitted) {
                 throw NSError(
                     domain: "MusicServiceError",
                     code: 4,
@@ -348,11 +338,9 @@ extension MusicService {
             throw NSError(
                 domain: "MusicServiceError",
                 code: 8,
-                userInfo: [NSLocalizedDescriptionKey: String(describing: errorInfo)]
+                userInfo: [NSLocalizedDescriptionKey: error.message]
             )
         }
-
-        return result
     }
 
     private func listItems(from descriptor: NSAppleEventDescriptor) -> [NSAppleEventDescriptor] {
@@ -365,8 +353,7 @@ extension MusicService {
         }
     }
 
-    @MainActor
-    private func fetchNowPlaying() throws -> [String: Value] {
+    private func fetchNowPlaying() async throws -> [String: Value] {
         let script = """
             tell application "Music"
                 if player state is stopped then
@@ -382,7 +369,7 @@ extension MusicService {
             end tell
             """
 
-        let descriptor = try executeAppleScript(script)
+        let descriptor = try await executeAppleScript(script)
         let items = listItems(from: descriptor)
         guard items.count >= 6 else {
             throw NSError(
@@ -409,8 +396,7 @@ extension MusicService {
         ]
     }
 
-    @MainActor
-    private func performControlAction(_ action: ControlAction, position: Double?) throws {
+    private func performControlAction(_ action: ControlAction, position: Double?) async throws {
         let script: String
         switch action {
         case .play:
@@ -433,19 +419,19 @@ extension MusicService {
                     userInfo: [NSLocalizedDescriptionKey: "Seek position required"]
                 )
             }
-            let seekPosition = try Self.seekPosition(position, duration: currentTrackDuration())
+            let duration = await currentTrackDuration()
+            let seekPosition = try Self.seekPosition(position, duration: duration)
             script =
                 "tell application \"Music\" to set player position to \(Self.appleScriptNumber(seekPosition))"
         }
 
         log.debug("Executing Music control action: \(action.rawValue)")
-        _ = try executeAppleScript(script)
+        _ = try await executeAppleScript(script)
     }
 
     /// Returns the duration of the current track in seconds,
     /// or `nil` when there's no current track or its duration is unknown.
-    @MainActor
-    private func currentTrackDuration() -> Double? {
+    private func currentTrackDuration() async -> Double? {
         let script = """
             tell application "Music"
                 try
@@ -456,7 +442,7 @@ extension MusicService {
             end tell
             """
 
-        guard let descriptor = try? executeAppleScript(script) else {
+        guard let descriptor = try? await executeAppleScript(script) else {
             return nil
         }
         let duration = descriptor.doubleValue
