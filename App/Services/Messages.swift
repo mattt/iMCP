@@ -465,7 +465,8 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
             )
         ) { arguments in
             let request = try SendRequest(arguments: arguments)
-            let target = try Self.resolvedTarget(for: request, chat: try self.chatDetails(for: request))
+            let approvedChat = try self.chatDetails(for: request)
+            let target = try Self.resolvedTarget(for: request, chat: approvedChat)
             let confirmation = MessageSendConfirmation(
                 clientName: ToolCallContext.clientName,
                 recipient: target.recipient,
@@ -476,16 +477,14 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
             try Self.checkAutomationPermission()
             return try await Self.send(
                 request,
+                identity: Self.sendIdentity(for: request, target: target, chat: approvedChat),
                 confirm: {
                     await Self.askForConfirmation(timeout: Self.sendConfirmationTimeout) { answer in
                         MessageSendConfirmationWindowController.shared.show(confirmation, onAnswer: answer)
                     }
                 },
-                baseline: {
-                    self.latestMessageRowID()
-                },
                 deliver: { request in
-                    try await Self.deliver(request)
+                    try await self.deliver(request, approvedChat: approvedChat)
                 },
                 locate: { request, baseline in
                     await Self.awaitSentMessage(
@@ -1463,14 +1462,15 @@ extension MessageService {
 
     /// Sends a message only after `confirm` reports that the user chose Send.
     /// Any other answer throws, and `deliver` is never called.
-    /// Before delivery, `baseline` reads the newest message row in chat.db;
-    /// after it, `locate` looks for the sent message among newer rows.
+    /// `deliver` returns the newest message row in chat.db,
+    /// read immediately before the Apple event, or `nil` when it can't be read;
+    /// after delivery, `locate` looks for the sent message among newer rows.
     /// Not finding it leaves the result without an @id but doesn't fail the send.
     static func send(
         _ request: SendRequest,
+        identity: SendIdentity,
         confirm: () async -> SendConfirmationAnswer,
-        baseline: () -> Int64?,
-        deliver: (SendRequest) async throws -> Void,
+        deliver: (SendRequest) async throws -> Int64?,
         locate: (SendRequest, Int64) async -> OutgoingMessage?,
         inFlight: InFlightSends = .shared
     ) async throws -> [String: Value] {
@@ -1484,20 +1484,19 @@ extension MessageService {
             log.notice("A message was not sent because its confirmation timed out")
             throw SendError.timedOut
         }
-        let token = inFlight.begin(request)
+        let token = inFlight.begin(identity)
         // Ends the send when delivery throws; ending it again below returns false.
         defer { _ = inFlight.end(token) }
-        let rowID = baseline()
-        try await deliver(request)
+        let rowID = try await deliver(request)
         log.notice("Messages accepted a message for sending")
         var sentMessage: OutgoingMessage?
         if let rowID {
             sentMessage = await locate(request, rowID)
         }
-        // An identical send that overlapped this one could have posted the message found,
-        // so neither gets an @id.
+        // A send that may be equivalent overlapped this one and could have posted the message found,
+        // so neither gets an @id; so does a send whose conversation couldn't be resolved.
         if inFlight.end(token) {
-            log.notice("An identical send overlapped this one, so its message has no @id")
+            log.notice("An equivalent send overlapped this one, or its conversation is unresolved, so it has no @id")
             sentMessage = nil
         } else if sentMessage == nil {
             log.notice("The sent message wasn't found in the Messages database")
@@ -1505,13 +1504,73 @@ extension MessageService {
         return request.result(sentMessage: sentMessage)
     }
 
-    /// The sends in progress, so that identical sends at once get no @id:
+    /// What makes two sends equivalent for finding their messages in chat.db:
+    /// the conversation, the service, and the text.
+    struct SendIdentity: Equatable, Sendable {
+        /// `handle:` and a normalized handle for a one-to-one conversation,
+        /// `chat:` and the ID for a group conversation,
+        /// or `nil` when the conversation can't be resolved.
+        let conversation: String?
+        /// The service, lowercased.
+        let service: String
+        /// The text without surrounding whitespace.
+        let text: String
+
+        init(conversation: String?, service: String, text: String) {
+            self.conversation = conversation
+            self.service = service.lowercased()
+            self.text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        /// Whether the two sends could post messages that chat.db can't tell apart.
+        /// An unresolved conversation could be any conversation.
+        func mayOverlap(_ other: SendIdentity) -> Bool {
+            guard text == other.text, service == other.service else { return false }
+            guard let conversation, let otherConversation = other.conversation else { return true }
+            return conversation == otherConversation
+        }
+    }
+
+    /// Returns a handle as chat.db stores it: an email address in lowercase,
+    /// a phone number in E.164 form, or a short code of up to six digits.
+    /// Returns `nil` for a longer phone number without a country code,
+    /// which can't be compared with other forms of the same number.
+    static func normalizedHandle(_ handle: String) -> String? {
+        if handle.contains("@") {
+            return handle.lowercased()
+        }
+        let digits = handle.filter(\.isNumber)
+        if handle.hasPrefix("+"), !digits.isEmpty {
+            return "+" + digits
+        }
+        return (1 ... 6).contains(digits.count) ? digits : nil
+    }
+
+    /// The identity of a send, after the conversation and service are resolved.
+    /// A conversation with one participant is identified by that participant's handle,
+    /// so a send by chatId and a send to the recipient are equivalent.
+    static func sendIdentity(for request: SendRequest, target: SendTarget, chat: ChatDetails?) -> SendIdentity {
+        let conversation: String?
+        switch request.destination {
+        case .recipient(let handle, _):
+            conversation = normalizedHandle(handle).map { "handle:\($0)" }
+        case .chat(let id):
+            if let participants = chat?.participants, participants.count == 1 {
+                conversation = normalizedHandle(participants[0]).map { "handle:\($0)" }
+            } else {
+                conversation = "chat:\(id)"
+            }
+        }
+        return SendIdentity(conversation: conversation, service: target.service, text: request.text)
+    }
+
+    /// The sends in progress, so that equivalent sends at once get no @id:
     /// chat.db can't tell their messages apart.
     final class InFlightSends: Sendable {
         static let shared = InFlightSends()
 
         private struct Send {
-            let key: String
+            let identity: SendIdentity
             var overlapped: Bool
         }
 
@@ -1519,22 +1578,23 @@ extension MessageService {
 
         init() {}
 
-        /// Registers a send and marks it and any identical send in progress as overlapped.
-        func begin(_ request: SendRequest) -> UUID {
-            let key = "\(request.destination)\u{0}\(request.text.trimmingCharacters(in: .whitespacesAndNewlines))"
+        /// Registers a send and marks it and any equivalent send in progress as overlapped.
+        /// A send whose conversation is unresolved is marked from the start.
+        func begin(_ identity: SendIdentity) -> UUID {
             let token = UUID()
             sends.withLock { sends in
-                var overlapped = false
-                for (id, send) in sends where send.key == key {
+                var overlapped = identity.conversation == nil
+                for (id, send) in sends where send.identity.mayOverlap(identity) {
                     sends[id]?.overlapped = true
                     overlapped = true
                 }
-                sends[token] = Send(key: key, overlapped: overlapped)
+                sends[token] = Send(identity: identity, overlapped: overlapped)
             }
             return token
         }
 
-        /// Removes a send and returns whether an identical send overlapped it.
+        /// Removes a send and returns whether it overlapped an equivalent send
+        /// or had an unresolved conversation.
         /// Ending a send twice returns `false` the second time.
         func end(_ token: UUID) -> Bool {
             sends.withLock { $0.removeValue(forKey: token)?.overlapped ?? false }
@@ -1848,13 +1908,46 @@ extension MessageService {
         }
     }
 
-    /// Hands the message to Messages, off the main thread.
-    fileprivate static func deliver(_ request: SendRequest) async throws {
+    /// Hands the message to Messages, off the main thread,
+    /// and returns the newest message row read immediately before the Apple event.
+    fileprivate func deliver(_ request: SendRequest, approvedChat: ChatDetails?) async throws -> Int64? {
+        let baseline = OSAllocatedUnfairLock<Int64?>(initialState: nil)
         do {
-            _ = try await NSAppleScript.execute(sendScriptSource, calling: request.handlerEvent)
+            _ = try await NSAppleScript.execute(Self.sendScriptSource, calling: request.handlerEvent) {
+                let rowID = try Self.prepareDelivery(
+                    for: request,
+                    approvedChat: approvedChat,
+                    currentChat: { try self.chatDetails(for: request) },
+                    baseline: { self.latestMessageRowID() }
+                )
+                baseline.withLock { $0 = rowID }
+            }
         } catch let error as NSAppleScript.ExecutionError {
             throw SendError(error, request: request)
         }
+        return baseline.withLock { $0 }
+    }
+
+    /// Runs immediately before the Apple event that sends a message.
+    /// A conversation must still have the participants and service the user approved;
+    /// otherwise, or when it can't be read again, the send stops with nothing sent.
+    /// Then the newest message row is read from chat.db as it is now.
+    static func prepareDelivery(
+        for request: SendRequest,
+        approvedChat: ChatDetails?,
+        currentChat: () throws -> ChatDetails?,
+        baseline: () -> Int64?
+    ) throws -> Int64? {
+        if case .chat(let id) = request.destination {
+            guard let approvedChat,
+                let current = try? currentChat(),
+                Set(current.participants) == Set(approvedChat.participants),
+                current.service == approvedChat.service
+            else {
+                throw SendError.chatChanged(id)
+            }
+        }
+        return baseline()
     }
 
     enum SendError: LocalizedError, Equatable {
@@ -1864,6 +1957,7 @@ extension MessageService {
         case notAuthorized
         case unknownChat(String)
         case chatUnresolved(String)
+        case chatChanged(String)
         case noAccountOrRecipient(String, SendService)
         case appleScript(number: Int?, message: String)
 
@@ -1900,6 +1994,9 @@ extension MessageService {
             case .chatUnresolved(let id):
                 return
                     "iMCP couldn't read the participants and service of conversation \(id) from the Messages database, so it can't show who would receive the message. Turn on Messages in iMCP and grant the Messages folder, or send to a recipient instead. Nothing was sent."
+            case .chatChanged(let id):
+                return
+                    "Conversation \(id) changed after you confirmed the message, or iMCP couldn't read it again: its participants or service no longer match what you approved. Nothing was sent."
             case .noAccountOrRecipient(let handle, let service):
                 return
                     "Messages couldn't find a signed-in \(service.rawValue) account or recipient \(handle). Nothing was sent."

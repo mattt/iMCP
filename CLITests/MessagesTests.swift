@@ -175,6 +175,15 @@ final class MessagesTests: XCTestCase {
 
     // MARK: - Confirmation
 
+    private func identity(_ request: SendRequest, service: String = "SMS") -> MessageService.SendIdentity {
+        switch request.destination {
+        case .recipient(let handle, _):
+            return .init(conversation: "handle:\(handle.lowercased())", service: service, text: request.text)
+        case .chat(let id):
+            return .init(conversation: "chat:\(id)", service: service, text: request.text)
+        }
+    }
+
     func testDeclinedOrUnansweredSendsNeverDeliver() async {
         let request = SendRequest(destination: .recipient("+15551234567", .iMessage), text: "Hi")
 
@@ -185,12 +194,12 @@ final class MessagesTests: XCTestCase {
             do {
                 _ = try await MessageService.send(
                     request,
+                    identity: identity(request),
                     confirm: { answer },
-                    baseline: {
-                        XCTFail("read a baseline after \(answer)")
+                    deliver: { _ in
+                        XCTFail("delivered after \(answer)")
                         return nil
                     },
-                    deliver: { _ in XCTFail("delivered after \(answer)") },
                     locate: { _, _ in
                         XCTFail("looked for a message after \(answer)")
                         return nil
@@ -221,14 +230,12 @@ final class MessagesTests: XCTestCase {
 
         let result = try await MessageService.send(
             request,
+            identity: identity(request, service: "iMessage"),
             confirm: { .send },
-            baseline: {
-                events.append("baseline")
-                return 100
-            },
             deliver: {
                 XCTAssertEqual($0, request)
                 events.append("deliver")
+                return 100
             },
             locate: { located, baseline in
                 XCTAssertEqual(located, request)
@@ -238,7 +245,7 @@ final class MessagesTests: XCTestCase {
             inFlight: MessageService.InFlightSends()
         )
 
-        XCTAssertEqual(events, ["baseline", "deliver", "locate after 100"])
+        XCTAssertEqual(events, ["deliver", "locate after 100"])
         XCTAssertEqual(result["@type"], "SendAction")
         XCTAssertEqual(result["recipient"], ["@type": "Conversation", "@id": "iMessage;-;+15551234567"])
         XCTAssertEqual(
@@ -261,9 +268,9 @@ final class MessagesTests: XCTestCase {
             var looked = false
             let result = try await MessageService.send(
                 request,
+                identity: identity(request),
                 confirm: { .send },
-                baseline: { baseline },
-                deliver: { _ in },
+                deliver: { _ in baseline },
                 locate: { _, _ in
                     looked = true
                     return nil
@@ -279,16 +286,23 @@ final class MessagesTests: XCTestCase {
         }
     }
 
-    func testIdenticalOverlappingSendsGetNoID() async throws {
-        let request = SendRequest(destination: .chat("any;-;+15551234567"), text: "On my way")
-        let other = SendRequest(destination: .chat("any;-;+15551234567"), text: "Running late")
-        let inFlight = MessageService.InFlightSends()
-        func send(_ request: SendRequest, during: () async throws -> Void = {}) async throws -> [String: Value] {
+    private func overlappingSends(
+        _ first: (SendRequest, MessageService.SendIdentity),
+        _ second: (SendRequest, MessageService.SendIdentity),
+        inFlight: MessageService.InFlightSends = .init()
+    ) async throws -> (outer: Value?, inner: Value?) {
+        func send(
+            _ send: (SendRequest, MessageService.SendIdentity),
+            during: () async throws -> Void = {}
+        ) async throws -> [String: Value] {
             try await MessageService.send(
-                request,
+                send.0,
+                identity: send.1,
                 confirm: { .send },
-                baseline: { 100 },
-                deliver: { _ in try await during() },
+                deliver: { _ in
+                    try await during()
+                    return 100
+                },
                 locate: { request, _ in
                     OutgoingMessage(
                         rowID: 101,
@@ -306,21 +320,215 @@ final class MessagesTests: XCTestCase {
 
         // The second send starts and finishes while the first is delivering.
         var inner: [String: Value]?
-        let outer = try await send(request) {
-            inner = try await send(request)
+        let outer = try await send(first) {
+            inner = try await send(second)
         }
-        XCTAssertNil(outer["object"]?.objectValue?["@id"])
-        XCTAssertNil(try XCTUnwrap(inner)["object"]?.objectValue?["@id"])
+        return (outer["object"]?.objectValue?["@id"], inner?["object"]?.objectValue?["@id"])
+    }
+
+    func testIdenticalOverlappingSendsGetNoID() async throws {
+        let request = SendRequest(destination: .chat("any;-;+15551234567"), text: "On my way")
+        let other = SendRequest(destination: .chat("any;-;+15551234567"), text: "Running late")
+        let inFlight = MessageService.InFlightSends()
+
+        let same = try await overlappingSends(
+            (request, identity(request)),
+            (request, identity(request)),
+            inFlight: inFlight
+        )
+        XCTAssertNil(same.outer)
+        XCTAssertNil(same.inner)
 
         // Different text doesn't overlap, and a later identical send doesn't either.
-        var different: [String: Value]?
-        let first = try await send(request) {
-            different = try await send(other)
+        let different = try await overlappingSends(
+            (request, identity(request)),
+            (other, identity(other)),
+            inFlight: inFlight
+        )
+        XCTAssertEqual(different.outer, "found")
+        XCTAssertEqual(different.inner, "found")
+        let later = try await overlappingSends(
+            (request, identity(request)),
+            (other, identity(other)),
+            inFlight: inFlight
+        )
+        XCTAssertEqual(later.outer, "found")
+    }
+
+    func testRecipientAndChatIDSendsToOneConversationOverlap() async throws {
+        let recipient = SendRequest(destination: .recipient("+15551234567", .SMS), text: "On my way")
+        let chat = SendRequest(destination: .chat("any;-;+15551234567"), text: "On my way ")
+        let details = MessageService.ChatDetails(displayName: nil, participants: ["+15551234567"], service: "SMS")
+
+        let recipientIdentity = MessageService.sendIdentity(
+            for: recipient,
+            target: try MessageService.resolvedTarget(for: recipient, chat: nil),
+            chat: nil
+        )
+        let chatIdentity = MessageService.sendIdentity(
+            for: chat,
+            target: try MessageService.resolvedTarget(for: chat, chat: details),
+            chat: details
+        )
+        XCTAssertEqual(recipientIdentity, chatIdentity)
+
+        let ids = try await overlappingSends((recipient, recipientIdentity), (chat, chatIdentity))
+        XCTAssertNil(ids.outer)
+        XCTAssertNil(ids.inner)
+
+        // The same conversation on another service doesn't overlap.
+        let iMessage = SendRequest(destination: .recipient("+15551234567", .iMessage), text: "On my way")
+        let iMessageIdentity = MessageService.sendIdentity(
+            for: iMessage,
+            target: try MessageService.resolvedTarget(for: iMessage, chat: nil),
+            chat: nil
+        )
+        XCTAssertFalse(iMessageIdentity.mayOverlap(chatIdentity))
+    }
+
+    func testEmailCaseVariantsOverlap() async throws {
+        let upper = SendRequest(destination: .recipient("Jane@Example.com", .iMessage), text: "Hi")
+        let lower = SendRequest(destination: .recipient("jane@example.com", .iMessage), text: "Hi")
+        func identity(_ request: SendRequest) throws -> MessageService.SendIdentity {
+            MessageService.sendIdentity(
+                for: request,
+                target: try MessageService.resolvedTarget(for: request, chat: nil),
+                chat: nil
+            )
         }
-        XCTAssertEqual(first["object"]?.objectValue?["@id"], "found")
-        XCTAssertEqual(try XCTUnwrap(different)["object"]?.objectValue?["@id"], "found")
-        let later = try await send(request)
-        XCTAssertEqual(later["object"]?.objectValue?["@id"], "found")
+        XCTAssertEqual(try identity(upper).conversation, "handle:jane@example.com")
+        XCTAssertEqual(try identity(upper), try identity(lower))
+
+        let ids = try await overlappingSends((upper, try identity(upper)), (lower, try identity(lower)))
+        XCTAssertNil(ids.outer)
+        XCTAssertNil(ids.inner)
+    }
+
+    func testUnresolvedConversationsGetNoID() async throws {
+        // Without a country code, 5551234567 can't be compared with +15551234567.
+        XCTAssertNil(MessageService.normalizedHandle("5551234567"))
+        XCTAssertEqual(MessageService.normalizedHandle("+15551234567"), "+15551234567")
+        XCTAssertEqual(MessageService.normalizedHandle("12345"), "12345")
+
+        let local = SendRequest(destination: .recipient("5551234567", .SMS), text: "On my way")
+        let localIdentity = MessageService.sendIdentity(
+            for: local,
+            target: try MessageService.resolvedTarget(for: local, chat: nil),
+            chat: nil
+        )
+        XCTAssertNil(localIdentity.conversation)
+
+        // Alone, it gets no @id.
+        let alone = try await overlappingSends(
+            (local, localIdentity),
+            (
+                SendRequest(destination: .chat("any;+;chat1"), text: "Other"),
+                .init(conversation: "chat:any;+;chat1", service: "SMS", text: "Other")
+            )
+        )
+        XCTAssertNil(alone.outer)
+        XCTAssertEqual(alone.inner, "found")
+
+        // It may be the same conversation as a resolved send with the same text and service.
+        let resolved = SendRequest(destination: .recipient("+15551234567", .SMS), text: "On my way")
+        let both = try await overlappingSends(
+            (resolved, identity(resolved)),
+            (local, localIdentity)
+        )
+        XCTAssertNil(both.outer)
+        XCTAssertNil(both.inner)
+    }
+
+    // MARK: - Delivery checks
+
+    private let approvedChat = MessageService.ChatDetails(
+        displayName: "Book Club",
+        participants: ["+15551234567", "jane@example.com"],
+        service: "iMessage"
+    )
+
+    func testChatThatChangedSinceApprovalIsNotSent() {
+        let request = SendRequest(destination: .chat("any;+;chat123456"), text: "Hi")
+        let changed: [MessageService.ChatDetails?] = [
+            nil,
+            .init(displayName: "Book Club", participants: ["+15551234567"], service: "iMessage"),
+            .init(
+                displayName: "Book Club",
+                participants: ["+15551234567", "jane@example.com", "+15557654321"],
+                service: "iMessage"
+            ),
+            .init(displayName: "Book Club", participants: ["+15551234567", "jane@example.com"], service: "SMS"),
+        ]
+        for current in changed {
+            var baselineRead = false
+            XCTAssertThrowsError(
+                try MessageService.prepareDelivery(
+                    for: request,
+                    approvedChat: approvedChat,
+                    currentChat: { current },
+                    baseline: {
+                        baselineRead = true
+                        return 100
+                    }
+                ),
+                "\(String(describing: current))"
+            ) { error in
+                XCTAssertEqual(error as? SendError, .chatChanged("any;+;chat123456"))
+                XCTAssertTrue(error.localizedDescription.contains("changed"), error.localizedDescription)
+                XCTAssertTrue(error.localizedDescription.contains("Nothing was sent"), error.localizedDescription)
+            }
+            XCTAssertFalse(baselineRead)
+        }
+
+        // A chat that can't be read again is treated as changed.
+        XCTAssertThrowsError(
+            try MessageService.prepareDelivery(
+                for: request,
+                approvedChat: approvedChat,
+                currentChat: { throw SendError.unknownChat("any;+;chat123456") },
+                baseline: { 100 }
+            )
+        ) { error in
+            XCTAssertEqual(error as? SendError, .chatChanged("any;+;chat123456"))
+        }
+    }
+
+    func testUnchangedChatIsSentAndReadsTheBaselineLast() throws {
+        let request = SendRequest(destination: .chat("any;+;chat123456"), text: "Hi")
+        var events: [String] = []
+        let rowID = try MessageService.prepareDelivery(
+            for: request,
+            approvedChat: approvedChat,
+            currentChat: {
+                events.append("chat")
+                // The same people in another order, and a new name, are the same chat.
+                return .init(
+                    displayName: "Readers",
+                    participants: ["jane@example.com", "+15551234567"],
+                    service: "iMessage"
+                )
+            },
+            baseline: {
+                events.append("baseline")
+                return 100
+            }
+        )
+        XCTAssertEqual(rowID, 100)
+        XCTAssertEqual(events, ["chat", "baseline"])
+
+        // A recipient send has no chat to check.
+        let recipient = SendRequest(destination: .recipient("+15551234567", .SMS), text: "Hi")
+        XCTAssertNil(
+            try MessageService.prepareDelivery(
+                for: recipient,
+                approvedChat: nil,
+                currentChat: {
+                    XCTFail("read a chat for a recipient send")
+                    return nil
+                },
+                baseline: { nil }
+            )
+        )
     }
 
     // MARK: - Finding the sent message
@@ -629,6 +837,35 @@ final class MessagesTests: XCTestCase {
         }
         let blocked = try await blocker.value
         XCTAssertEqual(blocked, 1)
+    }
+
+    func testBeforeSendingRunsImmediatelyBeforeTheScript() async throws {
+        // The hook runs on the queue before the script, which still returns its result.
+        let marker = OSAllocatedUnfairLock(initialState: 0)
+        let result = try await NSAppleScript.execute("return 7") {
+            marker.withLock { $0 = 1 }
+        }
+        XCTAssertEqual(result.int32Value, 7)
+        XCTAssertEqual(marker.withLock { $0 }, 1)
+
+        // When the hook throws, the script doesn't run.
+        struct Stop: Error {}
+        do {
+            _ = try await NSAppleScript.execute("error \"ran\" number 1") { throw Stop() }
+            XCTFail("expected the hook's error")
+        } catch {
+            XCTAssertTrue(error is Stop, "\(error)")
+        }
+    }
+
+    func testCancelledTasksSkipTheHook() async {
+        let called = OSAllocatedUnfairLock(initialState: false)
+        let task = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await NSAppleScript.execute("return 2") { called.withLock { $0 = true } }.int32Value
+        }
+        _ = try? await task.value
+        XCTAssertFalse(called.withLock { $0 })
     }
 
     func testScriptErrorsKeepTheirNumberAndMessage() async {
