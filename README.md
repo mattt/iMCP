@@ -61,7 +61,8 @@ and a [growing list of clients][mcp-clients] that support the
       <img src="Assets/messages.svg" width="48" height="48" alt="" role="presentation"/>
     </th>
     <td><strong>Messages</strong></td>
-    <td>Access message history with specific participants within customizable date ranges.</td>
+    <td>Read message history by participant and date, and confirm each send in iMCP.
+    Sending requires Automation permission for Messages.</td>
   </tr>
   <tr>
     <th width="48">

@@ -41,6 +41,10 @@
 		A50000000000000000000021 /* ../App/Services/Mail.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000011 /* ../App/Services/Mail.swift */; };
 		A50000000000000000000022 /* ../App/Extensions/Foundation+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000012 /* ../App/Extensions/Foundation+Extensions.swift */; };
 		A50000000000000000000030 /* Envelope in Frameworks */ = {isa = PBXBuildFile; productRef = A50000000000000000000040 /* Envelope */; };
+		4D5347000000000000000020 /* MessagesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D5347000000000000000010 /* MessagesTests.swift */; };
+		4D5347000000000000000021 /* ../App/Services/Messages.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D5347000000000000000011 /* ../App/Services/Messages.swift */; };
+		4D5347000000000000000022 /* ../App/Views/MessageSendConfirmationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D5347000000000000000012 /* ../App/Views/MessageSendConfirmationView.swift */; };
+		4D5347000000000000000030 /* iMessage in Frameworks */ = {isa = PBXBuildFile; productRef = 4D5347000000000000000040 /* iMessage */; };
 		B0D1DEADBEEF000000000002 /* BonjourDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF000000000001 /* BonjourDiscovery.swift */; };
 		B0D1DEADBEEF000000000004 /* BonjourDiscoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF000000000003 /* BonjourDiscoveryTests.swift */; };
 		B0D1DEADBEEF000000000006 /* MCPServiceLoop.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF000000000005 /* MCPServiceLoop.swift */; };
@@ -113,6 +117,9 @@
 		A50000000000000000000010 /* MailTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MailTests.swift; sourceTree = "<group>"; };
 		A50000000000000000000011 /* ../App/Services/Mail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../App/Services/Mail.swift; sourceTree = "<group>"; };
 		A50000000000000000000012 /* ../App/Extensions/Foundation+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../App/Extensions/Foundation+Extensions.swift"; sourceTree = "<group>"; };
+		4D5347000000000000000010 /* MessagesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessagesTests.swift; sourceTree = "<group>"; };
+		4D5347000000000000000011 /* ../App/Services/Messages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../App/Services/Messages.swift; sourceTree = "<group>"; };
+		4D5347000000000000000012 /* ../App/Views/MessageSendConfirmationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../App/Views/MessageSendConfirmationView.swift; sourceTree = "<group>"; };
 		B0D1DEADBEEF000000000001 /* BonjourDiscovery.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = BonjourDiscovery.swift; path = ../CLI/BonjourDiscovery.swift; sourceTree = "<group>"; };
 		B0D1DEADBEEF000000000003 /* BonjourDiscoveryTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BonjourDiscoveryTests.swift; sourceTree = "<group>"; };
 		B0D1DEADBEEF000000000005 /* MCPServiceLoop.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MCPServiceLoop.swift; path = ../CLI/MCPServiceLoop.swift; sourceTree = "<group>"; };
@@ -179,6 +186,7 @@
 				A30000000000000000000031 /* JSONSchema in Frameworks */,
 				A30000000000000000000032 /* Ontology in Frameworks */,
 				A50000000000000000000030 /* Envelope in Frameworks */,
+				4D5347000000000000000030 /* iMessage in Frameworks */,
 				76F80A6E3EDBFB02048A6ED8 /* Cocoa.framework in Frameworks */,
 				826C0834A5B647F8A918E54D /* ServiceLifecycle in Frameworks */,
 				8DFCE9E4CBCBEB93A32E8560 /* ServiceLifecycleTestKit in Frameworks */,
@@ -252,6 +260,9 @@
 				A50000000000000000000010 /* MailTests.swift */,
 				A50000000000000000000011 /* ../App/Services/Mail.swift */,
 				A50000000000000000000012 /* ../App/Extensions/Foundation+Extensions.swift */,
+				4D5347000000000000000010 /* MessagesTests.swift */,
+				4D5347000000000000000011 /* ../App/Services/Messages.swift */,
+				4D5347000000000000000012 /* ../App/Views/MessageSendConfirmationView.swift */,
 				A30000000000000000000010 /* HomeToolsTests.swift */,
 				A30000000000000000000011 /* ../Shared/Home/HomeBackend.swift */,
 				A30000000000000000000012 /* ../Shared/Home/HomeError.swift */,
@@ -326,6 +337,7 @@
 				A20000000000000000000012 /* Ontology */,
 				DCE061F8A68D0CD546D919E2 /* ServiceLifecycle */,
 				A50000000000000000000040 /* Envelope */,
+				4D5347000000000000000040 /* iMessage */,
 				1CD6B9E157EEC273F178543D /* ServiceLifecycleTestKit */,
 				48ABEE9E6903427DD79096A1 /* Logging */,
 			);
@@ -554,6 +566,9 @@
 				A50000000000000000000020 /* MailTests.swift in Sources */,
 				A50000000000000000000021 /* ../App/Services/Mail.swift in Sources */,
 				A50000000000000000000022 /* ../App/Extensions/Foundation+Extensions.swift in Sources */,
+				4D5347000000000000000020 /* MessagesTests.swift in Sources */,
+				4D5347000000000000000021 /* ../App/Services/Messages.swift in Sources */,
+				4D5347000000000000000022 /* ../App/Views/MessageSendConfirmationView.swift in Sources */,
 				A30000000000000000000020 /* HomeToolsTests.swift in Sources */,
 				A30000000000000000000021 /* ../Shared/Home/HomeBackend.swift in Sources */,
 				A30000000000000000000022 /* ../Shared/Home/HomeError.swift in Sources */,
@@ -1180,6 +1195,11 @@
 			productName = TypedStream;
 		};
 		F809556F2D7888920055B911 /* iMessage */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F809556C2D7888920055B911 /* XCRemoteSwiftPackageReference "Madrid" */;
+			productName = iMessage;
+		};
+		4D5347000000000000000040 /* iMessage */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = F809556C2D7888920055B911 /* XCRemoteSwiftPackageReference "Madrid" */;
 			productName = iMessage;
