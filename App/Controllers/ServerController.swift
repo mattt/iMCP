@@ -51,6 +51,12 @@ struct ServiceConfig: Identifiable {
     }
 }
 
+/// A service's name and tools, for lists of tools in Settings.
+struct ToolGroup {
+    let name: String
+    let tools: [Tool]
+}
+
 enum ServiceRegistry {
     static let services: [any Service] = {
         var services: [any Service] = [
@@ -279,6 +285,14 @@ final class ServerController: ObservableObject {
     @AppStorage("disabledTools") private var disabledToolsData = Data()
     private var disabledToolsGeneration = 0
 
+    // MARK: - Remote Access
+    @AppStorage("remoteAccessEnabled") private var remoteAccessEnabled = false
+    @AppStorage("remoteAccessPort") private var remoteAccessPortValue = Int(RemoteAccessServer.defaultPort)
+    @Published private(set) var remoteAccessState: RemoteAccessServer.State = .off
+    private let tokenStore = AccessTokenStore.shared
+    /// Applies remote access settings in the order that they change.
+    private var remoteAccessConfigurationTask: Task<Void, Never>?
+
     // MARK: - Computed Properties for Service Configurations and Bindings
     var computedServiceConfigs: [ServiceConfig] {
         ServiceRegistry.configureServices(
@@ -404,6 +418,102 @@ final class ServerController: ObservableObject {
         }
     }
 
+    // MARK: - Remote Access Management
+    var isRemoteAccessEnabled: Bool {
+        get { remoteAccessEnabled }
+        set {
+            objectWillChange.send()
+            remoteAccessEnabled = newValue
+            applyRemoteAccessConfiguration()
+        }
+    }
+
+    var remoteAccessPort: Int {
+        get { remoteAccessPortValue }
+        set {
+            let port = min(max(newValue, 1), Int(UInt16.max))
+            guard port != remoteAccessPortValue else { return }
+            objectWillChange.send()
+            remoteAccessPortValue = port
+            applyRemoteAccessConfiguration()
+        }
+    }
+
+    var accessTokens: [AccessToken] {
+        tokenStore.all.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    /// Every tool that iMCP has, whether or not its service is on.
+    var allTools: [Tool] {
+        ServiceRegistry.services.flatMap(\.tools)
+    }
+
+    /// Each service's tools, in Settings order, with Utilities last.
+    var toolGroups: [ToolGroup] {
+        var groups = computedServiceConfigs.map { ToolGroup(name: $0.name, tools: $0.service.tools) }
+        groups.append(ToolGroup(name: "Utilities", tools: UtilitiesService.shared.tools))
+        return groups
+    }
+
+    /// The tools that iMCP's own settings let clients use:
+    /// their services are on and the tools aren't turned off.
+    var availableToolNames: Set<String> {
+        let disabled = disabledTools
+        let bindings = currentServiceBindings
+        var names: Set<String> = []
+        for service in ServiceRegistry.services
+        where bindings[String(describing: type(of: service))]?.wrappedValue == true {
+            for tool in service.tools where !disabled.contains(tool.name) {
+                names.insert(tool.name)
+            }
+        }
+        return names
+    }
+
+    /// Creates an access token and returns its secret, which iMCP can't show again.
+    func createAccessToken(name: String, permissions: ToolPermissions) -> String {
+        let (token, secret) = AccessToken.make(name: name, permissions: permissions)
+        objectWillChange.send()
+        tokenStore.add(token)
+        return secret
+    }
+
+    func updateAccessToken(id: UUID, name: String, permissions: ToolPermissions) {
+        objectWillChange.send()
+        tokenStore.modify(id: id) {
+            $0.name = name
+            $0.permissions = permissions
+        }
+        Task { await networkManager.remoteAccess.notifyToolListChanged(forToken: id) }
+    }
+
+    /// Gives a token a new secret and returns it.
+    /// Clients that use the old secret lose access.
+    func rerollAccessToken(id: UUID) -> String? {
+        objectWillChange.send()
+        let secret = tokenStore.modify(id: id) { $0.reroll() }
+        Task { await networkManager.remoteAccess.closeSessions(forToken: id) }
+        return secret
+    }
+
+    func deleteAccessToken(id: UUID) {
+        objectWillChange.send()
+        tokenStore.remove(id: id)
+        Task { await networkManager.remoteAccess.closeSessions(forToken: id) }
+    }
+
+    private func applyRemoteAccessConfiguration() {
+        let configuration = RemoteAccessServer.Configuration(
+            isEnabled: remoteAccessEnabled,
+            port: UInt16(clamping: remoteAccessPortValue)
+        )
+        let previous = remoteAccessConfigurationTask
+        remoteAccessConfigurationTask = Task {
+            await previous?.value
+            await networkManager.remoteAccess.configure(configuration)
+        }
+    }
+
     // MARK: - Connection Approval Methods
     private func cleanupApprovalState(for clientID: String) {
         activeApprovalDialogs.remove(clientID)
@@ -463,6 +573,16 @@ final class ServerController: ObservableObject {
 
             await self.networkManager.start()
             self.updateServerStatus("Running")
+
+            await self.networkManager.remoteAccess.setHandlers(
+                state: { [weak self] state in
+                    Task { @MainActor in self?.remoteAccessState = state }
+                },
+                tokenUsage: { [weak self] in
+                    Task { @MainActor in self?.objectWillChange.send() }
+                }
+            )
+            self.applyRemoteAccessConfiguration()
         }
     }
 
@@ -475,6 +595,8 @@ final class ServerController: ObservableObject {
     func startServer() async {
         await networkManager.start()
         updateServerStatus("Running")
+        // Stopping the server turns off remote access until the settings are applied again.
+        applyRemoteAccessConfiguration()
     }
 
     func stopServer() async {
@@ -582,6 +704,28 @@ final class ServerController: ObservableObject {
 
 // MARK: - Connection Management Components
 
+extension MCP.Server {
+    /// A server for one client connection.
+    static func iMCP() -> MCP.Server {
+        // Some clients, such as ChatGPT,
+        // describe the server to the model with only the first line of the instructions,
+        // so keep them on one line.
+        MCP.Server(
+            name: Bundle.main.name ?? "iMCP",
+            version: Bundle.main.shortVersionString ?? "unknown",
+            instructions: """
+                Use iMCP for apps and data on the user's Mac: \
+                Calendar, Contacts, Location, Mail, Maps, Messages, Music, Notes, Phone, Reminders, Shortcuts, Voice Memos, Voicemail, Weather, \
+                and the camera, microphone, and screen. \
+                Only the services that the user turns on in iMCP have tools.
+                """,
+            capabilities: MCP.Server.Capabilities(
+                tools: .init(listChanged: true)
+            )
+        )
+    }
+}
+
 // Manages a single MCP connection.
 actor MCPConnectionManager {
     private let connectionID: UUID
@@ -605,22 +749,7 @@ actor MCPConnectionManager {
         )
 
         // MCP server instance for this connection.
-        // Some clients, such as ChatGPT,
-        // describe the server to the model with only the first line of the instructions,
-        // so keep them on one line.
-        self.server = MCP.Server(
-            name: Bundle.main.name ?? "iMCP",
-            version: Bundle.main.shortVersionString ?? "unknown",
-            instructions: """
-                Use iMCP for apps and data on the user's Mac: \
-                Calendar, Contacts, Location, Mail, Maps, Messages, Music, Notes, Phone, Reminders, Shortcuts, Voice Memos, Voicemail, Weather, \
-                and the camera, microphone, and screen. \
-                Only the services that the user turns on in iMCP have tools.
-                """,
-            capabilities: MCP.Server.Capabilities(
-                tools: .init(listChanged: true)
-            )
-        )
+        self.server = MCP.Server.iMCP()
     }
 
     func start(approvalHandler: @escaping (MCP.Client.Info) async -> Bool) async throws {
@@ -851,6 +980,15 @@ actor ServerNetworkManager {
     private var disabledTools: Set<String> = []
     private var disabledToolsLastGeneration = -1
 
+    private var remoteAccessIfStarted: RemoteAccessServer?
+    /// The HTTP server for clients on other devices, created when first needed.
+    var remoteAccess: RemoteAccessServer {
+        if let remoteAccessIfStarted { return remoteAccessIfStarted }
+        let server = RemoteAccessServer(tokenStore: .shared, networkManager: self)
+        remoteAccessIfStarted = server
+        return server
+    }
+
     init() {
         do {
             self.discoveryManager = try NetworkDiscoveryManager(
@@ -984,6 +1122,7 @@ actor ServerNetworkManager {
         removedConnections.removeAll()
 
         await discoveryManager?.stop()
+        await remoteAccessIfStarted?.stop()
     }
 
     func removeConnection(_ id: UUID) async {
@@ -1088,7 +1227,13 @@ actor ServerNetworkManager {
         setupTimeoutTasks.removeValue(forKey: connectionID)?.cancel()
     }
 
-    func registerHandlers(for server: MCP.Server, connectionID: UUID) async {
+    /// Registers the MCP methods for one client.
+    /// `isToolAllowed` narrows the tools that iMCP's settings allow, such as for a remote client's access token.
+    func registerHandlers(
+        for server: MCP.Server,
+        connectionID: UUID,
+        isToolAllowed: (@Sendable (Tool) async -> Bool)? = nil
+    ) async {
         await server.withMethodHandler(ListPrompts.self) { _ in
             log.debug("Handling ListPrompts request for \(connectionID)")
             return ListPrompts.Result(prompts: [])
@@ -1118,6 +1263,9 @@ actor ServerNetworkManager {
                         for tool in service.tools {
                             if await self.disabledTools.contains(tool.name) {
                                 log.debug("Skipping disabled tool: \(tool.name)")
+                                continue
+                            }
+                            if let isToolAllowed, await !isToolAllowed(tool) {
                                 continue
                             }
                             log.debug("Adding tool: \(tool.name)")
@@ -1174,6 +1322,23 @@ actor ServerNetworkManager {
                     ],
                     isError: true
                 )
+            }
+
+            if let isToolAllowed {
+                let tool = await self.services.lazy.flatMap(\.tools).first { $0.name == params.name }
+                guard let tool, await isToolAllowed(tool) else {
+                    log.notice("Tool call rejected: \(params.name) isn't allowed for this access token")
+                    return CallTool.Result(
+                        content: [
+                            .text(
+                                text: "The iMCP access token for this client doesn't allow the tool \(params.name).",
+                                annotations: nil,
+                                _meta: nil
+                            )
+                        ],
+                        isError: true
+                    )
+                }
             }
 
             for service in await self.services {
@@ -1278,6 +1443,7 @@ actor ServerNetworkManager {
                 await connectionManager.notifyToolListChanged()
             }
         }
+        await remoteAccessIfStarted?.notifyToolListChanged()
     }
 
     // Update service bindings.
@@ -1293,6 +1459,7 @@ actor ServerNetworkManager {
             for (_, connectionManager) in connections {
                 await connectionManager.notifyToolListChanged()
             }
+            await remoteAccessIfStarted?.notifyToolListChanged()
         }
     }
 
@@ -1309,6 +1476,7 @@ actor ServerNetworkManager {
             for (_, connectionManager) in connections {
                 await connectionManager.notifyToolListChanged()
             }
+            await remoteAccessIfStarted?.notifyToolListChanged()
         }
     }
 }
