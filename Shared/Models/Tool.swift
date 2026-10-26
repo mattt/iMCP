@@ -40,3 +40,9 @@ public struct Tool: Sendable {
         try await implementation(input)
     }
 }
+
+/// Facts about the tool call in progress, for tools that show them to the user.
+enum ToolCallContext {
+    /// The name that the MCP client gave when it connected, such as "Claude Desktop".
+    @TaskLocal static var clientName: String?
+}
