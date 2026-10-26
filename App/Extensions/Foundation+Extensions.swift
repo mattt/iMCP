@@ -169,16 +169,23 @@ extension NSAppleScript {
     /// and again on the queue, after compiling and before any Apple event is sent.
     /// A script that has started runs to the end.
     ///
+    /// `beforeSending` runs on the queue after that last check,
+    /// immediately before the script runs;
+    /// when it throws, the script doesn't run and its error is rethrown.
+    ///
     /// - Returns: The result of the script or the handler.
     /// - Throws: ``ExecutionError`` when the script does not compile or fails,
-    ///   or `CancellationError` when the task is cancelled before the script starts.
+    ///   `CancellationError` when the task is cancelled before the script starts,
+    ///   or the error from `beforeSending`.
     static func execute(
         _ source: String,
-        calling event: NSAppleEventDescriptor? = nil
+        calling event: NSAppleEventDescriptor? = nil,
+        beforeSending: @escaping () throws -> Void = {}
     ) async throws -> NSAppleEventDescriptor {
         try Task.checkCancellation()
-        // Callers must not access the event after passing it to this queue.
+        // Callers must not access the event or the closure after passing them to this queue.
         nonisolated(unsafe) let event = event
+        nonisolated(unsafe) let beforeSending = beforeSending
         let isCancelled = OSAllocatedUnfairLock(initialState: false)
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
@@ -198,6 +205,12 @@ extension NSAppleScript {
                     // The last point before an Apple event can be sent.
                     if isCancelled.withLock({ $0 }) {
                         continuation.resume(throwing: CancellationError())
+                        return
+                    }
+                    do {
+                        try beforeSending()
+                    } catch {
+                        continuation.resume(throwing: error)
                         return
                     }
                     let result =
