@@ -22,27 +22,24 @@ struct MessageSendConfirmationView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            // Icon
             Image(nsImage: NSApplication.shared.applicationIconImage)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
                 .frame(width: 64, height: 64)
 
-            // Title
             Text("Send Message?")
                 .font(.title2)
                 .fontWeight(.semibold)
 
             Group {
                 if let clientName = confirmation.clientName, !clientName.isEmpty {
-                    Text("\"\(clientName)\" wants to send this message with Messages.")
+                    Text("\"\(clientName)\" wants to send this message.")
                 } else {
-                    Text("An app connected to iMCP wants to send this message with Messages.")
+                    Text("An app connected to iMCP wants to send this message.")
                 }
             }
             .fixedSize(horizontal: false, vertical: true)
 
-            // Details
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 8, verticalSpacing: 6) {
                 GridRow {
                     Text("To:")
@@ -68,7 +65,6 @@ struct MessageSendConfirmationView: View {
                 }
             }
 
-            // Message
             ScrollView {
                 Text(confirmation.text)
                     .textSelection(.enabled)
@@ -85,15 +81,13 @@ struct MessageSendConfirmationView: View {
             .clipShape(RoundedRectangle(cornerRadius: 6))
 
             Text(
-                "Nothing is sent unless you click Send. If you don't answer within \(MessageService.sendConfirmationTimeout.components.seconds) seconds, the message is canceled."
+                "Click Send to confirm within \(MessageService.sendConfirmationTimeout.components.seconds) seconds. Otherwise, nothing is sent."
             )
             .font(.caption)
             .foregroundColor(.secondary)
             .fixedSize(horizontal: false, vertical: true)
 
-            // Buttons
-            // Send has no keyboard shortcut,
-            // so a Return typed into another app as this window appears cannot send.
+            // Omit a Send shortcut to prevent an accidental Return from sending.
             HStack(spacing: 12) {
                 Spacer()
 
@@ -120,19 +114,15 @@ struct MessageSendConfirmationView: View {
 final class MessageSendConfirmationWindowController: NSObject, NSWindowDelegate {
     static let shared = MessageSendConfirmationWindowController()
 
-    /// Open confirmation windows.
-    /// Each request gets its own window,
-    /// so several sends at once cannot answer for each other.
+    /// A separate confirmation window for each request.
     private var windows: [UUID: NSWindow] = [:]
-    /// Answer handlers for windows that have not been answered yet.
+    /// Handlers for unanswered confirmations.
     private var answerHandlers: [UUID: (Bool) -> Void] = [:]
 
     /// Shows a confirmation window for one message.
     ///
-    /// `onAnswer` receives `true` for Send,
-    /// and `false` for Cancel or the close button, at most once.
-    /// Returns a closure that closes the window without an answer,
-    /// for a confirmation that times out or is no longer wanted.
+    /// Calls `onAnswer` at most once: `true` for Send, `false` for Cancel or close.
+    /// Returns a closure to close the window without an answer.
     func show(
         _ confirmation: MessageSendConfirmation,
         onAnswer: @escaping (Bool) -> Void
@@ -152,8 +142,7 @@ final class MessageSendConfirmationWindowController: NSObject, NSWindowDelegate 
         window.isMovableByWindowBackground = false
         window.delegate = self
 
-        // Offset each additional window so concurrent requests
-        // do not hide each other.
+        // Offset additional windows so each remains visible.
         let cascadeIndex = windows.count
         windows[id] = window
         answerHandlers[id] = onAnswer

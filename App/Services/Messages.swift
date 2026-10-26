@@ -140,7 +140,11 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
         Tool(
             name: "messages_fetch",
             description:
-                "Fetch messages from the Messages app. Each message names the conversation it belongs to (isPartOf), with its participants. Messages whose sender is me also report isDelivered, deliveredAt, and a nonzero error when sending failed.",
+                """
+                Fetch messages from Messages, with each conversation (isPartOf) and its participants. \
+                When available, messages whose sender is me include isDelivered, \
+                deliveredAt if recorded, and error if nonzero.
+                """,
             inputSchema: .object(
                 properties: [
                     "participants": .array(
@@ -269,9 +273,8 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                 includeAttachments
                 ? try self.attachments(ofMessages: fetched.map { $0.id.rawValue }, in: access)
                 : [:]
-            // The user's own messages carry their delivery status,
-            // so that a caller can check whether messages_send went out.
-            // The status is extra, so a failure to read it leaves the messages as they are.
+            // Include delivery status for the user's messages when available.
+            // A failed status query does not prevent fetching messages.
             var deliveryByMessage: [String: [String: Value]] = [:]
             do {
                 deliveryByMessage = try self.deliveryStatus(
@@ -422,31 +425,29 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
             description:
                 """
                 Send a text message with the Messages app. \
-                Give exactly one destination: recipient, a phone number or email address, with an optional service; \
-                or chatId, the @id of an existing conversation that messages_fetch reports in isPartOf, without service, \
-                because a conversation keeps its own service. \
-                iMCP shows the user the recipient, the service, and the full text, and sends only if they click Send. \
-                If they cancel or do not answer within \(Int(Self.sendConfirmationTimeout.components.seconds)) seconds, \
-                the call fails and nothing is sent. \
+                Give exactly one destination: recipient (phone number or email) with an optional service, \
+                or chatId (the conversation @id in messages_fetch's isPartOf) without service. \
+                The user must confirm the recipient, service, and full text in iMCP. \
+                Canceling or leaving the confirmation unanswered for \(Int(Self.sendConfirmationTimeout.components.seconds)) seconds sends nothing. \
                 Success means Messages accepted the message, not that it was delivered. \
-                To check delivery, call messages_fetch a few seconds later with the same chatId, \
-                or with the recipient in participants, \
-                and read isDelivered and error on the newest message whose sender is me.
+                To check delivery, call messages_fetch with the same chatId or the recipient in participants. \
+                Match the outgoing message by recipient, text, and time before reading isDelivered and error. \
+                Missing status doesn't confirm delivery.
                 """,
             inputSchema: .object(
                 properties: [
                     "recipient": .string(
                         description:
-                            "Phone number (E.164 format preferred) or email address. Give either recipient or chatId"
+                            "Phone number (prefer E.164) or email address. Give either recipient or chatId"
                     ),
                     "chatId": .string(
                         description:
-                            "Conversation @id, as reported in a message's isPartOf. Give either recipient or chatId"
+                            "Conversation @id from messages_fetch's isPartOf. Give either recipient or chatId"
                     ),
                     "text": .string(description: "The message text, sent exactly as given"),
                     "service": .string(
                         description:
-                            "Service for a message to recipient; defaults to iMessage. SMS and RCS need an iPhone with Text Message Forwarding. Not allowed with chatId, which keeps the conversation's own service",
+                            "Service for recipient; defaults to iMessage. SMS and RCS need an iPhone with Text Message Forwarding. Omit with chatId to use the conversation's service",
                         enum: SendService.allCases.map { .string($0.rawValue) }
                     ),
                 ],
@@ -528,9 +529,8 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
         return result
     }
 
-    /// The delivery status of the given messages (by guid), keyed by message guid:
-    /// isDelivered, deliveredAt when Messages recorded a date,
-    /// and error when it is not zero.
+    /// Delivery status keyed by message guid: isDelivered,
+    /// deliveredAt if recorded, and error if nonzero.
     private func deliveryStatus(
         ofMessages guids: [String],
         in access: DatabaseAccess
@@ -1185,13 +1185,10 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
 private let messagesBundleIdentifier = "com.apple.MobileSMS"
 
 extension MessageService {
-    /// How long the user has to answer a send confirmation.
-    /// MCP clients commonly give up on a request after 60 seconds,
-    /// so the confirmation ends first
-    /// and the client learns that nothing was sent.
+    /// Time allowed for the user to confirm a send.
     static let sendConfirmationTimeout: Duration = .seconds(50)
 
-    /// The service that a message to a phone number or email address goes out on.
+    /// The service for a phone number or email address.
     enum SendService: String, CaseIterable, Sendable {
         case iMessage
         case SMS
@@ -1226,9 +1223,7 @@ extension MessageService {
             self.text = text
         }
 
-        /// Validates the arguments of a `messages_send` call.
-        /// The input schema is advertised, not enforced,
-        /// so every argument is checked here.
+        /// Validates supported arguments because the server does not enforce the schema.
         init(arguments: [String: Value]) throws {
             func string(_ name: String) throws -> String? {
                 guard let value = arguments[name], !value.isNull else { return nil }
@@ -1290,10 +1285,9 @@ extension MessageService {
             }
         }
 
-        /// Returns the recipient as Messages expects a handle,
-        /// or `nil` when it is neither a phone number nor an email address.
-        /// Phone numbers lose their formatting and keep a leading plus sign;
-        /// email addresses are kept as given.
+        /// Returns a Messages handle, or `nil` for an invalid phone number or email.
+        /// Trims surrounding whitespace and removes phone number formatting,
+        /// keeping a leading plus sign.
         static func normalizedRecipient(_ recipient: String) -> String? {
             let trimmed = recipient.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmed.contains("@") {
@@ -1310,9 +1304,8 @@ extension MessageService {
             return (trimmed.hasPrefix("+") ? "+" : "") + digits
         }
 
-        /// The service shown in the confirmation.
-        /// A conversation's guid starts with its service,
-        /// or with `any` when Messages chooses one for each message.
+        /// The service from the request or conversation ID.
+        /// Displays "Chosen by Messages" for unrecognized prefixes, including `any`.
         var serviceDescription: String {
             switch destination {
             case .recipient(_, let service):
@@ -1327,8 +1320,7 @@ extension MessageService {
         }
 
         /// The Apple event that calls a handler in ``MessageService/sendScriptSource``.
-        /// The text and the recipient travel as typed descriptors,
-        /// so they never become AppleScript source.
+        /// Passes text and recipient as typed descriptors, never as script source.
         var handlerEvent: NSAppleEventDescriptor {
             switch destination {
             case .recipient(let handle, let service):
@@ -1449,13 +1441,11 @@ extension MessageService {
         return request.result
     }
 
-    /// Asks the user to confirm a send and waits for the answer.
+    /// Waits for the user's send confirmation.
     ///
-    /// `present` puts the question on screen.
-    /// It receives a closure to call with the answer, `true` for Send,
-    /// and returns a closure that takes the question off screen.
-    /// When no answer comes within `timeout`, or the calling task is cancelled,
-    /// the question is taken off screen and the answer is not Send.
+    /// `present` receives an answer handler (`true` for Send)
+    /// and returns a closure to dismiss the window.
+    /// A timeout or task cancellation dismisses the window without approval.
     @MainActor
     static func askForConfirmation(
         timeout: Duration,
@@ -1483,8 +1473,7 @@ extension MessageService {
         }
     }
 
-    /// The state of one confirmation, so that the first answer wins
-    /// and the others are ignored.
+    /// Tracks one confirmation and accepts only its first answer.
     @MainActor
     private final class PendingSendConfirmation {
         var continuation: CheckedContinuation<SendConfirmationAnswer, Never>?
@@ -1504,9 +1493,8 @@ extension MessageService {
         }
     }
 
-    /// What the confirmation window shows for a request.
-    /// For a conversation, the participants come from chat.db when iMCP can read it;
-    /// a conversation that chat.db does not have is an error.
+    /// Builds the confirmation, adding conversation details when chat.db is readable.
+    /// A readable database must contain the requested conversation.
     fileprivate func confirmation(
         for request: SendRequest,
         clientName: String?
@@ -1548,12 +1536,9 @@ extension MessageService {
         }
     }
 
-    /// Fails before the confirmation when the user has already refused
-    /// to let iMCP control Messages,
-    /// so they are not asked to approve a message that cannot go out.
-    /// When macOS has not asked yet, or Messages is not running,
-    /// the answer is unknown and the send goes ahead;
-    /// macOS asks for permission when the Apple event goes out.
+    /// Rejects a known Automation denial before confirmation.
+    /// Other results allow confirmation to proceed;
+    /// macOS can ask for permission when the Apple event is sent.
     fileprivate static func checkAutomationPermission() throws {
         let target = NSAppleEventDescriptor(bundleIdentifier: messagesBundleIdentifier)
         let status = AEDeterminePermissionToAutomateTarget(
@@ -1609,18 +1594,18 @@ extension MessageService {
             case .timedOut:
                 let seconds = MessageService.sendConfirmationTimeout.components.seconds
                 return
-                    "The user declined to send the message: iMCP got no answer within \(seconds) seconds. Nothing was sent."
+                    "The send confirmation timed out after \(seconds) seconds. Nothing was sent."
             case .notAuthorized:
                 return
-                    "iMCP is not allowed to control Messages. Allow iMCP to control Messages in System Settings > Privacy & Security > Automation. Nothing was sent."
+                    "Allow iMCP to control Messages in System Settings > Privacy & Security > Automation. Nothing was sent."
             case .unknownChat(let id):
-                return "Messages has no conversation \(id). Nothing was sent."
+                return "Conversation \(id) wasn't found. Nothing was sent."
             case .noAccountOrRecipient(let handle, let service):
                 return
-                    "Messages could not send to \(handle) over \(service.rawValue): no signed-in \(service.rawValue) account, or the recipient is not reachable on it. Nothing was sent."
+                    "Messages couldn't find a signed-in \(service.rawValue) account or recipient \(handle). Nothing was sent."
             case .appleScript(let number, let message):
                 let code = number.map { " (error \($0))" } ?? ""
-                return "Messages could not send the message: \(message)\(code)"
+                return "Messages reported a send error: \(message)\(code)"
             }
         }
     }

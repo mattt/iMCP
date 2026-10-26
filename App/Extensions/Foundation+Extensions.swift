@@ -135,7 +135,7 @@ extension Calendar {
 }
 
 extension NSAppleScript {
-    /// An error that AppleScript reports when it compiles or runs a script.
+    /// An AppleScript compilation or execution error.
     struct ExecutionError: Error, Equatable, Sendable {
         /// The AppleScript error number, such as -1743 when the user has not allowed
         /// iMCP to send Apple events to the target app.
@@ -156,11 +156,8 @@ extension NSAppleScript {
         }
     }
 
-    /// The queue that compiles and runs every script in iMCP.
-    /// AppleScript has been thread-safe since Mac OS X 10.6,
-    /// provided that one script object is not used on several threads at once.
-    /// Each script is created and run in one block on this serial queue,
-    /// so the main thread stays free while the target app answers.
+    /// Creates and runs each script in one block, off the main thread.
+    /// Script objects are not shared between queue blocks.
     private static let executionQueue = DispatchQueue(label: "me.mattt.iMCP.AppleScript")
 
     /// Compiles `source` and runs it,
@@ -172,8 +169,7 @@ extension NSAppleScript {
         _ source: String,
         calling event: NSAppleEventDescriptor? = nil
     ) async throws -> NSAppleEventDescriptor {
-        // Callers build the event for this call alone and do not use it again,
-        // so handing it to the queue does not share it.
+        // Callers must not access the event after passing it to this queue.
         nonisolated(unsafe) let event = event
         return try await withCheckedThrowingContinuation { continuation in
             executionQueue.async {

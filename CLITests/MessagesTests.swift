@@ -154,7 +154,8 @@ final class MessagesTests: XCTestCase {
                 XCTFail("expected an error after \(answer)")
             } catch {
                 XCTAssertEqual(error as? SendError, expected)
-                XCTAssertTrue(error.localizedDescription.contains("declined"), error.localizedDescription)
+                let description = answer == .timeout ? "confirmation timed out" : "declined"
+                XCTAssertTrue(error.localizedDescription.contains(description), error.localizedDescription)
                 XCTAssertTrue(error.localizedDescription.contains("Nothing was sent"), error.localizedDescription)
             }
         }

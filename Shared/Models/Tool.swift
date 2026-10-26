@@ -41,8 +41,8 @@ public struct Tool: Sendable {
     }
 }
 
-/// Facts about the tool call in progress, for tools that show them to the user.
+/// Context for the current tool call.
 enum ToolCallContext {
-    /// The name that the MCP client gave when it connected, such as "Claude Desktop".
+    /// The client name from its initialize request, if available.
     @TaskLocal static var clientName: String?
 }

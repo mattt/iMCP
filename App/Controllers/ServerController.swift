@@ -1191,7 +1191,7 @@ actor ServerNetworkManager {
                     isServiceEnabled
                 {
                     do {
-                        // Tools that ask the user, such as messages_send, name the client.
+                        // Make the captured client name available to tools.
                         guard
                             let value = try await ToolCallContext.$clientName.withValue(
                                 clientName,
