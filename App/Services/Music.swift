@@ -177,6 +177,30 @@ extension MusicService {
         return min(max(position, 0), upperBound)
     }
 
+    /// The script for a seek.
+    ///
+    /// It reads the current track's duration and sets the position in one script,
+    /// with no suspension in iMCP between them,
+    /// so a track change can't come between reading one track's duration
+    /// and seeking in another.
+    /// The position is clamped to zero and ``maximumSeekPosition`` here,
+    /// and to the track's duration in the script when Music knows it.
+    ///
+    /// - Throws: An error when `position` isn't finite.
+    static func seekScript(position: Double) throws -> String {
+        let position = try seekPosition(position, duration: nil)
+        return """
+            tell application "Music"
+                set targetPosition to \(appleScriptNumber(position))
+                try
+                    set trackDuration to duration of current track
+                    if trackDuration > 0 and targetPosition > trackDuration then set targetPosition to trackDuration
+                end try
+                set player position to targetPosition
+            end tell
+            """
+    }
+
     /// Formats a finite number as an AppleScript real literal.
     ///
     /// The result uses plain decimal notation with a period as the separator,
@@ -419,34 +443,11 @@ extension MusicService {
                     userInfo: [NSLocalizedDescriptionKey: "Seek position required"]
                 )
             }
-            let duration = await currentTrackDuration()
-            let seekPosition = try Self.seekPosition(position, duration: duration)
-            script =
-                "tell application \"Music\" to set player position to \(Self.appleScriptNumber(seekPosition))"
+            script = try Self.seekScript(position: position)
         }
 
         log.debug("Executing Music control action: \(action.rawValue)")
         _ = try await executeAppleScript(script)
-    }
-
-    /// Returns the duration of the current track in seconds,
-    /// or `nil` when there's no current track or its duration is unknown.
-    private func currentTrackDuration() async -> Double? {
-        let script = """
-            tell application "Music"
-                try
-                    return duration of current track
-                on error
-                    return -1
-                end try
-            end tell
-            """
-
-        guard let descriptor = try? await executeAppleScript(script) else {
-            return nil
-        }
-        let duration = descriptor.doubleValue
-        return duration.isFinite && duration > 0 ? duration : nil
     }
 
     private func searchCatalog(with arguments: [String: Value]) async throws -> [MusicCatalogResult] {
