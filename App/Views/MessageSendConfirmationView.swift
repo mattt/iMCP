@@ -3,6 +3,8 @@ import SwiftUI
 
 /// What the user sees before iMCP sends a message.
 struct MessageSendConfirmation: Equatable {
+    /// The name that the MCP client gave when it connected, if known.
+    let clientName: String?
     /// The phone number or email address,
     /// or the name and participants of a conversation.
     let recipient: String
@@ -31,8 +33,14 @@ struct MessageSendConfirmationView: View {
                 .font(.title2)
                 .fontWeight(.semibold)
 
-            Text("An app connected to iMCP wants to send this message with Messages.")
-                .fixedSize(horizontal: false, vertical: true)
+            Group {
+                if let clientName = confirmation.clientName, !clientName.isEmpty {
+                    Text("\"\(clientName)\" wants to send this message with Messages.")
+                } else {
+                    Text("An app connected to iMCP wants to send this message with Messages.")
+                }
+            }
+            .fixedSize(horizontal: false, vertical: true)
 
             // Details
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 8, verticalSpacing: 6) {
@@ -192,6 +200,7 @@ final class MessageSendConfirmationWindowController: NSObject, NSWindowDelegate 
 #Preview {
     MessageSendConfirmationView(
         confirmation: MessageSendConfirmation(
+            clientName: "Claude Desktop",
             recipient: "+15551234567",
             conversationID: nil,
             service: "iMessage",

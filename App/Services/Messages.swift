@@ -140,7 +140,7 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
         Tool(
             name: "messages_fetch",
             description:
-                "Fetch messages from the Messages app. Each message names the conversation it belongs to (isPartOf), with its participants.",
+                "Fetch messages from the Messages app. Each message names the conversation it belongs to (isPartOf), with its participants. Messages whose sender is me also report isDelivered, deliveredAt, and a nonzero error when sending failed.",
             inputSchema: .object(
                 properties: [
                     "participants": .array(
@@ -269,6 +269,18 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                 includeAttachments
                 ? try self.attachments(ofMessages: fetched.map { $0.id.rawValue }, in: access)
                 : [:]
+            // The user's own messages carry their delivery status,
+            // so that a caller can check whether messages_send went out.
+            // The status is extra, so a failure to read it leaves the messages as they are.
+            var deliveryByMessage: [String: [String: Value]] = [:]
+            do {
+                deliveryByMessage = try self.deliveryStatus(
+                    ofMessages: fetched.filter(\.isFromMe).map { $0.id.rawValue },
+                    in: access
+                )
+            } catch {
+                log.error("Could not read delivery status: \(error.localizedDescription, privacy: .public)")
+            }
 
             // Each chat is looked up once and shared by all of its messages.
             var conversations: [Chat.ID: [String: Value]] = [:]
@@ -332,6 +344,9 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                 }
                 if !attachments.isEmpty {
                     object["attachment"] = .array(attachments.map { .object($0) })
+                }
+                if let delivery = deliveryByMessage[message.id.rawValue] {
+                    object.merge(delivery) { _, new in new }
                 }
 
                 if let chatID = message.chatID {
@@ -405,7 +420,19 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
         Tool(
             name: "messages_send",
             description:
-                "Send a text message with the Messages app, to a phone number or email address, or to an existing conversation by the @id that messages_fetch reports in isPartOf. iMCP shows the user the recipient, the service, and the full text, and sends only if they click Send. If they cancel or do not answer within \(Int(Self.sendConfirmationTimeout.components.seconds)) seconds, the call fails and nothing is sent. Success means Messages accepted the message for sending, not that it was delivered.",
+                """
+                Send a text message with the Messages app. \
+                Give exactly one destination: recipient, a phone number or email address, with an optional service; \
+                or chatId, the @id of an existing conversation that messages_fetch reports in isPartOf, without service, \
+                because a conversation keeps its own service. \
+                iMCP shows the user the recipient, the service, and the full text, and sends only if they click Send. \
+                If they cancel or do not answer within \(Int(Self.sendConfirmationTimeout.components.seconds)) seconds, \
+                the call fails and nothing is sent. \
+                Success means Messages accepted the message, not that it was delivered. \
+                To check delivery, call messages_fetch a few seconds later with the same chatId, \
+                or with the recipient in participants, \
+                and read isDelivered and error on the newest message whose sender is me.
+                """,
             inputSchema: .object(
                 properties: [
                     "recipient": .string(
@@ -435,7 +462,7 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
             )
         ) { arguments in
             let request = try SendRequest(arguments: arguments)
-            let confirmation = try self.confirmation(for: request)
+            let confirmation = try self.confirmation(for: request, clientName: ToolCallContext.clientName)
             try Self.checkAutomationPermission()
             return try await Self.send(
                 request,
@@ -496,6 +523,45 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                     part["sticker"] = .bool(true)
                 }
                 result[messageGuid, default: []].append(part)
+            }
+        }
+        return result
+    }
+
+    /// The delivery status of the given messages (by guid), keyed by message guid:
+    /// isDelivered, deliveredAt when Messages recorded a date,
+    /// and error when it is not zero.
+    private func deliveryStatus(
+        ofMessages guids: [String],
+        in access: DatabaseAccess
+    ) throws -> [String: [String: Value]] {
+        var result: [String: [String: Value]] = [:]
+        guard !guids.isEmpty else { return result }
+        let raw = try RawDatabase(access)
+        defer { raw.close() }
+        let chunks = stride(from: 0, to: guids.count, by: 500)
+            .map { Array(guids[$0 ..< min($0 + 500, guids.count)]) }
+        for chunk in chunks {
+            let placeholders = Array(repeating: "?", count: chunk.count).joined(separator: ",")
+            let sql = """
+                SELECT guid, is_delivered, date_delivered, error
+                FROM message
+                WHERE guid IN (\(placeholders))
+                """
+            try raw.query(sql, bindings: chunk) { stmt in
+                guard let guid = RawDatabase.text(stmt, 0) else { return }
+                var status: [String: Value] = ["isDelivered": .bool(sqlite3_column_int(stmt, 1) != 0)]
+                // chat.db stores dates as nanoseconds since 2001.
+                let deliveredAt = sqlite3_column_int64(stmt, 2)
+                if deliveredAt > 0 {
+                    let date = Date(timeIntervalSinceReferenceDate: Double(deliveredAt) / 1_000_000_000)
+                    status["deliveredAt"] = .string(date.formatted(.iso8601))
+                }
+                let error = sqlite3_column_int(stmt, 3)
+                if error != 0 {
+                    status["error"] = .int(Int(error))
+                }
+                result[guid] = status
             }
         }
         return result
@@ -724,8 +790,9 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
         }
     }
 
-    /// A second, read-only SQLite connection on the same grant, for the tables the iMessage
-    /// package does not model (attachments). It uses `immutable=1` whenever the package does:
+    /// A second, read-only SQLite connection on the same grant, for the data the iMessage
+    /// package does not model (attachments and delivery status).
+    /// It uses `immutable=1` whenever the package does:
     /// a `.file` grant, or a default path whose write-ahead log is unreadable.
     private final class RawDatabase {
         private var handle: OpaquePointer?
@@ -739,7 +806,7 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
             guard rc == SQLITE_OK, let h else {
                 let message = h.map { String(cString: sqlite3_errmsg($0)) } ?? "sqlite error \(rc)"
                 if let h { sqlite3_close(h) }
-                throw DatabaseAccessError.attachmentsQueryFailed(message)
+                throw DatabaseAccessError.queryFailed(message)
             }
             sqlite3_busy_timeout(h, 1000)
             handle = h
@@ -753,7 +820,7 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
         func query(_ sql: String, bindings: [String], _ row: (OpaquePointer) throws -> Void) throws {
             var stmt: OpaquePointer?
             guard sqlite3_prepare_v2(handle, sql, -1, &stmt, nil) == SQLITE_OK, let stmt else {
-                throw DatabaseAccessError.attachmentsQueryFailed(String(cString: sqlite3_errmsg(handle)))
+                throw DatabaseAccessError.queryFailed(String(cString: sqlite3_errmsg(handle)))
             }
             defer { sqlite3_finalize(stmt) }
             for (i, value) in bindings.enumerated() {
@@ -766,7 +833,7 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                 } else if rc == SQLITE_DONE {
                     return
                 } else {
-                    throw DatabaseAccessError.attachmentsQueryFailed(String(cString: sqlite3_errmsg(handle)))
+                    throw DatabaseAccessError.queryFailed(String(cString: sqlite3_errmsg(handle)))
                 }
             }
         }
@@ -822,7 +889,7 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
         case userDeclinedAccess
         case invalidFileSelected
         case fileNotReadable
-        case attachmentsQueryFailed(String)
+        case queryFailed(String)
 
         var errorDescription: String? {
             switch self {
@@ -838,8 +905,8 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                 return "Messages database access denied or the selection is not the Messages folder"
             case .fileNotReadable:
                 return "The selected folder has no readable chat.db"
-            case .attachmentsQueryFailed(let message):
-                return "Reading attachments from the Messages database failed: \(message)"
+            case .queryFailed(let message):
+                return "Reading the Messages database failed: \(message)"
             }
         }
     }
@@ -1440,10 +1507,14 @@ extension MessageService {
     /// What the confirmation window shows for a request.
     /// For a conversation, the participants come from chat.db when iMCP can read it;
     /// a conversation that chat.db does not have is an error.
-    fileprivate func confirmation(for request: SendRequest) throws -> MessageSendConfirmation {
+    fileprivate func confirmation(
+        for request: SendRequest,
+        clientName: String?
+    ) throws -> MessageSendConfirmation {
         switch request.destination {
         case .recipient(let handle, _):
             return MessageSendConfirmation(
+                clientName: clientName,
                 recipient: handle,
                 conversationID: nil,
                 service: request.serviceDescription,
@@ -1468,6 +1539,7 @@ extension MessageService {
                 }
             }
             return MessageSendConfirmation(
+                clientName: clientName,
                 recipient: recipient,
                 conversationID: id,
                 service: request.serviceDescription,
@@ -1495,20 +1567,12 @@ extension MessageService {
         }
     }
 
-    /// Hands the message to Messages.
-    @MainActor
-    fileprivate static func deliver(_ request: SendRequest) throws {
-        guard let script = NSAppleScript(source: sendScriptSource) else {
-            throw SendError.appleScript(number: nil, message: "the send script could not be loaded")
-        }
-        var errorInfo: NSDictionary?
-        guard script.compileAndReturnError(&errorInfo) else {
-            throw SendError(errorInfo: errorInfo, request: request)
-        }
-        errorInfo = nil
-        script.executeAppleEvent(request.handlerEvent, error: &errorInfo)
-        if errorInfo != nil {
-            throw SendError(errorInfo: errorInfo, request: request)
+    /// Hands the message to Messages, off the main thread.
+    fileprivate static func deliver(_ request: SendRequest) async throws {
+        do {
+            _ = try await NSAppleScript.execute(sendScriptSource, calling: request.handlerEvent)
+        } catch let error as NSAppleScript.ExecutionError {
+            throw SendError(error, request: request)
         }
     }
 
@@ -1522,13 +1586,8 @@ extension MessageService {
         case appleScript(number: Int?, message: String)
 
         /// Describes an error that AppleScript reports for a send.
-        init(errorInfo: NSDictionary?, request: SendRequest) {
-            let number = (errorInfo?[NSAppleScript.errorNumber] as? NSNumber)?.intValue
-            let message =
-                errorInfo?[NSAppleScript.errorMessage] as? String
-                ?? errorInfo.map { String(describing: $0) }
-                ?? "unknown error"
-            switch (number, request.destination) {
+        init(_ error: NSAppleScript.ExecutionError, request: SendRequest) {
+            switch (error.number, request.destination) {
             case (Int(errAEEventNotPermitted), _):
                 self = .notAuthorized
             case (Int(errAENoSuchObject), .chat(let id)):
@@ -1537,7 +1596,7 @@ extension MessageService {
                 (Int(errAEIllegalIndex), .recipient(let handle, let service)):
                 self = .noAccountOrRecipient(handle, service)
             default:
-                self = .appleScript(number: number, message: message)
+                self = .appleScript(number: error.number, message: error.message)
             }
         }
 

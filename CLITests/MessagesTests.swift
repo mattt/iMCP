@@ -229,27 +229,64 @@ final class MessagesTests: XCTestCase {
     func testAppleScriptErrorsAreDescribed() {
         let participant = SendRequest(destination: .recipient("+15551234567", .SMS), text: "Hi")
         let chat = SendRequest(destination: .chat("iMessage;-;+15551234567"), text: "Hi")
-        func info(_ number: Int, _ message: String = "message") -> NSDictionary {
-            [NSAppleScript.errorNumber: NSNumber(value: number), NSAppleScript.errorMessage: message]
+        func error(_ number: Int, _ message: String = "message") -> NSAppleScript.ExecutionError {
+            NSAppleScript.ExecutionError(number: number, message: message)
         }
 
-        let notAuthorized = SendError(errorInfo: info(-1743), request: participant)
+        let notAuthorized = SendError(error(-1743), request: participant)
         XCTAssertEqual(notAuthorized, .notAuthorized)
         XCTAssertTrue(notAuthorized.localizedDescription.contains("Privacy & Security > Automation"))
 
-        XCTAssertEqual(SendError(errorInfo: info(-1728), request: chat), .unknownChat("iMessage;-;+15551234567"))
+        XCTAssertEqual(SendError(error(-1728), request: chat), .unknownChat("iMessage;-;+15551234567"))
         XCTAssertEqual(
-            SendError(errorInfo: info(-1728), request: participant),
+            SendError(error(-1728), request: participant),
             .noAccountOrRecipient("+15551234567", .SMS)
         )
         XCTAssertEqual(
-            SendError(errorInfo: info(-1719), request: participant),
+            SendError(error(-1719), request: participant),
             .noAccountOrRecipient("+15551234567", .SMS)
         )
         XCTAssertEqual(
-            SendError(errorInfo: info(-1712, "AppleEvent timed out."), request: chat),
+            SendError(error(-1712, "AppleEvent timed out."), request: chat),
             .appleScript(number: -1712, message: "AppleEvent timed out.")
         )
+    }
+
+    // MARK: - AppleScript
+
+    /// These scripts send no Apple events to other apps.
+    func testScriptsRunAndCallHandlersOffTheMainThread() async throws {
+        let sum = try await NSAppleScript.execute("return 1 + 1")
+        XCTAssertEqual(sum.int32Value, 2)
+
+        let doubled = try await NSAppleScript.execute(
+            """
+            on doubleIt(x)
+                return x * 2
+            end doubleIt
+            """,
+            calling: MessageService.handlerEvent(named: "doubleIt", parameters: [NSAppleEventDescriptor(int32: 21)])
+        )
+        XCTAssertEqual(doubled.int32Value, 42)
+    }
+
+    func testScriptErrorsKeepTheirNumberAndMessage() async {
+        do {
+            _ = try await NSAppleScript.execute("error \"Not allowed.\" number -1743")
+            XCTFail("expected an error")
+        } catch {
+            XCTAssertEqual(
+                error as? NSAppleScript.ExecutionError,
+                NSAppleScript.ExecutionError(number: -1743, message: "Not allowed.")
+            )
+        }
+
+        do {
+            _ = try await NSAppleScript.execute("return (")
+            XCTFail("expected a compile error")
+        } catch {
+            XCTAssertNotNil((error as? NSAppleScript.ExecutionError)?.number)
+        }
     }
 
     // MARK: - Tool
@@ -260,6 +297,17 @@ final class MessagesTests: XCTestCase {
         XCTAssertEqual(tool.annotations.destructiveHint, true)
         XCTAssertEqual(tool.annotations.idempotentHint, false)
         XCTAssertEqual(tool.annotations.openWorldHint, true)
+    }
+
+    func testSendToolDescribesTheContractAndTheDeliveryCheck() throws {
+        let tool = try XCTUnwrap(MessageService.shared.tools.first { $0.name == "messages_send" })
+        XCTAssertTrue(tool.description.contains("Give exactly one destination"), tool.description)
+        XCTAssertTrue(tool.description.contains("without service"), tool.description)
+        XCTAssertTrue(tool.description.contains("50 seconds"), tool.description)
+        XCTAssertTrue(tool.description.contains("isDelivered"), tool.description)
+
+        let fetch = try XCTUnwrap(MessageService.shared.tools.first { $0.name == "messages_fetch" })
+        XCTAssertTrue(fetch.description.contains("isDelivered"), fetch.description)
     }
 
     func testInvalidCallFailsBeforeAskingTheUser() async {
