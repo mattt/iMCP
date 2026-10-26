@@ -1460,6 +1460,8 @@ extension MessageService {
         case send
         case cancel
         case timeout
+        /// Another confirmation was on screen, so this one wasn't shown.
+        case busy
     }
 
     /// Sends a message only after `confirm` reports that the user chose Send.
@@ -1485,6 +1487,9 @@ extension MessageService {
         case .timeout:
             log.notice("A message was not sent because its confirmation timed out")
             throw SendError.timedOut
+        case .busy:
+            log.notice("A message was not sent because another confirmation was open")
+            throw SendError.confirmationBusy
         }
         let token = inFlight.begin(identity)
         // Ends the send when delivery throws; ending it again below returns false.
@@ -1557,8 +1562,11 @@ extension MessageService {
         case .recipient(let handle, _):
             conversation = normalizedHandle(handle).map { "handle:\($0)" }
         case .chat(let id):
-            if let participants = chat?.participants, participants.count == 1 {
-                conversation = normalizedHandle(participants[0]).map { "handle:\($0)" }
+            // A one-to-one chat whose handle can't be normalized is still identified, by its ID.
+            if let participants = chat?.participants, participants.count == 1,
+                let handle = normalizedHandle(participants[0])
+            {
+                conversation = "handle:\(handle)"
             } else {
                 conversation = "chat:\(id)"
             }
@@ -1781,11 +1789,18 @@ extension MessageService {
     /// `present` receives an answer handler (`true` for Send)
     /// and returns a closure to dismiss the window.
     /// A timeout or task cancellation dismisses the window without approval.
+    /// Only one confirmation is on screen at a time:
+    /// while one is open, another returns ``SendConfirmationAnswer/busy`` without being shown,
+    /// so a new window can't appear under a click meant for the first.
+    /// The timeout starts when the window appears.
     @MainActor
     static func askForConfirmation(
         timeout: Duration,
+        gate: SendConfirmationGate = .shared,
         present: @MainActor (@escaping @MainActor (Bool) -> Void) -> @MainActor () -> Void
     ) async -> SendConfirmationAnswer {
+        guard gate.enter() else { return .busy }
+        defer { gate.leave() }
         let pending = PendingSendConfirmation()
         return await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
@@ -1805,6 +1820,33 @@ extension MessageService {
             }
         } onCancel: {
             Task { @MainActor in pending.finish(.cancel) }
+        }
+    }
+
+    /// Allows one send confirmation on screen at a time.
+    ///
+    /// A second request is rejected rather than queued:
+    /// a queued request could wait for the open one and then for its own window,
+    /// longer than MCP clients commonly wait for a reply,
+    /// and its window could then ask the user to approve a send
+    /// that the client has already given up on.
+    @MainActor
+    final class SendConfirmationGate {
+        nonisolated static let shared = SendConfirmationGate()
+
+        private(set) var isOpen = false
+
+        nonisolated init() {}
+
+        /// Opens the gate, or returns `false` when a confirmation is already open.
+        func enter() -> Bool {
+            guard !isOpen else { return false }
+            isOpen = true
+            return true
+        }
+
+        func leave() {
+            isOpen = false
         }
     }
 
@@ -1828,8 +1870,6 @@ extension MessageService {
         }
     }
 
-    /// Builds the confirmation, adding conversation details when chat.db is readable.
-    /// A readable database must contain the requested conversation.
     /// Who and what the confirmation shows, and the service the message goes out on.
     struct SendTarget: Equatable, Sendable {
         /// The phone number or email address,
@@ -1863,7 +1903,10 @@ extension MessageService {
             }
             let participants = chat.participants.joined(separator: ", ")
             var recipient = participants
-            if let name = chat.displayName, !name.isEmpty {
+            // Another app or person can name a group chat,
+            // so the name is shown on one line and shortened.
+            let name = MessageSendConfirmation.sanitized(chat.displayName ?? "", maxLength: 80)
+            if !name.isEmpty {
                 recipient = "\(name) (\(participants))"
             }
             return SendTarget(recipient: recipient, conversationID: id, service: service)
@@ -1960,6 +2003,7 @@ extension MessageService {
         case unknownChat(String)
         case chatUnresolved(String)
         case chatChanged(String)
+        case confirmationBusy
         case noAccountOrRecipient(String, SendService)
         case appleScript(number: Int?, message: String)
 
@@ -1996,6 +2040,9 @@ extension MessageService {
             case .chatUnresolved(let id):
                 return
                     "iMCP couldn't read the participants and service of conversation \(id) from the Messages database, so it can't show who would receive the message. Turn on Messages in iMCP and grant the Messages folder, or send to a recipient instead. Nothing was sent."
+            case .confirmationBusy:
+                return
+                    "Another message is waiting for confirmation in iMCP, and only one is shown at a time. Try again after the user answers it. Nothing was sent."
             case .chatChanged(let id):
                 return
                     "Conversation \(id) changed after you confirmed the message, or iMCP couldn't read it again: its participants or service no longer match what you approved. Nothing was sent."

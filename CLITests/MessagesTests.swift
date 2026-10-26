@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import SwiftUI
 import os
 import XCTest
 
@@ -404,6 +405,17 @@ final class MessagesTests: XCTestCase {
         XCTAssertNil(ids.inner)
     }
 
+    func testOneToOneChatWithAnUnnormalizedHandleFallsBackToItsID() throws {
+        let request = SendRequest(destination: .chat("any;-;5551234567"), text: "Hi")
+        let details = MessageService.ChatDetails(displayName: nil, participants: ["5551234567"], service: "SMS")
+        let identity = MessageService.sendIdentity(
+            for: request,
+            target: try MessageService.resolvedTarget(for: request, chat: details),
+            chat: details
+        )
+        XCTAssertEqual(identity.conversation, "chat:any;-;5551234567")
+    }
+
     func testUnresolvedConversationsGetNoID() async throws {
         // Without a country code, 5551234567 can't be compared with +15551234567.
         XCTAssertNil(MessageService.normalizedHandle("5551234567"))
@@ -712,6 +724,193 @@ final class MessagesTests: XCTestCase {
         XCTAssertNil(found)
         XCTAssertEqual(reads.withLock { $0 }, 1)
         XCTAssertLessThan(clock.now - cancelled, .seconds(2))
+    }
+
+    @MainActor
+    func testOneConfirmationIsShownAtATime() async {
+        let gate = MessageService.SendConfirmationGate()
+        var respond: ((Bool) -> Void)?
+        let first = Task { @MainActor in
+            await MessageService.askForConfirmation(timeout: .seconds(10), gate: gate) { answer in
+                respond = answer
+                return {}
+            }
+        }
+        while respond == nil { await Task.yield() }
+        XCTAssertTrue(gate.isOpen)
+
+        var presentedSecond = false
+        let second = await MessageService.askForConfirmation(timeout: .seconds(10), gate: gate) { _ in
+            presentedSecond = true
+            return {}
+        }
+        XCTAssertEqual(second, .busy)
+        XCTAssertFalse(presentedSecond)
+
+        respond?(true)
+        let firstAnswer = await first.value
+        XCTAssertEqual(firstAnswer, .send)
+        XCTAssertFalse(gate.isOpen)
+
+        // Once the first is answered, the next is shown, and its timeout starts then.
+        var presentedThird = false
+        let third = await MessageService.askForConfirmation(timeout: .milliseconds(20), gate: gate) { _ in
+            presentedThird = true
+            return {}
+        }
+        XCTAssertTrue(presentedThird)
+        XCTAssertEqual(third, .timeout)
+        XCTAssertFalse(gate.isOpen)
+    }
+
+    func testBusyConfirmationSendsNothing() async {
+        let request = SendRequest(destination: .recipient("+15551234567", .SMS), text: "Hi")
+        do {
+            _ = try await MessageService.send(
+                request,
+                identity: identity(request),
+                confirm: { .busy },
+                deliver: { _ in
+                    XCTFail("delivered while another confirmation was open")
+                    return nil
+                },
+                locate: { _, _ in nil }
+            )
+            XCTFail("expected an error")
+        } catch {
+            XCTAssertEqual(error as? SendError, .confirmationBusy)
+            XCTAssertTrue(error.localizedDescription.contains("Another message"), error.localizedDescription)
+            XCTAssertTrue(error.localizedDescription.contains("Nothing was sent"), error.localizedDescription)
+        }
+    }
+
+    @MainActor
+    func testClosingTheWindowCancelsAndOnlyTheFirstAnswerCounts() throws {
+        _ = NSApplication.shared
+        let controller = MessageSendConfirmationWindowController(showsWindows: false)
+        let confirmation = MessageSendConfirmation(
+            clientName: "Claude",
+            recipient: "+15551234567",
+            conversationID: nil,
+            service: "SMS",
+            text: "Hi"
+        )
+
+        var answers: [Bool] = []
+        _ = controller.show(confirmation) { answers.append($0) }
+        let closed = try XCTUnwrap(controller.openConfirmationIDs.first)
+        let window = try XCTUnwrap(controller.window(for: closed))
+        controller.windowWillClose(Notification(name: NSWindow.willCloseNotification, object: window))
+        controller.answer(closed, true)
+        XCTAssertEqual(answers, [false])
+        XCTAssertTrue(controller.openConfirmationIDs.isEmpty)
+
+        answers = []
+        _ = controller.show(confirmation) { answers.append($0) }
+        let sent = try XCTUnwrap(controller.openConfirmationIDs.first)
+        controller.answer(sent, true)
+        controller.answer(sent, false)
+        XCTAssertEqual(answers, [true])
+
+        // Dismissing without an answer, as a timeout does, reports nothing.
+        answers = []
+        let dismiss = controller.show(confirmation) { answers.append($0) }
+        dismiss()
+        XCTAssertEqual(answers, [])
+        XCTAssertTrue(controller.openConfirmationIDs.isEmpty)
+    }
+
+    // MARK: - Displayed text
+
+    func testDisplayedStringsAreOneShortLine() {
+        let sanitized = MessageSendConfirmation.sanitized
+        XCTAssertEqual(sanitized("Claude\nTo: +15559999999", 60), "Claude To: +15559999999")
+        XCTAssertEqual(sanitized("  Claude \t\r\n\u{2028} Desktop  ", 60), "Claude Desktop")
+        XCTAssertEqual(sanitized("\u{202E}tpircs\u{202C} \u{2066}a\u{2069}\u{200F}b\u{061C}", 60), "tpircs ab")
+        XCTAssertEqual(sanitized("bell\u{07}\u{1B}[31m", 60), "bell[31m")
+        XCTAssertEqual(sanitized("👩‍👩‍👧 Family", 60), "👩‍👩‍👧 Family")
+        XCTAssertEqual(sanitized(String(repeating: "a", count: 100), 10), "aaaaaaaaa…")
+        XCTAssertEqual(sanitized("short", 10), "short")
+        XCTAssertEqual(sanitized("\n\u{202E}\n", 10), "")
+    }
+
+    func testConfirmationSanitizesEverythingButTheText() {
+        let text = "Line one\n\u{202E}Line two\tend"
+        let confirmation = MessageSendConfirmation(
+            clientName: "Evil\nTo: +15559999999\u{202E}",
+            recipient: "+15551234567\n",
+            conversationID: "any;-;+15551234567\u{2066}",
+            service: "SMS\n",
+            text: text
+        )
+        XCTAssertEqual(confirmation.clientName, "Evil To: +15559999999")
+        XCTAssertEqual(confirmation.recipient, "+15551234567")
+        XCTAssertEqual(confirmation.conversationID, "any;-;+15551234567")
+        XCTAssertEqual(confirmation.service, "SMS")
+        XCTAssertEqual(confirmation.text, text)
+
+        let blankClient = MessageSendConfirmation(
+            clientName: " \n\u{202E} ",
+            recipient: "+15551234567",
+            conversationID: nil,
+            service: "SMS",
+            text: "Hi"
+        )
+        XCTAssertNil(blankClient.clientName)
+        XCTAssertEqual(
+            MessageSendConfirmation(
+                clientName: String(repeating: "c", count: 200),
+                recipient: "+15551234567",
+                conversationID: nil,
+                service: "SMS",
+                text: "Hi"
+            ).clientName?.count,
+            60
+        )
+    }
+
+    func testGroupNamesAreShortenedToOneLine() throws {
+        let request = SendRequest(destination: .chat("any;+;chat123456"), text: "Hi")
+        let chat = MessageService.ChatDetails(
+            displayName: "Book Club\nTo: +15559999999\u{202E}" + String(repeating: "x", count: 200),
+            participants: ["+15551234567"],
+            service: "iMessage"
+        )
+        let target = try MessageService.resolvedTarget(for: request, chat: chat)
+        XCTAssertFalse(target.recipient.contains("\n"))
+        XCTAssertFalse(target.recipient.unicodeScalars.contains { $0.properties.isBidiControl })
+        XCTAssertTrue(target.recipient.hasPrefix("Book Club To: +15559999999xxx"), target.recipient)
+        XCTAssertTrue(target.recipient.hasSuffix("… (+15551234567)"), target.recipient)
+        XCTAssertEqual(target.recipient.count, 80 + " (+15551234567)".count)
+    }
+
+    @MainActor
+    func testLongOrUnusualTextKeepsTheWindowSize() {
+        _ = NSApplication.shared
+        func size(_ text: String) -> NSSize {
+            let view = MessageSendConfirmationView(
+                confirmation: MessageSendConfirmation(
+                    clientName: "Claude",
+                    recipient: "+15551234567",
+                    conversationID: nil,
+                    service: "SMS",
+                    text: text
+                ),
+                onSend: {},
+                onCancel: {}
+            )
+            return NSHostingView(rootView: view).fittingSize
+        }
+        let short = size("Hi")
+        for text in [
+            String(repeating: "x", count: 20_000),
+            String(repeating: "line\n", count: 2_000),
+            "\u{202E}" + String(repeating: "To: +15559999999 ", count: 500),
+        ] {
+            let measured = size(text)
+            XCTAssertEqual(measured.width, short.width, accuracy: 0.5)
+            XCTAssertLessThanOrEqual(measured.height, short.height + 200)
+        }
     }
 
     @MainActor
