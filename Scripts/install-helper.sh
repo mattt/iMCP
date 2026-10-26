@@ -106,7 +106,7 @@ trap 'echo "Interrupted." >&2; exit 130' INT TERM
 build_helper() {
     xcodebuild -quiet -project "$repo/iMCP.xcodeproj" -scheme "iMCP Helper" \
         -configuration Release -destination "$1" \
-        -derivedDataPath "$build_dir" -allowProvisioningUpdates \
+        -derivedDataPath "$build_dir" -allowProvisioningUpdates -allowProvisioningDeviceRegistration \
         CODE_SIGN_STYLE=Automatic DEVELOPMENT_TEAM="$team" HELPER_BUNDLE_IDENTIFIER="$bundle_id" \
         build
 }
