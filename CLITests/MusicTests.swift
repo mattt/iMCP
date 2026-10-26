@@ -71,6 +71,29 @@ final class MusicTests: XCTestCase {
         XCTAssertEqual(try MusicService.seekPosition(.greatestFiniteMagnitude, duration: 200), 200)
     }
 
+    /// Compiling reads the Music dictionary but runs nothing.
+    func testSeekReadsTheDurationAndSeeksInOneScript() throws {
+        let script = try MusicService.seekScript(position: 90)
+        XCTAssertTrue(script.contains("set targetPosition to 90.000"), script)
+        XCTAssertTrue(script.contains("set trackDuration to duration of current track"), script)
+        XCTAssertTrue(script.contains("set player position to targetPosition"), script)
+        XCTAssertEqual(script.components(separatedBy: "tell application").count - 1, 1, script)
+
+        XCTAssertTrue(try MusicService.seekScript(position: -5).contains("set targetPosition to 0.000"))
+        XCTAssertTrue(
+            try MusicService.seekScript(position: 1e12).contains(
+                "set targetPosition to \(MusicService.appleScriptNumber(MusicService.maximumSeekPosition))"
+            )
+        )
+        XCTAssertThrowsError(try MusicService.seekScript(position: .nan))
+
+        var errorInfo: NSDictionary?
+        XCTAssertTrue(
+            try XCTUnwrap(NSAppleScript(source: script)).compileAndReturnError(&errorInfo),
+            String(describing: errorInfo)
+        )
+    }
+
     func testSeekClampsToTheMaximumWithoutAUsableDuration() throws {
         let maximum = MusicService.maximumSeekPosition
         XCTAssertEqual(try MusicService.seekPosition(1e300, duration: nil), maximum)
