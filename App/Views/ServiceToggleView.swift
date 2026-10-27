@@ -27,11 +27,17 @@ struct ServiceToggleView: View {
                         Task {
                             do {
                                 if config.service is HomeService {
-                                    if try await !HomeService.shared.activateAskingUser() {
+                                    // Match the warning to the cause, not just to Home.
+                                    switch try await HomeService.shared.activateAskingUserWithOutcome() {
+                                    case .activated:
+                                        break
+                                    case .helperMissing:
                                         config.binding.wrappedValue = false
                                         activationError =
-                                            "Home needs iMCP Helper. Build it with Scripts/install-helper.sh, "
-                                            + "then turn Home on again"
+                                            "Home needs iMCP Helper. Build it with Scripts/install-helper.sh"
+                                    case .pairingCanceled:
+                                        config.binding.wrappedValue = false
+                                        activationError = "Pairing was canceled"
                                     }
                                     return
                                 }
@@ -153,7 +159,15 @@ struct ServiceToggleView: View {
     }
 
     /// The pane for one failure, so that each failure in a disclosure opens its own pane.
+    ///
+    /// A Home failure about the helper or pairing is not a HomeKit permission problem,
+    /// so it gets no pane: turning Home on again is the fix.
     static func privacyPaneURL(forMessage message: String, serviceName: String) -> URL? {
+        if serviceName == "Home"
+            && (message.contains("Helper") || message.lowercased().contains("pair"))
+        {
+            return nil
+        }
         let anchor: String?
         if message.hasPrefix("Camera") {
             anchor = "Privacy_Camera"

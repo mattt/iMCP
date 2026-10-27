@@ -126,7 +126,11 @@ and a [growing list of clients][mcp-clients] that support the
 To use iMCP, you need two apps:
 iMCP, which gives access to the services you turn on,
 and an AI app that can connect to MCP servers.
-Install iMCP and turn on services first.
+When you first open iMCP, the "Set Up iMCP" wizard opens.
+It connects an app, turns on a service with you, and tests the connection.
+You can open it again at any time from
+<img style="display: inline" width="20" height="16" src="/Assets/icon.svg" />
+\> "Set Up iMCP…".
 Then follow the instructions for your AI app:
 
 - [Claude Desktop](#connect-to-claude-desktop)
@@ -156,6 +160,11 @@ Click this icon to open the iMCP menu.
 The blue "Enable MCP Server" switch at the top indicates that
 the MCP server is running and ready to connect with AI apps.
 iMCP must be open for AI apps to use it.
+
+The first time you open the app, the "Set Up iMCP" wizard opens.
+It takes you through connecting an app and turning on a service.
+Choose "Finish Later" to leave it;
+you can open it again from the menu at any time.
 
 Below the switch, the menu lists the available services.
 Maps is on when you first open iMCP;
@@ -292,8 +301,9 @@ This creates a configuration file at
 
 To connect iMCP to Claude Desktop,
 click <img style="display: inline" width="20" height="16" src="/Assets/icon.svg" />
-\> "Configure Claude Desktop",
-and then click "Set Up".
+\> "Set Up iMCP…",
+choose "Claude Desktop", and click "Connect Claude Desktop…".
+Then click "Set Up".
 
 iMCP adds or updates its entry in the configuration file
 so that Claude Desktop starts the `imcp-server` executable in the app.
@@ -354,8 +364,24 @@ you can [download it here][chatgpt-app].
 > These steps use the labels in ChatGPT 26.930 for macOS
 > and haven't been tested end to end yet.
 > OpenAI documents MCP servers for
-> [Codex mode](https://learn.chatgpt.com/docs/extend/mcp),
+> [Codex mode](https://learn.chatgpt.com/docs/extend/mcp?surface=cli),
 > so use iMCP in a Codex conversation.
+
+1. Click <img style="display: inline" width="20" height="16" src="/Assets/icon.svg" />
+   \> "Set Up iMCP…",
+   choose "ChatGPT Desktop", and click "Connect ChatGPT…".
+2. Click "Set Up", and choose `config.toml` in the `~/.codex` folder.
+   iMCP adds its server entry to that file and keeps a copy of the file
+   as `config.toml.imcp-backup` next to it.
+   ChatGPT Desktop shares `~/.codex/config.toml` with the Codex CLI
+   and the IDE extension,
+   so they use the same entry.
+3. Restart ChatGPT so that it starts iMCP.
+4. [Approve the connection](#approve-connections) in iMCP.
+   ChatGPT might identify itself as `codex-mcp-client`.
+
+<details>
+<summary>Add iMCP in ChatGPT's settings instead</summary>
 
 1. Click <img style="display: inline" width="20" height="16" src="/Assets/icon.svg" />
    \> "Copy server command to clipboard".
@@ -366,8 +392,8 @@ you can [download it here][chatgpt-app].
    and paste the copied command into "Command to launch".
    Leave the other fields empty.
 4. Click "Save", and then click "Restart".
-5. [Approve the connection](#approve-connections) in iMCP.
-   ChatGPT might identify itself as `codex-mcp-client`.
+
+</details>
 
 To test the connection,
 start a new Codex conversation and send this message:
@@ -408,7 +434,8 @@ a result of `true` means that iMCP received the request.
 - **ChatGPT shows an error for the iMCP server.**
   The command might point to the wrong place,
   for example, if you moved iMCP after setting it up.
-  Copy the server command again,
+  Connect ChatGPT again from "Set Up iMCP…" in the iMCP menu,
+  or copy the server command again,
   open the iMCP server's settings in ChatGPT,
   and replace "Command to launch" with the copied command.
   Make sure that "Arguments" is empty,
