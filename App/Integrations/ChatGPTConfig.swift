@@ -23,12 +23,18 @@ enum ChatGPTConfig {
         var errorDescription: String? {
             switch self {
             case .doesNotParse(let detail):
-                "That file is not valid TOML, so iMCP left it unchanged. \(detail)"
+                "That file is not valid TOML, so iMCP left it unchanged. \(detail) "
+                    + "Add iMCP in ChatGPT instead: open ChatGPT Settings > MCP servers, "
+                    + "add a STDIO server named iMCP, and paste the server command."
             case .ambiguousIMCPEntry:
                 "That file already sets up iMCP in a form iMCP cannot update safely, "
-                    + "so iMCP left it unchanged. Edit the mcp_servers.iMCP entry by hand, or remove it and try again."
+                    + "so iMCP left it unchanged. "
+                    + "Add iMCP in ChatGPT instead: open ChatGPT Settings > MCP servers, "
+                    + "add a STDIO server named iMCP, and paste the server command."
             case .verificationFailed:
-                "iMCP could not check its edit safely, so it left that file unchanged."
+                "iMCP could not check its edit safely, so it left that file unchanged. "
+                    + "Add iMCP in ChatGPT instead: open ChatGPT Settings > MCP servers, "
+                    + "add a STDIO server named iMCP, and paste the server command."
             }
         }
     }

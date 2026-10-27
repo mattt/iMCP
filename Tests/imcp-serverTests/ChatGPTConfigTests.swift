@@ -86,7 +86,13 @@ final class ChatGPTConfigTests: XCTestCase {
     }
 
     func testInlineTableIsRefused() throws {
-        XCTAssertThrowsError(try updated("[mcp_servers]\niMCP = { command = \"old\" }\n"))
+        XCTAssertThrowsError(try updated("[mcp_servers]\niMCP = { command = \"old\" }\n")) { error in
+            XCTAssertTrue(
+                error.localizedDescription.contains("ChatGPT Settings > MCP servers"),
+                error.localizedDescription
+            )
+            XCTAssertFalse(error.localizedDescription.contains("by hand"), error.localizedDescription)
+        }
         XCTAssertThrowsError(try updated("mcp_servers = { iMCP = { command = \"old\" } }\n"))
     }
 
@@ -140,6 +146,11 @@ final class ChatGPTConfigTests: XCTestCase {
     func testFileThatDoesNotParseIsRefused() throws {
         XCTAssertThrowsError(try updated("model = \"unclosed\n")) { error in
             XCTAssertTrue(error.localizedDescription.contains("not valid TOML"), error.localizedDescription)
+            XCTAssertTrue(
+                error.localizedDescription.contains("ChatGPT Settings > MCP servers"),
+                error.localizedDescription
+            )
+            XCTAssertFalse(error.localizedDescription.contains("by hand"), error.localizedDescription)
         }
         XCTAssertThrowsError(try updated("[mcp_servers.iMCP]\ncommand = \"a\"\ncommand = \"b\"\n"))
     }

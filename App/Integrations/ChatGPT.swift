@@ -61,9 +61,20 @@ enum ChatGPT {
             log.error("Error configuring ChatGPT: \(error.localizedDescription)")
             let errorAlert = NSAlert()
             errorAlert.messageText = "Configuration Error"
-            errorAlert.informativeText = error.localizedDescription
             errorAlert.alertStyle = .critical
-            errorAlert.runModal()
+            if error is ChatGPTConfig.ConfigError {
+                // Point to ChatGPT's own settings, with the command ready to paste.
+                errorAlert.informativeText =
+                    "\(error.localizedDescription)\n\nServer command:\n\(ServerCommand.path)"
+                errorAlert.addButton(withTitle: "Copy Server Command")
+                errorAlert.addButton(withTitle: "OK")
+                if errorAlert.runModal() == .alertFirstButtonReturn {
+                    ServerCommand.copy()
+                }
+            } else {
+                errorAlert.informativeText = error.localizedDescription
+                errorAlert.runModal()
+            }
         }
     }
 
