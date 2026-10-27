@@ -146,11 +146,6 @@ struct OnboardingWizardView: View {
             HStack(spacing: 12) {
                 Button("Finish Later") { onFinish(false) }
                     .keyboardShortcut(.cancelAction)
-                if let continueHint {
-                    Text(continueHint)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
                 Spacer()
                 if step > 0 {
                     Button("Back") { step -= 1 }
@@ -165,6 +160,7 @@ struct OnboardingWizardView: View {
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
                 .disabled(!canContinue)
+                .help(canContinue ? "" : (continueHint ?? ""))
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 14)
@@ -239,7 +235,7 @@ struct OnboardingWizardView: View {
                     isConnected: isConnected(.chatGPT)
                 ) {
                     selectedClient = .chatGPT
-                    ServerCommand.copy()
+                    ChatGPT.showConfigurationPanel()
                 }
             }
 
@@ -361,7 +357,6 @@ struct OnboardingWizardView: View {
                                 }
                             }
                             Button("Try Again") { turnOnLocation() }
-                                .buttonStyle(.borderedProminent)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -435,7 +430,7 @@ struct OnboardingWizardView: View {
 
             VStack(alignment: .leading, spacing: 12) {
                 ExampleRow(
-                    prompt: "“What do I have on tomorrow, and when should I leave?”",
+                    prompt: "“What’s on my calendar tomorrow, and when do I need to leave?”",
                     detail:
                         "Calendar gives the events, Location and Maps give the travel time, and Weather gives the conditions."
                 )
@@ -508,8 +503,6 @@ private struct WelcomeView: View {
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
 
-            Text("Choose Continue to start.")
-                .foregroundStyle(.secondary)
         }
     }
 }
@@ -552,7 +545,7 @@ private struct ClientCard: View {
                     .foregroundStyle(.green)
                     .fontWeight(.medium)
             } else {
-                Button(client == .claudeDesktop ? "Connect Claude Desktop…" : "Copy Command for ChatGPT") {
+                Button(client == .claudeDesktop ? "Connect Claude Desktop…" : "Connect ChatGPT…") {
                     onConnect()
                 }
                 .disabled(!client.isInstalled)
@@ -569,78 +562,29 @@ private struct ClientCard: View {
     }
 }
 
-/// A short fake chat that shows the test, with iMCP's tool use visible in the reply.
-private struct FakeConversation: View {
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Spacer(minLength: 60)
-                Text(OnboardingWizardView.samplePrompt)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 14))
-                    .foregroundStyle(.white)
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                ToolUseRow(tool: "location_current", result: "Current location: San Francisco, California")
-                ToolUseRow(tool: "weather_current", result: "Weather there: 62°F and clear")
-                Text(
-                    "You are in San Francisco. It is 62°F and clear there right now, "
-                        + "so a light jacket should be enough if you go out."
-                )
-                .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(12)
-            .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 14))
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            Text(
-                "Your app shows its own tool names. What matters is that it answers from your Mac, without asking for your address."
-            )
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-}
-
-/// One visible tool call in the fake reply.
-private struct ToolUseRow: View {
-    let tool: String
-    let result: String
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "wrench.and.screwdriver.fill")
-                .foregroundStyle(.secondary)
-            Text(tool).font(.caption.monospaced()).fontWeight(.medium)
-            Text(result).font(.caption).foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.tail)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .background(.background, in: Capsule())
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Tool \(tool): \(result)")
-    }
-}
-
+/// One combined example: the prompt as a user bubble, as in Try it, and what answers it.
 private struct ExampleRow: View {
     let prompt: String
     let detail: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(prompt).fontWeight(.medium)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Spacer(minLength: 80)
+                Text(prompt)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 12))
+                    .foregroundStyle(.white)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             Text(detail).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
 }
 
-/// The dots and the "Step n of 4" label at the top of the wizard.
+/// The dots and the "Step n of 5" label at the top of the wizard.
 private struct StepIndicator: View {
     let step: Int
     let titles: [String]
@@ -660,6 +604,98 @@ private struct StepIndicator: View {
                 .foregroundStyle(.secondary)
         }
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// A short fake chat that shows the test, with iMCP's tool use visible in the reply.
+///
+/// The parts appear in sequence: the user message, each tool row, then the answer.
+/// The whole sequence takes about a second, it never blocks Continue,
+/// and with Reduce Motion on, every part is visible at once.
+private struct FakeConversation: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// How many of the four parts are visible: the user message, two tool rows, and the answer.
+    @State private var shownParts = 0
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if shownParts >= 1 {
+                HStack {
+                    Spacer(minLength: 60)
+                    Text(OnboardingWizardView.samplePrompt)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 14))
+                        .foregroundStyle(.white)
+                }
+                .transition(.opacity)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                if shownParts >= 2 {
+                    ToolUseRow(tool: "location_current", result: "Current location: San Francisco, California")
+                        .transition(.opacity)
+                }
+                if shownParts >= 3 {
+                    ToolUseRow(tool: "weather_current", result: "Weather there: 62°F and clear")
+                        .transition(.opacity)
+                }
+                if shownParts >= 4 {
+                    Text(
+                        "You are in San Francisco. It is 62°F and clear there right now, "
+                            + "so a light jacket should be enough if you go out."
+                    )
+                    .fixedSize(horizontal: false, vertical: true)
+                    .transition(.opacity)
+                }
+            }
+            .padding(12)
+            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14))
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text(
+                "Your app shows its own tool names. What matters is that it answers from your Mac, without asking for your address."
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(12)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .animation(.easeIn(duration: 0.25), value: shownParts)
+        .task {
+            if reduceMotion {
+                shownParts = 4
+                return
+            }
+            for part in 1 ... 4 {
+                shownParts = part
+                try? await Task.sleep(for: .milliseconds(300))
+            }
+        }
+    }
+}
+
+/// One visible tool call in the fake reply.
+private struct ToolUseRow: View {
+    let tool: String
+    let result: String
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "wrench.and.screwdriver.fill")
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+            Text(tool).font(.caption.monospaced()).fontWeight(.medium)
+            Text(result).font(.caption).foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(.quaternary, in: Capsule())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Tool \(tool): \(result)")
     }
 }
 
