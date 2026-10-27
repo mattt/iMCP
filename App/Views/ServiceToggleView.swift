@@ -82,10 +82,15 @@ struct ServiceToggleView: View {
             .frame(height: buttonSize)
 
             if let activationError, isWarningExpanded {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 8) {
+                    // The service is off, stated once. Each failure then gets its own fix.
+                    Text("\(config.name) is off.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
                     ForEach(failures(in: activationError), id: \.self) { failure in
                         VStack(alignment: .leading, spacing: 6) {
-                            Text(warningText(error: failure))
+                            Text(fixText(error: failure))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -126,16 +131,16 @@ struct ServiceToggleView: View {
         return config.name
     }
 
-    /// The full sentence for one failure, with the error and the next step as separate sentences.
-    private func warningText(error: String) -> String {
+    /// One failure and its fix, as two sentences. The disclosure states that the service is off.
+    private func fixText(error: String) -> String {
         let reason = error.hasSuffix(".") ? String(error.dropLast()) : error
         let subject = subject(of: error)
         if Self.privacyPaneURL(forMessage: error, serviceName: config.name) != nil {
-            return "\(config.name) is off. \(reason). "
+            return "\(reason). "
                 + "Open System Settings > Privacy & Security, turn on iMCP for \(subject), "
                 + "then click the \(config.name) icon again."
         }
-        return "\(config.name) is off. \(reason). "
+        return "\(reason). "
             + "Click the \(config.name) icon again to try again."
     }
 
