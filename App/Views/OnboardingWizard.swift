@@ -428,17 +428,17 @@ struct OnboardingWizardView: View {
 
             VStack(alignment: .leading, spacing: 14) {
                 ExampleRow(
-                    prompt: "“What’s on my calendar tomorrow, and when do I need to leave?”",
+                    prompt: "What’s on my calendar tomorrow, and when do I need to leave?",
                     detail:
                         "Calendar gives the events, Location and Maps give the travel time, and Weather gives the conditions."
                 )
                 ExampleRow(
-                    prompt: "“Find Maya's number and open an email draft about Friday.”",
+                    prompt: "Find Maya's number and open an email draft about Friday.",
                     detail:
                         "Contacts finds the person, Calendar checks Friday, and Mail opens the draft for you to send."
                 )
                 ExampleRow(
-                    prompt: "“Summarize what I missed this morning.”",
+                    prompt: "Summarize what I missed this morning.",
                     detail:
                         "Mail, Messages, Reminders, and Notes each hold part of the morning, and the app joins them."
                 )
@@ -453,11 +453,6 @@ struct OnboardingWizardView: View {
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
 
-            Label(
-                "Choose Done to finish. You can open this wizard again from Set Up iMCP… in the menu.",
-                systemImage: "menubar.rectangle"
-            )
-            .foregroundStyle(.secondary)
         }
     }
 }
@@ -533,26 +528,38 @@ private struct ClientCard: View {
                 .fontWeight(.medium)
                 .foregroundStyle(client.isInstalled ? .primary : .secondary)
 
-            if !client.isInstalled {
-                Text("Not installed on this Mac.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-
-            if isConnected {
-                Label("Connected", systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-                    .fontWeight(.medium)
-            } else {
-                Button(client == .claudeDesktop ? "Connect Claude Desktop…" : "Connect ChatGPT…") {
-                    onConnect()
+            // A fixed-height slot, filled or empty, so both cards line up in every state.
+            Group {
+                if !client.isInstalled {
+                    Text("Not installed on this Mac.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
                 }
-                .disabled(!client.isInstalled)
             }
+            .frame(height: 28)
+
+            Spacer(minLength: 0)
+
+            // The connected checkmark and the connect button share this bottom slot.
+            Group {
+                if isConnected {
+                    Label("Connected", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                        .fontWeight(.medium)
+                } else {
+                    Button(client == .claudeDesktop ? "Connect Claude Desktop…" : "Connect ChatGPT…") {
+                        onConnect()
+                    }
+                    .disabled(!client.isInstalled)
+                }
+            }
+            .frame(height: 24)
         }
-        .frame(maxWidth: .infinity)
         .padding(14)
+        .frame(maxWidth: .infinity)
+        // One height for every state, so the two cards always match.
+        .frame(height: 190)
         .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
         .accessibilityElement(children: .contain)
         .accessibilityLabel(client.name)
