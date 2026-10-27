@@ -364,6 +364,18 @@ final class ServerController: ObservableObject {
         credentials.removeLegacyTrustedName(name)
     }
 
+    /// Whether any client is trusted, or was trusted by name in an earlier version,
+    /// which shows that this install was set up before.
+    var hasTrustedClient: Bool { !trustedClients.isEmpty || !legacyTrustedClientNames.isEmpty }
+
+    /// Whether a service beyond the defaults is on, which also shows a prior setup.
+    ///
+    /// Maps is on by default, and Utilities is too where it appears,
+    /// so neither counts.
+    var hasServiceOnBeyondDefaults: Bool {
+        computedServiceConfigs.contains { $0.name != "Maps" && $0.binding.wrappedValue }
+    }
+
     /// Revokes every credential and closes the connections that used one.
     func resetTrustedClients() {
         objectWillChange.send()

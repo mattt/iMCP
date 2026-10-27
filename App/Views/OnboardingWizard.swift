@@ -77,7 +77,7 @@ enum WizardClient: String, CaseIterable, Identifiable {
 /// The setup assistant: one step per screen, in its own window, separate from Settings.
 ///
 /// It opens at first launch and from "Set Up iMCP…" in the menu.
-/// `onFinish` reports whether the person chose Done (true) or Finish Later (false).
+/// `onFinish` reports whether the person chose Done (true) or Finish Later (false). Either counts as seen.
 /// Progress comes from `ServerController`: `hasConnected` covers a connection from any client,
 /// and the Location step reads the Location service's own state.
 struct OnboardingWizardView: View {
@@ -794,13 +794,14 @@ final class OnboardingWizardWindowController: NSWindowController {
     func show(
         serverController: ServerController,
         isEnabled: Binding<Bool>,
-        onComplete: @escaping () -> Void
+        onSeen: @escaping () -> Void
     ) {
         let rootView = OnboardingWizardView(
             serverController: serverController,
             isEnabled: isEnabled,
-            onFinish: { [weak self] completed in
-                if completed { onComplete() }
+            onFinish: { [weak self] _ in
+                // Done and Finish Later both count as seen.
+                onSeen()
                 self?.close()
             }
         )
