@@ -273,9 +273,21 @@ final class ServerController: ObservableObject {
 
     var hasConnected: Bool { hasConnectedStorage }
 
-    private func markConnected() {
+    /// Names that connected clients reported, kept so that the wizard can mark each app as connected.
+    @AppStorage("connectedClientNames") private var connectedClientNamesData = Data()
+
+    var connectedClientNames: [String] {
+        (try? JSONDecoder().decode([String].self, from: connectedClientNamesData)) ?? []
+    }
+
+    private func markConnected(clientName: String) {
         objectWillChange.send()
         hasConnectedStorage = true
+        var names = connectedClientNames
+        if !names.contains(clientName) {
+            names.append(clientName)
+            connectedClientNamesData = (try? JSONEncoder().encode(names)) ?? Data()
+        }
     }
 
     // MARK: - Client Credentials
@@ -509,7 +521,7 @@ final class ServerController: ObservableObject {
             "\(approved ? "Approving" : "Denying") \(entry.waiters.count) connection(s) for client: \(request.claimedName)"
         )
         if approved {
-            markConnected()
+            markConnected(clientName: request.record?.name ?? request.claimedName)
         }
         for (_, waiter) in entry.waiters {
             approved ? waiter.approve() : waiter.deny()
@@ -673,7 +685,7 @@ final class ServerController: ObservableObject {
         case .approve(let record):
             log.notice("Client \(clientName) presented a trusted credential, auto-approving")
             credentialSessions.add(connectionID, credentialID: record.id)
-            markConnected()
+            markConnected(clientName: record.name)
             approve()
 
             // Notify the user on auto-approved connections.
