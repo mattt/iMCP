@@ -53,9 +53,14 @@ struct App: SwiftUI.App {
         .onChange(of: appDelegate.shouldOpenOnboarding, initial: true) { _, shouldOpenOnboarding in
             guard shouldOpenOnboarding else { return }
             appDelegate.shouldOpenOnboarding = false
-            guard !hasCompletedOnboarding else { return }
-            // A person who already connected a client has finished setup in practice.
-            if serverController.hasConnected {
+            // Open only at first launch. A prior setup counts as seen.
+            let shouldOpen = OnboardingGate.shouldOpenAutomatically(
+                hasSeenOnboarding: hasCompletedOnboarding,
+                hasTrustedClient: serverController.hasTrustedClient,
+                hasConnectedBefore: serverController.hasConnected,
+                hasServiceOnBeyondDefaults: serverController.hasServiceOnBeyondDefaults
+            )
+            guard shouldOpen else {
                 hasCompletedOnboarding = true
                 return
             }
@@ -83,7 +88,7 @@ struct App: SwiftUI.App {
         onboardingWizardController.show(
             serverController: serverController,
             isEnabled: $isEnabled,
-            onComplete: { hasCompletedOnboarding = true }
+            onSeen: { hasCompletedOnboarding = true }
         )
     }
 }

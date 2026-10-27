@@ -81,7 +81,7 @@ struct ContentView: View {
                     onboardingWizardController.show(
                         serverController: serverController,
                         isEnabled: $isEnabled,
-                        onComplete: { hasCompletedOnboarding = true }
+                        onSeen: { hasCompletedOnboarding = true }
                     )
                 }
 

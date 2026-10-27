@@ -40,6 +40,8 @@
 		A40000000000000000000023 /* ../../Shared/Extensions/Bundle+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000013 /* ../../Shared/Extensions/Bundle+Extensions.swift */; };
 		A40000000000000000000024 /* ../../Shared/Models/Service.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000014 /* ../../Shared/Models/Service.swift */; };
 		A50000000000000000000020 /* MailTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000010 /* MailTests.swift */; };
+		D31100000000000000000021 /* OnboardingGateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D31100000000000000000020 /* OnboardingGateTests.swift */; };
+		D31100000000000000000023 /* ../../App/OnboardingGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = D31100000000000000000022 /* ../../App/OnboardingGate.swift */; };
 		D31100000000000000000011 /* ChatGPTConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D31100000000000000000010 /* ChatGPTConfigTests.swift */; };
 		D31100000000000000000013 /* ../../App/Integrations/ChatGPTConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = D31100000000000000000012 /* ../../App/Integrations/ChatGPTConfig.swift */; };
 		A50000000000000000000021 /* ../../App/Services/Mail.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000011 /* ../../App/Services/Mail.swift */; };
@@ -115,6 +117,8 @@
 		A40000000000000000000013 /* ../../Shared/Extensions/Bundle+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../../Shared/Extensions/Bundle+Extensions.swift"; sourceTree = "<group>"; };
 		A40000000000000000000014 /* ../../Shared/Models/Service.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../Shared/Models/Service.swift; sourceTree = "<group>"; };
 		A50000000000000000000010 /* MailTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MailTests.swift; sourceTree = "<group>"; };
+		D31100000000000000000020 /* OnboardingGateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingGateTests.swift; sourceTree = "<group>"; };
+		D31100000000000000000022 /* ../../App/OnboardingGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/OnboardingGate.swift; sourceTree = "<group>"; };
 		D31100000000000000000010 /* ChatGPTConfigTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatGPTConfigTests.swift; sourceTree = "<group>"; };
 		D31100000000000000000012 /* ../../App/Integrations/ChatGPTConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Integrations/ChatGPTConfig.swift; sourceTree = "<group>"; };
 		A50000000000000000000011 /* ../../App/Services/Mail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/Mail.swift; sourceTree = "<group>"; };
@@ -258,6 +262,8 @@
 				A40000000000000000000013 /* ../../Shared/Extensions/Bundle+Extensions.swift */,
 				A40000000000000000000014 /* ../../Shared/Models/Service.swift */,
 				A50000000000000000000010 /* MailTests.swift */,
+				D31100000000000000000020 /* OnboardingGateTests.swift */,
+				D31100000000000000000022 /* ../../App/OnboardingGate.swift */,
 				D31100000000000000000010 /* ChatGPTConfigTests.swift */,
 				D31100000000000000000012 /* ../../App/Integrations/ChatGPTConfig.swift */,
 				A50000000000000000000011 /* ../../App/Services/Mail.swift */,
@@ -573,6 +579,8 @@
 				A40000000000000000000023 /* ../../Shared/Extensions/Bundle+Extensions.swift in Sources */,
 				A40000000000000000000024 /* ../../Shared/Models/Service.swift in Sources */,
 				A50000000000000000000020 /* MailTests.swift in Sources */,
+				D31100000000000000000021 /* OnboardingGateTests.swift in Sources */,
+				D31100000000000000000023 /* ../../App/OnboardingGate.swift in Sources */,
 				D31100000000000000000011 /* ChatGPTConfigTests.swift in Sources */,
 				D31100000000000000000013 /* ../../App/Integrations/ChatGPTConfig.swift in Sources */,
 				A50000000000000000000021 /* ../../App/Services/Mail.swift in Sources */,
