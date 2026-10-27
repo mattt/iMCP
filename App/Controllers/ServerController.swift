@@ -272,6 +272,16 @@ final class ServerController: ObservableObject {
     @AppStorage("voicemailEnabled") private var voicemailEnabled = false
     @AppStorage("weatherEnabled") private var weatherEnabled = false
 
+    /// Whether any client has connected, kept so that the setup wizard can show that step as done.
+    @AppStorage("hasConnected") private var hasConnectedStorage = false
+
+    var hasConnected: Bool { hasConnectedStorage }
+
+    private func markConnected() {
+        objectWillChange.send()
+        hasConnectedStorage = true
+    }
+
     // MARK: - AppStorage for Trusted Clients
     @AppStorage("trustedClients") private var trustedClientsData = Data()
 
@@ -523,6 +533,7 @@ final class ServerController: ObservableObject {
         // Trusted clients auto-approve without showing the dialog.
         if isClientTrusted(clientID) {
             log.notice("Client \(clientID) is already trusted, auto-approving")
+            markConnected()
             approve()
 
             // Notify the user on auto-approved connections.
@@ -565,6 +576,7 @@ final class ServerController: ObservableObject {
                     }
                 }
 
+                self.markConnected()
                 approve()
                 self.cleanupApprovalState(for: clientID)
                 self.handlePendingApprovals(for: clientID, approved: true)
