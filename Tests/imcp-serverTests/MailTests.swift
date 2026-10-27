@@ -22,6 +22,23 @@ final class MailTests: XCTestCase {
         XCTAssertTrue(MailToolError(underlying: Envelope.MailError.databaseBusy).localizedDescription.contains("iMCP"))
     }
 
+    func testSearchPageValueWithoutCount() {
+        let value = Envelope.Store.SearchResult.pageValue(records: [], nextCursor: nil, indexedMessageCount: nil)
+        let localIndex = value.objectValue?["localIndex"]?.objectValue
+        XCTAssertEqual(localIndex?["indexedMessageCount"], .null)
+        XCTAssertEqual(localIndex?["syncStatus"], "unknown")
+        XCTAssertTrue(localIndex?["description"]?.stringValue?.contains("could not be counted") ?? false)
+        XCTAssertEqual(value.objectValue?["itemListElement"], .array([]))
+        XCTAssertEqual(value.objectValue?["nextCursor"], .null)
+    }
+
+    func testSearchPageValueWithCount() {
+        let value = Envelope.Store.SearchResult.pageValue(records: [], nextCursor: nil, indexedMessageCount: 42)
+        let localIndex = value.objectValue?["localIndex"]?.objectValue
+        XCTAssertEqual(localIndex?["indexedMessageCount"], .int(42))
+        XCTAssertTrue(localIndex?["description"]?.stringValue?.contains("before search filters") ?? false)
+    }
+
     func testCompositionEncodingAndFailure() throws {
         let composition = MailComposition(
             to: "a@example.com,b@example.com",

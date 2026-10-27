@@ -554,19 +554,39 @@ extension Envelope.Content.Attachment {
 
 extension Envelope.Store.SearchResult {
     var value: Value {
+        Self.pageValue(records: records, nextCursor: nextCursor, indexedMessageCount: indexedMessageCount)
+    }
+
+    /// Returns the value of one page of search results.
+    ///
+    /// When `indexedMessageCount` is `nil`,
+    /// the scope count is unavailable because it passed the time limit.
+    static func pageValue(
+        records: [Envelope.Message],
+        nextCursor: Envelope.Message.FetchRequest.Cursor?,
+        indexedMessageCount: Int?
+    ) -> Value {
+        let description: String
+        switch indexedMessageCount {
+        case 0:
+            description =
+                "No messages are indexed locally in the selected scope. The mailbox may be empty or Mail may not have indexed it yet. Open Mail to check account sync."
+        case nil:
+            description =
+                "The number of indexed messages in the selected scope could not be counted within the time limit, so the count is unavailable. Sync status and server message counts are unavailable."
+        default:
+            description =
+                "The count covers locally indexed messages in the selected scope before search filters and pagination. Sync status and server message counts are unavailable."
+        }
         return [
             "@context": "https://schema.org",
             "@type": "ItemList",
             "itemListElement": .array(records.map(\.value)),
             "nextCursor": nextCursor.map { .string($0.description) } ?? .null,
             "localIndex": [
-                "indexedMessageCount": .int(indexedMessageCount),
+                "indexedMessageCount": indexedMessageCount.map { Value.int($0) } ?? .null,
                 "syncStatus": "unknown",
-                "description": .string(
-                    indexedMessageCount == 0
-                        ? "No messages are indexed locally in the selected scope. The mailbox may be empty or Mail may not have indexed it yet. Open Mail to check account sync."
-                        : "The count covers locally indexed messages in the selected scope before search filters and pagination. Sync status and server message counts are unavailable."
-                ),
+                "description": .string(description),
             ],
         ]
     }
