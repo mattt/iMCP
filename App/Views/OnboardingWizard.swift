@@ -240,7 +240,7 @@ struct OnboardingWizardView: View {
             }
 
             Text(
-                "For Claude Desktop, quit and reopen the app after setup so that it starts iMCP. For ChatGPT, paste the copied command in Settings > MCP servers as a STDIO server, save, then click Restart."
+                "Quit and reopen the app after setup so that it starts iMCP."
             )
             .font(.caption)
             .foregroundStyle(.secondary)
@@ -256,9 +256,7 @@ struct OnboardingWizardView: View {
                         }
                     }
                     Text(
-                        "In your MCP client, add a local server that uses the STDIO transport, "
-                            + "and paste the server command as its command. "
-                            + "For llama.cpp, put the command in its MCP configuration file instead."
+                        "Add a local STDIO server in your client, and paste the server command as its command."
                     )
                     .fixedSize(horizontal: false, vertical: true)
                     Button("Copy Server Command") {
@@ -411,7 +409,7 @@ struct OnboardingWizardView: View {
                 .controlSize(.small)
             }
 
-            FakeConversation()
+            FakeConversation(lookupEnabled: isLocationAuthorized)
         }
     }
 
@@ -428,7 +426,7 @@ struct OnboardingWizardView: View {
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
 
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 14) {
                 ExampleRow(
                     prompt: "“What’s on my calendar tomorrow, and when do I need to leave?”",
                     detail:
@@ -445,6 +443,8 @@ struct OnboardingWizardView: View {
                         "Mail, Messages, Reminders, and Notes each hold part of the morning, and the app joins them."
                 )
             }
+            .padding(12)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
 
             Text(
                 "Turn on more services in the iMCP menu, or open Settings to choose which tools each service offers. "
@@ -607,15 +607,32 @@ private struct StepIndicator: View {
     }
 }
 
+/// What the fake reply says, from a real lookup or from the Portland fallback.
+private struct SampleResult {
+    let place: String
+    let city: String
+    let weather: String
+
+    static let portland = SampleResult(place: "Portland, Oregon", city: "Portland", weather: "54°F and cloudy")
+}
+
 /// A short fake chat that shows the test, with iMCP's tool use visible in the reply.
 ///
-/// The parts appear in sequence: the user message, each tool row, then the answer.
-/// The whole sequence takes about a second, it never blocks Continue,
-/// and with Reduce Motion on, every part is visible at once.
+/// The parts appear in sequence: the user message, each tool call working, each result, then the answer.
+/// The whole sequence takes about two seconds, it never blocks Continue,
+/// and with Reduce Motion on, every part is visible at once with its result.
+///
+/// When Location is authorized, the place and weather come from iMCP's own
+/// Location and Weather services, with a four-second limit.
+/// The wizard only shows the result and stores nothing.
+/// Any failure, or a slow answer, falls back to the Portland text.
 private struct FakeConversation: View {
+    let lookupEnabled: Bool
+
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// How many of the four parts are visible: the user message, two tool rows, and the answer.
+    /// Stages 1 to 6: user message, first tool working, its result, second tool working, its result, answer.
     @State private var shownParts = 0
+    @State private var sample = SampleResult.portland
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -633,16 +650,22 @@ private struct FakeConversation: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 if shownParts >= 2 {
-                    ToolUseRow(tool: "location_current", result: "Current location: San Francisco, California")
-                        .transition(.opacity)
-                }
-                if shownParts >= 3 {
-                    ToolUseRow(tool: "weather_current", result: "Weather there: 62°F and clear")
-                        .transition(.opacity)
+                    ToolUseRow(
+                        tool: "location_current",
+                        result: shownParts >= 3 ? "Current location: \(sample.place)" : nil
+                    )
+                    .transition(.opacity)
                 }
                 if shownParts >= 4 {
+                    ToolUseRow(
+                        tool: "weather_current",
+                        result: shownParts >= 5 ? "Weather there: \(sample.weather)" : nil
+                    )
+                    .transition(.opacity)
+                }
+                if shownParts >= 6 {
                     Text(
-                        "You are in San Francisco. It is 62°F and clear there right now, "
+                        "You are in \(sample.city). It is \(sample.weather) there right now, "
                             + "so a light jacket should be enough if you go out."
                     )
                     .fixedSize(horizontal: false, vertical: true)
@@ -665,21 +688,65 @@ private struct FakeConversation: View {
         .animation(.easeIn(duration: 0.25), value: shownParts)
         .task {
             if reduceMotion {
-                shownParts = 4
+                if lookupEnabled { sample = await Self.lookup() }
+                shownParts = 6
                 return
             }
-            for part in 1 ... 4 {
-                shownParts = part
-                try? await Task.sleep(for: .milliseconds(300))
+            shownParts = 1
+            try? await Task.sleep(for: .milliseconds(300))
+            shownParts = 2
+            if lookupEnabled { sample = await Self.lookup() }
+            shownParts = 3
+            try? await Task.sleep(for: .milliseconds(300))
+            shownParts = 4
+            try? await Task.sleep(for: .milliseconds(400))
+            shownParts = 5
+            try? await Task.sleep(for: .milliseconds(300))
+            shownParts = 6
+        }
+    }
+
+    /// The current place and weather from iMCP's services, or Portland after four seconds or on any error.
+    private static func lookup() async -> SampleResult {
+        await withTaskGroup(of: SampleResult?.self) { group in
+            group.addTask {
+                do {
+                    let place = try await LocationService.shared.currentPlace()
+                    let conditions = try await WeatherService.shared.currentConditions(at: place.coordinate)
+                    let temperature = conditions.temperature.formatted(
+                        .measurement(width: .abbreviated, usage: .weather)
+                    )
+                    let condition = conditions.condition
+                    let lowered = condition.prefix(1).lowercased() + condition.dropFirst()
+                    return SampleResult(
+                        place: place.displayName,
+                        city: place.city,
+                        weather: "\(temperature) and \(lowered)"
+                    )
+                } catch {
+                    return nil
+                }
             }
+            group.addTask {
+                try? await Task.sleep(for: .seconds(4))
+                return nil
+            }
+            for await result in group {
+                if let result {
+                    group.cancelAll()
+                    return result
+                }
+            }
+            return .portland
         }
     }
 }
 
-/// One visible tool call in the fake reply.
+/// One visible tool call in the fake reply, working first and then showing its result.
 private struct ToolUseRow: View {
     let tool: String
-    let result: String
+    /// The result text, or nil while the call is still working.
+    let result: String?
 
     var body: some View {
         HStack(spacing: 6) {
@@ -687,15 +754,21 @@ private struct ToolUseRow: View {
                 .font(.system(size: 10))
                 .foregroundStyle(.secondary)
             Text(tool).font(.caption.monospaced()).fontWeight(.medium)
-            Text(result).font(.caption).foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.tail)
+            if let result {
+                Text(result).font(.caption).foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            } else {
+                ProgressView()
+                    .controlSize(.small)
+                    .accessibilityLabel("Working")
+            }
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
         .background(.quaternary, in: Capsule())
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Tool \(tool): \(result)")
+        .accessibilityLabel(result.map { "Tool \(tool): \($0)" } ?? "Tool \(tool), working")
     }
 }
 

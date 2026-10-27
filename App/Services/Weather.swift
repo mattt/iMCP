@@ -11,6 +11,19 @@ final class WeatherService: Service {
 
     private let weatherService = WeatherKit.WeatherService.shared
 
+    /// The current temperature and condition at a place, for display in the setup wizard.
+    ///
+    /// The wizard shows the result and stores nothing.
+    func currentConditions(at coordinate: CLLocationCoordinate2D) async throws
+        -> (temperature: Measurement<UnitTemperature>, condition: String)
+    {
+        let current = try await weatherService.weather(
+            for: CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude),
+            including: .current
+        )
+        return (current.temperature, current.condition.description)
+    }
+
     /// The attribution that WeatherKit requires, given once for a list of forecasts.
     ///
     /// Ontology includes it only in a forecast that is the root value,
