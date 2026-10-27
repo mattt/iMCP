@@ -82,17 +82,21 @@ struct ServiceToggleView: View {
             .frame(height: buttonSize)
 
             if let activationError, isWarningExpanded {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(warningText(error: activationError))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(failures(in: activationError), id: \.self) { failure in
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(warningText(error: failure))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
 
-                    if let paneURL = Self.privacyPaneURL(for: config.name) {
-                        Button("Open System Settings…") {
-                            NSWorkspace.shared.open(paneURL)
+                            if let paneURL = Self.privacyPaneURL(forMessage: failure, serviceName: config.name) {
+                                Button("Open System Settings…") {
+                                    NSWorkspace.shared.open(paneURL)
+                                }
+                                .controlSize(.small)
+                            }
                         }
-                        .controlSize(.small)
                     }
                 }
                 .padding(.leading, buttonSize + 8)
@@ -106,12 +110,29 @@ struct ServiceToggleView: View {
         }
     }
 
-    /// The full sentence for the disclosure, with the error and the next step as separate sentences.
+    /// Each failure in an activation error, one per line.
+    private func failures(in error: String) -> [String] {
+        error.components(separatedBy: "\n").filter { !$0.isEmpty }
+    }
+
+    /// The name that a failure's fix addresses, which may be one part of a service.
+    ///
+    /// Capture is one service with three permissions,
+    /// so its failures name the Camera, the Microphone, or Screen Recording instead.
+    private func subject(of failure: String) -> String {
+        for part in ["Camera", "Microphone", "Screen recording"] where failure.hasPrefix(part) {
+            return part
+        }
+        return config.name
+    }
+
+    /// The full sentence for one failure, with the error and the next step as separate sentences.
     private func warningText(error: String) -> String {
         let reason = error.hasSuffix(".") ? String(error.dropLast()) : error
-        if Self.privacyPaneURL(for: config.name) != nil {
+        let subject = subject(of: error)
+        if Self.privacyPaneURL(forMessage: error, serviceName: config.name) != nil {
             return "\(config.name) is off. \(reason). "
-                + "Open System Settings > Privacy & Security, turn on iMCP for \(config.name), "
+                + "Open System Settings > Privacy & Security, turn on iMCP for \(subject), "
                 + "then click the \(config.name) icon again."
         }
         return "\(config.name) is off. \(reason). "
@@ -123,16 +144,29 @@ struct ServiceToggleView: View {
     /// Folder-based services (Messages, Mail, Notes, and similar) have no pane:
     /// turning the service on again opens their folder picker instead.
     static func privacyPaneURL(for serviceName: String) -> URL? {
+        privacyPaneURL(forMessage: "", serviceName: serviceName)
+    }
+
+    /// The pane for one failure, so that each failure in a disclosure opens its own pane.
+    static func privacyPaneURL(forMessage message: String, serviceName: String) -> URL? {
         let anchor: String?
-        switch serviceName {
-        case "Calendar": anchor = "Privacy_Calendars"
-        case "Capture": anchor = "Privacy_Camera"
-        case "Contacts": anchor = "Privacy_Contacts"
-        case "Home": anchor = "Privacy_HomeKit"
-        case "Location", "Maps": anchor = "Privacy_LocationServices"
-        case "Music": anchor = "Privacy_Media"
-        case "Reminders": anchor = "Privacy_Reminders"
-        default: anchor = nil
+        if message.hasPrefix("Camera") {
+            anchor = "Privacy_Camera"
+        } else if message.hasPrefix("Microphone") {
+            anchor = "Privacy_Microphone"
+        } else if message.hasPrefix("Screen recording") {
+            anchor = "Privacy_ScreenCapture"
+        } else {
+            switch serviceName {
+            case "Calendar": anchor = "Privacy_Calendars"
+            case "Capture": anchor = "Privacy_Camera"
+            case "Contacts": anchor = "Privacy_Contacts"
+            case "Home": anchor = "Privacy_HomeKit"
+            case "Location", "Maps": anchor = "Privacy_LocationServices"
+            case "Music": anchor = "Privacy_Media"
+            case "Reminders": anchor = "Privacy_Reminders"
+            default: anchor = nil
+            }
         }
         guard let anchor else { return nil }
         return URL(string: "x-apple.systempreferences:com.apple.preference.security?\(anchor)")
