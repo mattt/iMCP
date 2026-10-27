@@ -268,6 +268,16 @@ final class ServerController: ObservableObject {
     @AppStorage("voicemailEnabled") private var voicemailEnabled = false
     @AppStorage("weatherEnabled") private var weatherEnabled = false
 
+    /// Whether any client has connected, kept so that the setup wizard can show that step as done.
+    @AppStorage("hasConnected") private var hasConnectedStorage = false
+
+    var hasConnected: Bool { hasConnectedStorage }
+
+    private func markConnected() {
+        objectWillChange.send()
+        hasConnectedStorage = true
+    }
+
     // MARK: - Client Credentials
     private let credentials = ClientCredentialStore(storage: KeychainClientRecordStorage())
     /// The open connections that each credential let in or was issued to,
@@ -498,6 +508,9 @@ final class ServerController: ObservableObject {
         log.notice(
             "\(approved ? "Approving" : "Denying") \(entry.waiters.count) connection(s) for client: \(request.claimedName)"
         )
+        if approved {
+            markConnected()
+        }
         for (_, waiter) in entry.waiters {
             approved ? waiter.approve() : waiter.deny()
         }
@@ -660,6 +673,7 @@ final class ServerController: ObservableObject {
         case .approve(let record):
             log.notice("Client \(clientName) presented a trusted credential, auto-approving")
             credentialSessions.add(connectionID, credentialID: record.id)
+            markConnected()
             approve()
 
             // Notify the user on auto-approved connections.
