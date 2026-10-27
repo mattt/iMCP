@@ -667,6 +667,37 @@ actor HomeService: Service, HomeBackend {
         Self.urlPairing = nil
     }
 
+    /// Why turning Home on for the user stopped, when it did not throw.
+    enum ActivationOutcome {
+        case activated
+        /// No helper is installed, and the person did not choose one.
+        case helperMissing
+        /// The person closed the pairing window without pairing.
+        case pairingCanceled
+    }
+
+    /// Turns Home on for the user, and reports why it stopped when it did.
+    ///
+    /// Asks for the helper if none is installed,
+    /// then asks for a code and pairs until the helper accepts iMCP's key.
+    /// Tool calls and reconnects never ask.
+    @MainActor
+    func activateAskingUserWithOutcome() async throws -> ActivationOutcome {
+        guard try promptForHelperIfMissing() else { return .helperMissing }
+        var message = "Enter the code shown in iMCP Helper's window."
+        while true {
+            do {
+                try await activate()
+                return .activated
+            } catch PairingError.missing {
+            } catch PairingError.rejected {
+                message =
+                    "iMCP Helper no longer recognizes iMCP. Enter the code shown in iMCP Helper to pair again."
+            }
+            guard await pairAskingUser(message: message) else { return .pairingCanceled }
+        }
+    }
+
     /// Turns Home on for the user:
     /// asks for the helper if none is installed,
     /// then asks for a code and pairs until the helper accepts iMCP's key.
@@ -674,19 +705,7 @@ actor HomeService: Service, HomeBackend {
     /// Returns false when the user cancels.
     @MainActor
     func activateAskingUser() async throws -> Bool {
-        guard try promptForHelperIfMissing() else { return false }
-        var message = "Enter the code shown in iMCP Helper's window."
-        while true {
-            do {
-                try await activate()
-                return true
-            } catch PairingError.missing {
-            } catch PairingError.rejected {
-                message =
-                    "iMCP Helper no longer recognizes iMCP. Enter the code shown in iMCP Helper to pair again."
-            }
-            guard await pairAskingUser(message: message) else { return false }
-        }
+        try await activateAskingUserWithOutcome() == .activated
     }
 
     /// Brings the helper's window to the front, launching the helper if needed.
