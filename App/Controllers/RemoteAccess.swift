@@ -35,6 +35,7 @@ enum Tailscale {
 
     /// The device and user at a tailnet address.
     struct Peer: Equatable, Sendable {
+        var stableID: String
         var deviceName: String
         var userID: Int64
         var isTagged: Bool
@@ -93,12 +94,17 @@ enum Tailscale {
     }
 
     static func whois(_ address: String) async throws -> Peer {
+        try decodePeer(try await run(["whois", "--json", address]), address: address)
+    }
+
+    static func decodePeer(_ data: Data, address: String) throws -> Peer {
         struct Output: Decodable {
             struct Node: Decodable {
                 struct Hostinfo: Decodable {
                     var Hostname: String?
                 }
                 var ComputedName: String?
+                var StableID: String
                 var Name: String?
                 var Tags: [String]?
                 var User: Int64
@@ -106,12 +112,11 @@ enum Tailscale {
             }
             var Node: Node
         }
-        let data = try await run(["whois", "--json", address])
-        guard let node = try? JSONDecoder().decode(Output.self, from: data).Node else {
+        guard let node = try? JSONDecoder().decode(Output.self, from: data).Node, !node.StableID.isEmpty else {
             throw Failure.unexpectedOutput
         }
         let name = node.Hostinfo?.Hostname ?? node.ComputedName ?? node.Name ?? address
-        return Peer(deviceName: name, userID: node.User, isTagged: !(node.Tags ?? []).isEmpty)
+        return Peer(stableID: node.StableID, deviceName: name, userID: node.User, isTagged: !(node.Tags ?? []).isEmpty)
     }
 
     private static func run(_ arguments: [String]) async throws -> Data {
@@ -201,7 +206,7 @@ actor RemoteAccessServer {
     }
 
     private let tokenStore: AccessTokenStore
-    private weak var networkManager: ServerNetworkManager?
+    private let makeSessionServer: @Sendable (UUID) async -> MCP.Server?
     private let queue = DispatchQueue(label: "iMCP.RemoteAccess")
 
     private var configuration = Configuration(isEnabled: false, port: defaultPort)
@@ -223,9 +228,9 @@ actor RemoteAccessServer {
     private var peers: [String: (peer: Tailscale.Peer?, expires: Date)] = [:]
     private var sessions: [String: Session] = [:]
 
-    init(tokenStore: AccessTokenStore, networkManager: ServerNetworkManager) {
+    init(tokenStore: AccessTokenStore, makeSessionServer: @escaping @Sendable (UUID) async -> MCP.Server?) {
         self.tokenStore = tokenStore
-        self.networkManager = networkManager
+        self.makeSessionServer = makeSessionServer
     }
 
     func setHandlers(
@@ -428,7 +433,7 @@ actor RemoteAccessServer {
         )
     }
 
-    private func respond(to message: HTTPRequestMessage, from peer: Tailscale.Peer) async -> MCP.HTTPResponse {
+    func respond(to message: HTTPRequestMessage, from peer: Tailscale.Peer) async -> MCP.HTTPResponse {
         guard message.path == "/mcp" else {
             return .error(statusCode: 404, .invalidRequest("Not Found: The MCP endpoint is /mcp."))
         }
@@ -449,11 +454,10 @@ actor RemoteAccessServer {
         }
 
         guard let token = Self.bearerToken(in: request).flatMap(tokenStore.token(secret:)) else {
-            return .error(
-                statusCode: 401,
-                .invalidRequest("Unauthorized: Send an iMCP access token in the Authorization header."),
-                extraHeaders: [HTTPHeaderName.wwwAuthenticate: #"Bearer realm="iMCP""#]
-            )
+            return Self.unauthorizedResponse
+        }
+        if let bound = token.boundDevice, bound.stableID != peer.stableID {
+            return Self.rejectDevice(peer)
         }
 
         if let sessionID = request.header(HTTPHeaderName.sessionID) {
@@ -494,7 +498,7 @@ actor RemoteAccessServer {
                 return .error(statusCode: 503, .internalError("Service Unavailable: Too many sessions."))
             }
         }
-        guard let networkManager else {
+        guard let server = await makeSessionServer(token.id) else {
             return .error(statusCode: 503, .internalError("Service Unavailable"))
         }
 
@@ -507,13 +511,7 @@ actor RemoteAccessServer {
                 SessionValidator(),
             ])
         )
-        let server = MCP.Server.iMCP()
         let tokenID = token.id
-        let tokenStore = self.tokenStore
-        // Read the token for each request, so that permission changes apply to open sessions.
-        await networkManager.registerHandlers(for: server, connectionID: UUID()) { tool in
-            tokenStore.token(id: tokenID)?.permissions.allows(tool) ?? false
-        }
         do {
             try await server.start(transport: transport)
         } catch {
@@ -526,6 +524,15 @@ actor RemoteAccessServer {
             await server.stop()
             return response
         }
+        do {
+            try tokenStore.bind(token, to: .init(stableID: peer.stableID, name: peer.deviceName))
+        } catch {
+            await server.stop()
+            if case AccessTokenStore.BindingError.differentDevice = error {
+                return Self.rejectDevice(peer)
+            }
+            return Self.unauthorizedResponse
+        }
         var openStreams = 0
         if case .stream = response { openStreams = 1 }
         sessions[sessionID] = Session(
@@ -535,15 +542,26 @@ actor RemoteAccessServer {
             lastActivity: Date(),
             openStreams: openStreams
         )
-        tokenStore.modify(id: tokenID) {
-            $0.lastUsedAt = Date()
-            $0.lastUsedDevice = peer.deviceName
-        }
         tokenUsageHandler?()
         log.notice(
             "Remote session started with token \(token.name, privacy: .public) from \(peer.deviceName, privacy: .public)"
         )
         return response
+    }
+
+    private static var unauthorizedResponse: MCP.HTTPResponse {
+        .error(
+            statusCode: 401,
+            .invalidRequest("Unauthorized: Send an iMCP access token in the Authorization header."),
+            extraHeaders: [HTTPHeaderName.wwwAuthenticate: #"Bearer realm="iMCP""#]
+        )
+    }
+
+    private static func rejectDevice(_ peer: Tailscale.Peer) -> MCP.HTTPResponse {
+        log.notice(
+            "Rejected remote request from \(peer.deviceName, privacy: .public), node \(peer.stableID, privacy: .public): access token is bound to another device"
+        )
+        return .error(statusCode: 403, .invalidRequest("Forbidden: This access token is bound to another device."))
     }
 
     private func streamEnded(sessionID: String?) {

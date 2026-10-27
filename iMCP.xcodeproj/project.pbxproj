@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		485454500000000000000023 /* ../App/Controllers/RemoteAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 485454500000000000000013 /* ../App/Controllers/RemoteAccess.swift */; };
 		485454500000000000000020 /* RemoteAccessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 485454500000000000000010 /* RemoteAccessTests.swift */; };
 		485454500000000000000021 /* ../App/Shared/HTTPMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 485454500000000000000011 /* ../App/Shared/HTTPMessage.swift */; };
 		485454500000000000000022 /* ../App/Models/AccessToken.swift in Sources */ = {isa = PBXBuildFile; fileRef = 485454500000000000000012 /* ../App/Models/AccessToken.swift */; };
@@ -93,6 +94,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		485454500000000000000013 /* ../App/Controllers/RemoteAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../App/Controllers/RemoteAccess.swift; sourceTree = "<group>"; };
 		485454500000000000000010 /* RemoteAccessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteAccessTests.swift; sourceTree = "<group>"; };
 		485454500000000000000011 /* ../App/Shared/HTTPMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../App/Shared/HTTPMessage.swift; sourceTree = "<group>"; };
 		485454500000000000000012 /* ../App/Models/AccessToken.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../App/Models/AccessToken.swift; sourceTree = "<group>"; };
@@ -276,6 +278,7 @@
 				485454500000000000000010 /* RemoteAccessTests.swift */,
 				485454500000000000000011 /* ../App/Shared/HTTPMessage.swift */,
 				485454500000000000000012 /* ../App/Models/AccessToken.swift */,
+				485454500000000000000013 /* ../App/Controllers/RemoteAccess.swift */,
 				B0D1DEADBEEF000000000005 /* MCPServiceLoop.swift */,
 			);
 			path = CLITests;
@@ -582,6 +585,7 @@
 				485454500000000000000020 /* RemoteAccessTests.swift in Sources */,
 				485454500000000000000021 /* ../App/Shared/HTTPMessage.swift in Sources */,
 				485454500000000000000022 /* ../App/Models/AccessToken.swift in Sources */,
+				485454500000000000000023 /* ../App/Controllers/RemoteAccess.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

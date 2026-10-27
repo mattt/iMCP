@@ -704,6 +704,20 @@ final class ServerController: ObservableObject {
 
 // MARK: - Connection Management Components
 
+extension RemoteAccessServer {
+    init(tokenStore: AccessTokenStore, networkManager: ServerNetworkManager) {
+        self.init(tokenStore: tokenStore) { [weak networkManager] tokenID in
+            guard let networkManager else { return nil }
+            let server = MCP.Server.iMCP()
+            // Read current permissions so changes apply to open sessions.
+            await networkManager.registerHandlers(for: server, connectionID: UUID()) { tool in
+                tokenStore.token(id: tokenID)?.permissions.allows(tool) ?? false
+            }
+            return server
+        }
+    }
+}
+
 extension MCP.Server {
     /// A server for one client connection.
     static func iMCP() -> MCP.Server {

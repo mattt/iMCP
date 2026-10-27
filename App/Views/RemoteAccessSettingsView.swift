@@ -219,6 +219,7 @@ private struct AccessTokenRow: View {
         } label: {
             Text(token.name)
             Text(accessSummary)
+            Text(token.boundDevice.map { "Bound to \($0.name)" } ?? "Not yet bound to a device")
             Text(usageSummary)
         }
     }

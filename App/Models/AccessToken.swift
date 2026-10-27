@@ -18,6 +18,13 @@ struct AccessToken: Codable, Identifiable, Hashable, Sendable {
     var lastUsedAt: Date?
     /// The Tailscale device that last started a session with the token.
     var lastUsedDevice: String?
+    /// The device that first started a session with this secret.
+    var boundDevice: BoundDevice?
+
+    struct BoundDevice: Codable, Hashable, Sendable {
+        let stableID: String
+        let name: String
+    }
 
     /// Creates a token and returns it with its secret.
     static func make(name: String, permissions: ToolPermissions, now: Date = Date()) -> (AccessToken, String) {
@@ -34,12 +41,14 @@ struct AccessToken: Codable, Identifiable, Hashable, Sendable {
 
     /// Replaces the secret and returns the new one.
     /// The old secret stops working; the name and permissions stay the same.
+    /// The new secret is unbound until a device starts a session with it.
     mutating func reroll(now: Date = Date()) -> String {
         let secret = Self.makeSecret()
         secretHash = Self.hash(secret)
         rolledAt = now
         lastUsedAt = nil
         lastUsedDevice = nil
+        boundDevice = nil
         return secret
     }
 
@@ -126,6 +135,30 @@ final class AccessTokenStore: @unchecked Sendable {
         update { $0.append(token) }
     }
 
+    enum BindingError: Error {
+        case invalidToken
+        case differentDevice
+    }
+
+    /// Claims an unbound token, or records another session from its bound node.
+    /// Checks the secret again in case it was replaced while the session started.
+    func bind(_ token: AccessToken, to device: AccessToken.BoundDevice, now: Date = Date()) throws {
+        try lock.withLock {
+            guard let index = tokens.firstIndex(where: { $0.id == token.id }),
+                tokens[index].secretHash == token.secretHash
+            else {
+                throw BindingError.invalidToken
+            }
+            if let bound = tokens[index].boundDevice, bound.stableID != device.stableID {
+                throw BindingError.differentDevice
+            }
+            tokens[index].boundDevice = device
+            tokens[index].lastUsedAt = now
+            tokens[index].lastUsedDevice = device.name
+            persist()
+        }
+    }
+
     func remove(id: UUID) {
         update { $0.removeAll { $0.id == id } }
     }
@@ -142,11 +175,15 @@ final class AccessTokenStore: @unchecked Sendable {
     }
 
     private func update(_ body: (inout [AccessToken]) -> Void) {
-        let data: Data? = lock.withLock {
+        lock.withLock {
             body(&tokens)
-            return try? JSONEncoder().encode(tokens)
+            persist()
         }
-        if let data {
+    }
+
+    /// Called with the lock held, so an older write cannot replace a newer binding.
+    private func persist() {
+        if let data = try? JSONEncoder().encode(tokens) {
             defaults.set(data, forKey: key)
         }
     }

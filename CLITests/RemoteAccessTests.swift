@@ -186,6 +186,7 @@ final class AccessTokenTests: XCTestCase {
         var (token, oldSecret) = AccessToken.make(name: "Laptop", permissions: .allTools)
         token.lastUsedAt = Date()
         token.lastUsedDevice = "MacBook Pro"
+        token.boundDevice = .init(stableID: "node-a", name: "MacBook Pro")
         store.add(token)
 
         let newSecret = try XCTUnwrap(store.modify(id: token.id) { $0.reroll() })
@@ -198,5 +199,221 @@ final class AccessTokenTests: XCTestCase {
         XCTAssertNotNil(rerolled.rolledAt)
         XCTAssertNil(rerolled.lastUsedAt)
         XCTAssertNil(rerolled.lastUsedDevice)
+        XCTAssertNil(rerolled.boundDevice)
+        try store.bind(rerolled, to: .init(stableID: "node-b", name: "Other Mac"))
+        XCTAssertEqual(store.token(id: token.id)?.boundDevice?.stableID, "node-b")
+    }
+
+    func testOldStoredTokenDecodesWithoutBinding() throws {
+        let suite = "RemoteAccessTests.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let data = Data(
+            #"[{"id":"BFA1562C-E2D4-4914-9BD3-0487301CC00B","name":"Old token","permissions":{"readOnly":{}},"secretHash":"AQID","createdAt":0,"lastUsedAt":1,"lastUsedDevice":"Old Mac"}]"#
+                .utf8
+        )
+        defaults.set(data, forKey: "remoteAccessTokens")
+        let token = try XCTUnwrap(AccessTokenStore(defaults: defaults).all.first)
+        XCTAssertEqual(token.name, "Old token")
+        XCTAssertNil(token.boundDevice)
+        XCTAssertEqual(token.lastUsedDevice, "Old Mac")
+    }
+
+    func testConcurrentBindingPersistsOnlyOneNode() async throws {
+        let suite = "RemoteAccessTests.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = AccessTokenStore(defaults: defaults)
+        let (token, _) = AccessToken.make(name: "Race", permissions: .readOnly)
+        store.add(token)
+
+        let winners = await withTaskGroup(of: String?.self) { group in
+            for index in 0 ..< 32 {
+                group.addTask {
+                    let node = "node-\(index)"
+                    do {
+                        try store.bind(token, to: .init(stableID: node, name: "Mac"))
+                        return node
+                    } catch {
+                        return nil
+                    }
+                }
+            }
+            var winners: [String] = []
+            for await winner in group {
+                if let winner { winners.append(winner) }
+            }
+            return winners
+        }
+        XCTAssertEqual(winners.count, 1)
+        XCTAssertEqual(store.token(id: token.id)?.boundDevice?.stableID, winners.first)
+        XCTAssertEqual(AccessTokenStore(defaults: defaults).all, store.all)
+    }
+
+    func testStaleTokenCannotBindAfterRerollOrDeletion() throws {
+        let suite = "RemoteAccessTests.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = AccessTokenStore(defaults: defaults)
+        let (token, _) = AccessToken.make(name: "Laptop", permissions: .readOnly)
+        let device = AccessToken.BoundDevice(stableID: "node-a", name: "Mac")
+        store.add(token)
+        store.modify(id: token.id) { $0.reroll() }
+        XCTAssertThrowsError(try store.bind(token, to: device))
+        XCTAssertNil(store.token(id: token.id)?.boundDevice)
+        store.remove(id: token.id)
+        XCTAssertThrowsError(try store.bind(token, to: device))
+    }
+}
+
+final class RemoteAccessBindingTests: XCTestCase {
+    private let first = Tailscale.Peer(stableID: "node-a", deviceName: "Mac", userID: 1, isTagged: false)
+    // The name is deliberately the same: only the stable ID identifies a node.
+    private let other = Tailscale.Peer(stableID: "node-b", deviceName: "Mac", userID: 1, isTagged: false)
+
+    private func makeStore() throws -> AccessTokenStore {
+        let suite = "RemoteAccessTests.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+        return AccessTokenStore(defaults: defaults)
+    }
+
+    private func request(secret: String, method: String = "POST", sessionID: String? = nil) -> HTTPRequestMessage {
+        var headers = [
+            "Authorization": "Bearer \(secret)",
+            "Accept": "application/json, text/event-stream",
+            "Content-Type": "application/json",
+            "MCP-Protocol-Version": "2025-11-25",
+        ]
+        if let sessionID { headers[HTTPHeaderName.sessionID] = sessionID }
+        let body =
+            if sessionID == nil {
+                #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}"#
+            } else {
+                #"{"jsonrpc":"2.0","id":2,"method":"ping"}"#
+            }
+        return HTTPRequestMessage(
+            method: method,
+            path: "/mcp",
+            headers: headers,
+            body: Data(body.utf8),
+            keepAlive: true
+        )
+    }
+
+    func testFirstSessionBindsAndSameNodeCanStartAnotherSession() async throws {
+        let store = try makeStore()
+        let (token, secret) = AccessToken.make(name: "Laptop", permissions: .readOnly)
+        store.add(token)
+        let server = RemoteAccessServer(tokenStore: store) { _ in MCP.Server(name: "test", version: "1") }
+        let response = await server.respond(to: request(secret: secret), from: first)
+        XCTAssertEqual(response.statusCode, 200)
+        XCTAssertNotNil(response.headers[HTTPHeaderName.sessionID])
+        XCTAssertEqual(store.token(id: token.id)?.boundDevice, .init(stableID: first.stableID, name: first.deviceName))
+        XCTAssertNotNil(store.token(id: token.id)?.lastUsedAt)
+
+        var renamed = first
+        renamed.deviceName = "Renamed Mac"
+        let again = await server.respond(to: request(secret: secret), from: renamed)
+        XCTAssertEqual(again.statusCode, 200)
+        XCTAssertEqual(store.token(id: token.id)?.boundDevice?.name, renamed.deviceName)
+        await server.closeSessions(forToken: token.id)
+    }
+
+    func testOtherNodeIsRejectedForNewAndExistingSessions() async throws {
+        let store = try makeStore()
+        let (token, secret) = AccessToken.make(name: "Laptop", permissions: .readOnly)
+        store.add(token)
+        let server = RemoteAccessServer(tokenStore: store) { _ in MCP.Server(name: "test", version: "1") }
+        let initial = await server.respond(to: request(secret: secret), from: first)
+        let sessionID = try XCTUnwrap(initial.headers[HTTPHeaderName.sessionID])
+        let newSession = await server.respond(to: request(secret: secret), from: other)
+        XCTAssertEqual(newSession.statusCode, 403)
+        XCTAssertTrue(
+            String(decoding: newSession.bodyData ?? Data(), as: UTF8.self).contains("bound to another device")
+        )
+
+        for method in ["POST", "GET", "DELETE"] {
+            let response = await server.respond(
+                to: request(secret: secret, method: method, sessionID: sessionID),
+                from: other
+            )
+            XCTAssertEqual(response.statusCode, 403, method)
+        }
+        XCTAssertEqual(store.token(id: token.id)?.boundDevice?.stableID, first.stableID)
+        for method in ["POST", "GET"] {
+            let response = await server.respond(
+                to: request(secret: secret, method: method, sessionID: sessionID),
+                from: first
+            )
+            XCTAssertEqual(response.statusCode, 200, method)
+        }
+        // A rejected DELETE must leave the owner's session available.
+        let accepted = await server.respond(
+            to: request(secret: secret, method: "DELETE", sessionID: sessionID),
+            from: first
+        )
+        XCTAssertEqual(accepted.statusCode, 200)
+        await server.closeSessions(forToken: token.id)
+    }
+
+    func testConcurrentFirstSessionsAcceptOnlyOneNode() async throws {
+        let store = try makeStore()
+        let (token, secret) = AccessToken.make(name: "Race", permissions: .readOnly)
+        store.add(token)
+        let barrier = SessionStartBarrier()
+        let server = RemoteAccessServer(tokenStore: store) { _ in
+            await barrier.wait()
+            return MCP.Server(name: "test", version: "1")
+        }
+        let message = request(secret: secret)
+        let responses = await withTaskGroup(of: (String, Int).self) { group in
+            for peer in [first, other] {
+                group.addTask { (peer.stableID, await server.respond(to: message, from: peer).statusCode) }
+            }
+            var responses: [(String, Int)] = []
+            for await response in group { responses.append(response) }
+            return responses
+        }
+        XCTAssertEqual(responses.map(\.1).sorted(), [200, 403])
+        XCTAssertEqual(store.token(id: token.id)?.boundDevice?.stableID, responses.first { $0.1 == 200 }?.0)
+        await server.closeSessions(forToken: token.id)
+    }
+
+    func testRejectedInitializationDoesNotBind() async throws {
+        let store = try makeStore()
+        let (token, secret) = AccessToken.make(name: "Laptop", permissions: .readOnly)
+        store.add(token)
+        let server = RemoteAccessServer(tokenStore: store) { _ in MCP.Server(name: "test", version: "1") }
+        var message = request(secret: secret)
+        message.headers["Content-Type"] = "text/plain"
+        let response = await server.respond(to: message, from: first)
+        XCTAssertEqual(response.statusCode, 415)
+        XCTAssertNil(store.token(id: token.id)?.boundDevice)
+        XCTAssertNil(store.token(id: token.id)?.lastUsedAt)
+        await server.closeSessions(forToken: token.id)
+    }
+
+    func testWhoisUsesStableIDAndRejectsMissingOrEmptyID() throws {
+        let data = Data(#"{"Node":{"StableID":"node-a","ID":123,"User":1,"Hostinfo":{"Hostname":"Mac"}}}"#.utf8)
+        XCTAssertEqual(try Tailscale.decodePeer(data, address: "100.64.0.1"), first)
+        for node in [#"{"ID":123,"User":1}"#, #"{"StableID":"","User":1}"#] {
+            XCTAssertThrowsError(try Tailscale.decodePeer(Data("{\"Node\":\(node)}".utf8), address: "100.64.0.1"))
+        }
+    }
+}
+
+/// Makes both requests reach session creation before either can claim the token.
+private actor SessionStartBarrier {
+    private var arrivals = 0
+    private var waiting: CheckedContinuation<Void, Never>?
+
+    func wait() async {
+        arrivals += 1
+        if arrivals == 2 {
+            waiting?.resume()
+        } else {
+            await withCheckedContinuation { waiting = $0 }
+        }
     }
 }
