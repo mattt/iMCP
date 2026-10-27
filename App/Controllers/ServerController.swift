@@ -277,9 +277,21 @@ final class ServerController: ObservableObject {
 
     var hasConnected: Bool { hasConnectedStorage }
 
-    private func markConnected() {
+    /// Names that connected clients reported, kept so that the wizard can mark each app as connected.
+    @AppStorage("connectedClientNames") private var connectedClientNamesData = Data()
+
+    var connectedClientNames: [String] {
+        (try? JSONDecoder().decode([String].self, from: connectedClientNamesData)) ?? []
+    }
+
+    private func markConnected(clientName: String) {
         objectWillChange.send()
         hasConnectedStorage = true
+        var names = connectedClientNames
+        if !names.contains(clientName) {
+            names.append(clientName)
+            connectedClientNamesData = (try? JSONEncoder().encode(names)) ?? Data()
+        }
     }
 
     // MARK: - AppStorage for Trusted Clients
@@ -533,7 +545,7 @@ final class ServerController: ObservableObject {
         // Trusted clients auto-approve without showing the dialog.
         if isClientTrusted(clientID) {
             log.notice("Client \(clientID) is already trusted, auto-approving")
-            markConnected()
+            markConnected(clientName: clientID)
             approve()
 
             // Notify the user on auto-approved connections.
@@ -576,7 +588,7 @@ final class ServerController: ObservableObject {
                     }
                 }
 
-                self.markConnected()
+                self.markConnected(clientName: clientID)
                 approve()
                 self.cleanupApprovalState(for: clientID)
                 self.handlePendingApprovals(for: clientID, approved: true)

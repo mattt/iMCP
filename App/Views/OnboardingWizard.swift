@@ -54,6 +54,24 @@ enum WizardClient: String, CaseIterable, Identifiable {
     }
 
     var isInstalled: Bool { self == .other || installedURL != nil }
+
+    /// The installed app's icon, or nil when the app is missing.
+    var appIcon: NSImage? {
+        installedURL.map { NSWorkspace.shared.icon(forFile: $0.path) }
+    }
+
+    /// Whether a name that a connected client reported belongs to this app.
+    ///
+    /// Clients report their own names: ChatGPT reports a Codex name,
+    /// so this accepts either spelling for it.
+    func matches(reportedName name: String) -> Bool {
+        let name = name.lowercased()
+        switch self {
+        case .claudeDesktop: return name.contains("claude")
+        case .chatGPT: return name.contains("chatgpt") || name.contains("codex")
+        case .other: return false
+        }
+    }
 }
 
 /// The setup assistant: one step per screen, in its own window, separate from Settings.
@@ -70,6 +88,7 @@ struct OnboardingWizardView: View {
     @State private var step = 0
     @State private var selectedClient: WizardClient
     @State private var locationPhase = LocationPhase.idle
+    @State private var isLocationAuthorized = false
 
     private enum LocationPhase: Equatable {
         case idle
@@ -77,7 +96,7 @@ struct OnboardingWizardView: View {
         case denied
     }
 
-    private static let stepTitles = ["Connect an app", "Turn on Location", "Try it", "What's possible"]
+    private static let stepTitles = ["Welcome", "Connect an app", "Turn on Location", "Try it", "What's possible"]
 
     init(serverController: ServerController, isEnabled: Binding<Bool>, onFinish: @escaping (Bool) -> Void) {
         self.serverController = serverController
@@ -111,9 +130,10 @@ struct OnboardingWizardView: View {
             ScrollView {
                 Group {
                     switch step {
-                    case 0: connectStep
-                    case 1: locationStep
-                    case 2: tryItStep
+                    case 0: WelcomeView()
+                    case 1: connectStep
+                    case 2: locationStep
+                    case 3: tryItStep
                     default: whatsPossibleStep
                     }
                 }
@@ -123,9 +143,14 @@ struct OnboardingWizardView: View {
 
             Divider()
 
-            HStack {
+            HStack(spacing: 12) {
                 Button("Finish Later") { onFinish(false) }
                     .keyboardShortcut(.cancelAction)
+                if let continueHint {
+                    Text(continueHint)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 Spacer()
                 if step > 0 {
                     Button("Back") { step -= 1 }
@@ -139,6 +164,7 @@ struct OnboardingWizardView: View {
                 }
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
+                .disabled(!canContinue)
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 14)
@@ -146,10 +172,53 @@ struct OnboardingWizardView: View {
         .frame(width: 620, height: 580)
         .task {
             if !isEnabled { isEnabled = true }
+            await refreshLocationAuthorization()
+        }
+        .task(id: step) {
+            await refreshLocationAuthorization()
         }
     }
 
-    // MARK: - Step 1: Connect an app
+    /// Whether Continue may leave this screen. Each step states its own requirement.
+    private var canContinue: Bool {
+        switch step {
+        case 1: serverController.hasConnected
+        case 2: isLocationAuthorized
+        case 3: serverController.hasConnected && isLocationAuthorized
+        default: true
+        }
+    }
+
+    private var continueHint: String? {
+        guard !canContinue else { return nil }
+        switch step {
+        case 1: return "Connect an app to continue."
+        case 2: return "Turn on Location to continue."
+        case 3: return "Connect an app and turn on Location to continue."
+        default: return nil
+        }
+    }
+
+    private func refreshLocationAuthorization() async {
+        guard let locationConfig else { return }
+        isLocationAuthorized = await locationConfig.isActivated
+    }
+
+    /// Whether the wizard has seen a connection from `client`.
+    private func isConnected(_ client: WizardClient) -> Bool {
+        let names = serverController.connectedClientNames
+        switch client {
+        case .claudeDesktop, .chatGPT:
+            return names.contains { client.matches(reportedName: $0) }
+        case .other:
+            return names.contains { name in
+                !WizardClient.claudeDesktop.matches(reportedName: name)
+                    && !WizardClient.chatGPT.matches(reportedName: name)
+            }
+        }
+    }
+
+    // MARK: - Connect an app
 
     private var connectStep: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -157,50 +226,54 @@ struct OnboardingWizardView: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            ForEach(WizardClient.allCases) { client in
-                ClientChoiceRow(
-                    client: client,
-                    isSelected: selectedClient == client,
-                    isInstalled: client.isInstalled
+            HStack(alignment: .top, spacing: 12) {
+                ClientCard(
+                    client: .claudeDesktop,
+                    isConnected: isConnected(.claudeDesktop)
                 ) {
-                    selectedClient = client
+                    selectedClient = .claudeDesktop
+                    ClaudeDesktop.showConfigurationPanel()
+                }
+                ClientCard(
+                    client: .chatGPT,
+                    isConnected: isConnected(.chatGPT)
+                ) {
+                    selectedClient = .chatGPT
+                    ServerCommand.copy()
                 }
             }
 
+            Text(
+                "For Claude Desktop, quit and reopen the app after setup so that it starts iMCP. For ChatGPT, paste the copied command in Settings > MCP servers as a STDIO server, save, then click Restart."
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+
             GroupBox {
                 VStack(alignment: .leading, spacing: 10) {
-                    switch selectedClient {
-                    case .claudeDesktop:
-                        Text("iMCP can add itself to Claude Desktop's configuration file for you.")
-                        Button("Set Up Claude Desktop…") {
-                            ClaudeDesktop.showConfigurationPanel()
+                    HStack {
+                        Text("Other").fontWeight(.medium)
+                        Spacer()
+                        if isConnected(.other) {
+                            Label("Connected", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
                         }
-                        Text("Then quit and reopen Claude Desktop so that it starts iMCP.")
-                            .foregroundStyle(.secondary)
-                    case .chatGPT:
-                        Text(
-                            "In ChatGPT, open Settings, then MCP servers. "
-                                + "Add a server named iMCP, choose STDIO, and paste the server command as the command to launch. "
-                                + "Leave the other fields empty, then save."
-                        )
-                        .fixedSize(horizontal: false, vertical: true)
-                        Button("Copy Server Command") { ServerCommand.copy() }
-                        Text("Then click Restart in ChatGPT's MCP servers settings.")
-                            .foregroundStyle(.secondary)
-                    case .other:
-                        Text(
-                            "In your MCP client, add a local server that uses the STDIO transport, "
-                                + "and paste the server command as its command. "
-                                + "For llama.cpp, put the command in its MCP configuration file instead."
-                        )
-                        .fixedSize(horizontal: false, vertical: true)
-                        Button("Copy Server Command") { ServerCommand.copy() }
-                        Text(ServerCommand.path)
-                            .font(.caption.monospaced())
-                            .textSelection(.enabled)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
                     }
+                    Text(
+                        "In your MCP client, add a local server that uses the STDIO transport, "
+                            + "and paste the server command as its command. "
+                            + "For llama.cpp, put the command in its MCP configuration file instead."
+                    )
+                    .fixedSize(horizontal: false, vertical: true)
+                    Button("Copy Server Command") {
+                        selectedClient = .other
+                        ServerCommand.copy()
+                    }
+                    Text(ServerCommand.path)
+                        .font(.caption.monospaced())
+                        .textSelection(.enabled)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(6)
@@ -227,7 +300,7 @@ struct OnboardingWizardView: View {
         }
     }
 
-    // MARK: - Step 2: Location
+    // MARK: - Location
 
     private var locationStep: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -258,6 +331,7 @@ struct OnboardingWizardView: View {
                 Label("Location is on.", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
                 Button("Turn Location Off") {
+                    isLocationAuthorized = false
                     if let locationConfig { serverController.setService(locationConfig, enabled: false) }
                 }
             } else {
@@ -295,7 +369,7 @@ struct OnboardingWizardView: View {
                 }
             }
 
-            Text("You can skip this step. The wizard works without Location, and you can turn it on later in the menu.")
+            Text("You can choose Finish Later to leave this step for now, and turn Location on later in the menu.")
                 .foregroundStyle(.secondary)
         }
     }
@@ -309,6 +383,7 @@ struct OnboardingWizardView: View {
             // Watch for the service to become active, or for the binding to fall back off.
             for _ in 0 ..< 150 {
                 if await config.isActivated {
+                    isLocationAuthorized = true
                     locationPhase = .idle
                     return
                 }
@@ -322,65 +397,32 @@ struct OnboardingWizardView: View {
         }
     }
 
-    // MARK: - Step 3: Try it
+    // MARK: - Try it
 
     private var tryItStep: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Open \(selectedClient.name == "Other" ? "your app" : selectedClient.name) and send this message:")
-                .foregroundStyle(.secondary)
-
-            GroupBox {
-                HStack(alignment: .top, spacing: 8) {
-                    Text("“Use iMCP to tell me where I am. What city am I in, and what is the weather there?”")
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer()
-                    Button("Copy Prompt") {
-                        let pasteboard = NSPasteboard.general
-                        pasteboard.clearContents()
-                        pasteboard.setString(
-                            "Use iMCP to tell me where I am. What city am I in, and what is the weather there?",
-                            forType: .string
-                        )
-                        _ = NSSound.play(.pop)
-                    }
-                    .controlSize(.small)
-                }
-                .padding(6)
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("What a good result looks like").fontWeight(.medium)
+            HStack {
                 Text(
-                    "The app may ask iMCP to approve its connection first. "
-                        + "After you click Allow, the app calls iMCP's location tool and answers with your city. "
-                        + "It should not ask you to type your address."
+                    "This is what the test looks like in \(selectedClient.name == "Other" ? "your app" : selectedClient.name):"
                 )
                 .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-                if serverController.hasConnected {
-                    Label("A client has connected, so the test can run now.", systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
-                } else {
-                    Label(
-                        "No client has connected yet. Go back to step 1, set up your app, and restart it.",
-                        systemImage: "circle.dashed"
-                    )
-                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Copy Prompt") {
+                    let pasteboard = NSPasteboard.general
+                    pasteboard.clearContents()
+                    pasteboard.setString(Self.samplePrompt, forType: .string)
+                    _ = NSSound.play(.pop)
                 }
-
-                if !isLocationOn {
-                    Label(
-                        "Location is off. Go back to step 2 to turn it on, or the test cannot find where you are.",
-                        systemImage: "exclamationmark.triangle.fill"
-                    )
-                    .foregroundStyle(.orange)
-                }
+                .controlSize(.small)
             }
+
+            FakeConversation()
         }
     }
 
-    // MARK: - Step 4: What's possible
+    static let samplePrompt = "Where am I right now, and what's the weather there?"
+
+    // MARK: - What's possible
 
     private var whatsPossibleStep: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -398,8 +440,9 @@ struct OnboardingWizardView: View {
                         "Calendar gives the events, Location and Maps give the travel time, and Weather gives the conditions."
                 )
                 ExampleRow(
-                    prompt: "“Find Maya's number and draft a message about Friday.”",
-                    detail: "Contacts finds the person, Calendar checks Friday, and Mail or Messages opens the draft."
+                    prompt: "“Find Maya's number and open an email draft about Friday.”",
+                    detail:
+                        "Contacts finds the person, Calendar checks Friday, and Mail opens the draft for you to send."
                 )
                 ExampleRow(
                     prompt: "“Summarize what I missed this morning.”",
@@ -424,40 +467,163 @@ struct OnboardingWizardView: View {
     }
 }
 
-/// One selectable app in step 1, disabled with a note when the app is missing.
-private struct ClientChoiceRow: View {
-    let client: WizardClient
-    let isSelected: Bool
-    let isInstalled: Bool
-    let onSelect: () -> Void
+/// The welcome screen's hero, kept in one small view so that it is easy to swap later.
+///
+/// Today it shows the README hero for the current appearance,
+/// from the HeroLight and HeroDark assets that `Scripts/generate-hero.py` made.
+/// A future animated version only has to replace this view.
+private struct WelcomeHeroView: View {
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        Button(action: onSelect) {
-            HStack(spacing: 10) {
-                Image(systemName: isSelected ? "largecircle.fill.circle" : "circle")
-                    .foregroundStyle(isSelected ? Color.accentColor : .secondary)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(client.name)
-                        .foregroundStyle(isInstalled ? .primary : .secondary)
-                    if !isInstalled {
-                        Text("Not installed on this Mac.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    } else if client == .other {
-                        Text("Any MCP client that can start a local STDIO server.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                Spacer()
-            }
-            .contentShape(Rectangle())
-            .padding(.vertical, 4)
+        Image(colorScheme == .dark ? "HeroDark" : "HeroLight")
+            .resizable()
+            .scaledToFit()
+            .accessibilityLabel("iMCP, with its service icons around the name")
+    }
+}
+
+/// The first screen: what iMCP is, before any setup choice.
+private struct WelcomeView: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            WelcomeHeroView()
+                .frame(maxWidth: 520)
+                .frame(maxWidth: .infinity, alignment: .center)
+
+            Text("Welcome to iMCP")
+                .font(.title.weight(.semibold))
+
+            Text(
+                "iMCP connects your Mac's data to an AI app. "
+                    + "The app can then use the services that you turn on, such as Calendar, Contacts, and Location, "
+                    + "to answer questions with your own information."
+            )
+            .fixedSize(horizontal: false, vertical: true)
+
+            Text(
+                "This setup connects an app, turns on one service as an example, and tests the result. "
+                    + "iMCP does not collect or store your data, and you can turn every service off again at any time."
+            )
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+
+            Text("Choose Continue to start.")
+                .foregroundStyle(.secondary)
         }
-        .buttonStyle(.plain)
-        .disabled(!isInstalled)
+    }
+}
+
+/// One app on the connect screen, with its icon, its connect button, or its connected checkmark.
+private struct ClientCard: View {
+    let client: WizardClient
+    let isConnected: Bool
+    let onConnect: () -> Void
+
+    var body: some View {
+        VStack(spacing: 10) {
+            if let icon = client.appIcon {
+                Image(nsImage: icon)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 56, height: 56)
+            } else {
+                Image(systemName: "app.dashed")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 44, height: 44)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 56, height: 56)
+            }
+
+            Text(client.name)
+                .fontWeight(.medium)
+                .foregroundStyle(client.isInstalled ? .primary : .secondary)
+
+            if !client.isInstalled {
+                Text("Not installed on this Mac.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+
+            if isConnected {
+                Label("Connected", systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                    .fontWeight(.medium)
+            } else {
+                Button(client == .claudeDesktop ? "Connect Claude Desktop…" : "Copy Command for ChatGPT") {
+                    onConnect()
+                }
+                .disabled(!client.isInstalled)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(14)
+        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
+        .accessibilityElement(children: .contain)
         .accessibilityLabel(client.name)
-        .accessibilityValue(isInstalled ? (isSelected ? "Selected" : "Not selected") : "Not installed")
+        .accessibilityValue(
+            isConnected ? "Connected" : (client.isInstalled ? "Not connected" : "Not installed")
+        )
+    }
+}
+
+/// A short fake chat that shows the test, with iMCP's tool use visible in the reply.
+private struct FakeConversation: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Spacer(minLength: 60)
+                Text(OnboardingWizardView.samplePrompt)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 14))
+                    .foregroundStyle(.white)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                ToolUseRow(tool: "location_current", result: "Current location: San Francisco, California")
+                ToolUseRow(tool: "weather_current", result: "Weather there: 62°F and clear")
+                Text(
+                    "You are in San Francisco. It is 62°F and clear there right now, "
+                        + "so a light jacket should be enough if you go out."
+                )
+                .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(12)
+            .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 14))
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text(
+                "Your app shows its own tool names. What matters is that it answers from your Mac, without asking for your address."
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+/// One visible tool call in the fake reply.
+private struct ToolUseRow: View {
+    let tool: String
+    let result: String
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "wrench.and.screwdriver.fill")
+                .foregroundStyle(.secondary)
+            Text(tool).font(.caption.monospaced()).fontWeight(.medium)
+            Text(result).font(.caption).foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(.background, in: Capsule())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Tool \(tool): \(result)")
     }
 }
 
