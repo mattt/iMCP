@@ -63,6 +63,15 @@ jobs:
                       HELPER_CODE_SIGNING_ALLOWED=NO \
                       build
 
+            - name: Test
+              run: |
+                  xcodebuild -quiet \
+                      -scheme imcp-serverTests \
+                      -destination "platform=macOS" \
+                      CODE_SIGNING_ALLOWED=NO \
+                      CODE_SIGNING_REQUIRED=NO \
+                      test
+
             # The cache action's exclude pattern has not kept the module cache out of
             # the archive, and runner images with the same Xcode build can differ in
             # toolchain file timestamps, which makes a restored module cache fatal.

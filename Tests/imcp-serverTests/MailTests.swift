@@ -219,7 +219,7 @@ final class MailIndexTests: XCTestCase {
         XCTAssertEqual(content["encodingFormat"], "text/plain")
         XCTAssertEqual(
             content["attachment"]?.arrayValue,
-            [["@type": "MediaObject", "name": "budget.csv", "encodingFormat": "text/csv", "isStoredSeparately": false]]
+            [["name": "budget.csv", "encodingFormat": "text/csv", "isStoredSeparately": false]]
         )
         let headers = try XCTUnwrap(content["headers"]?.arrayValue)
         XCTAssertTrue(headers.contains(["name": "Subject", "value": "Quarterly budget"]))
@@ -270,11 +270,8 @@ final class MailIndexTests: XCTestCase {
         XCTAssertEqual(
             content["attachment"]?.arrayValue,
             [
-                ["@type": "MediaObject", "name": .null, "encodingFormat": "image/png", "isStoredSeparately": true],
-                [
-                    "@type": "MediaObject", "name": "budget.pdf", "encodingFormat": "application/pdf",
-                    "isStoredSeparately": true,
-                ],
+                ["name": .null, "encodingFormat": "image/png", "isStoredSeparately": true],
+                ["name": "budget.pdf", "encodingFormat": "application/pdf", "isStoredSeparately": true],
             ]
         )
     }

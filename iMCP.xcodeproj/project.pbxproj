@@ -18,28 +18,28 @@
 		A20000000000000000000023 /* Logging in Frameworks */ = {isa = PBXBuildFile; productRef = A20000000000000000000013 /* Logging */; };
 		A20000000000000000000030 /* BonjourDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF000000000001 /* BonjourDiscovery.swift */; };
 		A30000000000000000000020 /* HomeToolsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000010 /* HomeToolsTests.swift */; };
-		A30000000000000000000021 /* ../Shared/Home/HomeBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000011 /* ../Shared/Home/HomeBackend.swift */; };
-		A30000000000000000000022 /* ../Shared/Home/HomeError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000012 /* ../Shared/Home/HomeError.swift */; };
-		A60000000000000000000021 /* ../Shared/Home/HomeHelperPairing.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000011 /* ../Shared/Home/HomeHelperPairing.swift */; };
-		A60000000000000000000022 /* ../Helper/Server/HelperServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000012 /* ../Helper/Server/HelperServer.swift */; };
-		A30000000000000000000023 /* ../Shared/Home/HomeInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000013 /* ../Shared/Home/HomeInput.swift */; };
-		A30000000000000000000024 /* ../Shared/Home/HomeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000014 /* ../Shared/Home/HomeTools.swift */; };
-		A30000000000000000000025 /* ../Shared/Models/Tool.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000015 /* ../Shared/Models/Tool.swift */; };
-		A30000000000000000000026 /* ../Shared/Models/Value.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000016 /* ../Shared/Models/Value.swift */; };
+		A30000000000000000000021 /* ../../Shared/Home/HomeBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000011 /* ../../Shared/Home/HomeBackend.swift */; };
+		A30000000000000000000022 /* ../../Shared/Home/HomeError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000012 /* ../../Shared/Home/HomeError.swift */; };
+		A60000000000000000000021 /* ../../Shared/Home/HomeHelperPairing.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000011 /* ../../Shared/Home/HomeHelperPairing.swift */; };
+		A60000000000000000000022 /* ../../Helper/Server/HelperServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000012 /* ../../Helper/Server/HelperServer.swift */; };
+		A30000000000000000000023 /* ../../Shared/Home/HomeInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000013 /* ../../Shared/Home/HomeInput.swift */; };
+		A30000000000000000000024 /* ../../Shared/Home/HomeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000014 /* ../../Shared/Home/HomeTools.swift */; };
+		A30000000000000000000025 /* ../../Shared/Models/Tool.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000015 /* ../../Shared/Models/Tool.swift */; };
+		A30000000000000000000026 /* ../../Shared/Models/Value.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000016 /* ../../Shared/Models/Value.swift */; };
 		A30000000000000000000030 /* MCP in Frameworks */ = {isa = PBXBuildFile; productRef = A20000000000000000000010 /* MCP */; };
 		A30000000000000000000031 /* JSONSchema in Frameworks */ = {isa = PBXBuildFile; productRef = A20000000000000000000011 /* JSONSchema */; };
 		A30000000000000000000032 /* Ontology in Frameworks */ = {isa = PBXBuildFile; productRef = A20000000000000000000012 /* Ontology */; };
 		A40000000000000000000020 /* HomeProxyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000010 /* HomeProxyTests.swift */; };
-		A40000000000000000000021 /* ../App/Services/Home.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000011 /* ../App/Services/Home.swift */; };
-		A40000000000000000000029 /* ../App/Services/HomeHelperLocator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000019 /* ../App/Services/HomeHelperLocator.swift */; };
+		A40000000000000000000021 /* ../../App/Services/Home.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000011 /* ../../App/Services/Home.swift */; };
+		A40000000000000000000029 /* ../../App/Services/HomeHelperLocator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000019 /* ../../App/Services/HomeHelperLocator.swift */; };
 		B13300000000000000000020 /* MusicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13300000000000000000010 /* MusicTests.swift */; };
-		B13300000000000000000021 /* ../App/Services/Music.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13300000000000000000011 /* ../App/Services/Music.swift */; };
-		A40000000000000000000022 /* ../Shared/Extensions/Logger+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000012 /* ../Shared/Extensions/Logger+Extensions.swift */; };
-		A40000000000000000000023 /* ../Shared/Extensions/Bundle+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000013 /* ../Shared/Extensions/Bundle+Extensions.swift */; };
-		A40000000000000000000024 /* ../Shared/Models/Service.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000014 /* ../Shared/Models/Service.swift */; };
+		B13300000000000000000021 /* ../../App/Services/Music.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13300000000000000000011 /* ../../App/Services/Music.swift */; };
+		A40000000000000000000022 /* ../../Shared/Extensions/Logger+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000012 /* ../../Shared/Extensions/Logger+Extensions.swift */; };
+		A40000000000000000000023 /* ../../Shared/Extensions/Bundle+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000013 /* ../../Shared/Extensions/Bundle+Extensions.swift */; };
+		A40000000000000000000024 /* ../../Shared/Models/Service.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000014 /* ../../Shared/Models/Service.swift */; };
 		A50000000000000000000020 /* MailTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000010 /* MailTests.swift */; };
-		A50000000000000000000021 /* ../App/Services/Mail.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000011 /* ../App/Services/Mail.swift */; };
-		A50000000000000000000022 /* ../App/Extensions/Foundation+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000012 /* ../App/Extensions/Foundation+Extensions.swift */; };
+		A50000000000000000000021 /* ../../App/Services/Mail.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000011 /* ../../App/Services/Mail.swift */; };
+		A50000000000000000000022 /* ../../App/Extensions/Foundation+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000012 /* ../../App/Extensions/Foundation+Extensions.swift */; };
 		A50000000000000000000030 /* Envelope in Frameworks */ = {isa = PBXBuildFile; productRef = A50000000000000000000040 /* Envelope */; };
 		B0D1DEADBEEF000000000002 /* BonjourDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF000000000001 /* BonjourDiscovery.swift */; };
 		B0D1DEADBEEF000000000004 /* BonjourDiscoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF000000000003 /* BonjourDiscoveryTests.swift */; };
@@ -94,30 +94,30 @@
 		75E148EAC5AC8B3263C5AA13 /* ServiceGroupConfigurationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ServiceGroupConfigurationTests.swift; sourceTree = "<group>"; };
 		A10000000000000000000001 /* iMCP Helper.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; path = "iMCP Helper.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		A30000000000000000000010 /* HomeToolsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeToolsTests.swift; sourceTree = "<group>"; };
-		A30000000000000000000011 /* ../Shared/Home/HomeBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Home/HomeBackend.swift; sourceTree = "<group>"; };
-		A30000000000000000000012 /* ../Shared/Home/HomeError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Home/HomeError.swift; sourceTree = "<group>"; };
-		A60000000000000000000011 /* ../Shared/Home/HomeHelperPairing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Home/HomeHelperPairing.swift; sourceTree = "<group>"; };
-		A60000000000000000000012 /* ../Helper/Server/HelperServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Helper/Server/HelperServer.swift; sourceTree = "<group>"; };
-		A30000000000000000000013 /* ../Shared/Home/HomeInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Home/HomeInput.swift; sourceTree = "<group>"; };
-		A30000000000000000000014 /* ../Shared/Home/HomeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Home/HomeTools.swift; sourceTree = "<group>"; };
-		A30000000000000000000015 /* ../Shared/Models/Tool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Models/Tool.swift; sourceTree = "<group>"; };
-		A30000000000000000000016 /* ../Shared/Models/Value.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Models/Value.swift; sourceTree = "<group>"; };
+		A30000000000000000000011 /* ../../Shared/Home/HomeBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../Shared/Home/HomeBackend.swift; sourceTree = "<group>"; };
+		A30000000000000000000012 /* ../../Shared/Home/HomeError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../Shared/Home/HomeError.swift; sourceTree = "<group>"; };
+		A60000000000000000000011 /* ../../Shared/Home/HomeHelperPairing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../Shared/Home/HomeHelperPairing.swift; sourceTree = "<group>"; };
+		A60000000000000000000012 /* ../../Helper/Server/HelperServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../Helper/Server/HelperServer.swift; sourceTree = "<group>"; };
+		A30000000000000000000013 /* ../../Shared/Home/HomeInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../Shared/Home/HomeInput.swift; sourceTree = "<group>"; };
+		A30000000000000000000014 /* ../../Shared/Home/HomeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../Shared/Home/HomeTools.swift; sourceTree = "<group>"; };
+		A30000000000000000000015 /* ../../Shared/Models/Tool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../Shared/Models/Tool.swift; sourceTree = "<group>"; };
+		A30000000000000000000016 /* ../../Shared/Models/Value.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../Shared/Models/Value.swift; sourceTree = "<group>"; };
 		A40000000000000000000010 /* HomeProxyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeProxyTests.swift; sourceTree = "<group>"; };
-		A40000000000000000000011 /* ../App/Services/Home.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../App/Services/Home.swift; sourceTree = "<group>"; };
-		A40000000000000000000019 /* ../App/Services/HomeHelperLocator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../App/Services/HomeHelperLocator.swift; sourceTree = "<group>"; };
+		A40000000000000000000011 /* ../../App/Services/Home.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/Home.swift; sourceTree = "<group>"; };
+		A40000000000000000000019 /* ../../App/Services/HomeHelperLocator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/HomeHelperLocator.swift; sourceTree = "<group>"; };
 		B13300000000000000000010 /* MusicTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicTests.swift; sourceTree = "<group>"; };
-		B13300000000000000000011 /* ../App/Services/Music.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../App/Services/Music.swift; sourceTree = "<group>"; };
-		A40000000000000000000012 /* ../Shared/Extensions/Logger+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Shared/Extensions/Logger+Extensions.swift"; sourceTree = "<group>"; };
-		A40000000000000000000013 /* ../Shared/Extensions/Bundle+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Shared/Extensions/Bundle+Extensions.swift"; sourceTree = "<group>"; };
-		A40000000000000000000014 /* ../Shared/Models/Service.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Shared/Models/Service.swift; sourceTree = "<group>"; };
+		B13300000000000000000011 /* ../../App/Services/Music.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/Music.swift; sourceTree = "<group>"; };
+		A40000000000000000000012 /* ../../Shared/Extensions/Logger+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../../Shared/Extensions/Logger+Extensions.swift"; sourceTree = "<group>"; };
+		A40000000000000000000013 /* ../../Shared/Extensions/Bundle+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../../Shared/Extensions/Bundle+Extensions.swift"; sourceTree = "<group>"; };
+		A40000000000000000000014 /* ../../Shared/Models/Service.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../Shared/Models/Service.swift; sourceTree = "<group>"; };
 		A50000000000000000000010 /* MailTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MailTests.swift; sourceTree = "<group>"; };
-		A50000000000000000000011 /* ../App/Services/Mail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../App/Services/Mail.swift; sourceTree = "<group>"; };
-		A50000000000000000000012 /* ../App/Extensions/Foundation+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../App/Extensions/Foundation+Extensions.swift"; sourceTree = "<group>"; };
-		B0D1DEADBEEF000000000001 /* BonjourDiscovery.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = BonjourDiscovery.swift; path = ../CLI/BonjourDiscovery.swift; sourceTree = "<group>"; };
+		A50000000000000000000011 /* ../../App/Services/Mail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/Mail.swift; sourceTree = "<group>"; };
+		A50000000000000000000012 /* ../../App/Extensions/Foundation+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../../App/Extensions/Foundation+Extensions.swift"; sourceTree = "<group>"; };
+		B0D1DEADBEEF000000000001 /* BonjourDiscovery.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = BonjourDiscovery.swift; path = ../../CLI/BonjourDiscovery.swift; sourceTree = "<group>"; };
 		B0D1DEADBEEF000000000003 /* BonjourDiscoveryTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BonjourDiscoveryTests.swift; sourceTree = "<group>"; };
-		B0D1DEADBEEF000000000005 /* MCPServiceLoop.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MCPServiceLoop.swift; path = ../CLI/MCPServiceLoop.swift; sourceTree = "<group>"; };
+		B0D1DEADBEEF000000000005 /* MCPServiceLoop.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MCPServiceLoop.swift; path = ../../CLI/MCPServiceLoop.swift; sourceTree = "<group>"; };
 		B0D1DEADBEEF000000000007 /* MCPServiceLoopTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MCPServiceLoopTests.swift; sourceTree = "<group>"; };
-		B0D1DEADBEEF000000000009 /* MCPInitializeCompatibility.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MCPInitializeCompatibility.swift; path = ../CLI/MCPInitializeCompatibility.swift; sourceTree = "<group>"; };
+		B0D1DEADBEEF000000000009 /* MCPInitializeCompatibility.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MCPInitializeCompatibility.swift; path = ../../CLI/MCPInitializeCompatibility.swift; sourceTree = "<group>"; };
 		B0D1DEADBEEF00000000000B /* MCPInitializeCompatibilityTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MCPInitializeCompatibilityTests.swift; sourceTree = "<group>"; };
 		E0E66768348853754D32208C /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/System/Library/Frameworks/Cocoa.framework; sourceTree = DEVELOPER_DIR; };
 		F8F44E6D2D59038D0075D79C /* iMCP.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = iMCP.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -238,29 +238,29 @@
 			name = Frameworks;
 			sourceTree = "<group>";
 		};
-		9784E568F0621136136A0EAC /* CLITests */ = {
+		9784E568F0621136136A0EAC /* imcp-serverTests */ = {
 			isa = PBXGroup;
 			children = (
 				A40000000000000000000010 /* HomeProxyTests.swift */,
-				A40000000000000000000011 /* ../App/Services/Home.swift */,
-				A40000000000000000000019 /* ../App/Services/HomeHelperLocator.swift */,
+				A40000000000000000000011 /* ../../App/Services/Home.swift */,
+				A40000000000000000000019 /* ../../App/Services/HomeHelperLocator.swift */,
 				B13300000000000000000010 /* MusicTests.swift */,
-				B13300000000000000000011 /* ../App/Services/Music.swift */,
-				A40000000000000000000012 /* ../Shared/Extensions/Logger+Extensions.swift */,
-				A40000000000000000000013 /* ../Shared/Extensions/Bundle+Extensions.swift */,
-				A40000000000000000000014 /* ../Shared/Models/Service.swift */,
+				B13300000000000000000011 /* ../../App/Services/Music.swift */,
+				A40000000000000000000012 /* ../../Shared/Extensions/Logger+Extensions.swift */,
+				A40000000000000000000013 /* ../../Shared/Extensions/Bundle+Extensions.swift */,
+				A40000000000000000000014 /* ../../Shared/Models/Service.swift */,
 				A50000000000000000000010 /* MailTests.swift */,
-				A50000000000000000000011 /* ../App/Services/Mail.swift */,
-				A50000000000000000000012 /* ../App/Extensions/Foundation+Extensions.swift */,
+				A50000000000000000000011 /* ../../App/Services/Mail.swift */,
+				A50000000000000000000012 /* ../../App/Extensions/Foundation+Extensions.swift */,
 				A30000000000000000000010 /* HomeToolsTests.swift */,
-				A30000000000000000000011 /* ../Shared/Home/HomeBackend.swift */,
-				A30000000000000000000012 /* ../Shared/Home/HomeError.swift */,
-				A60000000000000000000011 /* ../Shared/Home/HomeHelperPairing.swift */,
-				A60000000000000000000012 /* ../Helper/Server/HelperServer.swift */,
-				A30000000000000000000013 /* ../Shared/Home/HomeInput.swift */,
-				A30000000000000000000014 /* ../Shared/Home/HomeTools.swift */,
-				A30000000000000000000015 /* ../Shared/Models/Tool.swift */,
-				A30000000000000000000016 /* ../Shared/Models/Value.swift */,
+				A30000000000000000000011 /* ../../Shared/Home/HomeBackend.swift */,
+				A30000000000000000000012 /* ../../Shared/Home/HomeError.swift */,
+				A60000000000000000000011 /* ../../Shared/Home/HomeHelperPairing.swift */,
+				A60000000000000000000012 /* ../../Helper/Server/HelperServer.swift */,
+				A30000000000000000000013 /* ../../Shared/Home/HomeInput.swift */,
+				A30000000000000000000014 /* ../../Shared/Home/HomeTools.swift */,
+				A30000000000000000000015 /* ../../Shared/Models/Tool.swift */,
+				A30000000000000000000016 /* ../../Shared/Models/Value.swift */,
 				75E148EAC5AC8B3263C5AA13 /* ServiceGroupConfigurationTests.swift */,
 				B0D1DEADBEEF000000000003 /* BonjourDiscoveryTests.swift */,
 				B0D1DEADBEEF000000000001 /* BonjourDiscovery.swift */,
@@ -269,7 +269,15 @@
 				B0D1DEADBEEF00000000000B /* MCPInitializeCompatibilityTests.swift */,
 				B0D1DEADBEEF000000000005 /* MCPServiceLoop.swift */,
 			);
-			path = CLITests;
+			path = "imcp-serverTests";
+			sourceTree = "<group>";
+		};
+		04ABF9BC0B3C420EBACC3053 /* Tests */ = {
+			isa = PBXGroup;
+			children = (
+				9784E568F0621136136A0EAC /* imcp-serverTests */,
+			);
+			path = Tests;
 			sourceTree = "<group>";
 		};
 		F53ADAE0D917F06C8D01D825 /* OS X */ = {
@@ -289,7 +297,7 @@
 				F8F44EB72D5908D00075D79C /* CLI */,
 				F8F44E6E2D59038D0075D79C /* Products */,
 				13058B0C8A894B6DB0A7D2A8 /* Frameworks */,
-				9784E568F0621136136A0EAC /* CLITests */,
+				04ABF9BC0B3C420EBACC3053 /* Tests */,
 			);
 			sourceTree = "<group>";
 		};
@@ -544,25 +552,25 @@
 			buildActionMask = 2147483647;
 			files = (
 				A40000000000000000000020 /* HomeProxyTests.swift in Sources */,
-				A40000000000000000000021 /* ../App/Services/Home.swift in Sources */,
-				A40000000000000000000029 /* ../App/Services/HomeHelperLocator.swift in Sources */,
+				A40000000000000000000021 /* ../../App/Services/Home.swift in Sources */,
+				A40000000000000000000029 /* ../../App/Services/HomeHelperLocator.swift in Sources */,
 				B13300000000000000000020 /* MusicTests.swift in Sources */,
-				B13300000000000000000021 /* ../App/Services/Music.swift in Sources */,
-				A40000000000000000000022 /* ../Shared/Extensions/Logger+Extensions.swift in Sources */,
-				A40000000000000000000023 /* ../Shared/Extensions/Bundle+Extensions.swift in Sources */,
-				A40000000000000000000024 /* ../Shared/Models/Service.swift in Sources */,
+				B13300000000000000000021 /* ../../App/Services/Music.swift in Sources */,
+				A40000000000000000000022 /* ../../Shared/Extensions/Logger+Extensions.swift in Sources */,
+				A40000000000000000000023 /* ../../Shared/Extensions/Bundle+Extensions.swift in Sources */,
+				A40000000000000000000024 /* ../../Shared/Models/Service.swift in Sources */,
 				A50000000000000000000020 /* MailTests.swift in Sources */,
-				A50000000000000000000021 /* ../App/Services/Mail.swift in Sources */,
-				A50000000000000000000022 /* ../App/Extensions/Foundation+Extensions.swift in Sources */,
+				A50000000000000000000021 /* ../../App/Services/Mail.swift in Sources */,
+				A50000000000000000000022 /* ../../App/Extensions/Foundation+Extensions.swift in Sources */,
 				A30000000000000000000020 /* HomeToolsTests.swift in Sources */,
-				A30000000000000000000021 /* ../Shared/Home/HomeBackend.swift in Sources */,
-				A30000000000000000000022 /* ../Shared/Home/HomeError.swift in Sources */,
-				A60000000000000000000021 /* ../Shared/Home/HomeHelperPairing.swift in Sources */,
-				A60000000000000000000022 /* ../Helper/Server/HelperServer.swift in Sources */,
-				A30000000000000000000023 /* ../Shared/Home/HomeInput.swift in Sources */,
-				A30000000000000000000024 /* ../Shared/Home/HomeTools.swift in Sources */,
-				A30000000000000000000025 /* ../Shared/Models/Tool.swift in Sources */,
-				A30000000000000000000026 /* ../Shared/Models/Value.swift in Sources */,
+				A30000000000000000000021 /* ../../Shared/Home/HomeBackend.swift in Sources */,
+				A30000000000000000000022 /* ../../Shared/Home/HomeError.swift in Sources */,
+				A60000000000000000000021 /* ../../Shared/Home/HomeHelperPairing.swift in Sources */,
+				A60000000000000000000022 /* ../../Helper/Server/HelperServer.swift in Sources */,
+				A30000000000000000000023 /* ../../Shared/Home/HomeInput.swift in Sources */,
+				A30000000000000000000024 /* ../../Shared/Home/HomeTools.swift in Sources */,
+				A30000000000000000000025 /* ../../Shared/Models/Tool.swift in Sources */,
+				A30000000000000000000026 /* ../../Shared/Models/Value.swift in Sources */,
 				930214FCD680D7D74158F215 /* ServiceGroupConfigurationTests.swift in Sources */,
 				B0D1DEADBEEF000000000004 /* BonjourDiscoveryTests.swift in Sources */,
 				B0D1DEADBEEF000000000002 /* BonjourDiscovery.swift in Sources */,
