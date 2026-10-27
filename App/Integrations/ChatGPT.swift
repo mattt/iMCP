@@ -3,20 +3,27 @@ import Foundation
 import OSLog
 
 private let log = Logger.integration("chatgpt")
-private let defaultConfigURL = FileManager.userHomeDirectoryURL
-    .appendingPathComponent(".codex/config.toml")
+private let codexDirectoryURL = FileManager.userHomeDirectoryURL.appendingPathComponent(".codex")
+private let defaultConfigURL = codexDirectoryURL.appendingPathComponent("config.toml")
 
 /// One-click setup for the ChatGPT desktop app, through the file that it reads.
 ///
 /// OpenAI documents that the desktop app, the CLI, and the IDE extension share
 /// `~/.codex/config.toml`, where each MCP server is a `[mcp_servers.<name>]` table
-/// with a `command`. This writes the iMCP entry in that format, like the
-/// Claude Desktop integration writes its JSON file. The app's own
-/// `codex` URL scheme has no documented add-server form, so no deep link is used.
+/// with a `command`. The app's own `codex` URL scheme has no documented
+/// add-server form, so no deep link is used.
 ///
-/// iMCP is sandboxed, so the person picks the file in a save panel,
-/// which grants access to it. An existing file is read back after the pick
-/// and merged, so the panel's overwrite prompt does not lose its contents.
+/// The edit itself is in `ChatGPTConfig`: parse with swift-toml, edit the text
+/// as little as possible, and parse the result again before writing.
+/// swift-toml encodes and decodes Codable values, but it has no
+/// format-preserving document, so re-serializing the file would lose its
+/// comments and formatting. The text edit keeps them.
+///
+/// iMCP is sandboxed, so the person picks the file in a panel that opens in
+/// `~/.codex`, which grants access to it. Before writing, the original is
+/// copied to `config.toml.imcp-backup` next to it, and the new contents go in
+/// with an atomic write. When the backup cannot be written under the file's
+/// grant, the person picks the `.codex` folder, which grants the folder.
 enum ChatGPT {
     enum Error: LocalizedError {
         case noLocationSelected
@@ -36,7 +43,7 @@ enum ChatGPT {
 
             Location: \(defaultConfigURL.path)
 
-            Your existing server configurations won't be affected. Then restart ChatGPT so that it starts iMCP.
+            Your existing server configurations won't be affected. iMCP keeps a copy of the file as config.toml.imcp-backup first. Then restart ChatGPT so that it starts iMCP.
             """
         alert.addButton(withTitle: "Set Up")
         alert.addButton(withTitle: "Cancel")
@@ -61,55 +68,75 @@ enum ChatGPT {
     }
 
     private static func chooseAndWriteConfig() throws {
-        let savePanel = NSSavePanel()
-        savePanel.message = "Choose the configuration file that ChatGPT reads."
-        savePanel.prompt = "Set Up"
-        savePanel.directoryURL = defaultConfigURL.deletingLastPathComponent()
-        savePanel.nameFieldStringValue = defaultConfigURL.lastPathComponent
-        savePanel.canCreateDirectories = true
-        savePanel.showsHiddenFiles = true
+        let selectedURL = try pickConfigFile()
+        let existing = (try? String(contentsOf: selectedURL, encoding: .utf8)) ?? ""
+        let updated = try ChatGPTConfig.updatedConfig(original: existing, command: ServerCommand.path)
 
-        guard savePanel.runModal() == .OK, let selectedURL = savePanel.url else {
-            throw Error.noLocationSelected
+        // Keep the original next to the file before replacing it.
+        do {
+            try writeBackup(of: selectedURL, original: existing)
+        } catch {
+            // A file grant may not cover a new file next to it. Ask for the folder, then retry.
+            log.debug("Backup under the file grant failed: \(error.localizedDescription)")
+            guard let folderURL = pickCodexFolder() else { throw Error.noLocationSelected }
+            let scoped = folderURL.startAccessingSecurityScopedResource()
+            defer { if scoped { folderURL.stopAccessingSecurityScopedResource() } }
+            try writeBackup(of: selectedURL, original: existing)
         }
 
-        // The panel grants access to the selected file, so read any existing
-        // contents from it and merge, rather than replacing the file.
-        let existing = (try? String(contentsOf: selectedURL, encoding: .utf8)) ?? ""
-        let updated = mergedConfig(existing, command: ServerCommand.path)
         try updated.write(to: selectedURL, atomically: true, encoding: .utf8)
     }
 
-    /// Returns `toml` with an `[mcp_servers.iMCP]` table that starts `command`.
-    ///
-    /// An existing iMCP table keeps its other keys and gets a new command.
-    /// Every other line stays as it was.
-    static func mergedConfig(_ toml: String, command: String) -> String {
-        let tableHeader = "[mcp_servers.iMCP]"
-        var lines = toml.components(separatedBy: "\n")
-        // A trailing newline makes a final empty element. Drop it and add one back at the end.
-        if lines.last == "" { lines.removeLast() }
+    private static func writeBackup(of selectedURL: URL, original: String) throws {
+        let backup = selectedURL.deletingLastPathComponent()
+            .appendingPathComponent("config.toml.imcp-backup")
+        try original.write(to: backup, atomically: true, encoding: .utf8)
+    }
 
-        guard let headerIndex = lines.firstIndex(where: { $0.trimmingCharacters(in: .whitespaces) == tableHeader })
-        else {
-            if !lines.isEmpty { lines.append("") }
-            lines.append(tableHeader)
-            lines.append("command = \"\(command)\"")
-            return lines.joined(separator: "\n") + "\n"
+    /// Opens the open panel in `~/.codex`, or a save panel there when no file exists yet.
+    private static func pickConfigFile() throws -> URL {
+        NSApp.activate(ignoringOtherApps: true)
+        if FileManager.default.fileExists(atPath: defaultConfigURL.path) {
+            let panel = NSOpenPanel()
+            panel.message = "Choose the configuration file that ChatGPT reads."
+            panel.prompt = "Set Up"
+            panel.directoryURL = codexDirectoryURL
+            panel.allowsMultipleSelection = false
+            panel.canChooseDirectories = false
+            panel.canChooseFiles = true
+            panel.showsHiddenFiles = true
+            // The panel opens in ~/.codex. It cannot preselect a file by name,
+            // so its message and the alert name config.toml instead.
+            guard panel.runModal() == .OK, let url = panel.url else {
+                throw Error.noLocationSelected
+            }
+            return url
         }
 
-        // The table runs until the next table header.
-        let tableEnd =
-            lines[(headerIndex + 1)...]
-            .firstIndex { $0.trimmingCharacters(in: .whitespaces).hasPrefix("[") }
-            ?? lines.endIndex
-        if let commandIndex = lines[(headerIndex + 1) ..< tableEnd]
-            .firstIndex(where: { $0.trimmingCharacters(in: .whitespaces).hasPrefix("command") })
-        {
-            lines[commandIndex] = "command = \"\(command)\""
-        } else {
-            lines.insert("command = \"\(command)\"", at: headerIndex + 1)
+        let panel = NSSavePanel()
+        panel.message = "Choose where to create the configuration file that ChatGPT reads."
+        panel.prompt = "Set Up"
+        panel.directoryURL = codexDirectoryURL
+        panel.nameFieldStringValue = defaultConfigURL.lastPathComponent
+        panel.canCreateDirectories = true
+        panel.showsHiddenFiles = true
+        guard panel.runModal() == .OK, let url = panel.url else {
+            throw Error.noLocationSelected
         }
-        return lines.joined(separator: "\n") + "\n"
+        return url
+    }
+
+    /// Asks for the `.codex` folder, for the backup write that a file grant may not cover.
+    private static func pickCodexFolder() -> URL? {
+        let panel = NSOpenPanel()
+        panel.message = "Choose the .codex folder, so that iMCP can keep a backup of config.toml next to it."
+        panel.prompt = "Choose Folder"
+        panel.directoryURL = FileManager.userHomeDirectoryURL
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.showsHiddenFiles = true
+        guard panel.runModal() == .OK else { return nil }
+        return panel.url
     }
 }
