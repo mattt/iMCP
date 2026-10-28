@@ -240,12 +240,11 @@ enum ServiceRegistry {
 final class ServerController: ObservableObject {
     @Published var serverStatus: String = "Starting..."
 
-    /// Approval windows on screen, keyed by
+    /// Connections waiting for a person's decision, keyed by
     /// ``ClientCredentialStore/Request/approvalKey(connectionID:)``:
     /// connections with the same credential share a window,
     /// and each connection without one gets its own.
-    private var activeApprovalDialogs: Set<String> = []
-    private var pendingApprovals: [(String, () -> Void, () -> Void)] = []
+    private var approvals = ApprovalQueue<ClientCredentialStore.Request, ApprovalWaiter>()
     private let approvalWindowController = ConnectionApprovalWindowController()
 
     private let networkManager = ServerNetworkManager()
@@ -420,20 +419,101 @@ final class ServerController: ObservableObject {
     }
 
     // MARK: - Connection Approval Methods
-    private func cleanupApprovalState(for approvalKey: String) {
-        activeApprovalDialogs.remove(approvalKey)
+
+    /// Shows the dialog for a request in the approval queue.
+    private func presentApproval(_ entry: ApprovalQueue<ClientCredentialStore.Request, ApprovalWaiter>.Entry) {
+        let key = entry.key
+        approvalWindowController.showApprovalWindow(
+            id: key,
+            request: entry.request,
+            enabledServiceNames:
+                computedServiceConfigs
+                .filter { $0.binding.wrappedValue }
+                .map { $0.name },
+            onApprove: { alwaysTrust in
+                self.finishApproval(key: key, approved: true, alwaysTrust: alwaysTrust)
+            },
+            onDeny: {
+                self.finishApproval(key: key, approved: false, alwaysTrust: false)
+            }
+        )
+
+        NSApp.activate(ignoringOtherApps: true)
     }
 
-    private func handlePendingApprovals(for approvalKey: String, approved: Bool) {
-        while let pendingIndex = pendingApprovals.firstIndex(where: { $0.0 == approvalKey }) {
-            let (_, pendingApprove, pendingDeny) = pendingApprovals.remove(at: pendingIndex)
-            if approved {
-                log.notice("Approving pending connection for \(approvalKey)")
-                pendingApprove()
-            } else {
-                log.notice("Denying pending connection for \(approvalKey)")
-                pendingDeny()
+    /// Applies a person's decision to every connection waiting on the dialog for `key`.
+    private func finishApproval(key: String, approved: Bool, alwaysTrust: Bool) {
+        let resolution = approvals.resolve(key: key, approved: approved, now: .now)
+        // The request expired or its connections closed while the dialog was open.
+        guard let entry = resolution.removed.first else { return }
+        let request = entry.request
+
+        var newCredential: String?
+        if approved && alwaysTrust {
+            objectWillChange.send()
+            do {
+                newCredential = try credentials.alwaysTrust(request)
+            } catch {
+                log.error("Failed to trust client: \(String(describing: error), privacy: .public)")
+                showTrustError(error, clientName: request.claimedName)
             }
+
+            // Ask for notification permission to alert on future trusted connections.
+            UNUserNotificationCenter.current().requestAuthorization(options: [
+                .alert, .sound, .badge,
+            ]) { granted, error in
+                if let error = error {
+                    log.error(
+                        "Failed to request notification permissions: \(error.localizedDescription)"
+                    )
+                } else {
+                    log.info("Notification permissions granted: \(granted)")
+                }
+            }
+        }
+
+        log.notice(
+            "\(approved ? "Approving" : "Denying") \(entry.waiters.count) connection(s) for client: \(request.claimedName)"
+        )
+        for (_, waiter) in entry.waiters {
+            approved ? waiter.approve() : waiter.deny()
+        }
+        resolution.promoted.forEach(presentApproval)
+
+        if let newCredential {
+            Task { @MainActor in
+                self.showNewCredential(newCredential, clientName: request.claimedName)
+            }
+        }
+    }
+
+    /// Denies requests that waited too long, and closes their dialogs.
+    private func expireApprovals() {
+        let resolution = approvals.expire(now: .now)
+        for entry in resolution.removed {
+            log.notice("Approval request for client \(entry.request.claimedName) expired")
+            approvalWindowController.closeWindow(for: entry.key)
+            for (_, waiter) in entry.waiters {
+                waiter.deny()
+            }
+        }
+        resolution.promoted.forEach(presentApproval)
+    }
+
+    /// Stops waiting for a decision on a connection that closed.
+    func cancelApproval(for connectionID: UUID) {
+        let (waiter, resolution) = approvals.cancel(id: connectionID)
+        waiter?.deny()
+        for entry in resolution.removed {
+            approvalWindowController.closeWindow(for: entry.key)
+        }
+        resolution.promoted.forEach(presentApproval)
+    }
+
+    private func scheduleExpiry(at deadline: ContinuousClock.Instant) {
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(until: deadline, clock: .continuous)
+            self?.expireApprovals()
         }
     }
 
@@ -446,6 +526,9 @@ final class ServerController: ObservableObject {
             // Register the approval handler before listening on the socket.
             // Otherwise the first connection after launch is rejected
             // immediately because the handler is still nil.
+            await networkManager.setConnectionCancellationHandler { [weak self] connectionID in
+                await self?.cancelApproval(for: connectionID)
+            }
             await networkManager.setConnectionApprovalHandler {
                 [weak self] connectionID, clientInfo, credential in
                 guard let self = self else {
@@ -558,67 +641,34 @@ final class ServerController: ObservableObject {
             log.notice("Client \(clientName) presented a credential that iMCP didn't issue or revoked")
         }
 
-        // Coalesce concurrent approvals for the same credential.
-        let approvalKey = request.approvalKey(connectionID: connectionID)
-        guard !activeApprovalDialogs.contains(approvalKey) else {
-            log.info("Adding to pending approvals for client: \(clientName)")
-            pendingApprovals.append((approvalKey, approve, deny))
-            return
-        }
-
-        activeApprovalDialogs.insert(approvalKey)
-
-        // Present the approval window and wire callbacks.
-        approvalWindowController.showApprovalWindow(
-            id: approvalKey,
+        // Coalesce concurrent approvals for the same credential,
+        // and bound the dialogs that clients can open.
+        let admission = approvals.enqueue(
+            key: request.approvalKey(connectionID: connectionID),
+            cooldownKey: request.cooldownKey,
             request: request,
-            enabledServiceNames:
-                computedServiceConfigs
-                .filter { $0.binding.wrappedValue }
-                .map { $0.name },
-            onApprove: { alwaysTrust in
-                var newCredential: String?
-                if alwaysTrust {
-                    self.objectWillChange.send()
-                    do {
-                        newCredential = try self.credentials.alwaysTrust(request)
-                    } catch {
-                        log.error("Failed to trust client: \(String(describing: error), privacy: .public)")
-                        self.showTrustError(error, clientName: clientName)
-                    }
-
-                    // Ask for notification permission to alert on future trusted connections.
-                    UNUserNotificationCenter.current().requestAuthorization(options: [
-                        .alert, .sound, .badge,
-                    ]) { granted, error in
-                        if let error = error {
-                            log.error(
-                                "Failed to request notification permissions: \(error.localizedDescription)"
-                            )
-                        } else {
-                            log.info("Notification permissions granted: \(granted)")
-                        }
-                    }
-                }
-
-                approve()
-                self.cleanupApprovalState(for: approvalKey)
-                self.handlePendingApprovals(for: approvalKey, approved: true)
-
-                if let newCredential {
-                    Task { @MainActor in
-                        self.showNewCredential(newCredential, clientName: clientName)
-                    }
-                }
-            },
-            onDeny: {
-                deny()
-                self.cleanupApprovalState(for: approvalKey)
-                self.handlePendingApprovals(for: approvalKey, approved: false)
-            }
+            id: connectionID,
+            waiter: ApprovalWaiter(approve: approve, deny: deny),
+            now: .now
         )
-
-        NSApp.activate(ignoringOtherApps: true)
+        switch admission {
+        case .show(let deadline):
+            scheduleExpiry(at: deadline)
+            if let entry = approvals.entries.last {
+                presentApproval(entry)
+            }
+        case .queued(let deadline):
+            log.info("Queued approval for client \(clientName) until another dialog closes")
+            scheduleExpiry(at: deadline)
+        case .coalesced:
+            log.info("Added connection to the open approval for client: \(clientName)")
+        case .rejected(.coolingDown):
+            log.notice("Denied client \(clientName): a request from it was denied moments ago")
+            deny()
+        case .rejected(.tooManyWaiting):
+            log.notice("Denied client \(clientName): too many connections are waiting for approval")
+            deny()
+        }
     }
 
     /// Shows a credential that iMCP just issued, so that the person can add it to the client.
@@ -664,6 +714,12 @@ final class ServerController: ObservableObject {
             alert.runModal()
         }
     }
+}
+
+/// The callbacks that resume a connection waiting for approval.
+private struct ApprovalWaiter {
+    let approve: () -> Void
+    let deny: () -> Void
 }
 
 // MARK: - Connection Management Components
@@ -849,18 +905,33 @@ actor ServerNetworkManager {
     private var listenerRetryTask: Task<Void, Never>?
     private var connections: [UUID: MCPConnectionManager] = [:]
     private var connectionTasks: [UUID: Task<Void, Never>] = [:]
-    /// Setup timers, keyed by connection.
-    /// A timer is cancelled while the user is deciding on the approval dialog
-    /// and started again with a fresh budget once they have,
-    /// so human deliberation never counts as a stalled handshake (#193).
+    /// Timers that close connections that aren't approved in time, keyed by connection.
+    /// The handshake gets ``setupTimeout``.
+    /// While the person decides on the approval dialog,
+    /// the connection gets ``approvalTimeout`` instead,
+    /// so deliberation doesn't count as a stalled handshake (#193)
+    /// but an unanswered dialog doesn't hold the connection open forever.
     private var setupTimeoutTasks: [UUID: Task<Void, Never>] = [:]
-    private var pendingConnections: [UUID: String] = [:]
+    /// Connections that are accepted but not yet approved.
+    private var unapprovedConnections: Set<UUID> = []
+    /// Connections that wait for the approval handler.
+    private var awaitingApproval: Set<UUID> = []
     private var removedConnections: Set<UUID> = []
+
+    /// How long a connection has to send its hello and initialize request.
+    static let setupTimeout: Duration = .seconds(10)
+    /// How long a connection can wait for the person to decide.
+    /// The approval dialog expires first; this is a backstop.
+    static let approvalTimeout: Duration = ApprovalPolicy.default.expiry + .seconds(5)
 
     /// Decides whether to approve a connection,
     /// given the client's reported info and the credential it presented, if any.
     typealias ConnectionApprovalHandler = @Sendable (UUID, MCP.Client.Info, String?) async -> Bool
     private var connectionApprovalHandler: ConnectionApprovalHandler?
+
+    /// Called when a connection that waits for approval closes.
+    typealias ConnectionCancellationHandler = @Sendable (UUID) async -> Void
+    private var connectionCancellationHandler: ConnectionCancellationHandler?
 
     private let services = ServiceRegistry.services
     private var serviceBindings: [String: Binding<Bool>] = [:]
@@ -869,6 +940,10 @@ actor ServerNetworkManager {
 
     func isRunning() -> Bool {
         isRunningState
+    }
+
+    func setConnectionCancellationHandler(_ handler: @escaping ConnectionCancellationHandler) {
+        self.connectionCancellationHandler = handler
     }
 
     func setConnectionApprovalHandler(_ handler: @escaping ConnectionApprovalHandler) {
@@ -919,9 +994,18 @@ actor ServerNetworkManager {
             connectionTasks[id]?.cancel()
         }
 
+        for id in awaitingApproval {
+            await connectionCancellationHandler?(id)
+        }
+        for task in setupTimeoutTasks.values {
+            task.cancel()
+        }
+
         connections.removeAll()
         connectionTasks.removeAll()
-        pendingConnections.removeAll()
+        setupTimeoutTasks.removeAll()
+        unapprovedConnections.removeAll()
+        awaitingApproval.removeAll()
         removedConnections.removeAll()
 
         listenerRetryTask?.cancel()
@@ -951,13 +1035,32 @@ actor ServerNetworkManager {
 
         connections.removeValue(forKey: id)
         connectionTasks.removeValue(forKey: id)
-        pendingConnections.removeValue(forKey: id)
+        unapprovedConnections.remove(id)
+        cancelSetupTimeout(for: id)
+
+        // Close the connection's approval dialog, or leave it to other connections.
+        if awaitingApproval.remove(id) != nil {
+            await connectionCancellationHandler?(id)
+        }
     }
 
     // Handle new incoming connections.
     private func handleNewConnection(_ descriptor: Int32) async {
         let connectionID = UUID()
         log.info("Handling new connection: \(connectionID)")
+
+        switch ConnectionAdmission.decide(isEnabled: isEnabledState, unapprovedCount: unapprovedConnections.count) {
+        case .accept:
+            unapprovedConnections.insert(connectionID)
+        case .reject(.disabled):
+            log.notice("Rejected connection \(connectionID): iMCP is disabled")
+            close(descriptor)
+            return
+        case .reject(.tooManyUnapproved):
+            log.notice("Rejected connection \(connectionID): too many connections are waiting for approval")
+            close(descriptor)
+            return
+        }
 
         // Check the client's code signature before reading anything from it.
         let hello: LocalSocketHello
@@ -967,12 +1070,20 @@ actor ServerNetworkManager {
             log.error(
                 "Rejected connection \(connectionID): \(String(describing: error), privacy: .public)"
             )
+            unapprovedConnections.remove(connectionID)
             close(descriptor)
             return
         }
         log.debug(
             "Connection \(connectionID) sent hello version \(hello.version), credential: \(hello.credential != nil)"
         )
+
+        // The server can stop while the hello is read.
+        guard isRunningState else {
+            unapprovedConnections.remove(connectionID)
+            close(descriptor)
+            return
+        }
 
         let connectionManager = MCPConnectionManager(
             connectionID: connectionID,
@@ -983,11 +1094,11 @@ actor ServerNetworkManager {
         connections[connectionID] = connectionManager
 
         // Drive the MCP handshake and approval flow.
+        // `start` returns once the server's message loop runs;
+        // the approval handler runs later, when the initialize request arrives.
         let task = Task {
-            // Ensure this task is removed so the timeout logic doesn't fire afterward.
             defer {
                 self.connectionTasks.removeValue(forKey: connectionID)
-                self.cancelSetupTimeout(for: connectionID)
             }
 
             do {
@@ -998,18 +1109,12 @@ actor ServerNetworkManager {
                 }
 
                 try await connectionManager.start { clientInfo in
-                    // From here the wait is on a person, not the client:
-                    // stop the setup timer for the dialog
-                    // and restart it for the rest of the handshake afterwards.
-                    self.cancelSetupTimeout(for: connectionID)
-                    let approved = await approvalHandler(connectionID, clientInfo, hello.credential)
-                    if approved {
-                        self.scheduleSetupTimeout(for: connectionID)
+                    await self.awaitApproval(for: connectionID) {
+                        await approvalHandler(connectionID, clientInfo, hello.credential)
                     }
-                    return approved
                 }
 
-                log.notice("Connection \(connectionID) successfully established")
+                log.notice("Connection \(connectionID) started")
             } catch {
                 log.error("Failed to establish connection \(connectionID): \(error)")
                 await removeConnection(connectionID)
@@ -1019,7 +1124,28 @@ actor ServerNetworkManager {
         connectionTasks[connectionID] = task
 
         // Time out stalled setups to avoid orphaned connections.
-        scheduleSetupTimeout(for: connectionID)
+        scheduleSetupTimeout(for: connectionID, after: Self.setupTimeout)
+    }
+
+    /// Runs the approval handler for a connection under the approval timeout.
+    private func awaitApproval(for connectionID: UUID, _ handler: () async -> Bool) async -> Bool {
+        guard !removedConnections.contains(connectionID) else { return false }
+        guard isEnabledState else {
+            log.notice("Denied connection \(connectionID): iMCP is disabled")
+            return false
+        }
+
+        // From here the wait is on a person, not the client.
+        scheduleSetupTimeout(for: connectionID, after: Self.approvalTimeout)
+        awaitingApproval.insert(connectionID)
+        let approved = await handler()
+        awaitingApproval.remove(connectionID)
+
+        guard approved, !removedConnections.contains(connectionID) else { return false }
+        cancelSetupTimeout(for: connectionID)
+        unapprovedConnections.remove(connectionID)
+        log.notice("Connection \(connectionID) approved")
+        return true
     }
 
     /// Checks that `imcp-server` is on the other end of `descriptor`, then reads its hello.
@@ -1048,22 +1174,17 @@ actor ServerNetworkManager {
         }
     }
 
-    /// Gives the connection a fresh setup budget.
+    /// Closes the connection after `timeout` unless it's approved by then.
     /// Any previous timer for it is replaced.
-    private func scheduleSetupTimeout(for connectionID: UUID) {
+    private func scheduleSetupTimeout(for connectionID: UUID, after timeout: Duration) {
         setupTimeoutTasks[connectionID]?.cancel()
         setupTimeoutTasks[connectionID] = Task {
-            try? await Task.sleep(nanoseconds: 10_000_000_000)  // 10 seconds
+            try? await Task.sleep(for: timeout)
             guard !Task.isCancelled else { return }
             self.setupTimeoutTasks.removeValue(forKey: connectionID)
 
-            // If the setup task is still registered, treat it as timed out.
-            if self.connectionTasks[connectionID] != nil,
-                self.connections[connectionID] != nil
-            {
-                log.warning(
-                    "Connection \(connectionID) setup timed out (task still in registry), closing it"
-                )
+            if self.unapprovedConnections.contains(connectionID) {
+                log.warning("Connection \(connectionID) wasn't approved in time, closing it")
                 await removeConnection(connectionID)
             }
         }
