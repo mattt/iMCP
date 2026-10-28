@@ -47,6 +47,8 @@
 		5EC5A1E70000000000000005 /* LocalSocketTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EC5A1E70000000000000004 /* LocalSocketTests.swift */; };
 		5EC5A1E70000000000000007 /* SocketTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EC5A1E70000000000000006 /* SocketTransport.swift */; };
 		5EC5A1E70000000000000009 /* SocketTransportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EC5A1E70000000000000008 /* SocketTransportTests.swift */; };
+		5EC5A1E7000000000000000B /* ClientCredentials.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EC5A1E7000000000000000A /* ClientCredentials.swift */; };
+		5EC5A1E7000000000000000D /* ClientCredentialsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EC5A1E7000000000000000C /* ClientCredentialsTests.swift */; };
 		B0D1DEADBEEF000000000006 /* MCPServiceLoop.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF000000000005 /* MCPServiceLoop.swift */; };
 		B0D1DEADBEEF000000000008 /* MCPServiceLoopTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF000000000007 /* MCPServiceLoopTests.swift */; };
 		B0D1DEADBEEF00000000000A /* MCPInitializeCompatibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF000000000009 /* MCPInitializeCompatibility.swift */; };
@@ -124,6 +126,8 @@
 		5EC5A1E70000000000000004 /* LocalSocketTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LocalSocketTests.swift; sourceTree = "<group>"; };
 		5EC5A1E70000000000000006 /* SocketTransport.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SocketTransport.swift; path = ../../App/Controllers/SocketTransport.swift; sourceTree = "<group>"; };
 		5EC5A1E70000000000000008 /* SocketTransportTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SocketTransportTests.swift; sourceTree = "<group>"; };
+		5EC5A1E7000000000000000A /* ClientCredentials.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ClientCredentials.swift; path = ../../App/Controllers/ClientCredentials.swift; sourceTree = "<group>"; };
+		5EC5A1E7000000000000000C /* ClientCredentialsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ClientCredentialsTests.swift; sourceTree = "<group>"; };
 		B0D1DEADBEEF000000000005 /* MCPServiceLoop.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MCPServiceLoop.swift; path = ../../CLI/MCPServiceLoop.swift; sourceTree = "<group>"; };
 		B0D1DEADBEEF000000000007 /* MCPServiceLoopTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MCPServiceLoopTests.swift; sourceTree = "<group>"; };
 		B0D1DEADBEEF000000000009 /* MCPInitializeCompatibility.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MCPInitializeCompatibility.swift; path = ../../CLI/MCPInitializeCompatibility.swift; sourceTree = "<group>"; };
@@ -284,6 +288,8 @@
 				5EC5A1E70000000000000004 /* LocalSocketTests.swift */,
 				5EC5A1E70000000000000006 /* SocketTransport.swift */,
 				5EC5A1E70000000000000008 /* SocketTransportTests.swift */,
+				5EC5A1E7000000000000000A /* ClientCredentials.swift */,
+				5EC5A1E7000000000000000C /* ClientCredentialsTests.swift */,
 			);
 			path = "imcp-serverTests";
 			sourceTree = "<group>";
@@ -599,6 +605,8 @@
 				5EC5A1E70000000000000005 /* LocalSocketTests.swift in Sources */,
 				5EC5A1E70000000000000007 /* SocketTransport.swift in Sources */,
 				5EC5A1E70000000000000009 /* SocketTransportTests.swift in Sources */,
+				5EC5A1E7000000000000000B /* ClientCredentials.swift in Sources */,
+				5EC5A1E7000000000000000D /* ClientCredentialsTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

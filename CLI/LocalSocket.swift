@@ -381,8 +381,22 @@ struct LocalSocketHello: Codable, Equatable {
     /// The longest hello the app reads, excluding the newline.
     static let maximumLength = 1024
 
+    /// The environment variable that holds the client's credential
+    /// in the client's MCP server settings.
+    static let credentialEnvironmentVariable = "IMCP_CLIENT_CREDENTIAL"
+
     /// The version of this exchange.
     var version: Int = 1
+
+    /// The credential that iMCP issued to the client, if it has one.
+    var credential: String?
+
+    /// Returns a hello with the credential from `environment`.
+    static func fromEnvironment(_ environment: [String: String]) -> Self {
+        let credential = environment[credentialEnvironmentVariable]?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return Self(credential: credential?.isEmpty == false ? credential : nil)
+    }
 
     /// Returns the hello as a line of JSON.
     func encoded() throws -> Data {

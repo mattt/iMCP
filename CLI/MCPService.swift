@@ -1,4 +1,5 @@
 import Darwin
+import Foundation
 import Logging
 import ServiceLifecycle
 
@@ -23,7 +24,9 @@ actor MCPService: Service {
 
                 let sessionError: (any Swift.Error)?
                 do {
-                    try await proxy.start(hello: LocalSocketHello().encoded())
+                    // Send the client's credential only to an app that passed the check.
+                    let hello = LocalSocketHello.fromEnvironment(ProcessInfo.processInfo.environment)
+                    try await proxy.start(hello: hello.encoded())
                     sessionError = nil
                 } catch {
                     sessionError = error

@@ -240,9 +240,10 @@ enum ServiceRegistry {
 final class ServerController: ObservableObject {
     @Published var serverStatus: String = "Starting..."
 
-    /// Clients with an approval window on screen.
-    /// Keyed by client name so that concurrent requests
-    /// from different clients each keep their own state.
+    /// Approval windows on screen, keyed by
+    /// ``ClientCredentialStore/Request/approvalKey(connectionID:)``:
+    /// connections with the same credential share a window,
+    /// and each connection without one gets its own.
     private var activeApprovalDialogs: Set<String> = []
     private var pendingApprovals: [(String, () -> Void, () -> Void)] = []
     private let approvalWindowController = ConnectionApprovalWindowController()
@@ -268,8 +269,8 @@ final class ServerController: ObservableObject {
     @AppStorage("voicemailEnabled") private var voicemailEnabled = false
     @AppStorage("weatherEnabled") private var weatherEnabled = false
 
-    // MARK: - AppStorage for Trusted Clients
-    @AppStorage("trustedClients") private var trustedClientsData = Data()
+    // MARK: - Client Credentials
+    private let credentials = ClientCredentialStore(storage: KeychainClientRecordStorage())
 
     // MARK: - AppStorage for Disabled Tools
     @AppStorage("disabledTools") private var disabledToolsData = Data()
@@ -311,38 +312,56 @@ final class ServerController: ObservableObject {
     }
 
     // MARK: - Trusted Clients Management
-    private var trustedClients: Set<String> {
-        get {
-            (try? JSONDecoder().decode(Set<String>.self, from: trustedClientsData)) ?? []
+
+    /// The clients that connect without an approval dialog, sorted by name.
+    var trustedClients: [ClientRecord] {
+        credentials.trustedRecords
+    }
+
+    /// The names of clients that an earlier version trusted by name.
+    /// They need approval again, because a name doesn't identify a client.
+    var legacyTrustedClientNames: [String] {
+        credentials.legacyTrustedNames
+    }
+
+    /// Revokes the credential of a trusted client.
+    func removeTrustedClient(_ record: ClientRecord) {
+        objectWillChange.send()
+        do {
+            try credentials.revoke(id: record.id)
+        } catch {
+            log.error("Failed to remove trusted client: \(String(describing: error), privacy: .public)")
         }
-        set {
-            objectWillChange.send()
-            trustedClientsData = (try? JSONEncoder().encode(newValue)) ?? Data()
-        }
     }
 
-    private func isClientTrusted(_ clientName: String) -> Bool {
-        trustedClients.contains(clientName)
-    }
-
-    private func addTrustedClient(_ clientName: String) {
-        var clients = trustedClients
-        clients.insert(clientName)
-        trustedClients = clients
-    }
-
-    func removeTrustedClient(_ clientName: String) {
-        var clients = trustedClients
-        clients.remove(clientName)
-        trustedClients = clients
-    }
-
-    func getTrustedClients() -> [String] {
-        trustedClients.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    func removeLegacyTrustedClient(_ name: String) {
+        objectWillChange.send()
+        credentials.removeLegacyTrustedName(name)
     }
 
     func resetTrustedClients() {
-        trustedClients = Set<String>()
+        objectWillChange.send()
+        do {
+            try credentials.revokeAll()
+        } catch {
+            log.error("Failed to remove trusted clients: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    /// Returns a credential for iMCP to write into a client's MCP settings.
+    ///
+    /// - Parameters:
+    ///   - name: The client's name, which the approval dialog shows.
+    ///   - existing: The credential that the settings already have, if any.
+    ///     It's kept if iMCP issued it.
+    func credentialForClientSettings(name: String, existing: String?) throws -> String {
+        try credentials.credentialForSettings(name: name, existing: existing)
+    }
+
+    /// Revokes a credential that iMCP issued for settings it then failed to write.
+    func discardCredential(_ credential: String) {
+        guard let record = credentials.record(for: credential) else { return }
+        try? credentials.revoke(id: record.id)
     }
 
     // MARK: - Disabled Tools Management
@@ -401,18 +420,18 @@ final class ServerController: ObservableObject {
     }
 
     // MARK: - Connection Approval Methods
-    private func cleanupApprovalState(for clientID: String) {
-        activeApprovalDialogs.remove(clientID)
+    private func cleanupApprovalState(for approvalKey: String) {
+        activeApprovalDialogs.remove(approvalKey)
     }
 
-    private func handlePendingApprovals(for clientID: String, approved: Bool) {
-        while let pendingIndex = pendingApprovals.firstIndex(where: { $0.0 == clientID }) {
+    private func handlePendingApprovals(for approvalKey: String, approved: Bool) {
+        while let pendingIndex = pendingApprovals.firstIndex(where: { $0.0 == approvalKey }) {
             let (_, pendingApprove, pendingDeny) = pendingApprovals.remove(at: pendingIndex)
             if approved {
-                log.notice("Approving pending connection for client: \(clientID)")
+                log.notice("Approving pending connection for \(approvalKey)")
                 pendingApprove()
             } else {
-                log.notice("Denying pending connection for client: \(clientID)")
+                log.notice("Denying pending connection for \(approvalKey)")
                 pendingDeny()
             }
         }
@@ -428,7 +447,7 @@ final class ServerController: ObservableObject {
             // Otherwise the first connection after launch is rejected
             // immediately because the handler is still nil.
             await networkManager.setConnectionApprovalHandler {
-                [weak self] connectionID, clientInfo in
+                [weak self] connectionID, clientInfo, credential in
                 guard let self = self else {
                     return false
                 }
@@ -445,7 +464,9 @@ final class ServerController: ObservableObject {
 
                     Task { @MainActor in
                         self.showConnectionApprovalAlert(
-                            clientID: clientInfo.name,
+                            connectionID: connectionID,
+                            clientName: clientInfo.name,
+                            credential: credential,
                             approve: {
                                 Task { await resumeOnce(true) }
                             },
@@ -510,42 +531,61 @@ final class ServerController: ObservableObject {
     }
 
     private func showConnectionApprovalAlert(
-        clientID: String,
+        connectionID: UUID,
+        clientName: String,
+        credential: String?,
         approve: @escaping () -> Void,
         deny: @escaping () -> Void
     ) {
-        log.notice("Connection approval requested for client: \(clientID)")
+        log.notice("Connection approval requested for client: \(clientName)")
 
-        // Trusted clients auto-approve without showing the dialog.
-        if isClientTrusted(clientID) {
-            log.notice("Client \(clientID) is already trusted, auto-approving")
+        // Only a trusted credential skips the dialog; the reported name never does.
+        let request: ClientCredentialStore.Request
+        switch credentials.evaluate(credential: credential, claimedName: clientName) {
+        case .approve(let record):
+            log.notice("Client \(clientName) presented a trusted credential, auto-approving")
             approve()
 
             // Notify the user on auto-approved connections.
-            sendClientConnectionNotification(clientName: clientID)
+            sendClientConnectionNotification(clientName: record.name)
 
+            return
+        case .ask(let pendingRequest):
+            request = pendingRequest
+        }
+
+        if request.hasUnrecognizedCredential {
+            log.notice("Client \(clientName) presented a credential that iMCP didn't issue or revoked")
+        }
+
+        // Coalesce concurrent approvals for the same credential.
+        let approvalKey = request.approvalKey(connectionID: connectionID)
+        guard !activeApprovalDialogs.contains(approvalKey) else {
+            log.info("Adding to pending approvals for client: \(clientName)")
+            pendingApprovals.append((approvalKey, approve, deny))
             return
         }
 
-        // Coalesce concurrent approvals for the same client.
-        guard !activeApprovalDialogs.contains(clientID) else {
-            log.info("Adding to pending approvals for client: \(clientID)")
-            pendingApprovals.append((clientID, approve, deny))
-            return
-        }
-
-        activeApprovalDialogs.insert(clientID)
+        activeApprovalDialogs.insert(approvalKey)
 
         // Present the approval window and wire callbacks.
         approvalWindowController.showApprovalWindow(
-            clientName: clientID,
+            id: approvalKey,
+            request: request,
             enabledServiceNames:
                 computedServiceConfigs
                 .filter { $0.binding.wrappedValue }
                 .map { $0.name },
             onApprove: { alwaysTrust in
+                var newCredential: String?
                 if alwaysTrust {
-                    self.addTrustedClient(clientID)
+                    self.objectWillChange.send()
+                    do {
+                        newCredential = try self.credentials.alwaysTrust(request)
+                    } catch {
+                        log.error("Failed to trust client: \(String(describing: error), privacy: .public)")
+                        self.showTrustError(error, clientName: clientName)
+                    }
 
                     // Ask for notification permission to alert on future trusted connections.
                     UNUserNotificationCenter.current().requestAuthorization(options: [
@@ -562,17 +602,67 @@ final class ServerController: ObservableObject {
                 }
 
                 approve()
-                self.cleanupApprovalState(for: clientID)
-                self.handlePendingApprovals(for: clientID, approved: true)
+                self.cleanupApprovalState(for: approvalKey)
+                self.handlePendingApprovals(for: approvalKey, approved: true)
+
+                if let newCredential {
+                    Task { @MainActor in
+                        self.showNewCredential(newCredential, clientName: clientName)
+                    }
+                }
             },
             onDeny: {
                 deny()
-                self.cleanupApprovalState(for: clientID)
-                self.handlePendingApprovals(for: clientID, approved: false)
+                self.cleanupApprovalState(for: approvalKey)
+                self.handlePendingApprovals(for: approvalKey, approved: false)
             }
         )
 
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Shows a credential that iMCP just issued, so that the person can add it to the client.
+    /// iMCP stores only the credential's hash, so this is the only time it can be shown.
+    private func showNewCredential(_ credential: String, clientName: String) {
+        let alert = NSAlert()
+        alert.messageText = "Add a Credential to \(clientName)"
+        alert.informativeText = """
+            To connect without approval next time, \
+            add this environment variable to the iMCP server in the client's MCP settings. \
+            iMCP doesn't keep a copy of the value.
+            """
+
+        let field = NSTextField(
+            wrappingLabelWithString: "\(ClientCredential.environmentVariable)=\(credential)"
+        )
+        field.isSelectable = true
+        field.font = .monospacedSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular)
+        field.preferredMaxLayoutWidth = 300
+        field.frame.size = field.fittingSize
+        alert.accessoryView = field
+
+        alert.addButton(withTitle: "Copy Value")
+        alert.addButton(withTitle: "Done")
+
+        NSApp.activate(ignoringOtherApps: true)
+        if alert.runModal() == .alertFirstButtonReturn {
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            pasteboard.setString(credential, forType: .string)
+        }
+    }
+
+    private func showTrustError(_ error: any Swift.Error, clientName: String) {
+        let alert = NSAlert()
+        alert.messageText = "iMCP Couldn't Trust \(clientName)"
+        alert.informativeText = """
+            The connection is allowed this time, \
+            but iMCP couldn't save a credential for the client: \(error)
+            """
+        alert.alertStyle = .warning
+        Task { @MainActor in
+            alert.runModal()
+        }
     }
 }
 
@@ -767,7 +857,9 @@ actor ServerNetworkManager {
     private var pendingConnections: [UUID: String] = [:]
     private var removedConnections: Set<UUID> = []
 
-    typealias ConnectionApprovalHandler = @Sendable (UUID, MCP.Client.Info) async -> Bool
+    /// Decides whether to approve a connection,
+    /// given the client's reported info and the credential it presented, if any.
+    typealias ConnectionApprovalHandler = @Sendable (UUID, MCP.Client.Info, String?) async -> Bool
     private var connectionApprovalHandler: ConnectionApprovalHandler?
 
     private let services = ServiceRegistry.services
@@ -878,7 +970,9 @@ actor ServerNetworkManager {
             close(descriptor)
             return
         }
-        log.debug("Connection \(connectionID) sent hello version \(hello.version)")
+        log.debug(
+            "Connection \(connectionID) sent hello version \(hello.version), credential: \(hello.credential != nil)"
+        )
 
         let connectionManager = MCPConnectionManager(
             connectionID: connectionID,
@@ -908,7 +1002,7 @@ actor ServerNetworkManager {
                     // stop the setup timer for the dialog
                     // and restart it for the rest of the handshake afterwards.
                     self.cancelSetupTimeout(for: connectionID)
-                    let approved = await approvalHandler(connectionID, clientInfo)
+                    let approved = await approvalHandler(connectionID, clientInfo, hello.credential)
                     if approved {
                         self.scheduleSetupTimeout(for: connectionID)
                     }

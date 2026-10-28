@@ -211,13 +211,68 @@ iMCP shows a "Client Connection Request" dialog
 with the name the app reports
 and the services that the app can use.
 Click "Allow" to connect.
-To skip this dialog next time, select "Always trust this client";
-iMCP then shows a notification each time the app connects.
+
+Any app can report any name,
+so iMCP doesn't trust a client by its name.
+Instead, iMCP trusts a client that presents a credential iMCP created for it.
+`imcp-server` reads the credential from the `IMCP_CLIENT_CREDENTIAL`
+environment variable in the client's MCP settings,
+and sends it to iMCP after it checks that iMCP is genuine.
+iMCP stores only a hash of each credential, in your Keychain.
+
+To skip the dialog next time, select "Always trust this client".
+If the client already presents a credential,
+for example because iMCP [set up Claude Desktop](#connect-to-claude-desktop),
+iMCP trusts that credential.
+Otherwise, iMCP creates a credential and shows it once.
+Click "Copy Value"
+and add `IMCP_CLIENT_CREDENTIAL` with that value
+to the environment of the iMCP server in the client's MCP settings.
+iMCP then shows a notification each time the client connects.
 You can remove trusted clients in
 <img style="display: inline" width="20" height="16" src="/Assets/icon.svg" />
-\> "Settings" > "Clients".
+\> "Settings" > "Clients",
+which revokes their credentials.
+
+> [!NOTE]
+> Earlier versions of iMCP trusted clients by name.
+> Those clients need your approval again;
+> select "Always trust this client" to give each one a credential.
 
 <br clear="all">
+
+<details>
+<summary>Add a credential to a client's MCP settings</summary>
+
+In a JSON configuration file, add the credential to the server's `env`:
+
+```json
+{
+  "mcpServers": {
+    "iMCP": {
+      "command": "/Applications/iMCP.app/Contents/MacOS/imcp-server",
+      "env": {
+        "IMCP_CLIENT_CREDENTIAL": "{paste the copied value}"
+      }
+    }
+  }
+}
+```
+
+With Claude Code, add the server again with the `-e` option:
+
+```console
+claude mcp remove --scope user iMCP
+claude mcp add --scope user -e IMCP_CLIENT_CREDENTIAL={paste the copied value} \
+  iMCP -- /Applications/iMCP.app/Contents/MacOS/imcp-server
+```
+
+Anyone who can read the client's settings can use the credential,
+so keep those files private to your user account.
+If you think that a credential was exposed,
+remove the client in "Settings" > "Clients" and trust it again.
+
+</details>
 
 ### Mail access and search
 
@@ -296,8 +351,11 @@ click <img style="display: inline" width="20" height="16" src="/Assets/icon.svg"
 and then click "Set Up".
 
 iMCP adds or updates its entry in the configuration file
-so that Claude Desktop starts the `imcp-server` executable in the app.
+so that Claude Desktop starts the `imcp-server` executable in the app,
+with a credential that identifies Claude Desktop to iMCP.
 iMCP keeps the other MCP servers in the file.
+The first time Claude Desktop connects, iMCP still asks you to approve it;
+select "Always trust this client" to trust its credential.
 
 <details>
 <summary>Configure Claude Desktop manually</summary>
@@ -391,7 +449,7 @@ a result of `true` means that iMCP received the request.
   Make sure that iMCP is open and "Enable MCP Server" is on,
   and then click "Restart" in ChatGPT's "MCP servers" settings.
   The dialog can also open behind other windows.
-  If you trusted ChatGPT before,
+  If you added a trusted credential to ChatGPT's settings,
   iMCP shows a notification instead of a dialog.
 - **ChatGPT can't use iMCP tools.**
   Make sure that you're in a Codex conversation
