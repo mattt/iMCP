@@ -49,6 +49,8 @@
 		5EC5A1E70000000000000009 /* SocketTransportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EC5A1E70000000000000008 /* SocketTransportTests.swift */; };
 		5EC5A1E7000000000000000B /* ClientCredentials.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EC5A1E7000000000000000A /* ClientCredentials.swift */; };
 		5EC5A1E7000000000000000D /* ClientCredentialsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EC5A1E7000000000000000C /* ClientCredentialsTests.swift */; };
+		5EC5A1E7000000000000000F /* ConnectionApprovals.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EC5A1E7000000000000000E /* ConnectionApprovals.swift */; };
+		5EC5A1E70000000000000011 /* ConnectionApprovalsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EC5A1E70000000000000010 /* ConnectionApprovalsTests.swift */; };
 		B0D1DEADBEEF000000000006 /* MCPServiceLoop.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF000000000005 /* MCPServiceLoop.swift */; };
 		B0D1DEADBEEF000000000008 /* MCPServiceLoopTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF000000000007 /* MCPServiceLoopTests.swift */; };
 		B0D1DEADBEEF00000000000A /* MCPInitializeCompatibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF000000000009 /* MCPInitializeCompatibility.swift */; };
@@ -128,6 +130,8 @@
 		5EC5A1E70000000000000008 /* SocketTransportTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SocketTransportTests.swift; sourceTree = "<group>"; };
 		5EC5A1E7000000000000000A /* ClientCredentials.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ClientCredentials.swift; path = ../../App/Controllers/ClientCredentials.swift; sourceTree = "<group>"; };
 		5EC5A1E7000000000000000C /* ClientCredentialsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ClientCredentialsTests.swift; sourceTree = "<group>"; };
+		5EC5A1E7000000000000000E /* ConnectionApprovals.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ConnectionApprovals.swift; path = ../../App/Controllers/ConnectionApprovals.swift; sourceTree = "<group>"; };
+		5EC5A1E70000000000000010 /* ConnectionApprovalsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ConnectionApprovalsTests.swift; sourceTree = "<group>"; };
 		B0D1DEADBEEF000000000005 /* MCPServiceLoop.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MCPServiceLoop.swift; path = ../../CLI/MCPServiceLoop.swift; sourceTree = "<group>"; };
 		B0D1DEADBEEF000000000007 /* MCPServiceLoopTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MCPServiceLoopTests.swift; sourceTree = "<group>"; };
 		B0D1DEADBEEF000000000009 /* MCPInitializeCompatibility.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MCPInitializeCompatibility.swift; path = ../../CLI/MCPInitializeCompatibility.swift; sourceTree = "<group>"; };
@@ -290,6 +294,8 @@
 				5EC5A1E70000000000000008 /* SocketTransportTests.swift */,
 				5EC5A1E7000000000000000A /* ClientCredentials.swift */,
 				5EC5A1E7000000000000000C /* ClientCredentialsTests.swift */,
+				5EC5A1E7000000000000000E /* ConnectionApprovals.swift */,
+				5EC5A1E70000000000000010 /* ConnectionApprovalsTests.swift */,
 			);
 			path = "imcp-serverTests";
 			sourceTree = "<group>";
@@ -607,6 +613,8 @@
 				5EC5A1E70000000000000009 /* SocketTransportTests.swift in Sources */,
 				5EC5A1E7000000000000000B /* ClientCredentials.swift in Sources */,
 				5EC5A1E7000000000000000D /* ClientCredentialsTests.swift in Sources */,
+				5EC5A1E7000000000000000F /* ConnectionApprovals.swift in Sources */,
+				5EC5A1E70000000000000011 /* ConnectionApprovalsTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

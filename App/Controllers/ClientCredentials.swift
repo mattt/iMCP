@@ -344,6 +344,12 @@ final class ClientCredentialStore {
         func approvalKey(connectionID: UUID) -> String {
             record.map { "credential:\($0.id)" } ?? "connection:\(connectionID.uuidString)"
         }
+
+        /// The key for refusing requests for a while after a denial:
+        /// the credential, or else the claimed name.
+        var cooldownKey: String {
+            record.map { "credential:\($0.id)" } ?? "name:\(claimedName)"
+        }
     }
 
     enum Decision: Equatable {
