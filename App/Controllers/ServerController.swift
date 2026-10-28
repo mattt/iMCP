@@ -272,6 +272,28 @@ final class ServerController: ObservableObject {
     @AppStorage("voicemailEnabled") private var voicemailEnabled = false
     @AppStorage("weatherEnabled") private var weatherEnabled = false
 
+    /// Whether any client has connected, kept so that the setup wizard can show that step as done.
+    @AppStorage("hasConnected") private var hasConnectedStorage = false
+
+    var hasConnected: Bool { hasConnectedStorage }
+
+    /// Names that connected clients reported, kept so that the wizard can mark each app as connected.
+    @AppStorage("connectedClientNames") private var connectedClientNamesData = Data()
+
+    var connectedClientNames: [String] {
+        (try? JSONDecoder().decode([String].self, from: connectedClientNamesData)) ?? []
+    }
+
+    private func markConnected(clientName: String) {
+        objectWillChange.send()
+        hasConnectedStorage = true
+        var names = connectedClientNames
+        if !names.contains(clientName) {
+            names.append(clientName)
+            connectedClientNamesData = (try? JSONEncoder().encode(names)) ?? Data()
+        }
+    }
+
     // MARK: - AppStorage for Trusted Clients
     @AppStorage("trustedClients") private var trustedClientsData = Data()
 
@@ -327,6 +349,17 @@ final class ServerController: ObservableObject {
 
     private func isClientTrusted(_ clientName: String) -> Bool {
         trustedClients.contains(clientName)
+    }
+
+    /// Whether any client is trusted, which shows that this install was set up before.
+    var hasTrustedClient: Bool { !trustedClients.isEmpty }
+
+    /// Whether a service beyond the defaults is on, which also shows a prior setup.
+    ///
+    /// Maps is on by default, and Utilities is too where it appears,
+    /// so neither counts.
+    var hasServiceOnBeyondDefaults: Bool {
+        computedServiceConfigs.contains { $0.name != "Maps" && $0.binding.wrappedValue }
     }
 
     private func addTrustedClient(_ clientName: String) {
@@ -523,6 +556,7 @@ final class ServerController: ObservableObject {
         // Trusted clients auto-approve without showing the dialog.
         if isClientTrusted(clientID) {
             log.notice("Client \(clientID) is already trusted, auto-approving")
+            markConnected(clientName: clientID)
             approve()
 
             // Notify the user on auto-approved connections.
@@ -565,6 +599,7 @@ final class ServerController: ObservableObject {
                     }
                 }
 
+                self.markConnected(clientName: clientID)
                 approve()
                 self.cleanupApprovalState(for: clientID)
                 self.handlePendingApprovals(for: clientID, approved: true)

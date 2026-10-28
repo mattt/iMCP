@@ -8,6 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		158948D22D0E610E83A4433C /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = B75D49165A453E912E36DBFE /* Sparkle */; };
+		D31100000000000000000004 /* TOML in Frameworks */ = {isa = PBXBuildFile; productRef = D31100000000000000000002 /* TOML */; };
+		D31100000000000000000005 /* TOML in Frameworks */ = {isa = PBXBuildFile; productRef = D31100000000000000000003 /* TOML */; };
 		76F80A6E3EDBFB02048A6ED8 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E0E66768348853754D32208C /* Cocoa.framework */; };
 		826C0834A5B647F8A918E54D /* ServiceLifecycle in Frameworks */ = {isa = PBXBuildFile; productRef = DCE061F8A68D0CD546D919E2 /* ServiceLifecycle */; };
 		8DFCE9E4CBCBEB93A32E8560 /* ServiceLifecycleTestKit in Frameworks */ = {isa = PBXBuildFile; productRef = 1CD6B9E157EEC273F178543D /* ServiceLifecycleTestKit */; };
@@ -38,6 +40,10 @@
 		A40000000000000000000023 /* ../../Shared/Extensions/Bundle+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000013 /* ../../Shared/Extensions/Bundle+Extensions.swift */; };
 		A40000000000000000000024 /* ../../Shared/Models/Service.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000014 /* ../../Shared/Models/Service.swift */; };
 		A50000000000000000000020 /* MailTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000010 /* MailTests.swift */; };
+		D31100000000000000000021 /* OnboardingGateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D31100000000000000000020 /* OnboardingGateTests.swift */; };
+		D31100000000000000000023 /* ../../App/OnboardingGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = D31100000000000000000022 /* ../../App/OnboardingGate.swift */; };
+		D31100000000000000000011 /* ChatGPTConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D31100000000000000000010 /* ChatGPTConfigTests.swift */; };
+		D31100000000000000000013 /* ../../App/Integrations/ChatGPTConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = D31100000000000000000012 /* ../../App/Integrations/ChatGPTConfig.swift */; };
 		A50000000000000000000021 /* ../../App/Services/Mail.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000011 /* ../../App/Services/Mail.swift */; };
 		A50000000000000000000022 /* ../../App/Extensions/Foundation+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000012 /* ../../App/Extensions/Foundation+Extensions.swift */; };
 		A50000000000000000000030 /* Envelope in Frameworks */ = {isa = PBXBuildFile; productRef = A50000000000000000000040 /* Envelope */; };
@@ -111,6 +117,10 @@
 		A40000000000000000000013 /* ../../Shared/Extensions/Bundle+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../../Shared/Extensions/Bundle+Extensions.swift"; sourceTree = "<group>"; };
 		A40000000000000000000014 /* ../../Shared/Models/Service.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../Shared/Models/Service.swift; sourceTree = "<group>"; };
 		A50000000000000000000010 /* MailTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MailTests.swift; sourceTree = "<group>"; };
+		D31100000000000000000020 /* OnboardingGateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingGateTests.swift; sourceTree = "<group>"; };
+		D31100000000000000000022 /* ../../App/OnboardingGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/OnboardingGate.swift; sourceTree = "<group>"; };
+		D31100000000000000000010 /* ChatGPTConfigTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatGPTConfigTests.swift; sourceTree = "<group>"; };
+		D31100000000000000000012 /* ../../App/Integrations/ChatGPTConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Integrations/ChatGPTConfig.swift; sourceTree = "<group>"; };
 		A50000000000000000000011 /* ../../App/Services/Mail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/Mail.swift; sourceTree = "<group>"; };
 		A50000000000000000000012 /* ../../App/Extensions/Foundation+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../../App/Extensions/Foundation+Extensions.swift"; sourceTree = "<group>"; };
 		B0D1DEADBEEF000000000001 /* BonjourDiscovery.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = BonjourDiscovery.swift; path = ../../CLI/BonjourDiscovery.swift; sourceTree = "<group>"; };
@@ -183,6 +193,7 @@
 				826C0834A5B647F8A918E54D /* ServiceLifecycle in Frameworks */,
 				8DFCE9E4CBCBEB93A32E8560 /* ServiceLifecycleTestKit in Frameworks */,
 				F9E9902DC72D90F6C423EFE2 /* Logging in Frameworks */,
+				D31100000000000000000005 /* TOML in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -213,6 +224,7 @@
 				F80955702D7888920055B911 /* iMessage in Frameworks */,
 				C0FFEE0000000000000000A1 /* TopoText in Frameworks */,
 				F8D8C48E2DCE0E6800369E5C /* JSONSchema in Frameworks */,
+				D31100000000000000000004 /* TOML in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -250,6 +262,10 @@
 				A40000000000000000000013 /* ../../Shared/Extensions/Bundle+Extensions.swift */,
 				A40000000000000000000014 /* ../../Shared/Models/Service.swift */,
 				A50000000000000000000010 /* MailTests.swift */,
+				D31100000000000000000020 /* OnboardingGateTests.swift */,
+				D31100000000000000000022 /* ../../App/OnboardingGate.swift */,
+				D31100000000000000000010 /* ChatGPTConfigTests.swift */,
+				D31100000000000000000012 /* ../../App/Integrations/ChatGPTConfig.swift */,
 				A50000000000000000000011 /* ../../App/Services/Mail.swift */,
 				A50000000000000000000012 /* ../../App/Extensions/Foundation+Extensions.swift */,
 				A30000000000000000000010 /* HomeToolsTests.swift */,
@@ -336,6 +352,7 @@
 				A50000000000000000000040 /* Envelope */,
 				1CD6B9E157EEC273F178543D /* ServiceLifecycleTestKit */,
 				48ABEE9E6903427DD79096A1 /* Logging */,
+				D31100000000000000000003 /* TOML */,
 			);
 			productName = "imcp-serverTests";
 			productReference = 6A5CFBBEC66BC8CDA9D65496 /* imcp-serverTests.xctest */;
@@ -400,6 +417,7 @@
 				F8D7C3192DCBD32100A4775F /* MCP */,
 				F8D8C48D2DCE0E6800369E5C /* JSONSchema */,
 				B75D49165A453E912E36DBFE /* Sparkle */,
+				D31100000000000000000002 /* TOML */,
 			);
 			productName = iMCP;
 			productReference = F8F44E6D2D59038D0075D79C /* iMCP.app */;
@@ -483,6 +501,7 @@
 				F8D7C3182DCBD32100A4775F /* XCRemoteSwiftPackageReference "swift-sdk" */,
 				F8D8C48C2DCE0E6800369E5C /* XCRemoteSwiftPackageReference "JSONSchema" */,
 				26120478122FBFCB2B073DE5 /* XCRemoteSwiftPackageReference "Sparkle" */,
+				D31100000000000000000001 /* XCRemoteSwiftPackageReference "swift-toml" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = F8F44E6E2D59038D0075D79C /* Products */;
@@ -560,6 +579,10 @@
 				A40000000000000000000023 /* ../../Shared/Extensions/Bundle+Extensions.swift in Sources */,
 				A40000000000000000000024 /* ../../Shared/Models/Service.swift in Sources */,
 				A50000000000000000000020 /* MailTests.swift in Sources */,
+				D31100000000000000000021 /* OnboardingGateTests.swift in Sources */,
+				D31100000000000000000023 /* ../../App/OnboardingGate.swift in Sources */,
+				D31100000000000000000011 /* ChatGPTConfigTests.swift in Sources */,
+				D31100000000000000000013 /* ../../App/Integrations/ChatGPTConfig.swift in Sources */,
 				A50000000000000000000021 /* ../../App/Services/Mail.swift in Sources */,
 				A50000000000000000000022 /* ../../App/Extensions/Foundation+Extensions.swift in Sources */,
 				A30000000000000000000020 /* HomeToolsTests.swift in Sources */,
@@ -1139,6 +1162,14 @@
 				minimumVersion = 0.1.1;
 			};
 		};
+		D31100000000000000000001 /* XCRemoteSwiftPackageReference "swift-toml" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/mattt/swift-toml";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.0.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -1250,6 +1281,16 @@
 			productName = Envelope;
 		};
 		AB0055000000000000000002 /* TSRP */ = {isa = XCSwiftPackageProductDependency; package = AB0055000000000000000003 /* XCRemoteSwiftPackageReference "TSRP" */; productName = TSRP; };
+		D31100000000000000000002 /* TOML */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D31100000000000000000001 /* XCRemoteSwiftPackageReference "swift-toml" */;
+			productName = TOML;
+		};
+		D31100000000000000000003 /* TOML */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D31100000000000000000001 /* XCRemoteSwiftPackageReference "swift-toml" */;
+			productName = TOML;
+		};
 /* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = F8F44E652D59038D0075D79C /* Project object */;

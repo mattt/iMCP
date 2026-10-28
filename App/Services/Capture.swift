@@ -38,10 +38,31 @@ final class CaptureService: NSObject, Service {
         }
     }
 
+    /// Asks for every Capture permission, even when an earlier one fails.
+    ///
+    /// The menu lists each failure with its own fix, so one pass must collect them all.
+    /// The thrown error carries one failure per line.
     func activate() async throws {
-        try await requestPermission(for: .video)
-        try await requestPermission(for: .audio)
-        try await requestScreenRecordingPermission()
+        var failures: [String] = []
+        for mediaType in [AVMediaType.video, .audio] {
+            do {
+                try await requestPermission(for: mediaType)
+            } catch {
+                failures.append(error.localizedDescription)
+            }
+        }
+        do {
+            try await requestScreenRecordingPermission()
+        } catch {
+            failures.append(error.localizedDescription)
+        }
+        if !failures.isEmpty {
+            throw NSError(
+                domain: "CaptureServiceError",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: failures.joined(separator: "\n")]
+            )
+        }
     }
 
     private func requestPermission(for mediaType: AVMediaType) async throws {

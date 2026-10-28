@@ -8,6 +8,8 @@ struct App: SwiftUI.App {
     @StateObject private var serverController = ServerController()
     @AppStorage("isEnabled") private var isEnabled = true
     @AppStorage("showMenuBarExtra") private var showMenuBarExtra = true
+    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
+    @State private var onboardingWizardController = OnboardingWizardWindowController()
 
     // `startingUpdater: true` makes this the sole owner of update checking
     // for the app's lifetime.
@@ -33,7 +35,9 @@ struct App: SwiftUI.App {
             ContentView(
                 serverManager: serverController,
                 isEnabled: $isEnabled,
-                updater: updaterController.updater
+                updater: updaterController.updater,
+                onboardingWizardController: onboardingWizardController,
+                hasCompletedOnboarding: $hasCompletedOnboarding
             )
         }
         .menuBarExtraStyle(.window)
@@ -45,6 +49,22 @@ struct App: SwiftUI.App {
             appDelegate.shouldOpenSettings = false
             NSApp.activate(ignoringOtherApps: true)
             openSettings()
+        }
+        .onChange(of: appDelegate.shouldOpenOnboarding, initial: true) { _, shouldOpenOnboarding in
+            guard shouldOpenOnboarding else { return }
+            appDelegate.shouldOpenOnboarding = false
+            // Open only at first launch. A prior setup counts as seen.
+            let shouldOpen = OnboardingGate.shouldOpenAutomatically(
+                hasSeenOnboarding: hasCompletedOnboarding,
+                hasTrustedClient: serverController.hasTrustedClient,
+                hasConnectedBefore: serverController.hasConnected,
+                hasServiceOnBeyondDefaults: serverController.hasServiceOnBeyondDefaults
+            )
+            guard shouldOpen else {
+                hasCompletedOnboarding = true
+                return
+            }
+            showOnboarding()
         }
 
         Settings {
@@ -63,11 +83,20 @@ struct App: SwiftUI.App {
             }
         }
     }
+
+    private func showOnboarding() {
+        onboardingWizardController.show(
+            serverController: serverController,
+            isEnabled: $isEnabled,
+            onSeen: { hasCompletedOnboarding = true }
+        )
+    }
 }
 
 @Observable
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var shouldOpenSettings = false
+    var shouldOpenOnboarding = false
     // System removal must not overwrite the user's saved preference.
     var isMenuBarExtraInserted =
         UserDefaults.standard.object(forKey: "showMenuBarExtra") as? Bool ?? true
@@ -76,6 +105,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // An unset preference defaults to showing the menu bar item.
         if UserDefaults.standard.object(forKey: "showMenuBarExtra") as? Bool == false {
             shouldOpenSettings = true
+        }
+        // Show the setup wizard until the person finishes it.
+        if UserDefaults.standard.object(forKey: "hasCompletedOnboarding") as? Bool != true {
+            shouldOpenOnboarding = true
         }
     }
 

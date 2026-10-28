@@ -53,6 +53,56 @@ final class LocationService: NSObject, Service, CLLocationManagerDelegate {
         }
     }
 
+    /// A place at the current location, for display in the setup wizard.
+    struct CurrentPlace {
+        let city: String
+        let region: String
+        let coordinate: CLLocationCoordinate2D
+
+        var displayName: String {
+            region.isEmpty ? city : "\(city), \(region)"
+        }
+    }
+
+    /// The current place, using this service's location manager and a geocoder.
+    ///
+    /// The wizard shows the result and stores nothing.
+    func currentPlace() async throws -> CurrentPlace {
+        try await activate()
+
+        if latestLocation == nil {
+            locationManager.startUpdatingLocation()
+            while latestLocation == nil {
+                try Task.checkCancellation()
+                try await Task.sleep(for: .milliseconds(100))
+            }
+            locationManager.stopUpdatingLocation()
+        }
+
+        guard let location = latestLocation else {
+            throw NSError(
+                domain: "LocationServiceError",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "Failed to get location"]
+            )
+        }
+
+        let placemarks = try await CLGeocoder().reverseGeocodeLocation(location)
+        guard let placemark = placemarks.first else {
+            throw NSError(
+                domain: "LocationServiceError",
+                code: 4,
+                userInfo: [NSLocalizedDescriptionKey: "No place found for location"]
+            )
+        }
+
+        return CurrentPlace(
+            city: placemark.locality ?? placemark.name ?? "your area",
+            region: placemark.administrativeArea ?? "",
+            coordinate: location.coordinate
+        )
+    }
+
     @MainActor
     func activate() async throws {
         if let authorizationTask {

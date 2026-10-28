@@ -8,8 +8,10 @@ struct ContentView: View {
     @Environment(\.openSettings) private var openSettings
 
     private let aboutWindowController: AboutWindowController
+    private let onboardingWizardController: OnboardingWizardWindowController
     private let updater: SPUUpdater
     @State private var menuPanel = MenuPanelController()
+    @Binding var hasCompletedOnboarding: Bool
 
     private var serviceConfigs: [ServiceConfig] {
         serverController.computedServiceConfigs
@@ -18,12 +20,16 @@ struct ContentView: View {
     init(
         serverManager: ServerController,
         isEnabled: Binding<Bool>,
-        updater: SPUUpdater
+        updater: SPUUpdater,
+        onboardingWizardController: OnboardingWizardWindowController,
+        hasCompletedOnboarding: Binding<Bool>
     ) {
         self.serverController = serverManager
         self._isEnabled = isEnabled
         self.aboutWindowController = AboutWindowController()
+        self.onboardingWizardController = onboardingWizardController
         self.updater = updater
+        self._hasCompletedOnboarding = hasCompletedOnboarding
     }
 
     var body: some View {
@@ -71,20 +77,16 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Divider()
 
-                MenuButton("Configure Claude Desktop") {
-                    ClaudeDesktop.showConfigurationPanel()
+                MenuButton("Set Up iMCP…") {
+                    onboardingWizardController.show(
+                        serverController: serverController,
+                        isEnabled: $isEnabled,
+                        onSeen: { hasCompletedOnboarding = true }
+                    )
                 }
 
                 MenuButton("Copy server command to clipboard") {
-                    let command = Bundle.main.bundleURL
-                        .appendingPathComponent("Contents/MacOS/imcp-server")
-                        .path
-
-                    let pasteboard = NSPasteboard.general
-                    pasteboard.clearContents()
-                    pasteboard.setString(command, forType: .string)
-
-                    _ = NSSound.play(.pop)
+                    ServerCommand.copy()
                 }
             }
             .padding(.top, 8)
