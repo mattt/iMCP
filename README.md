@@ -515,6 +515,72 @@ then open the web UI at <http://localhost:9931>.
 > from "llama.cpp" in that time,
 > no iMCP tools appear until you restart the server.
 
+### Connect from your other devices
+
+iMCP can serve clients on your other devices
+over your [Tailscale][tailscale] network.
+iMCP and its permissions stay on your Mac,
+and the client connects with an access token.
+Tailscale must be installed and connected on the Mac.
+
+1. In iMCP's Settings, choose Remote Access,
+   then turn on Allow Remote Access.
+   Settings shows the server's URL,
+   such as `http://my-mac.example.ts.net:4627/mcp`.
+2. Click Create Token, enter a name for the client,
+   and choose its access:
+   read-only tools, all tools, or the tools that you select.
+3. Copy the token.
+   iMCP keeps only a hash of the token,
+   so it can't show the token again.
+4. On the other device,
+   add an HTTP server with the URL
+   and the header `Authorization: Bearer <token>`.
+   For example, in [Claude Code][claude-code]:
+
+   ```console
+   claude mcp add --transport http iMCP http://my-mac.example.ts.net:4627/mcp \
+       --header "Authorization: Bearer <token>"
+   ```
+
+A token can use only the services and tools that are on in iMCP.
+When you turn off a service or tool,
+no token can use it, whatever the token's access allows.
+You can change a token's name and access at any time;
+connected clients get the new list of tools.
+To replace a lost or leaked token,
+choose Re-roll: the token keeps its name and access,
+and the old token stops working.
+To remove a client's access, delete its token.
+
+<details>
+<summary>How remote access works</summary>
+
+iMCP listens only on the Mac's tailnet IPv4 address,
+on port 4627 unless you choose another one.
+Tailscale encrypts the traffic,
+so the server uses plain HTTP inside the tailnet
+and doesn't need Tailscale Serve or Funnel.
+
+For each connection,
+iMCP asks the Tailscale command-line tool
+which device and user the peer address belongs to.
+iMCP accepts only untagged devices
+that belong to the same Tailscale user as the Mac,
+and then requires a valid access token on every request.
+A session belongs to the token that started it,
+and deleting or re-rolling a token ends its sessions.
+
+The endpoint implements the
+[Streamable HTTP transport][mcp-streamable-http]
+of MCP revision 2025-11-25, with sessions.
+It checks the `Host` and `Origin` headers
+against the Mac's tailnet address and MagicDNS name.
+Remote clients don't see the connection approval dialog;
+the access token takes its place.
+
+</details>
+
 ## Technical Details
 
 ### App & CLI
@@ -938,12 +1004,14 @@ This project is not affiliated with, endorsed, or sponsored by Apple Inc.
 [madrid]: https://github.com/mattt/Madrid
 [mcp]: https://modelcontextprotocol.io/introduction
 [mcp-clients]: https://modelcontextprotocol.io/clients
+[mcp-streamable-http]: https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#streamable-http
 [mcp-transports]: https://modelcontextprotocol.io/docs/concepts/architecture#transport-layer
 [notesutils]: https://github.com/dunhamsteve/notesutils
 [nsopenpanel]: https://developer.apple.com/documentation/appkit/nsopenpanel
 [ontology]: https://github.com/mattt/Ontology
 [schema.org]: https://schema.org
 [swift-sdk]: https://github.com/modelcontextprotocol/swift-sdk
+[tailscale]: https://tailscale.com
 [topotext]: https://github.com/mattt/TopoText
 [tsrp]: https://github.com/mattt/TSRP
 [typedstream-blog-post]: https://chrissardegna.com/blog/reverse-engineering-apples-typedstream-format/
