@@ -2,12 +2,38 @@ import AppKit
 import SwiftUI
 
 struct ConnectionApprovalView: View {
-    let clientName: String
+    let request: ClientCredentialStore.Request
     let enabledServiceNames: [String]
     let onApprove: (Bool) -> Void  // Bool parameter is for "always trust"
     let onDeny: () -> Void
 
     @State private var alwaysTrust = false
+
+    private var clientName: String { request.claimedName }
+
+    /// What iMCP knows about the client beyond the name it reported.
+    private var identityNote: String? {
+        if let record = request.record {
+            let date = record.issuedAt.formatted(date: .abbreviated, time: .omitted)
+            return "This client uses the credential that iMCP created for \"\(record.name)\" on \(date)."
+        }
+        if request.hasUnrecognizedCredential {
+            return "This client presented a credential that iMCP didn't create or has removed."
+        }
+        if request.wasTrustedByName {
+            return
+                "You trusted a client with this name before. iMCP now trusts clients by credential instead of by name."
+        }
+        return nil
+    }
+
+    /// What selecting "Always trust this client" does.
+    private var alwaysTrustNote: String {
+        if request.record != nil {
+            return "This client connects without asking while it keeps its credential."
+        }
+        return "iMCP creates a credential for you to add to the client's MCP settings."
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -27,6 +53,14 @@ struct ConnectionApprovalView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Allow \"\(clientName)\" to connect to iMCP?")
 
+                if let identityNote {
+                    Text(identityNote)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
                 if enabledServiceNames.isEmpty {
                     Text("No services are currently enabled.")
                         .font(.caption)
@@ -37,14 +71,21 @@ struct ConnectionApprovalView: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
 
             // Always trust checkbox
-            HStack(alignment: .firstTextBaseline) {
-                Toggle("Always trust this client", isOn: $alwaysTrust)
-                    .toggleStyle(CheckboxToggleStyle())
-                Spacer()
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline) {
+                    Toggle("Always trust this client", isOn: $alwaysTrust)
+                        .toggleStyle(CheckboxToggleStyle())
+                    Spacer()
+                }
+                Text(alwaysTrustNote)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.bottom, 20)
 
@@ -64,8 +105,8 @@ struct ConnectionApprovalView: View {
             }
         }
         .padding(24)
-        .frame(width: 400, height: 300)
-        .fixedSize()
+        .frame(width: 400, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
         .background(Color(NSColor.windowBackgroundColor))
         .cornerRadius(12)
         .shadow(radius: 10)
@@ -94,7 +135,7 @@ struct CheckboxToggleStyle: ToggleStyle {
 
 @MainActor
 class ConnectionApprovalWindowController: NSObject, NSWindowDelegate {
-    /// Open approval windows, keyed by client name.
+    /// Open approval windows, keyed by approval key.
     /// Several clients can ask for approval at once,
     /// so each one gets its own window and its own close path.
     private var windows: [String: NSWindow] = [:]
@@ -103,36 +144,37 @@ class ConnectionApprovalWindowController: NSObject, NSWindowDelegate {
     private var denyHandlers: [String: () -> Void] = [:]
 
     func showApprovalWindow(
-        clientName: String,
+        id: String,
+        request: ClientCredentialStore.Request,
         enabledServiceNames: [String],
         onApprove: @escaping (Bool) -> Void,
         onDeny: @escaping () -> Void
     ) {
-        // Replace any stale window for the same client.
-        closeWindow(for: clientName)
+        // Replace any stale window for the same key.
+        closeWindow(for: id)
 
         // Create the SwiftUI view
         let approvalView = ConnectionApprovalView(
-            clientName: clientName,
+            request: request,
             enabledServiceNames: enabledServiceNames,
             onApprove: { [weak self] alwaysTrust in
-                self?.denyHandlers.removeValue(forKey: clientName)
+                self?.denyHandlers.removeValue(forKey: id)
                 onApprove(alwaysTrust)
-                self?.closeWindow(for: clientName)
+                self?.closeWindow(for: id)
             },
             onDeny: { [weak self] in
-                self?.denyHandlers.removeValue(forKey: clientName)
+                self?.denyHandlers.removeValue(forKey: id)
                 onDeny()
-                self?.closeWindow(for: clientName)
+                self?.closeWindow(for: id)
             }
         )
 
         // Create the hosting controller
         let hostingController = NSHostingController(rootView: approvalView)
 
-        // Create the window with fixed size matching the SwiftUI view
+        // Size the window to fit the view, which grows with its notes.
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
+            contentRect: NSRect(origin: .zero, size: hostingController.view.fittingSize),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -151,8 +193,8 @@ class ConnectionApprovalWindowController: NSObject, NSWindowDelegate {
 
         // Store references
         let cascadeIndex = windows.count
-        windows[clientName] = window
-        denyHandlers[clientName] = onDeny
+        windows[id] = window
+        denyHandlers[id] = onDeny
 
         // Activate the app first
         NSApp.activate(ignoringOtherApps: true)
@@ -175,8 +217,8 @@ class ConnectionApprovalWindowController: NSObject, NSWindowDelegate {
         }
     }
 
-    private func closeWindow(for clientName: String) {
-        guard let window = windows.removeValue(forKey: clientName) else { return }
+    func closeWindow(for id: String) {
+        guard let window = windows.removeValue(forKey: id) else { return }
         window.delegate = nil
         window.close()
     }
@@ -185,18 +227,23 @@ class ConnectionApprovalWindowController: NSObject, NSWindowDelegate {
     /// so the waiting connection is released instead of hanging forever.
     func windowWillClose(_ notification: Notification) {
         guard let window = notification.object as? NSWindow,
-            let clientName = windows.first(where: { $0.value === window })?.key
+            let id = windows.first(where: { $0.value === window })?.key
         else { return }
 
-        windows.removeValue(forKey: clientName)
+        windows.removeValue(forKey: id)
         window.delegate = nil
-        denyHandlers.removeValue(forKey: clientName)?()
+        denyHandlers.removeValue(forKey: id)?()
     }
 }
 
 #Preview {
     ConnectionApprovalView(
-        clientName: "Claude Desktop",
+        request: .init(
+            claimedName: "Claude Desktop",
+            record: nil,
+            hasUnrecognizedCredential: false,
+            wasTrustedByName: true
+        ),
         enabledServiceNames: ["Calendar", "Contacts", "Location"],
         onApprove: { alwaysTrust in
             print("Approved with always trust: \(alwaysTrust)")

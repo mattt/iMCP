@@ -197,13 +197,14 @@ struct ClientsSettingsView: View {
         .path
 
     var body: some View {
-        let trustedClients = serverController.getTrustedClients()
+        let trustedClients = serverController.trustedClients
+        let legacyTrustedClientNames = serverController.legacyTrustedClientNames
 
         Form {
             Section("Connect a Client") {
                 LabeledContent {
                     Button("Set Up…") {
-                        ClaudeDesktop.showConfigurationPanel()
+                        ClaudeDesktop.showConfigurationPanel(serverController: serverController)
                     }
                 } label: {
                     Text("Claude Desktop")
@@ -236,11 +237,14 @@ struct ClientsSettingsView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
                 } else {
-                    ForEach(trustedClients, id: \.self) { client in
-                        LabeledContent(client) {
+                    ForEach(trustedClients) { client in
+                        LabeledContent {
                             Button("Remove") {
                                 serverController.removeTrustedClient(client)
                             }
+                        } label: {
+                            Text(client.name)
+                            Text("Trusted since \(client.issuedAt.formatted(date: .abbreviated, time: .omitted))")
                         }
                     }
                 }
@@ -249,15 +253,34 @@ struct ClientsSettingsView: View {
             } footer: {
                 VStack(alignment: .trailing) {
                     Text(
-                        "Trusted clients connect without an approval dialog, and iMCP shows a notification whenever one connects. Clients are identified by the name they report, not by a verified identity."
+                        "Trusted clients connect without an approval dialog, and iMCP shows a notification whenever one connects. Each trusted client presents a credential that iMCP created for it, in the \(ClientCredential.environmentVariable) environment variable of its MCP settings. Removing a client revokes its credential."
                     )
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                    if !trustedClients.isEmpty {
+                    if !trustedClients.isEmpty || !legacyTrustedClientNames.isEmpty {
                         Button("Remove All…") {
                             isConfirmingRemoveAll = true
                         }
                     }
+                }
+            }
+
+            if !legacyTrustedClientNames.isEmpty {
+                Section {
+                    ForEach(legacyTrustedClientNames, id: \.self) { name in
+                        LabeledContent(name) {
+                            Button("Remove") {
+                                serverController.removeLegacyTrustedClient(name)
+                            }
+                        }
+                    }
+                } header: {
+                    Text("Approve Again")
+                } footer: {
+                    Text(
+                        "Earlier versions of iMCP trusted these clients by the name they reported, which any app can claim. They need your approval the next time they connect. Select \"Always trust this client\" to give one a credential."
+                    )
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
         }
