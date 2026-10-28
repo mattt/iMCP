@@ -10,6 +10,7 @@ private let parameters: NWParameters = {
     let parameters = NWParameters.tcp
     parameters.acceptLocalOnly = true
     parameters.includePeerToPeer = false
+    parameters.requiredInterfaceType = .loopback
 
     if let tcpOptions = parameters.defaultProtocolStack.internetProtocol as? NWProtocolIP.Options {
         tcpOptions.version = .v4
@@ -28,7 +29,7 @@ actor MCPService: Service {
                 await log.info("Starting Bonjour service discovery...")
 
                 let browser = NWBrowser(
-                    for: .bonjourWithTXTRecord(type: serviceType, domain: nil),
+                    for: .bonjour(type: serviceType, domain: nil),
                     using: parameters
                 )
 
