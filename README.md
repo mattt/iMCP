@@ -785,6 +785,14 @@ with a five-second timeout and at most four outstanding HomeKit reads.
 After a lost connection, read-only calls retry once.
 Writes are not repeated, because HomeKit may have applied them already;
 the error asks the caller to inspect the home before retrying.
+HomeKit sometimes refuses characteristic reads, accessory identification,
+and scene action edits with "Missing entitlement for API" or "Request not handled".
+In some tests, these refusals happened only while the helper was hidden,
+or its window was minimized or closed,
+but other tests didn't reproduce them, so the cause isn't confirmed.
+The error keeps HomeKit's description, domain, and code,
+and suggests showing iMCP Helper's window and retrying;
+the window can stay behind other windows.
 
 The helper advertises "\_imcp-helper.\_tcp" on the local-only DNS-SD interface,
 and iMCP finds it there, whether or not iMCP launched it.

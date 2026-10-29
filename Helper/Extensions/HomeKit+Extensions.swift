@@ -1,6 +1,7 @@
 import CoreFoundation
 import Foundation
 import HomeKit
+import OSLog
 
 @MainActor
 enum HomeValue {
@@ -82,8 +83,14 @@ enum HomeValue {
     }
 }
 
+private let homeErrorLog = Logger.service("helper.homekit")
+
 func homeErrorMessage(_ error: Error) -> String {
+    if let error = error as? HomeError { return error.message }
     let error = error as NSError
+    // userInfo can name homes and accessories, so log only the domain and code.
+    homeErrorLog.error("HomeKit error \(error.domain, privacy: .public) \(error.code, privacy: .public)")
+    if HomeError.isPossibleWindowRefusal(error) { return HomeError.possibleWindowRefusal(error).message }
     guard error.domain == HMErrorDomain else { return error.localizedDescription }
     switch HMError.Code(rawValue: error.code) {
     case .homeAccessNotAuthorized:
