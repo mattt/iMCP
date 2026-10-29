@@ -63,9 +63,7 @@ enum BonjourDiscovery {
                 Task {
                     if await state.checkAndSetResumed() {
                         timeoutTask.cancel()
-                        continuation.resume(
-                            returning: connectionEndpoint(for: selected.endpoint, metadata: selected.metadata)
-                        )
+                        continuation.resume(returning: selected.endpoint)
                     }
                 }
             }
@@ -89,27 +87,9 @@ enum BonjourDiscovery {
     ///
     /// Bonjour reports a service registered on this Mac on the loopback interface,
     /// and a service from another Mac only on network interfaces.
-    /// iMCP on another Mac accepts connections over its own loopback only (#242),
-    /// and its advertised port is meaningless here,
-    /// because the connection goes to this Mac's loopback address (#229).
+    /// iMCP on another Mac accepts connections over its own loopback only (#242).
+    /// The CLI connects to the service endpoint over the loopback interface (#320).
     static func isLocal(_ result: NWBrowser.Result) -> Bool {
         result.interfaces.contains { $0.type == .loopback }
-    }
-
-    static func connectionEndpoint(
-        for serviceEndpoint: NWEndpoint,
-        metadata: NWBrowser.Result.Metadata
-    ) -> NWEndpoint {
-        guard case .bonjour(let record) = metadata,
-            let value = record["port"],
-            let number = UInt16(value),
-            number > 0,
-            let port = NWEndpoint.Port(rawValue: number)
-        else {
-            return serviceEndpoint
-        }
-
-        // Avoid service resolution selecting a Docker bridge address (#142).
-        return .hostPort(host: .ipv4(.loopback), port: port)
     }
 }
