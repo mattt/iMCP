@@ -696,8 +696,15 @@ final class RemindersService: Service {
 
             try Self.rejectUnknownKeys(arguments, allowed: ["identifier"])
 
+            // Deletion uses its own store because removing a reminder runs a
+            // consent check that can fail with EKErrorDomain 29 on the shared
+            // store after a first-time grant, while other operations succeed
+            // (#315). A stale authorization status on the long-lived store is
+            // the suspected cause, but this is not confirmed.
+            let eventStore = EKEventStore()
+
             guard
-                let reminder = self.eventStore.calendarItem(withIdentifier: identifier)
+                let reminder = eventStore.calendarItem(withIdentifier: identifier)
                     as? EKReminder
             else {
                 throw NSError(
@@ -720,7 +727,7 @@ final class RemindersService: Service {
                 )
             }
 
-            try self.eventStore.remove(reminder, commit: true)
+            try eventStore.remove(reminder, commit: true)
 
             return Value.object([
                 "deleted": .bool(true),
