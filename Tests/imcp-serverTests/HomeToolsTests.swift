@@ -83,6 +83,28 @@ final class HomeToolsTests: XCTestCase {
         }
     }
 
+    func testRecognizesPossibleWindowRefusals() {
+        XCTAssertTrue(HomeError.isPossibleWindowRefusal(NSError(domain: "HMErrorDomain", code: 80)))
+        XCTAssertTrue(HomeError.isPossibleWindowRefusal(NSError(domain: "HMFErrorDomain", code: 14)))
+        XCTAssertFalse(HomeError.isPossibleWindowRefusal(NSError(domain: "HMErrorDomain", code: 14)))
+        XCTAssertFalse(HomeError.isPossibleWindowRefusal(NSError(domain: "HMFErrorDomain", code: 80)))
+        XCTAssertFalse(HomeError.isPossibleWindowRefusal(NSError(domain: "HMErrorDomain", code: 4)))
+        XCTAssertFalse(HomeError.isPossibleWindowRefusal(NSError(domain: NSCocoaErrorDomain, code: 80)))
+    }
+
+    func testKeepsHomeKitDescriptionDomainAndCodeInRefusals() {
+        let error = NSError(
+            domain: "HMErrorDomain",
+            code: 80,
+            userInfo: [NSLocalizedDescriptionKey: "Missing entitlement for API."]
+        )
+        let message = HomeError.possibleWindowRefusal(error).message
+        XCTAssertTrue(message.contains("Missing entitlement for API."))
+        XCTAssertTrue(message.contains("HMErrorDomain"))
+        XCTAssertTrue(message.contains("80"))
+        XCTAssertTrue(message.contains("iMCP Helper's window"))
+    }
+
     private func validate(_ name: String, _ input: [String: Value]) throws {
         let tool = try XCTUnwrap(HomeTools.tools(backend: backend).first { $0.name == name })
         try HomeInput.validate(input, schema: tool.inputSchema)
