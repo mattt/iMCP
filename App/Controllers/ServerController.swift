@@ -270,6 +270,9 @@ final class ServerController: ObservableObject {
 
     // MARK: - Client Credentials
     private let credentials = ClientCredentialStore(storage: KeychainClientRecordStorage())
+    /// The open connections that each credential let in or was issued to,
+    /// so that revoking a credential closes them.
+    private var credentialSessions = CredentialSessions()
 
     // MARK: - AppStorage for Disabled Tools
     @AppStorage("disabledTools") private var disabledToolsData = Data()
@@ -323,7 +326,7 @@ final class ServerController: ObservableObject {
         credentials.legacyTrustedNames
     }
 
-    /// Revokes the credential of a trusted client.
+    /// Revokes the credential of a trusted client and closes its connections.
     func removeTrustedClient(_ record: ClientRecord) {
         objectWillChange.send()
         do {
@@ -331,6 +334,7 @@ final class ServerController: ObservableObject {
         } catch {
             log.error("Failed to remove trusted client: \(String(describing: error), privacy: .public)")
         }
+        closeConnections(credentialSessions.revoke(credentialID: record.id))
     }
 
     func removeLegacyTrustedClient(_ name: String) {
@@ -338,12 +342,25 @@ final class ServerController: ObservableObject {
         credentials.removeLegacyTrustedName(name)
     }
 
+    /// Revokes every credential and closes the connections that used one.
     func resetTrustedClients() {
         objectWillChange.send()
         do {
             try credentials.revokeAll()
         } catch {
             log.error("Failed to remove trusted clients: \(String(describing: error), privacy: .public)")
+        }
+        closeConnections(credentialSessions.revokeAll())
+    }
+
+    /// Closes connections whose credential was revoked.
+    private func closeConnections(_ connectionIDs: Set<UUID>) {
+        guard !connectionIDs.isEmpty else { return }
+        log.notice("Closing \(connectionIDs.count) connection(s) whose credential was removed")
+        Task {
+            for id in connectionIDs {
+                await networkManager.removeConnection(id)
+            }
         }
     }
 
@@ -453,6 +470,12 @@ final class ServerController: ObservableObject {
             objectWillChange.send()
             do {
                 newCredential = try credentials.alwaysTrust(request)
+                // Revoking the new credential closes the connections that it was issued for.
+                if let newCredential, let id = ClientCredential.identifier(for: newCredential) {
+                    for case let (connectionID as UUID, _) in entry.waiters {
+                        credentialSessions.add(connectionID, credentialID: id)
+                    }
+                }
             } catch {
                 log.error("Failed to trust client: \(String(describing: error), privacy: .public)")
                 showTrustError(error, clientName: request.claimedName)
@@ -500,6 +523,12 @@ final class ServerController: ObservableObject {
         resolution.promoted.forEach(presentApproval)
     }
 
+    /// Releases what the app holds for a connection that closed.
+    private func connectionClosed(_ connectionID: UUID) {
+        credentialSessions.remove(connectionID)
+        cancelApproval(for: connectionID)
+    }
+
     /// Stops waiting for a decision on a connection that closed.
     func cancelApproval(for connectionID: UUID) {
         let (waiter, resolution) = approvals.cancel(id: connectionID)
@@ -529,8 +558,8 @@ final class ServerController: ObservableObject {
             // Register the approval handler before listening on the socket.
             // Otherwise the first connection after launch is rejected
             // immediately because the handler is still nil.
-            await networkManager.setConnectionCancellationHandler { [weak self] connectionID in
-                await self?.cancelApproval(for: connectionID)
+            await networkManager.setConnectionClosedHandler { [weak self] connectionID in
+                await self?.connectionClosed(connectionID)
             }
             await networkManager.setConnectionApprovalHandler {
                 [weak self] connectionID, clientInfo, credential in
@@ -630,6 +659,7 @@ final class ServerController: ObservableObject {
         switch credentials.evaluate(credential: credential, claimedName: clientName) {
         case .approve(let record):
             log.notice("Client \(clientName) presented a trusted credential, auto-approving")
+            credentialSessions.add(connectionID, credentialID: record.id)
             approve()
 
             // Notify the user on auto-approved connections.
@@ -638,6 +668,10 @@ final class ServerController: ObservableObject {
             return
         case .ask(let pendingRequest):
             request = pendingRequest
+            // Revoking the credential also closes a connection that waits for approval.
+            if let record = pendingRequest.record {
+                credentialSessions.add(connectionID, credentialID: record.id)
+            }
         }
 
         if request.hasUnrecognizedCredential {
@@ -942,9 +976,10 @@ actor ServerNetworkManager {
     typealias ConnectionApprovalHandler = @Sendable (UUID, MCP.Client.Info, String?) async -> Bool
     private var connectionApprovalHandler: ConnectionApprovalHandler?
 
-    /// Called when a connection that waits for approval closes.
-    typealias ConnectionCancellationHandler = @Sendable (UUID) async -> Void
-    private var connectionCancellationHandler: ConnectionCancellationHandler?
+    /// Called when a connection closes,
+    /// so that its approval dialog and its record of the credential it used are released.
+    typealias ConnectionClosedHandler = @Sendable (UUID) async -> Void
+    private var connectionClosedHandler: ConnectionClosedHandler?
 
     private let services = ServiceRegistry.services
     private var serviceBindings: [String: Binding<Bool>] = [:]
@@ -955,8 +990,8 @@ actor ServerNetworkManager {
         isRunningState
     }
 
-    func setConnectionCancellationHandler(_ handler: @escaping ConnectionCancellationHandler) {
-        self.connectionCancellationHandler = handler
+    func setConnectionClosedHandler(_ handler: @escaping ConnectionClosedHandler) {
+        self.connectionClosedHandler = handler
     }
 
     func setConnectionApprovalHandler(_ handler: @escaping ConnectionApprovalHandler) {
@@ -1034,8 +1069,8 @@ actor ServerNetworkManager {
             connectionTasks[id]?.cancel()
         }
 
-        for id in awaitingApproval {
-            await connectionCancellationHandler?(id)
+        for id in awaitingApproval.union(connections.keys) {
+            await connectionClosedHandler?(id)
         }
         for task in setupTimeoutTasks.values {
             task.cancel()
@@ -1079,10 +1114,10 @@ actor ServerNetworkManager {
         unapprovedConnections.remove(id)
         cancelSetupTimeout(for: id)
 
-        // Close the connection's approval dialog, or leave it to other connections.
-        if awaitingApproval.remove(id) != nil {
-            await connectionCancellationHandler?(id)
-        }
+        // Release the connection's approval dialog, if no other connection waits on it,
+        // and its place in the record of credential sessions.
+        awaitingApproval.remove(id)
+        await connectionClosedHandler?(id)
     }
 
     // Handle new incoming connections.

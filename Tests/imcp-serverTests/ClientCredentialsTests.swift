@@ -263,6 +263,46 @@ final class ClientCredentialsTests: XCTestCase {
         XCTAssertFalse(unknown.identityNote.contains("no credential"))
     }
 
+    // MARK: - Sessions
+
+    func testRevokingCredentialReturnsItsConnections() {
+        var sessions = CredentialSessions()
+        let first = UUID()
+        let second = UUID()
+        let other = UUID()
+        sessions.add(first, credentialID: "a")
+        sessions.add(second, credentialID: "a")
+        sessions.add(other, credentialID: "b")
+
+        XCTAssertEqual(sessions.revoke(credentialID: "a"), [first, second])
+        XCTAssertEqual(sessions.revoke(credentialID: "a"), [])
+        XCTAssertEqual(sessions.connections, ["b": [other]])
+    }
+
+    func testClosedConnectionsAreForgotten() {
+        var sessions = CredentialSessions()
+        let closed = UUID()
+        let open = UUID()
+        sessions.add(closed, credentialID: "a")
+        sessions.add(open, credentialID: "b")
+
+        sessions.remove(closed)
+
+        XCTAssertEqual(sessions.connections, ["b": [open]])
+        XCTAssertEqual(sessions.revoke(credentialID: "a"), [])
+    }
+
+    func testRevokingAllReturnsEveryConnection() {
+        var sessions = CredentialSessions()
+        let first = UUID()
+        let second = UUID()
+        sessions.add(first, credentialID: "a")
+        sessions.add(second, credentialID: "b")
+
+        XCTAssertEqual(sessions.revokeAll(), [first, second])
+        XCTAssertTrue(sessions.connections.isEmpty)
+    }
+
     // MARK: - Trust by name from earlier versions
 
     func testNameTrustedByEarlierVersionMustReenroll() throws {
