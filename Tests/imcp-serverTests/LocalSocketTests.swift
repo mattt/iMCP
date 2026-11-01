@@ -292,6 +292,32 @@ final class LocalSocketTests: XCTestCase {
         }
     }
 
+    func testReadLineDeadlineCoversWholeLine() throws {
+        let (reader, writer) = try socketPair()
+        defer {
+            close(reader)
+            close(writer)
+        }
+
+        // A peer that sends a byte more often than the timeout still runs out of time.
+        let sender = Thread {
+            for _ in 0 ..< 20 {
+                var byte = UInt8(ascii: "a")
+                guard write(writer, &byte, 1) == 1 else { return }
+                Thread.sleep(forTimeInterval: 0.03)
+            }
+        }
+        sender.start()
+
+        let start = ContinuousClock.now
+        XCTAssertThrowsError(
+            try LocalSocket.readLine(from: reader, maximumLength: 64, timeout: .milliseconds(100))
+        ) {
+            XCTAssertEqual(($0 as? LocalSocket.Error)?.code, EAGAIN)
+        }
+        XCTAssertLessThan(ContinuousClock.now - start, .milliseconds(400))
+    }
+
     func testHelloRoundTrips() throws {
         let hello = LocalSocketHello()
         let data = try hello.encoded()
