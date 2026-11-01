@@ -170,6 +170,9 @@ struct KeychainClientRecordStorage: ClientRecordStorage {
     /// Release builds don't contain the fallback.
     static let usesDataProtectionKeychain: Bool = {
         #if DEBUG
+            // The login keychain doesn't limit items to this app:
+            // any process that runs as the same user can add a record there,
+            // including a trusted one, so a Debug build's trust protects nothing.
             let query: [CFString: Any] = [
                 kSecClass: kSecClassGenericPassword,
                 kSecUseDataProtectionKeychain: true,
