@@ -1,168 +1,171 @@
 import Foundation
 import MCP
-import Network
 import OSLog
 
 private let log = Logger.server
 
-// MARK: - Tailscale
+// MARK: - Tailnet node
 
-/// What iMCP reads from the Tailscale command-line tool.
-enum Tailscale {
-    /// This Mac on its tailnet.
-    struct Status: Equatable, Sendable {
-        var address: IPv4Address
-        /// The MagicDNS name, without the trailing dot.
-        var dnsName: String?
-        var userID: Int64
+/// What iMCP needs to start its own node on a tailnet.
+struct TailnetNodeConfiguration: Equatable, Sendable {
+    /// The name that the node asks for on the tailnet.
+    var hostname: String
+    /// The directory where the node keeps its keys and state.
+    var stateDirectory: URL
+    /// A key that logs the node in without a browser.
+    /// iMCP uses it for one start and doesn't keep it.
+    var authKey: String?
+}
 
-        /// The address in dotted decimal form.
-        var addressString: String {
-            address.rawValue.map(String.init).joined(separator: ".")
-        }
+/// iMCP's own node on a tailnet.
+///
+/// The app uses an embedded Tailscale node;
+/// tests use a fake, so that they don't need a tailnet.
+protocol TailnetNode: Sendable {
+    func status() async throws -> TailnetStatus
+    /// The device and user at a tailnet IP address.
+    func whois(_ address: String) async throws -> TailnetPeer
+    /// Listens for TCP connections on one of the node's tailnet addresses.
+    func listen(on address: String, port: UInt16) async throws -> any TailnetListener
+    func logout() async throws
+    /// Stops the node.
+    /// The node's listeners and connections close.
+    func close() async
+}
 
-        var hostNames: [String] {
-            var names = [addressString]
-            if let dnsName {
-                names.append(dnsName)
-                if let label = dnsName.split(separator: ".").first {
-                    names.append(String(label))
-                }
+protocol TailnetListener: Sendable {
+    /// The next connection.
+    /// Throws when the listener closes.
+    func accept() async throws -> any TailnetConnection
+}
+
+/// A TCP connection that a peer opened to the node.
+protocol TailnetConnection: Sendable {
+    /// The peer's tailnet IP address, without a port.
+    var remoteAddress: String? { get }
+    /// The next bytes from the peer, or empty data when the peer closes the connection.
+    /// Throws when no bytes arrive before the timeout.
+    func receive(timeout: Duration) async throws -> Data
+    /// Sends all the bytes, or throws.
+    func send(_ data: Data, timeout: Duration) async throws
+    func close() async
+}
+
+/// The node itself, once it's on the tailnet.
+struct TailnetSelf: Equatable, Sendable {
+    var stableID: String
+    var userID: Int64
+    var ipv4Address: String
+    var ipv6Address: String?
+    /// The MagicDNS name, without the trailing dot.
+    var dnsName: String?
+    var isTagged: Bool
+
+    /// The names that clients can use for the node in the `Host` header.
+    var hostNames: [String] {
+        var names = [ipv4Address]
+        if let dnsName {
+            names.append(dnsName)
+            if let label = dnsName.split(separator: ".").first {
+                names.append(String(label))
             }
-            return names
         }
+        return names
+    }
+}
+
+/// The device and user at a tailnet address.
+struct TailnetPeer: Equatable, Sendable {
+    var stableID: String
+    var deviceName: String
+    var userID: Int64
+    var isTagged: Bool
+}
+
+/// The parts of a node's status that iMCP reads.
+struct TailnetStatus: Equatable, Sendable {
+    enum State: Equatable, Sendable {
+        case starting
+        /// The node needs its owner to log in at the URL,
+        /// once the control server provides one.
+        case needsLogin(URL?)
+        /// An admin of the tailnet must approve the node.
+        case needsApproval
+        case running(TailnetSelf)
+        case stopped
     }
 
-    /// The device and user at a tailnet address.
-    struct Peer: Equatable, Sendable {
-        var stableID: String
-        var deviceName: String
-        var userID: Int64
-        var isTagged: Bool
+    var state: State
+    /// The host names of the other nodes, by stable ID.
+    var peerNames: [String: String] = [:]
+
+    init(state: State, peerNames: [String: String] = [:]) {
+        self.state = state
+        self.peerNames = peerNames
     }
 
-    enum Failure: LocalizedError, Equatable {
-        case notInstalled
-        case notConnected
-        case commandFailed(String)
-        case unexpectedOutput
-
-        var errorDescription: String? {
-            switch self {
-            case .notInstalled: "Tailscale isn't installed."
-            case .notConnected: "Tailscale isn't connected."
-            case .commandFailed(let message): "Tailscale reported an error: \(message)"
-            case .unexpectedOutput: "Tailscale returned information that iMCP can't read."
-            }
+    /// Reads the JSON encoding of a node's `ipnstate.Status`.
+    init(json data: Data) throws {
+        struct Node: Decodable {
+            var ID: String?
+            var HostName: String?
+            var DNSName: String?
+            var TailscaleIPs: [String]?
+            var UserID: Int64?
+            var Tags: [String]?
         }
-    }
-
-    /// The Tailscale app for macOS includes its command-line tool;
-    /// the open source client installs it separately.
-    static let executablePaths = [
-        "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
-        "/opt/homebrew/bin/tailscale",
-        "/usr/local/bin/tailscale",
-    ]
-
-    static func status() async throws -> Status {
-        struct Output: Decodable {
-            struct Node: Decodable {
-                var TailscaleIPs: [String]?
-                var DNSName: String?
-                var UserID: Int64
-            }
+        struct Status: Decodable {
             var BackendState: String
+            var AuthURL: String?
+            var TailscaleIPs: [String]?
             var selfNode: Node?
+            var Peer: [String: Node]?
 
             enum CodingKeys: String, CodingKey {
-                case BackendState
+                case BackendState, AuthURL, TailscaleIPs, Peer
                 case selfNode = "Self"
             }
         }
-        let data = try await run(["status", "--json", "--peers=false"])
-        guard let output = try? JSONDecoder().decode(Output.self, from: data) else {
-            throw Failure.unexpectedOutput
-        }
-        guard output.BackendState == "Running", let node = output.selfNode,
-            let address = node.TailscaleIPs?.lazy.compactMap(IPv4Address.init).first
-        else {
-            throw Failure.notConnected
-        }
-        let dnsName = node.DNSName.map { $0.hasSuffix(".") ? String($0.dropLast()) : $0 }
-        return Status(address: address, dnsName: dnsName?.isEmpty == false ? dnsName : nil, userID: node.UserID)
-    }
 
-    static func whois(_ address: String) async throws -> Peer {
-        try decodePeer(try await run(["whois", "--json", address]), address: address)
-    }
-
-    static func decodePeer(_ data: Data, address: String) throws -> Peer {
-        struct Output: Decodable {
-            struct Node: Decodable {
-                struct Hostinfo: Decodable {
-                    var Hostname: String?
-                }
-                var ComputedName: String?
-                var StableID: String
-                var Name: String?
-                var Tags: [String]?
-                var User: Int64
-                var Hostinfo: Hostinfo?
-            }
-            var Node: Node
-        }
-        guard let node = try? JSONDecoder().decode(Output.self, from: data).Node, !node.StableID.isEmpty else {
-            throw Failure.unexpectedOutput
-        }
-        let name = node.Hostinfo?.Hostname ?? node.ComputedName ?? node.Name ?? address
-        return Peer(stableID: node.StableID, deviceName: name, userID: node.User, isTagged: !(node.Tags ?? []).isEmpty)
-    }
-
-    private static func run(_ arguments: [String]) async throws -> Data {
-        guard let path = executablePaths.first(where: FileManager.default.isExecutableFile(atPath:)) else {
-            throw Failure.notInstalled
-        }
-        return try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global(qos: .utility).async {
-                let process = Process()
-                process.executableURL = URL(fileURLWithPath: path)
-                process.arguments = arguments
-                process.standardInput = FileHandle.nullDevice
-                let output = Pipe()
-                let errors = Pipe()
-                process.standardOutput = output
-                process.standardError = errors
-                do {
-                    try process.run()
-                } catch {
-                    continuation.resume(throwing: Failure.commandFailed(error.localizedDescription))
-                    return
-                }
-                // Don't wait for a command that hangs.
-                let timeout = DispatchWorkItem { if process.isRunning { process.terminate() } }
-                DispatchQueue.global().asyncAfter(deadline: .now() + 10, execute: timeout)
-                let data = output.fileHandleForReading.readDataToEndOfFile()
-                let message = String(decoding: errors.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-                process.waitUntilExit()
-                timeout.cancel()
-                if process.terminationStatus == 0 {
-                    continuation.resume(returning: data)
-                } else {
-                    let message = message.trimmingCharacters(in: .whitespacesAndNewlines)
-                    continuation.resume(
-                        throwing: Failure.commandFailed(
-                            message.isEmpty ? "exit status \(process.terminationStatus)" : message
-                        )
-                    )
-                }
+        let status = try JSONDecoder().decode(Status.self, from: data)
+        for peer in (status.Peer ?? [:]).values {
+            if let id = peer.ID, !id.isEmpty, let name = peer.HostName, !name.isEmpty {
+                peerNames[id] = name
             }
         }
-    }
 
-    /// Whether an IPv4 address is in the tailnet range, 100.64.0.0/10.
-    static func isTailnetAddress(_ bytes: [UInt8]) -> Bool {
-        bytes.count == 4 && bytes[0] == 100 && bytes[1] & 0xC0 == 64
+        switch status.BackendState {
+        case "NeedsLogin":
+            let url = status.AuthURL.flatMap { $0.isEmpty ? nil : URL(string: $0) }
+            state = .needsLogin(url)
+        case "NeedsMachineAuth":
+            state = .needsApproval
+        case "Stopped":
+            state = .stopped
+        case "Running":
+            let addresses = status.selfNode?.TailscaleIPs ?? status.TailscaleIPs ?? []
+            guard let node = status.selfNode,
+                let stableID = node.ID, !stableID.isEmpty,
+                let userID = node.UserID, userID != 0,
+                let ipv4 = addresses.first(where: { $0.contains(".") })
+            else {
+                state = .starting
+                return
+            }
+            let dnsName = node.DNSName.map { $0.hasSuffix(".") ? String($0.dropLast()) : $0 }
+            state = .running(
+                TailnetSelf(
+                    stableID: stableID,
+                    userID: userID,
+                    ipv4Address: ipv4,
+                    ipv6Address: addresses.first { $0.contains(":") },
+                    dnsName: dnsName?.isEmpty == false ? dnsName : nil,
+                    isTagged: !(node.Tags ?? []).isEmpty
+                )
+            )
+        default:
+            state = .starting
+        }
     }
 }
 
@@ -170,23 +173,39 @@ enum Tailscale {
 
 /// Serves MCP over HTTP to the owner's other devices on their tailnet.
 ///
-/// The server listens only on this Mac's tailnet address.
-/// Each connection must come from an untagged device that belongs to the same Tailscale user as this Mac,
+/// iMCP runs its own Tailscale node, so the server's address belongs only to iMCP.
+/// The server listens only on that node's tailnet IPv4 address.
+/// Each connection must come from an untagged device
+/// that belongs to the same Tailscale user as the node,
 /// and each request must carry an access token.
 /// Sessions follow the 2025-11-25 Streamable HTTP transport.
 actor RemoteAccessServer {
     enum State: Equatable, Sendable {
         case off
         case starting
-        /// Tailscale isn't available, for the given reason.
-        case unavailable(String)
-        case running(endpoint: String)
+        /// The node needs its owner to log in at the URL,
+        /// or is waiting for the control server to provide one.
+        case needsLogin(URL?)
+        /// An admin of the tailnet must approve the node.
+        case needsApproval
+        case running(Endpoint)
+        case loggingOut
         case failed(String)
+    }
+
+    /// Where clients reach the server.
+    struct Endpoint: Equatable, Sendable {
+        var url: String
+        /// The node's MagicDNS name.
+        var dnsName: String?
+        var ipv4Address: String
+        var ipv6Address: String?
     }
 
     struct Configuration: Equatable, Sendable {
         var isEnabled: Bool
         var port: UInt16
+        var hostname: String
     }
 
     static let defaultPort: UInt16 = 4627
@@ -194,8 +213,10 @@ actor RemoteAccessServer {
     static let maximumSessions = 16
     /// How long a session with no requests and no open streams lasts.
     static let sessionIdleTimeout: TimeInterval = 60 * 60
-    /// How often iMCP checks Tailscale for a new address.
+    /// How often iMCP reads the node's status while the node is on the tailnet.
     static let refreshInterval: Duration = .seconds(15)
+    /// How often iMCP reads the node's status while it starts or waits for a login.
+    static let startingRefreshInterval: Duration = .seconds(1)
 
     private struct Session {
         let tokenID: UUID
@@ -206,10 +227,11 @@ actor RemoteAccessServer {
     }
 
     private let tokenStore: AccessTokenStore
+    private let stateDirectory: URL
+    private let makeNode: @Sendable (TailnetNodeConfiguration) async throws -> any TailnetNode
     private let makeSessionServer: @Sendable (UUID) async -> MCP.Server?
-    private let queue = DispatchQueue(label: "iMCP.RemoteAccess")
 
-    private var configuration = Configuration(isEnabled: false, port: defaultPort)
+    private var configuration = Configuration(isEnabled: false, port: defaultPort, hostname: "")
     private var stateHandler: (@Sendable (State) -> Void)?
     private var tokenUsageHandler: (@Sendable () -> Void)?
     private var state: State = .off {
@@ -220,16 +242,26 @@ actor RemoteAccessServer {
         }
     }
 
+    /// Counts node starts, so that work for a stopped node can tell that it's stale.
+    private var generation = 0
+    private var node: (any TailnetNode)?
     private var monitorTask: Task<Void, Never>?
-    private var listener: SocketListener?
-    /// The Tailscale status that the listener uses.
-    private var status: Tailscale.Status?
+    /// The node's identity, while the server listens on its address.
+    private var identity: TailnetSelf?
+    private var isListening = false
     private var connectionCount = 0
-    private var peers: [String: (peer: Tailscale.Peer?, expires: Date)] = [:]
+    private var peers: [String: (peer: TailnetPeer?, expires: Date)] = [:]
     private var sessions: [String: Session] = [:]
 
-    init(tokenStore: AccessTokenStore, makeSessionServer: @escaping @Sendable (UUID) async -> MCP.Server?) {
+    init(
+        tokenStore: AccessTokenStore,
+        stateDirectory: URL,
+        makeNode: @escaping @Sendable (TailnetNodeConfiguration) async throws -> any TailnetNode,
+        makeSessionServer: @escaping @Sendable (UUID) async -> MCP.Server?
+    ) {
         self.tokenStore = tokenStore
+        self.stateDirectory = stateDirectory
+        self.makeNode = makeNode
         self.makeSessionServer = makeSessionServer
     }
 
@@ -242,135 +274,229 @@ actor RemoteAccessServer {
         state(self.state)
     }
 
+    /// Starts the node when remote access is on, and stops it when it's off.
+    /// A change to the port or host name restarts the node.
     func configure(_ configuration: Configuration) async {
         guard configuration != self.configuration else { return }
-        let portChanged = configuration.port != self.configuration.port
         self.configuration = configuration
-
-        if portChanged || !configuration.isEnabled {
-            stopListener()
-        }
         guard configuration.isEnabled else {
-            monitorTask?.cancel()
-            monitorTask = nil
-            await closeSessions { _ in true }
+            await stopNode()
             state = .off
             return
         }
-
-        state = .starting
-        monitorTask?.cancel()
-        monitorTask = Task { [weak self] in
-            while !Task.isCancelled {
-                await self?.refresh()
-                try? await Task.sleep(for: Self.refreshInterval)
-            }
-        }
+        await startNode()
     }
 
     func stop() async {
-        await configure(Configuration(isEnabled: false, port: configuration.port))
+        await configure(Configuration(isEnabled: false, port: configuration.port, hostname: configuration.hostname))
     }
 
-    // MARK: Tokens
+    // MARK: Node
 
-    /// Ends the sessions that use a token, after the token is deleted or re-rolled.
-    func closeSessions(forToken id: UUID) async {
-        await closeSessions { $0.tokenID == id }
-    }
-
-    /// Tells clients to fetch their tool lists again.
-    /// Pass a token to notify only the sessions that use it.
-    func notifyToolListChanged(forToken id: UUID? = nil) async {
-        for session in sessions.values where id == nil || session.tokenID == id {
-            do {
-                try await session.server.notify(ToolListChangedNotification.message())
-            } catch {
-                log.debug("Couldn't notify a remote session of a tool list change: \(error)")
-            }
-        }
-    }
-
-    // MARK: Listener
-
-    private func refresh() async {
+    /// Starts the node again with an auth key, which logs it in without a browser.
+    func logIn(authKey: String) async {
         guard configuration.isEnabled else { return }
-        await closeIdleSessions()
+        await startNode(authKey: authKey)
+    }
 
-        let current: Tailscale.Status
+    /// Starts the node again, such as to get a new login URL.
+    func restartNode() async {
+        guard configuration.isEnabled else { return }
+        await startNode()
+    }
+
+    /// Logs the node out of the tailnet and starts it again, ready for another login.
+    func logOut() async {
+        guard configuration.isEnabled, let node else { return }
+        let current = generation
+        state = .loggingOut
+        await closeSessions { _ in true }
         do {
-            current = try await Tailscale.status()
+            try await node.logout()
         } catch {
-            guard configuration.isEnabled else { return }
-            stopListener()
-            state = .unavailable(error.localizedDescription)
+            log.error("Couldn't log the remote access node out: \(error)")
+            guard current == generation else { return }
+            state = .failed("iMCP couldn't log out of Tailscale: \(error.localizedDescription)")
             return
         }
-        guard configuration.isEnabled else { return }
-        if listener != nil, current == status { return }
-        startListener(on: current)
+        // A new start asks the control server for a new login URL.
+        guard current == generation else { return }
+        await startNode()
     }
 
-    private func startListener(on current: Tailscale.Status) {
-        stopListener()
+    private func startNode(authKey: String? = nil) async {
+        await stopNode()
         guard configuration.port != 0 else {
             state = .failed("Choose a port from 1 to 65535.")
             return
         }
+        state = .starting
+        let current = generation
+        let nodeConfiguration = TailnetNodeConfiguration(
+            hostname: configuration.hostname,
+            stateDirectory: stateDirectory,
+            authKey: authKey
+        )
+        monitorTask = Task { [weak self] in
+            await self?.runNode(nodeConfiguration, generation: current)
+        }
+    }
+
+    private func stopNode() async {
+        generation += 1
+        monitorTask?.cancel()
+        monitorTask = nil
+        let node = self.node
+        self.node = nil
+        identity = nil
+        isListening = false
+        peers.removeAll()
+        await closeSessions { _ in true }
+        await node?.close()
+    }
+
+    private func runNode(_ nodeConfiguration: TailnetNodeConfiguration, generation current: Int) async {
+        let node: any TailnetNode
         do {
-            // Listen on the tailnet address only, so that other networks can't reach the server.
-            // A kernel socket accepts connections from this Mac's own tailnet address too,
-            // which Network.framework's listener on the Tailscale interface doesn't.
-            listener = try SocketListener(address: current.address, port: configuration.port, queue: queue) {
-                [weak self] connection in
-                guard let self else {
-                    connection.close()
-                    return
-                }
-                Task { await self.accept(connection) }
-            }
+            node = try await makeNode(nodeConfiguration)
         } catch {
-            log.error("Remote access listener failed: \(error)")
-            if (error as? POSIXError)?.code == .EADDRINUSE {
-                state = .failed("Another app is using port \(configuration.port). Choose another port.")
-            } else {
-                state = .failed("iMCP couldn't listen on port \(configuration.port): \(error.localizedDescription)")
+            log.error("Remote access node failed to start: \(error)")
+            guard current == generation else { return }
+            state = .failed("iMCP couldn't start its Tailscale node: \(error.localizedDescription)")
+            return
+        }
+        guard current == generation, !Task.isCancelled else {
+            await node.close()
+            return
+        }
+        self.node = node
+
+        while current == generation, !Task.isCancelled {
+            await refresh(node, generation: current)
+            await closeIdleSessions()
+            try? await Task.sleep(for: identity == nil ? Self.startingRefreshInterval : Self.refreshInterval)
+        }
+    }
+
+    private func refresh(_ node: any TailnetNode, generation current: Int) async {
+        let status: TailnetStatus
+        do {
+            status = try await node.status()
+        } catch {
+            log.error("Couldn't read the remote access node's status: \(error)")
+            guard current == generation else { return }
+            state = .failed("iMCP couldn't read its Tailscale node's status: \(error.localizedDescription)")
+            return
+        }
+        guard current == generation, state != .loggingOut else { return }
+
+        guard case .running(let me) = status.state else {
+            if identity != nil {
+                // The node left the tailnet, such as when its key expired.
+                identity = nil
+                peers.removeAll()
+                await closeSessions { _ in true }
+            }
+            switch status.state {
+            case .needsLogin(let url): state = .needsLogin(url)
+            case .needsApproval: state = .needsApproval
+            case .starting, .stopped, .running: state = .starting
             }
             return
         }
-        status = current
-        peers.removeAll()
-        let host = current.dnsName ?? current.addressString
-        state = .running(endpoint: "http://\(host):\(configuration.port)/mcp")
-        log.notice("Remote access listening on \(current.addressString, privacy: .public):\(self.configuration.port)")
+
+        guard !me.isTagged else {
+            identity = nil
+            state = .failed(
+                "This node has tags, so iMCP can't tell which user owns it. Log out, then log in with your own account."
+            )
+            return
+        }
+        if let identity, identity != me {
+            if identity.ipv4Address != me.ipv4Address {
+                // The listener can't move to another address, so start over.
+                await startNode()
+                return
+            }
+            peers.removeAll()
+            await closeSessions { _ in true }
+        }
+        identity = me
+
+        if !isListening {
+            do {
+                let listener = try await node.listen(on: me.ipv4Address, port: configuration.port)
+                guard current == generation else { return }
+                isListening = true
+                acceptConnections(from: listener, node: node, generation: current)
+                log.notice("Remote access listening on \(me.ipv4Address, privacy: .public):\(self.configuration.port)")
+            } catch {
+                log.error("Remote access listener failed: \(error)")
+                guard current == generation else { return }
+                state = .failed("iMCP couldn't listen on port \(configuration.port): \(error.localizedDescription)")
+                return
+            }
+        }
+
+        let host = me.dnsName ?? me.ipv4Address
+        state = .running(
+            Endpoint(
+                url: "http://\(host):\(configuration.port)/mcp",
+                dnsName: me.dnsName,
+                ipv4Address: me.ipv4Address,
+                ipv6Address: me.ipv6Address
+            )
+        )
     }
 
-    private func stopListener() {
-        listener?.cancel()
-        listener = nil
-        status = nil
+    private func acceptConnections(
+        from listener: any TailnetListener,
+        node: any TailnetNode,
+        generation current: Int
+    ) {
+        Task { [weak self] in
+            while true {
+                let connection: any TailnetConnection
+                do {
+                    connection = try await listener.accept()
+                } catch {
+                    break
+                }
+                guard let self else {
+                    await connection.close()
+                    return
+                }
+                await self.accept(connection, node: node, generation: current)
+            }
+            await self?.listenerEnded(generation: current)
+        }
+    }
+
+    /// Lets the next refresh listen again if the node is still running.
+    private func listenerEnded(generation current: Int) {
+        guard current == generation else { return }
+        isListening = false
     }
 
     // MARK: Connections
 
-    private func accept(_ connection: SocketConnection) {
-        guard listener != nil, connectionCount < Self.maximumConnections,
-            Tailscale.isTailnetAddress(connection.peerAddress)
+    private func accept(_ connection: any TailnetConnection, node: any TailnetNode, generation current: Int) async {
+        guard current == generation, let me = identity, connectionCount < Self.maximumConnections,
+            let address = connection.remoteAddress
         else {
-            connection.close()
+            await connection.close()
             return
         }
         connectionCount += 1
 
-        let address = connection.peerAddress.map(String.init).joined(separator: ".")
         let http = HTTPServerConnection(connection)
         Task {
-            let peer = await self.authorizedPeer(at: address)
+            let peer = await self.authorizedPeer(at: address, node: node, identity: me)
             await http.serve(
                 { request in
                     guard let peer else {
                         let error = MCPError.invalidRequest(
-                            "Forbidden: Only devices that belong to the owner of this Mac can connect."
+                            "Forbidden: Only devices that belong to the owner of this node can connect."
                         )
                         return (MCP.HTTPResponse.error(statusCode: 403, error), keepAlive: false)
                     }
@@ -388,25 +514,35 @@ actor RemoteAccessServer {
         connectionCount -= 1
     }
 
-    /// The device at an address, if it belongs to this Mac's user and has no tags.
-    private func authorizedPeer(at address: String) async -> Tailscale.Peer? {
+    /// Whether a peer may use the server:
+    /// an untagged device that belongs to the same user as the node.
+    static func isAuthorized(_ peer: TailnetPeer, for node: TailnetSelf) -> Bool {
+        !node.isTagged && !peer.isTagged && !peer.stableID.isEmpty && peer.userID == node.userID
+    }
+
+    /// The device at an address, if it may use the server.
+    private func authorizedPeer(at address: String, node: any TailnetNode, identity: TailnetSelf) async -> TailnetPeer?
+    {
         if let cached = peers[address], cached.expires > Date() {
             return cached.peer
         }
-        var authorized: Tailscale.Peer?
+        let peer: TailnetPeer
         do {
-            let peer = try await Tailscale.whois(address)
-            if let status, peer.userID == status.userID, !peer.isTagged {
-                authorized = peer
-            } else {
-                log.notice(
-                    "Rejected remote connection from \(address, privacy: .public): another user or a tagged device"
-                )
-            }
+            peer = try await node.whois(address)
         } catch {
             log.error("Couldn't identify the remote device at \(address, privacy: .public): \(error)")
+            return nil
         }
-        peers[address] = (authorized, Date().addingTimeInterval(60))
+        let authorized = Self.isAuthorized(peer, for: identity) ? peer : nil
+        if authorized == nil {
+            log.notice(
+                "Rejected remote connection from \(address, privacy: .public): another user or a tagged device"
+            )
+        }
+        // Keep the decision only for the node that made it.
+        if identity == self.identity {
+            peers[address] = (authorized, Date().addingTimeInterval(60))
+        }
         return authorized
     }
 
@@ -414,7 +550,7 @@ actor RemoteAccessServer {
 
     private var originValidator: OriginValidator {
         let port = configuration.port
-        let hosts = status?.hostNames ?? []
+        let hosts = identity?.hostNames ?? []
         return OriginValidator(
             allowedHosts: hosts.map { "\($0):\(port)" },
             allowedOrigins: hosts.map { "http://\($0):\(port)" }
@@ -425,7 +561,7 @@ actor RemoteAccessServer {
     private static func logRequest(
         _ request: HTTPRequestMessage,
         response: MCP.HTTPResponse,
-        from peer: Tailscale.Peer
+        from peer: TailnetPeer
     ) {
         let method = (try? JSONSerialization.jsonObject(with: request.body) as? [String: Any])?["method"] as? String
         log.info(
@@ -433,7 +569,7 @@ actor RemoteAccessServer {
         )
     }
 
-    func respond(to message: HTTPRequestMessage, from peer: Tailscale.Peer) async -> MCP.HTTPResponse {
+    func respond(to message: HTTPRequestMessage, from peer: TailnetPeer) async -> MCP.HTTPResponse {
         guard message.path == "/mcp" else {
             return .error(statusCode: 404, .invalidRequest("Not Found: The MCP endpoint is /mcp."))
         }
@@ -486,7 +622,7 @@ actor RemoteAccessServer {
     private func startSession(
         with request: MCP.HTTPRequest,
         token: AccessToken,
-        peer: Tailscale.Peer
+        peer: TailnetPeer
     ) async -> MCP.HTTPResponse {
         if sessions.count >= Self.maximumSessions {
             // Make room by ending the session that has waited longest without a request or stream.
@@ -557,7 +693,7 @@ actor RemoteAccessServer {
         )
     }
 
-    private static func rejectDevice(_ peer: Tailscale.Peer) -> MCP.HTTPResponse {
+    private static func rejectDevice(_ peer: TailnetPeer) -> MCP.HTTPResponse {
         log.notice(
             "Rejected remote request from \(peer.deviceName, privacy: .public), node \(peer.stableID, privacy: .public): access token is bound to another device"
         )
@@ -587,6 +723,23 @@ actor RemoteAccessServer {
         }
     }
 
+    /// Ends the sessions that use a token, after the token is deleted or re-rolled.
+    func closeSessions(forToken id: UUID) async {
+        await closeSessions { $0.tokenID == id }
+    }
+
+    /// Tells clients to fetch their tool lists again.
+    /// Pass a token to notify only the sessions that use it.
+    func notifyToolListChanged(forToken id: UUID? = nil) async {
+        for session in sessions.values where id == nil || session.tokenID == id {
+            do {
+                try await session.server.notify(ToolListChangedNotification.message())
+            } catch {
+                log.debug("Couldn't notify a remote session of a tool list change: \(error)")
+            }
+        }
+    }
+
     private static func bearerToken(in request: MCP.HTTPRequest) -> String? {
         guard let field = request.header(HTTPHeaderName.authorization) else { return nil }
         let parts = field.split(separator: " ", maxSplits: 1)
@@ -597,6 +750,32 @@ actor RemoteAccessServer {
     private static func isInitializeRequest(_ body: Data) -> Bool {
         let message = try? JSONSerialization.jsonObject(with: body) as? [String: Any]
         return message?["method"] as? String == "initialize"
+    }
+
+    // MARK: Host name
+
+    /// A host name for the node, made from the Mac's name,
+    /// such as `mattts-macbook-pro-imcp` for "Mattt's MacBook Pro".
+    static func defaultHostname(computerName: String?) -> String {
+        sanitizedHostname("\(computerName ?? "Mac") iMCP") ?? "imcp"
+    }
+
+    /// A DNS label made from a name, or `nil` if the name has no letters or digits.
+    static func sanitizedHostname(_ name: String) -> String? {
+        var label = ""
+        for character in name.lowercased() {
+            if character.isASCII, character.isLetter || character.isNumber {
+                label.append(character)
+            } else if character == "'" || character == "\u{2019}" {
+                continue
+            } else if !label.isEmpty, label.last != "-" {
+                label.append("-")
+            }
+        }
+        while label.last == "-" { label.removeLast() }
+        label = String(label.prefix(63))
+        while label.last == "-" { label.removeLast() }
+        return label.isEmpty ? nil : label
     }
 }
 
@@ -609,18 +788,27 @@ final class HTTPServerConnection: @unchecked Sendable {
 
     /// How long a connection can wait for a request.
     static let idleTimeout: Duration = .seconds(120)
+    /// How long the peer has to accept each write.
+    static let sendTimeout: Duration = .seconds(30)
     /// How often an open event stream gets a comment, so that a closed connection is noticed.
     static let keepAliveInterval: Duration = .seconds(25)
 
-    private let connection: SocketConnection
+    private let connection: any TailnetConnection
+    // Only `serve(_:streamEnded:)` reads and writes the buffer, one request at a time.
     private var buffer = Data()
 
-    init(_ connection: SocketConnection) {
+    init(_ connection: any TailnetConnection) {
         self.connection = connection
     }
 
+    /// Serves requests until the client or the handler ends the connection, then closes it.
     func serve(_ handler: Handler, streamEnded: @Sendable (String?) async -> Void) async {
-        defer { connection.close() }
+        await serveRequests(handler, streamEnded: streamEnded)
+        // No read is in progress here, so closing can't affect a reused descriptor.
+        await connection.close()
+    }
+
+    private func serveRequests(_ handler: Handler, streamEnded: @Sendable (String?) async -> Void) async {
         while let result = await readRequest() {
             switch result {
             case .request(let message, _):
@@ -641,7 +829,7 @@ final class HTTPServerConnection: @unchecked Sendable {
         }
     }
 
-    /// The next request, or `nil` when the connection closes first.
+    /// The next request, or `nil` when the connection closes or waits too long.
     private func readRequest() async -> HTTPRequestParser.Result? {
         var sentContinue = false
         while true {
@@ -665,17 +853,19 @@ final class HTTPServerConnection: @unchecked Sendable {
     }
 
     private func receive() async -> Data? {
-        let connection = self.connection
-        let timeout = Task {
-            try? await Task.sleep(for: Self.idleTimeout)
-            if !Task.isCancelled { connection.close() }
+        guard let data = try? await connection.receive(timeout: Self.idleTimeout), !data.isEmpty else {
+            return nil
         }
-        defer { timeout.cancel() }
-        return await connection.receive()
+        return data
     }
 
     private func send(_ data: Data) async -> Bool {
-        await connection.send(data)
+        do {
+            try await connection.send(data, timeout: Self.sendTimeout)
+            return true
+        } catch {
+            return false
+        }
     }
 
     private func write(
@@ -735,180 +925,5 @@ final class HTTPServerConnection: @unchecked Sendable {
             group.cancelAll()
             return result ?? false
         }
-    }
-}
-
-// MARK: - Sockets
-
-/// A TCP listener on one IPv4 address.
-final class SocketListener: @unchecked Sendable {
-    private let source: DispatchSourceRead
-
-    init(
-        address: IPv4Address,
-        port: UInt16,
-        queue: DispatchQueue,
-        accept: @escaping @Sendable (SocketConnection) -> Void
-    ) throws {
-        let socket = Darwin.socket(AF_INET, SOCK_STREAM, 0)
-        guard socket >= 0 else { throw POSIXError.current }
-        var reuse: Int32 = 1
-        setsockopt(socket, SOL_SOCKET, SO_REUSEADDR, &reuse, socklen_t(MemoryLayout<Int32>.size))
-
-        var socketAddress = sockaddr_in()
-        socketAddress.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
-        socketAddress.sin_family = sa_family_t(AF_INET)
-        socketAddress.sin_port = port.bigEndian
-        withUnsafeMutableBytes(of: &socketAddress.sin_addr) { $0.copyBytes(from: address.rawValue) }
-        let bound = withUnsafePointer(to: &socketAddress) {
-            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                bind(socket, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
-            }
-        }
-        guard bound == 0, listen(socket, 16) == 0, fcntl(socket, F_SETFL, O_NONBLOCK) == 0 else {
-            let error = POSIXError.current
-            Darwin.close(socket)
-            throw error
-        }
-
-        source = DispatchSource.makeReadSource(fileDescriptor: socket, queue: queue)
-        source.setEventHandler {
-            while true {
-                var peer = sockaddr_in()
-                var length = socklen_t(MemoryLayout<sockaddr_in>.size)
-                let client = withUnsafeMutablePointer(to: &peer) {
-                    $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.accept(socket, $0, &length) }
-                }
-                guard client >= 0 else { return }
-                let peerAddress = withUnsafeBytes(of: peer.sin_addr) { [UInt8]($0) }
-                accept(SocketConnection(socket: client, peerAddress: peerAddress))
-            }
-        }
-        source.setCancelHandler { Darwin.close(socket) }
-        source.resume()
-    }
-
-    func cancel() {
-        source.cancel()
-    }
-}
-
-/// An accepted TCP connection.
-///
-/// Reads wait on a dispatch source; writes run one at a time on their own queue,
-/// and closing waits for the write in progress, so a write never reaches a reused descriptor.
-final class SocketConnection: @unchecked Sendable {
-    /// The peer's IPv4 address, in network byte order.
-    let peerAddress: [UInt8]
-
-    private let socket: Int32
-    private let readQueue = DispatchQueue(label: "iMCP.RemoteAccess.read")
-    private let writeQueue = DispatchQueue(label: "iMCP.RemoteAccess.write")
-    private let readSource: DispatchSourceRead
-    // Read state, on the read queue.
-    private var pendingReceive: CheckedContinuation<Data?, Never>?
-    private var isReadSourceSuspended = true
-    private var isClosed = false
-    // Write state, on the write queue.
-    private var isWriteClosed = false
-
-    init(socket: Int32, peerAddress: [UInt8]) {
-        self.socket = socket
-        self.peerAddress = peerAddress
-        // Use blocking writes with a timeout, and don't raise SIGPIPE when the peer goes away.
-        _ = fcntl(socket, F_SETFL, fcntl(socket, F_GETFL) & ~O_NONBLOCK)
-        var noSignal: Int32 = 1
-        setsockopt(socket, SOL_SOCKET, SO_NOSIGPIPE, &noSignal, socklen_t(MemoryLayout<Int32>.size))
-        var timeout = timeval(tv_sec: 30, tv_usec: 0)
-        setsockopt(socket, SOL_SOCKET, SO_SNDTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
-
-        readSource = DispatchSource.makeReadSource(fileDescriptor: socket, queue: readQueue)
-        readSource.setEventHandler { [unowned self] in self.readAvailable() }
-        readSource.setCancelHandler { Darwin.close(socket) }
-    }
-
-    /// The next bytes from the peer, or `nil` when the connection closes.
-    func receive() async -> Data? {
-        await withCheckedContinuation { continuation in
-            readQueue.async { [self] in
-                guard !isClosed, pendingReceive == nil else {
-                    continuation.resume(returning: nil)
-                    return
-                }
-                pendingReceive = continuation
-                if isReadSourceSuspended {
-                    isReadSourceSuspended = false
-                    readSource.resume()
-                }
-            }
-        }
-    }
-
-    private func readAvailable() {
-        guard !isClosed else { return }
-        var buffer = [UInt8](repeating: 0, count: 64 * 1024)
-        let count = read(socket, &buffer, buffer.count)
-        if count < 0, errno == EAGAIN || errno == EINTR { return }
-        // Stop reading until someone asks for more.
-        isReadSourceSuspended = true
-        readSource.suspend()
-        let continuation = pendingReceive
-        pendingReceive = nil
-        continuation?.resume(returning: count > 0 ? Data(buffer[0 ..< count]) : nil)
-    }
-
-    /// Writes all the bytes, and returns whether the peer received them.
-    func send(_ data: Data) async -> Bool {
-        await withCheckedContinuation { continuation in
-            writeQueue.async { [self] in
-                guard !isWriteClosed else {
-                    continuation.resume(returning: false)
-                    return
-                }
-                let sent = data.withUnsafeBytes { bytes -> Bool in
-                    guard var pointer = bytes.baseAddress else { return true }
-                    var remaining = bytes.count
-                    while remaining > 0 {
-                        let count = write(socket, pointer, remaining)
-                        if count > 0 {
-                            pointer += count
-                            remaining -= count
-                        } else if count < 0, errno == EINTR {
-                            continue
-                        } else {
-                            return false
-                        }
-                    }
-                    return true
-                }
-                continuation.resume(returning: sent)
-            }
-        }
-    }
-
-    func close() {
-        writeQueue.async { [self] in
-            guard !isWriteClosed else { return }
-            isWriteClosed = true
-            shutdown(socket, SHUT_RDWR)
-            readQueue.async { [self] in
-                isClosed = true
-                // A source must be running for its cancel handler, which closes the socket, to run.
-                if isReadSourceSuspended {
-                    isReadSourceSuspended = false
-                    readSource.resume()
-                }
-                readSource.cancel()
-                let continuation = pendingReceive
-                pendingReceive = nil
-                continuation?.resume(returning: nil)
-            }
-        }
-    }
-}
-
-extension POSIXError {
-    fileprivate static var current: POSIXError {
-        POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
     }
 }

@@ -2,10 +2,14 @@ import AppKit
 import SwiftUI
 
 /// The Settings pane for clients on the owner's other devices,
-/// which connect over HTTP through Tailscale with an access token.
+/// which connect over HTTP to iMCP's own Tailscale node with an access token.
 struct RemoteAccessSettingsView: View {
     @ObservedObject var serverController: ServerController
 
+    @Environment(\.openURL) private var openURL
+    @State private var hostnameDraft = ""
+    @State private var isEnteringAuthKey = false
+    @State private var isConfirmingLogOut = false
     @State private var editingToken: EditingToken?
     @State private var revealedSecret: RevealedSecret?
     @State private var tokenToReroll: AccessToken?
@@ -25,17 +29,38 @@ struct RemoteAccessSettingsView: View {
                     LabeledContent("Status") {
                         RemoteAccessStatusView(state: serverController.remoteAccessState)
                     }
+                    nodeRows(for: serverController.remoteAccessState)
+                }
+            } footer: {
+                Text(
+                    "iMCP joins your tailnet as its own device, with an address that only iMCP can use. It accepts connections only from devices that you own, and each client needs an access token. Tailscale encrypts the connection."
+                )
+            }
+
+            if serverController.isRemoteAccessEnabled {
+                Section {
+                    LabeledContent("Device Name") {
+                        TextField(
+                            "Device Name",
+                            text: $hostnameDraft,
+                            prompt: Text(serverController.defaultRemoteAccessHostname)
+                        )
+                        .labelsHidden()
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 220)
+                        .onSubmit { serverController.remoteAccessHostname = hostnameDraft }
+                    }
                     LabeledContent("Port") {
                         TextField("Port", value: portBinding, format: .number.grouping(.never))
                             .labelsHidden()
                             .multilineTextAlignment(.trailing)
                             .frame(width: 80)
                     }
+                } footer: {
+                    Text(
+                        "The device name is iMCP's name on your tailnet, and the first part of its MagicDNS name. Changing the name or port reconnects iMCP to Tailscale."
+                    )
                 }
-            } footer: {
-                Text(
-                    "iMCP accepts connections only from devices in your tailnet that you own, and each client needs an access token. Tailscale encrypts the connection. Tailscale must be installed and connected on this Mac."
-                )
             }
 
             Section {
@@ -76,6 +101,21 @@ struct RemoteAccessSettingsView: View {
         }
         .formStyle(.grouped)
         .navigationTitle("Remote Access")
+        .onAppear { hostnameDraft = serverController.remoteAccessHostname }
+        .onChange(of: serverController.remoteAccessHostname) { _, name in hostnameDraft = name }
+        .sheet(isPresented: $isEnteringAuthKey) {
+            AuthKeyView { key in serverController.logInToRemoteAccess(authKey: key) }
+        }
+        .alert("Log Out of Tailscale?", isPresented: $isConfirmingLogOut) {
+            Button("Log Out", role: .destructive) {
+                serverController.logOutOfRemoteAccess()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(
+                "Clients on your other devices can't connect until iMCP logs in again. Your access tokens stay the same."
+            )
+        }
         .sheet(item: $editingToken) { editing in
             AccessTokenEditor(serverController: serverController, token: editing.token) { name, permissions in
                 if let token = editing.token {
@@ -123,6 +163,75 @@ struct RemoteAccessSettingsView: View {
         }
     }
 
+    @ViewBuilder
+    private func nodeRows(for state: RemoteAccessServer.State) -> some View {
+        switch state {
+        case .needsLogin(let url):
+            LabeledContent {
+                HStack {
+                    Button("Use Auth Key…") { isEnteringAuthKey = true }
+                    if let url {
+                        Button("Log In…") { openURL(url) }
+                            .keyboardShortcut(.defaultAction)
+                    } else {
+                        Button("Get Login Link") { serverController.restartRemoteAccessNode() }
+                    }
+                }
+            } label: {
+                Text("Log In to Tailscale")
+                Text(
+                    url == nil
+                        ? "iMCP is waiting for a login link from Tailscale."
+                        : "Log in with the account that you use on your other devices to add iMCP to your tailnet."
+                )
+            }
+        case .needsApproval:
+            LabeledContent {
+                Button("Log Out…") { isConfirmingLogOut = true }
+            } label: {
+                Text("Waiting for Approval")
+                Text("An admin of your tailnet must approve this device in the Tailscale admin console.")
+            }
+        case .running(let endpoint):
+            LabeledContent("URL") {
+                HStack {
+                    Text(endpoint.url)
+                        .textSelection(.enabled)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Button("Copy") {
+                        copyToPasteboard(endpoint.url)
+                    }
+                }
+            }
+            if let dnsName = endpoint.dnsName {
+                LabeledContent("MagicDNS Name") {
+                    Text(dnsName)
+                        .textSelection(.enabled)
+                }
+            }
+            LabeledContent("Tailnet Address") {
+                VStack(alignment: .trailing) {
+                    Text(endpoint.ipv4Address)
+                    if let ipv6Address = endpoint.ipv6Address {
+                        Text(ipv6Address)
+                    }
+                }
+                .textSelection(.enabled)
+            }
+            LabeledContent("Tailscale Account") {
+                Button("Log Out…") { isConfirmingLogOut = true }
+            }
+        case .failed:
+            HStack {
+                Spacer()
+                Button("Try Again") { serverController.restartRemoteAccessNode() }
+            }
+        case .off, .starting, .loggingOut:
+            EmptyView()
+        }
+    }
+
     private var enabledBinding: Binding<Bool> {
         Binding(
             get: { serverController.isRemoteAccessEnabled },
@@ -159,7 +268,7 @@ private struct RevealedSecret: Identifiable {
 
 extension RemoteAccessServer.State {
     var endpoint: String? {
-        if case .running(let endpoint) = self { endpoint } else { nil }
+        if case .running(let endpoint) = self { endpoint.url } else { nil }
     }
 }
 
@@ -172,25 +281,60 @@ private struct RemoteAccessStatusView: View {
             Text("Off")
                 .foregroundStyle(.secondary)
         case .starting:
-            Text("Starting…")
+            Text("Connecting to Tailscale…")
                 .foregroundStyle(.secondary)
-        case .unavailable(let reason):
-            Text(reason)
+        case .needsLogin:
+            Text("Not logged in")
                 .foregroundStyle(.orange)
+        case .needsApproval:
+            Text("Waiting for approval")
+                .foregroundStyle(.orange)
+        case .loggingOut:
+            Text("Logging out…")
+                .foregroundStyle(.secondary)
         case .failed(let reason):
             Text(reason)
                 .foregroundStyle(.red)
-        case .running(let endpoint):
+        case .running:
+            Text("On")
+                .foregroundStyle(.green)
+        }
+    }
+}
+
+/// Logs iMCP's node in with an auth key, which iMCP uses once and doesn't keep.
+private struct AuthKeyView: View {
+    let logIn: (String) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var key = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Log In with an Auth Key")
+                .font(.headline)
+            Text(
+                "Create an auth key in the Keys page of the Tailscale admin console. Use a key without tags, so that iMCP's device belongs to you. iMCP uses the key once and doesn't keep it."
+            )
+            .fixedSize(horizontal: false, vertical: true)
+            SecureField("Auth Key", text: $key, prompt: Text("tskey-auth-…"))
+                .textFieldStyle(.roundedBorder)
             HStack {
-                Text(endpoint)
-                    .textSelection(.enabled)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Button("Copy") {
-                    copyToPasteboard(endpoint)
+                Spacer()
+                Button("Cancel") {
+                    dismiss()
                 }
+                .keyboardShortcut(.cancelAction)
+                Button("Log In") {
+                    logIn(key)
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
+        .padding(20)
+        .frame(width: 460)
     }
 }
 

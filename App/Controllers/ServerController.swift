@@ -288,6 +288,8 @@ final class ServerController: ObservableObject {
     // MARK: - Remote Access
     @AppStorage("remoteAccessEnabled") private var remoteAccessEnabled = false
     @AppStorage("remoteAccessPort") private var remoteAccessPortValue = Int(RemoteAccessServer.defaultPort)
+    /// The host name for iMCP's node, or empty for one made from the Mac's name.
+    @AppStorage("remoteAccessHostname") private var remoteAccessHostnameValue = ""
     @Published private(set) var remoteAccessState: RemoteAccessServer.State = .off
     private let tokenStore = AccessTokenStore.shared
     /// Applies remote access settings in the order that they change.
@@ -439,6 +441,42 @@ final class ServerController: ObservableObject {
         }
     }
 
+    /// The host name that iMCP's node asks for on the tailnet.
+    /// Setting an empty name goes back to one made from the Mac's name.
+    var remoteAccessHostname: String {
+        get { remoteAccessHostnameValue.isEmpty ? defaultRemoteAccessHostname : remoteAccessHostnameValue }
+        set {
+            let name = RemoteAccessServer.sanitizedHostname(newValue) ?? ""
+            let value = name == defaultRemoteAccessHostname ? "" : name
+            guard value != remoteAccessHostnameValue else { return }
+            objectWillChange.send()
+            remoteAccessHostnameValue = value
+            applyRemoteAccessConfiguration()
+        }
+    }
+
+    /// A host name made from the Mac's name when iMCP starts.
+    private(set) lazy var defaultRemoteAccessHostname = RemoteAccessServer.defaultHostname(
+        computerName: Host.current().localizedName
+    )
+
+    /// Starts iMCP's node again with an auth key, which logs it in without a browser.
+    func logInToRemoteAccess(authKey: String) {
+        let key = authKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else { return }
+        afterRemoteAccessConfiguration { await $0.logIn(authKey: key) }
+    }
+
+    /// Starts iMCP's node again, such as to get a new login URL.
+    func restartRemoteAccessNode() {
+        afterRemoteAccessConfiguration { await $0.restartNode() }
+    }
+
+    /// Logs iMCP's node out of the tailnet.
+    func logOutOfRemoteAccess() {
+        afterRemoteAccessConfiguration { await $0.logOut() }
+    }
+
     var accessTokens: [AccessToken] {
         tokenStore.all.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
@@ -505,12 +543,19 @@ final class ServerController: ObservableObject {
     private func applyRemoteAccessConfiguration() {
         let configuration = RemoteAccessServer.Configuration(
             isEnabled: remoteAccessEnabled,
-            port: UInt16(clamping: remoteAccessPortValue)
+            port: UInt16(clamping: remoteAccessPortValue),
+            hostname: remoteAccessHostname
         )
+        afterRemoteAccessConfiguration { await $0.configure(configuration) }
+    }
+
+    /// Runs remote access changes one at a time, in the order that they're made.
+    private func afterRemoteAccessConfiguration(_ body: @escaping @Sendable (RemoteAccessServer) async -> Void) {
         let previous = remoteAccessConfigurationTask
+        let networkManager = self.networkManager
         remoteAccessConfigurationTask = Task {
             await previous?.value
-            await networkManager.remoteAccess.configure(configuration)
+            await body(await networkManager.remoteAccess)
         }
     }
 
@@ -705,8 +750,19 @@ final class ServerController: ObservableObject {
 // MARK: - Connection Management Components
 
 extension RemoteAccessServer {
+    /// Where iMCP's node keeps its keys and state, in the app's container.
+    static var nodeStateDirectory: URL {
+        URL.applicationSupportDirectory
+            .appending(path: Bundle.main.bundleIdentifier ?? "iMCP", directoryHint: .isDirectory)
+            .appending(path: "Tailscale", directoryHint: .isDirectory)
+    }
+
     init(tokenStore: AccessTokenStore, networkManager: ServerNetworkManager) {
-        self.init(tokenStore: tokenStore) { [weak networkManager] tokenID in
+        self.init(
+            tokenStore: tokenStore,
+            stateDirectory: Self.nodeStateDirectory,
+            makeNode: { try await EmbeddedTailnetNode.start($0) }
+        ) { [weak networkManager] tokenID in
             guard let networkManager else { return nil }
             let server = MCP.Server.iMCP()
             // A valid access token approves a remote session,
