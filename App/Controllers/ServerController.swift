@@ -854,7 +854,7 @@ final class LocalSocketListener: @unchecked Sendable {
     /// - Throws: ``LocalSocket/Error/addressInUse(_:)`` if another copy of iMCP listens at `path`.
     init(path: String, onConnection: @escaping @Sendable (Int32) -> Void) throws {
         let descriptor = try LocalSocket.listen(at: path) { occupant in
-            LocalSocket.peerSatisfies(CodeRequirement.server, descriptor: occupant, usesDynamicCode: true)
+            LocalSocket.isOtherServer(occupant, requirement: CodeRequirement.server)
         }
         let flags = fcntl(descriptor, F_GETFL)
         _ = fcntl(descriptor, F_SETFL, flags | O_NONBLOCK)
