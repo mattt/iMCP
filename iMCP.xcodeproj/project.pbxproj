@@ -47,6 +47,8 @@
 		B0D1DEADBEEF000000000008 /* MCPServiceLoopTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF000000000007 /* MCPServiceLoopTests.swift */; };
 		B0D1DEADBEEF00000000000A /* MCPInitializeCompatibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF000000000009 /* MCPInitializeCompatibility.swift */; };
 		B0D1DEADBEEF00000000000C /* MCPInitializeCompatibilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF00000000000B /* MCPInitializeCompatibilityTests.swift */; };
+		C0A7E00000000000000000A2 /* ../../App/Controllers/ConnectionApprovalGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0A7E00000000000000000A1 /* ../../App/Controllers/ConnectionApprovalGate.swift */; };
+		C0A7E00000000000000000B2 /* ConnectionApprovalGateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0A7E00000000000000000B1 /* ConnectionApprovalGateTests.swift */; };
 		F809556E2D7888920055B911 /* TypedStream in Frameworks */ = {isa = PBXBuildFile; productRef = F809556D2D7888920055B911 /* TypedStream */; };
 		F80955702D7888920055B911 /* iMessage in Frameworks */ = {isa = PBXBuildFile; productRef = F809556F2D7888920055B911 /* iMessage */; };
 		C0FFEE0000000000000000A1 /* TopoText in Frameworks */ = {isa = PBXBuildFile; productRef = C0FFEE0000000000000000A2 /* TopoText */; };
@@ -119,6 +121,8 @@
 		B0D1DEADBEEF000000000007 /* MCPServiceLoopTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MCPServiceLoopTests.swift; sourceTree = "<group>"; };
 		B0D1DEADBEEF000000000009 /* MCPInitializeCompatibility.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MCPInitializeCompatibility.swift; path = ../../CLI/MCPInitializeCompatibility.swift; sourceTree = "<group>"; };
 		B0D1DEADBEEF00000000000B /* MCPInitializeCompatibilityTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MCPInitializeCompatibilityTests.swift; sourceTree = "<group>"; };
+		C0A7E00000000000000000A1 /* ../../App/Controllers/ConnectionApprovalGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Controllers/ConnectionApprovalGate.swift; sourceTree = "<group>"; };
+		C0A7E00000000000000000B1 /* ConnectionApprovalGateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionApprovalGateTests.swift; sourceTree = "<group>"; };
 		E0E66768348853754D32208C /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/System/Library/Frameworks/Cocoa.framework; sourceTree = DEVELOPER_DIR; };
 		F8F44E6D2D59038D0075D79C /* iMCP.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = iMCP.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F8F44EB62D5908D00075D79C /* imcp-server */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "imcp-server"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -252,6 +256,8 @@
 				A50000000000000000000010 /* MailTests.swift */,
 				A50000000000000000000011 /* ../../App/Services/Mail.swift */,
 				A50000000000000000000012 /* ../../App/Extensions/Foundation+Extensions.swift */,
+				C0A7E00000000000000000B1 /* ConnectionApprovalGateTests.swift */,
+				C0A7E00000000000000000A1 /* ../../App/Controllers/ConnectionApprovalGate.swift */,
 				A30000000000000000000010 /* HomeToolsTests.swift */,
 				A30000000000000000000011 /* ../../Shared/Home/HomeBackend.swift */,
 				A30000000000000000000012 /* ../../Shared/Home/HomeError.swift */,
@@ -572,6 +578,8 @@
 				A30000000000000000000025 /* ../../Shared/Models/Tool.swift in Sources */,
 				A30000000000000000000026 /* ../../Shared/Models/Value.swift in Sources */,
 				930214FCD680D7D74158F215 /* ServiceGroupConfigurationTests.swift in Sources */,
+				C0A7E00000000000000000B2 /* ConnectionApprovalGateTests.swift in Sources */,
+				C0A7E00000000000000000A2 /* ../../App/Controllers/ConnectionApprovalGate.swift in Sources */,
 				B0D1DEADBEEF000000000004 /* BonjourDiscoveryTests.swift in Sources */,
 				B0D1DEADBEEF000000000002 /* BonjourDiscovery.swift in Sources */,
 				B0D1DEADBEEF000000000008 /* MCPServiceLoopTests.swift in Sources */,
