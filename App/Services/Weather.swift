@@ -11,6 +11,16 @@ final class WeatherService: Service {
 
     private let weatherService = WeatherKit.WeatherService.shared
 
+    /// The attribution that WeatherKit requires, given once for a list of forecasts.
+    ///
+    /// Ontology includes it only in a forecast that is the root value,
+    /// so a list of forecasts carries it on the enclosing document.
+    private static let attribution: [String: Value] = [
+        "provider": "Apple Weather",
+        "attribution": "Weather data provided by Apple Weather",
+        "attributionLink": "https://weatherkit.apple.com/legal-attribution.html",
+    ]
+
     var tools: [Tool] {
         Tool(
             name: "weather_current",
@@ -98,7 +108,10 @@ final class WeatherService: Service {
                 including: .daily
             )
 
-            return dailyForecast.prefix(days).map { WeatherForecast($0) }
+            return JSONLDGraph(
+                dailyForecast.prefix(days).map { WeatherForecast($0) },
+                properties: Self.attribution
+            )
         }
 
         Tool(
@@ -151,7 +164,10 @@ final class WeatherService: Service {
                 including: .hourly
             )
 
-            return hourlyForecasts.prefix(hours).map { WeatherForecast($0) }
+            return JSONLDGraph(
+                hourlyForecasts.prefix(hours).map { WeatherForecast($0) },
+                properties: Self.attribution
+            )
         }
 
         Tool(
@@ -210,7 +226,10 @@ final class WeatherService: Service {
                 )
             }
 
-            return minuteByMinuteForecast.prefix(minutes).map { WeatherForecast($0) }
+            return JSONLDGraph(
+                minuteByMinuteForecast.prefix(minutes).map { WeatherForecast($0) },
+                properties: Self.attribution
+            )
         }
     }
 }

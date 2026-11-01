@@ -6,8 +6,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/mattt/Envelope",
       "state" : {
-        "revision" : "a90202c94df24b985d101ab5d2cfdf8162bbe9c9",
-        "version" : "0.4.0"
+        "revision" : "edccf6c528e94ffcadf678faff50f1e8b96c76e3",
+        "version" : "0.5.0"
       }
     },
     {
@@ -42,8 +42,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/mattt/Ontology",
       "state" : {
-        "revision" : "8c57a9162cbe0a27d84d63428fcb697e2fa22a3a",
-        "version" : "0.10.0"
+        "revision" : "7e3937c46057ec9afcfb347da2241033d311bd34",
+        "version" : "0.11.0"
       }
     },
     {

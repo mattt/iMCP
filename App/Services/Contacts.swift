@@ -222,7 +222,7 @@ final class ContactsService: Service {
                 )
             }
 
-            return contacts.compactMap { listedPerson(from: $0) }
+            return JSONLDGraph(contacts.compactMap { listedPerson(from: $0) })
         }
 
         Tool(
@@ -271,7 +271,7 @@ final class ContactsService: Service {
 
             // Filter before paging so skipped organizations do not shorten pages.
             let people = contacts.compactMap { listedPerson(from: $0) }
-            return Array(people.dropFirst(offset).prefix(limit))
+            return JSONLDGraph(Array(people.dropFirst(offset).prefix(limit)))
         }
 
         Tool(

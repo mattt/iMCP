@@ -140,7 +140,7 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
         Tool(
             name: "messages_fetch",
             description:
-                "Fetch messages from the Messages app. Each message names the conversation it belongs to (isPartOf), with its participants.",
+                "Fetch messages from the Messages app. Each message names the conversation it belongs to (isPartOf). The first message from each conversation includes its name and participants; later messages give only its @id.",
             inputSchema: .object(
                 properties: [
                     "participants": .array(
@@ -270,8 +270,9 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                 ? try self.attachments(ofMessages: fetched.map { $0.id.rawValue }, in: access)
                 : [:]
 
-            // Each chat is looked up once and shared by all of its messages.
-            var conversations: [Chat.ID: [String: Value]] = [:]
+            // Each chat is looked up once. The first message in a chat includes
+            // the chat's details, and later messages refer to the chat by its @id.
+            var conversations: Set<Chat.ID> = []
 
             for message in fetched {
                 guard messages.count < (limit ?? defaultLimit) else { break }
@@ -335,10 +336,11 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                 }
 
                 if let chatID = message.chatID {
-                    if conversations[chatID] == nil {
-                        conversations[chatID] = try self.conversation(for: chatID, in: db)
+                    if conversations.insert(chatID).inserted {
+                        object["isPartOf"] = .object(try self.conversation(for: chatID, in: db))
+                    } else {
+                        object["isPartOf"] = ["@id": .string(chatID.rawValue)]
                     }
-                    object["isPartOf"] = conversations[chatID].map { .object($0) }
                 }
 
                 messages.append(object)
@@ -433,7 +435,7 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
             try raw.query(sql, bindings: chunk) { stmt in
                 guard let messageGuid = RawDatabase.text(stmt, 0), let id = RawDatabase.text(stmt, 1)
                 else { return }
-                var part: [String: Value] = ["@type": "MediaObject", "@id": .string(id)]
+                var part: [String: Value] = ["@id": .string(id)]
                 let filename = RawDatabase.text(stmt, 2)
                 if let name = RawDatabase.text(stmt, 3) ?? filename.map({ ($0 as NSString).lastPathComponent }),
                     !name.isEmpty
@@ -735,8 +737,7 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
         in db: iMessage.Database
     ) throws -> [String: Value] {
         var conversation: [String: Value] = [
-            "@type": "Conversation",
-            "@id": .string(chatID.rawValue),
+            "@id": .string(chatID.rawValue)
         ]
 
         let request = FetchRequest<Chat>(predicate: .id(chatID), limit: 1)

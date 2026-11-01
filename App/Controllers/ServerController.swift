@@ -709,8 +709,12 @@ extension RemoteAccessServer {
         self.init(tokenStore: tokenStore) { [weak networkManager] tokenID in
             guard let networkManager else { return nil }
             let server = MCP.Server.iMCP()
+            // A valid access token approves a remote session,
+            // so the session doesn't ask the user.
+            let gate = ConnectionApprovalGate()
+            try? await gate.approve { true }
             // Read current permissions so changes apply to open sessions.
-            await networkManager.registerHandlers(for: server, connectionID: UUID()) { tool in
+            await networkManager.registerHandlers(for: server, connectionID: UUID(), gate: gate) { tool in
                 tokenStore.token(id: tokenID)?.permissions.allows(tool) ?? false
             }
             return server
@@ -747,6 +751,7 @@ actor MCPConnectionManager {
     private let server: MCP.Server
     private var transport: NetworkTransport
     private let parentManager: ServerNetworkManager
+    private let approvalGate = ConnectionApprovalGate()
     private var isStopping = false
 
     init(connectionID: UUID, connection: NWConnection, parentManager: ServerNetworkManager) {
@@ -769,27 +774,32 @@ actor MCPConnectionManager {
     func start(approvalHandler: @escaping (MCP.Client.Info) async -> Bool) async throws {
         do {
             log.notice("Starting MCP server for connection: \(self.connectionID)")
-            try await server.start(transport: transport) { [weak self] clientInfo, capabilities in
-                guard let self = self else { throw MCPError.connectionClosed }
+            // Register handlers only after the user approves the connection.
+            try await server.start(
+                transport: transport,
+                gate: approvalGate,
+                approve: { [weak self] clientInfo in
+                    guard let self = self else { return false }
 
-                log.info("Received initialize request from client: \(clientInfo.name)")
+                    log.info("Received initialize request from client: \(clientInfo.name)")
 
-                // Request user approval for the connection.
-                let approved = await approvalHandler(clientInfo)
-                log.info(
-                    "Approval result for connection \(connectionID): \(approved ? "Approved" : "Denied")"
-                )
+                    // Request user approval for the connection.
+                    let approved = await approvalHandler(clientInfo)
+                    log.info(
+                        "Approval result for connection \(self.connectionID): \(approved ? "Approved" : "Denied")"
+                    )
 
-                if !approved {
-                    await self.parentManager.removeConnection(self.connectionID)
-                    throw MCPError.connectionClosed
+                    if !approved {
+                        await self.parentManager.removeConnection(self.connectionID)
+                    }
+                    return approved
+                },
+                registerHandlers: { [weak self] in
+                    await self?.registerHandlers()
                 }
-            }
+            )
 
             log.notice("MCP Server started successfully for connection: \(self.connectionID)")
-
-            // Register handlers after successful approval.
-            await registerHandlers()
 
             // Monitor connection health for early disconnects.
             await startHealthMonitoring()
@@ -808,7 +818,11 @@ actor MCPConnectionManager {
     }
 
     private func registerHandlers() async {
-        await parentManager.registerHandlers(for: server, connectionID: connectionID)
+        await parentManager.registerHandlers(
+            for: server,
+            connectionID: connectionID,
+            gate: approvalGate
+        )
     }
 
     private func startHealthMonitoring() async {
@@ -869,7 +883,6 @@ actor NetworkDiscoveryManager {
     private let serviceDomain: String
     var listener: NWListener
     private let browser: NWBrowser
-    private var listenerStateHandler: (@Sendable (NWListener.State) -> Void)?
 
     init(serviceType: String, serviceDomain: String) throws {
         self.serviceType = serviceType
@@ -889,8 +902,9 @@ actor NetworkDiscoveryManager {
             tcpOptions.version = .v4
         }
 
-        // Advertise once the listener has an assigned port.
+        // Listen and advertise via Bonjour.
         self.listener = try NWListener(using: parameters)
+        self.listener.service = NWListener.Service(name: "iMCP", type: serviceType, domain: serviceDomain)
 
         // Browser is used for monitoring and diagnostics.
         self.browser = NWBrowser(
@@ -905,8 +919,7 @@ actor NetworkDiscoveryManager {
         stateHandler: @escaping @Sendable (NWListener.State) -> Void,
         connectionHandler: @escaping @Sendable (NWConnection) -> Void
     ) {
-        listenerStateHandler = stateHandler
-        configureStateHandler(for: listener)
+        listener.stateUpdateHandler = stateHandler
 
         listener.newConnectionHandler = connectionHandler
 
@@ -914,24 +927,6 @@ actor NetworkDiscoveryManager {
         browser.start(queue: .main)
 
         log.info("Started network discovery and advertisement")
-    }
-
-    private func configureStateHandler(for listener: NWListener) {
-        let serviceType = self.serviceType
-        let serviceDomain = self.serviceDomain
-        let stateHandler = listenerStateHandler
-        listener.stateUpdateHandler = { [weak listener] state in
-            if case .ready = state, let listener, let port = listener.port {
-                // Publish the assigned port before clients can discover the service.
-                listener.service = NWListener.Service(
-                    name: "iMCP",
-                    type: serviceType,
-                    domain: serviceDomain,
-                    txtRecord: NWTXTRecord(["port": String(port.rawValue)])
-                )
-            }
-            stateHandler?(state)
-        }
     }
 
     func stop() {
@@ -958,7 +953,11 @@ actor NetworkDiscoveryManager {
         }
 
         let newListener: NWListener = try NWListener(using: parameters)
-        configureStateHandler(for: newListener)
+        newListener.service = NWListener.Service(name: "iMCP", type: self.serviceType, domain: self.serviceDomain)
+
+        if let currentStateHandler = listener.stateUpdateHandler {
+            newListener.stateUpdateHandler = currentStateHandler
+        }
 
         if let currentConnectionHandler = listener.newConnectionHandler {
             newListener.newConnectionHandler = currentConnectionHandler
@@ -1241,24 +1240,28 @@ actor ServerNetworkManager {
         setupTimeoutTasks.removeValue(forKey: connectionID)?.cancel()
     }
 
-    /// Registers the MCP methods for one client.
-    /// `isToolAllowed` narrows the tools that iMCP's settings allow, such as for a remote client's access token.
+    /// Registers the handlers for an approved connection.
+    /// Each handler checks `gate` again,
+    /// so that no request reaches a tool before approval.
+    /// `isToolAllowed` narrows the tools that iMCP's settings allow,
+    /// such as for a remote client's access token.
     func registerHandlers(
         for server: MCP.Server,
         connectionID: UUID,
+        gate: ConnectionApprovalGate,
         isToolAllowed: (@Sendable (Tool) async -> Bool)? = nil
     ) async {
-        await server.withMethodHandler(ListPrompts.self) { _ in
+        await server.withApprovedMethodHandler(ListPrompts.self, gate: gate) { _ in
             log.debug("Handling ListPrompts request for \(connectionID)")
             return ListPrompts.Result(prompts: [])
         }
 
-        await server.withMethodHandler(ListResources.self) { _ in
+        await server.withApprovedMethodHandler(ListResources.self, gate: gate) { _ in
             log.debug("Handling ListResources request for \(connectionID)")
             return ListResources.Result(resources: [])
         }
 
-        await server.withMethodHandler(ListTools.self) { [weak self] _ in
+        await server.withApprovedMethodHandler(ListTools.self, gate: gate) { [weak self] _ in
             guard let self = self else {
                 return ListTools.Result(tools: [])
             }
@@ -1300,7 +1303,7 @@ actor ServerNetworkManager {
             return ListTools.Result(tools: tools)
         }
 
-        await server.withMethodHandler(CallTool.self) { [weak self] params in
+        await server.withApprovedMethodHandler(CallTool.self, gate: gate) { [weak self] params in
             guard let self = self else {
                 return CallTool.Result(
                     content: [.text(text: "Server unavailable", annotations: nil, _meta: nil)],
@@ -1402,6 +1405,7 @@ actor ServerNetworkManager {
                             let encoder = JSONEncoder()
                             encoder.userInfo[Ontology.DateTime.timeZoneOverrideKey] =
                                 TimeZone.current
+                            encoder.userInfo[JSONLD.omitsNestedTypesKey] = true
                             encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
 
                             let data = try encoder.encode(value)

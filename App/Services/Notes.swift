@@ -235,6 +235,7 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
 
             var object = note.properties(in: folders)
             object["@context"] = "https://schema.org"
+            object["@type"] = "NoteDigitalDocument"
             object["encodingFormat"] = .string(isMarkdown ? "text/markdown" : "text/plain")
             object["text"] = .string(isMarkdown ? content.markdown() : content.plainText())
             return object
@@ -582,7 +583,6 @@ extension TopoText.Note {
     /// The note's metadata as the properties of a JSON object for tool output.
     fileprivate func properties(in folders: [TopoText.Folder]) -> [String: Value] {
         var object: [String: Value] = [
-            "@type": "NoteDigitalDocument",
             "@id": .string(id.description),
             "name": .string(title.isEmpty ? "New Note" : title),
         ]

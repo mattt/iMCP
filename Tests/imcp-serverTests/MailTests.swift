@@ -22,6 +22,23 @@ final class MailTests: XCTestCase {
         XCTAssertTrue(MailToolError(underlying: Envelope.MailError.databaseBusy).localizedDescription.contains("iMCP"))
     }
 
+    func testSearchPageValueWithoutCount() {
+        let value = Envelope.Store.SearchResult.pageValue(records: [], nextCursor: nil, indexedMessageCount: nil)
+        let localIndex = value.objectValue?["localIndex"]?.objectValue
+        XCTAssertEqual(localIndex?["indexedMessageCount"], .null)
+        XCTAssertEqual(localIndex?["syncStatus"], "unknown")
+        XCTAssertTrue(localIndex?["description"]?.stringValue?.contains("could not be counted") ?? false)
+        XCTAssertEqual(value.objectValue?["itemListElement"], .array([]))
+        XCTAssertEqual(value.objectValue?["nextCursor"], .null)
+    }
+
+    func testSearchPageValueWithCount() {
+        let value = Envelope.Store.SearchResult.pageValue(records: [], nextCursor: nil, indexedMessageCount: 42)
+        let localIndex = value.objectValue?["localIndex"]?.objectValue
+        XCTAssertEqual(localIndex?["indexedMessageCount"], .int(42))
+        XCTAssertTrue(localIndex?["description"]?.stringValue?.contains("before search filters") ?? false)
+    }
+
     func testCompositionEncodingAndFailure() throws {
         let composition = MailComposition(
             to: "a@example.com,b@example.com",
@@ -219,7 +236,7 @@ final class MailIndexTests: XCTestCase {
         XCTAssertEqual(content["encodingFormat"], "text/plain")
         XCTAssertEqual(
             content["attachment"]?.arrayValue,
-            [["@type": "MediaObject", "name": "budget.csv", "encodingFormat": "text/csv", "isStoredSeparately": false]]
+            [["name": "budget.csv", "encodingFormat": "text/csv", "isStoredSeparately": false]]
         )
         let headers = try XCTUnwrap(content["headers"]?.arrayValue)
         XCTAssertTrue(headers.contains(["name": "Subject", "value": "Quarterly budget"]))
@@ -270,11 +287,8 @@ final class MailIndexTests: XCTestCase {
         XCTAssertEqual(
             content["attachment"]?.arrayValue,
             [
-                ["@type": "MediaObject", "name": .null, "encodingFormat": "image/png", "isStoredSeparately": true],
-                [
-                    "@type": "MediaObject", "name": "budget.pdf", "encodingFormat": "application/pdf",
-                    "isStoredSeparately": true,
-                ],
+                ["name": .null, "encodingFormat": "image/png", "isStoredSeparately": true],
+                ["name": "budget.pdf", "encodingFormat": "application/pdf", "isStoredSeparately": true],
             ]
         )
     }

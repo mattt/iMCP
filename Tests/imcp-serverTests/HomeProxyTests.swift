@@ -85,7 +85,7 @@ final class HomeHelperPairingTests: XCTestCase {
     func testAppInfoPlistDeclaresThePairingURLScheme() throws {
         let plist = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
-            .appendingPathComponent("../App/Info.plist")
+            .appendingPathComponent("../../App/Info.plist")
         let info = try XCTUnwrap(
             PropertyListSerialization.propertyList(from: Data(contentsOf: plist), format: nil) as? [String: Any]
         )
@@ -965,7 +965,7 @@ final class HomeHelperLocatorTests: XCTestCase {
     func testHelperInfoPlistDeclaresTheCurrentProtocolVersion() throws {
         let plist = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
-            .appendingPathComponent("../Helper/Info.plist")
+            .appendingPathComponent("../../Helper/Info.plist")
         let info = try XCTUnwrap(
             PropertyListSerialization.propertyList(from: Data(contentsOf: plist), format: nil) as? [String: Any]
         )
