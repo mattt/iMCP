@@ -815,10 +815,13 @@ actor MCPConnectionManager {
         )
     }
 
+    /// Tells the client that the tool list changed, if the connection is approved.
     func notifyToolListChanged() async {
         do {
-            log.info("Notifying client that tool list changed")
-            try await server.notify(ToolListChangedNotification.message())
+            let sent = try await server.notify(ToolListChangedNotification.message(), ifApprovedBy: approvalGate)
+            if sent {
+                log.info("Notified client that tool list changed for connection: \(self.connectionID)")
+            }
         } catch {
             log.error("Failed to notify client of tool list change: \(error)")
 
