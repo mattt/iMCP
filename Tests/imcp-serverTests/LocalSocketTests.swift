@@ -402,6 +402,17 @@ final class LocalSocketTests: XCTestCase {
         XCTAssertLessThan(ContinuousClock.now - start, .milliseconds(400))
     }
 
+    func testHelloRejectsUnknownVersion() throws {
+        for version in [0, 2] {
+            let line = Data(#"{"version":\#(version)}"#.utf8)
+            XCTAssertThrowsError(try LocalSocketHello.decode(line)) { error in
+                XCTAssertEqual(error as? LocalSocketHello.Error, .unsupportedVersion(version))
+            }
+        }
+        XCTAssertThrowsError(try LocalSocketHello.decode(Data(#"{"credential":"x"}"#.utf8)))
+        XCTAssertEqual(try LocalSocketHello.decode(Data(#"{"version":1}"#.utf8)), LocalSocketHello())
+    }
+
     func testHelloRoundTrips() throws {
         let hello = LocalSocketHello()
         let data = try hello.encoded()

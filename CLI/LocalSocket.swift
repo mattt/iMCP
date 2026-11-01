@@ -550,8 +550,11 @@ struct LocalSocketHello: Codable, Equatable {
     /// in the client's MCP server settings.
     static let credentialEnvironmentVariable = "IMCP_CLIENT_CREDENTIAL"
 
+    /// The version of this exchange that this build sends and accepts.
+    static let currentVersion = 1
+
     /// The version of this exchange.
-    var version: Int = 1
+    var version: Int = currentVersion
 
     /// The credential that iMCP issued to the client, if it has one.
     var credential: String?
@@ -572,9 +575,20 @@ struct LocalSocketHello: Codable, Equatable {
         return data
     }
 
+    enum Error: Swift.Error, Equatable {
+        /// The hello is for a version of the exchange that this build doesn't know.
+        case unsupportedVersion(Int)
+    }
+
     /// Decodes a hello from a line without its newline.
+    ///
+    /// - Throws: ``Error/unsupportedVersion(_:)`` unless the hello's version is ``currentVersion``.
     static func decode(_ line: Data) throws -> Self {
-        try JSONDecoder().decode(Self.self, from: line)
+        let hello = try JSONDecoder().decode(Self.self, from: line)
+        guard hello.version == currentVersion else {
+            throw Error.unsupportedVersion(hello.version)
+        }
+        return hello
     }
 }
 
