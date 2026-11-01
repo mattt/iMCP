@@ -104,7 +104,10 @@ final class MCPInitializeCompatibilityTests: XCTestCase {
     func testOversizedUnterminatedFrameFailsClosed() {
         var frames = MCPStdinFrames()
         XCTAssertThrowsError(try frames.append(Data(repeating: 0x61, count: MCPStdinFrames.maximumFrameBytes + 1)))
-        XCTAssertEqual(MCPServiceLoop.decision(error: MCPStdinFrames.Failure.frameTooLarge), .terminate)
+        XCTAssertEqual(
+            MCPServiceLoop.decision(error: MCPStdinFrames.Failure.frameTooLarge, hasReadClientInput: false),
+            .terminate
+        )
     }
 
     func testOversizedTerminatedFrameFailsClosed() {

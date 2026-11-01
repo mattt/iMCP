@@ -931,6 +931,10 @@ which most MCP clients save with their own logs.
 If it reports that it couldn't connect to iMCP,
 make sure that iMCP is open and that its server is turned on;
 `imcp-server` keeps trying until the app is available.
+Once it relays anything from the MCP client, it doesn't reconnect:
+if the connection ends, it exits,
+and the client must start it again for a new session,
+which iMCP approves again.
 If it reports that the process listening at the socket path
 isn't a signed copy of iMCP,
 something other than iMCP created the socket.
