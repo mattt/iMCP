@@ -289,6 +289,12 @@ enum LocalSocket {
         return token
     }
 
+    /// Returns the process ID in an audit token.
+    static func processID(of token: audit_token_t) -> pid_t {
+        // `audit_token_to_pid` reads the same field.
+        pid_t(bitPattern: token.val.5)
+    }
+
     /// Returns whether the process on the other end of `descriptor` satisfies `requirement`.
     static func peerSatisfies(_ requirement: String, descriptor: Int32, usesDynamicCode: Bool) -> Bool {
         do {
@@ -300,15 +306,139 @@ enum LocalSocket {
         }
     }
 
+    /// Returns whether a process other than this one listens on the other end of `occupant`
+    /// and satisfies `requirement`.
+    ///
+    /// The app uses this to decide whether a socket file at its path is stale.
+    /// A listener in this process is one that the app no longer uses,
+    /// so it doesn't count.
+    static func isOtherServer(_ occupant: Int32, requirement: String) -> Bool {
+        guard let token = try? peerAuditToken(of: occupant), processID(of: token) != getpid() else {
+            return false
+        }
+        return (try? CodeRequirement.check(auditToken: token, against: requirement, usesDynamicCode: true)) != nil
+    }
+
+    // MARK: - Peer ownership
+
+    /// The kernel's identifiers for a Unix domain socket and for the socket that it's connected to.
+    ///
+    /// `proc_pidfdinfo` reports the kernel addresses of the sockets' protocol control blocks.
+    /// It obscures them, but it reports the same value for a socket to every process,
+    /// so they can be compared across processes.
+    struct SocketIdentity: Equatable {
+        /// The socket's control block.
+        var socket: UInt64
+        /// The connected socket's control block, or 0 if the socket isn't connected.
+        var peer: UInt64
+    }
+
+    /// Returns the identity of the Unix domain socket that process `pid` has open as `descriptor`.
+    static func socketIdentity(process pid: pid_t, descriptor: Int32) -> SocketIdentity? {
+        var info = socket_fdinfo()
+        let size = Int32(MemoryLayout<socket_fdinfo>.size)
+        guard proc_pidfdinfo(pid, descriptor, PROC_PIDFDSOCKETINFO, &info, size) == size,
+            info.psi.soi_kind == SOCKINFO_UN
+        else { return nil }
+        return SocketIdentity(socket: info.psi.soi_pcb, peer: info.psi.soi_proto.pri_un.unsi_conn_pcb)
+    }
+
+    /// Returns the socket descriptors that process `pid` has open.
+    static func socketDescriptors(process pid: pid_t) throws -> [Int32] {
+        let stride = MemoryLayout<proc_fdinfo>.stride
+        let needed = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, nil, 0)
+        guard needed > 0 else {
+            throw Error.posix(call: "proc_pidinfo(PROC_PIDLISTFDS)", code: errno)
+        }
+        // Leave room for descriptors that the process opens in the meantime.
+        var descriptors = [proc_fdinfo](repeating: proc_fdinfo(), count: Int(needed) / stride + 16)
+        let filled = descriptors.withUnsafeMutableBytes {
+            proc_pidinfo(pid, PROC_PIDLISTFDS, 0, $0.baseAddress, Int32($0.count))
+        }
+        guard filled > 0 else {
+            throw Error.posix(call: "proc_pidinfo(PROC_PIDLISTFDS)", code: errno)
+        }
+        return descriptors.prefix(Int(filled) / stride)
+            .filter { $0.proc_fdtype == PROX_FDTYPE_SOCKET }
+            .map(\.proc_fd)
+    }
+
+    /// Returns whether process `pid` has the other end of `descriptor` open.
+    ///
+    /// - Throws: ``Error/posix(call:code:)`` with `ECONNRESET`
+    ///   if the other end closed the connection.
+    static func process(_ pid: pid_t, holdsPeerOf descriptor: Int32) throws -> Bool {
+        guard let own = socketIdentity(process: getpid(), descriptor: descriptor) else {
+            throw Error.posix(call: "proc_pidfdinfo(PROC_PIDFDSOCKETINFO)", code: errno)
+        }
+        guard own.peer != 0 else {
+            throw Error.posix(call: "connect", code: ECONNRESET)
+        }
+        let peer = SocketIdentity(socket: own.peer, peer: own.socket)
+        return try socketDescriptors(process: pid).contains {
+            socketIdentity(process: pid, descriptor: $0) == peer
+        }
+    }
+
+    /// The process that `LOCAL_PEERTOKEN` names doesn't have the other end of the connection open.
+    struct PeerNotHeld: Swift.Error, CustomStringConvertible {
+        let processID: pid_t
+
+        var description: String {
+            "Process \(processID) doesn't have the other end of the connection open"
+        }
+    }
+
+    /// Checks that the process in `token` has the other end of `descriptor` open.
+    ///
+    /// For the connecting side, `LOCAL_PEERTOKEN` doesn't come from the listening process itself.
+    /// The kernel looks up the process ID that the listening socket last recorded
+    /// and returns the audit token of whatever process has that ID now.
+    /// If the listener's process exited and left the socket to another process,
+    /// such as a child that inherited it,
+    /// a new process that reuses the ID would answer for the listener.
+    /// This check rejects that case: the process must hold the accepted socket.
+    ///
+    /// The listener accepts the connection after `connect` returns,
+    /// so the check waits up to `timeout` for the socket to appear in the process.
+    /// It then reads the token again, and requires the same process ID and ID version,
+    /// so the process that it checked is the one that the token names.
+    ///
+    /// - Throws: ``PeerNotHeld`` if the process doesn't have the socket open,
+    ///   or ``Error/posix(call:code:)`` with `ECONNRESET` if the listener closed the connection.
+    static func checkPeerHoldsConnection(
+        _ descriptor: Int32,
+        token: audit_token_t,
+        timeout: Duration = .seconds(3)
+    ) throws {
+        let pid = processID(of: token)
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: timeout)
+        while try !process(pid, holdsPeerOf: descriptor) {
+            guard clock.now < deadline else {
+                throw PeerNotHeld(processID: pid)
+            }
+            usleep(5_000)
+        }
+
+        let current = try peerAuditToken(of: descriptor)
+        guard withUnsafeBytes(of: current, { Data($0) }) == withUnsafeBytes(of: token, { Data($0) }) else {
+            throw PeerNotHeld(processID: pid)
+        }
+    }
+
     /// Connects to the first path where a process that satisfies `requirement` listens.
     ///
-    /// Nothing is written to a socket before its listener passes the check.
+    /// Nothing is written to a socket before its listener passes the check
+    /// and ``checkPeerHoldsConnection(_:token:timeout:)``.
     ///
+    /// - Parameter acceptTimeout: How long to wait for the listener to accept the connection.
     /// - Returns: The connected descriptor and its path.
     /// - Throws: The error for the last path if no path has a verified listener.
     static func connect(
         toFirstOf paths: [String],
-        requiring requirement: String
+        requiring requirement: String,
+        acceptTimeout: Duration = .seconds(3)
     ) throws -> (descriptor: Int32, path: String) {
         var lastError: any Swift.Error = Error.posix(call: "connect", code: ENOENT)
         for path in paths {
@@ -323,7 +453,12 @@ enum LocalSocket {
             do {
                 let token = try peerAuditToken(of: descriptor)
                 try CodeRequirement.check(auditToken: token, against: requirement, usesDynamicCode: false)
+                try checkPeerHoldsConnection(descriptor, token: token, timeout: acceptTimeout)
                 return (descriptor, path)
+            } catch let error as Error where error.code == ECONNRESET || error.code == ENOTCONN {
+                // The app closed the connection, for example because its server is off.
+                close(descriptor)
+                lastError = error
             } catch {
                 close(descriptor)
                 lastError = CodeRequirement.UntrustedPeer(path: path, underlying: error)

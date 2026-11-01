@@ -185,6 +185,24 @@ final class LocalSocketTests: XCTestCase {
         close(accepted)
     }
 
+    func testListenReplacesListenerInThisProcess() throws {
+        let path = directory + "/own.sock"
+        let earlier = try LocalSocket.listen(at: path) { _ in false }
+        defer { close(earlier) }
+
+        // A listener in this process isn't another copy of the app,
+        // even if it would pass the code-signing check.
+        let listener = try LocalSocket.listen(at: path) { occupant in
+            LocalSocket.isOtherServer(occupant, requirement: "always")
+        }
+        defer { close(listener) }
+
+        // New connections reach the new listener.
+        let client = try LocalSocket.connect(to: path)
+        defer { close(client) }
+        close(try LocalSocket.accept(listener))
+    }
+
     func testListenDoesNotRemoveOtherFiles() throws {
         let path = directory + "/file.sock"
         FileManager.default.createFile(atPath: path, contents: Data("keep".utf8))
@@ -210,6 +228,7 @@ final class LocalSocketTests: XCTestCase {
         let path = directory + "/server.sock"
         let listener = try LocalSocket.listen(at: path) { _ in false }
         defer { close(listener) }
+        let accepted = acceptInBackground(listener)
 
         let (descriptor, connectedPath) = try LocalSocket.connect(
             toFirstOf: [directory + "/missing.sock", path],
@@ -217,6 +236,55 @@ final class LocalSocketTests: XCTestCase {
         )
         close(descriptor)
         XCTAssertEqual(connectedPath, path)
+        close(try accepted())
+    }
+
+    func testConnectRejectsListenerWhoseProcessDoesNotHoldConnection() throws {
+        let path = directory + "/unaccepted.sock"
+        let listener = try LocalSocket.listen(at: path) { _ in false }
+        defer { close(listener) }
+
+        // Nothing accepts the connection, so no process has its other end open,
+        // as when the process that the token names isn't the one that holds the listener.
+        XCTAssertThrowsError(
+            try LocalSocket.connect(toFirstOf: [path], requiring: "always", acceptTimeout: .milliseconds(100))
+        ) { error in
+            let untrusted = error as? CodeRequirement.UntrustedPeer
+            XCTAssertEqual(untrusted?.path, path)
+            XCTAssertEqual((untrusted?.underlying as? LocalSocket.PeerNotHeld)?.processID, getpid())
+        }
+    }
+
+    func testProcessHoldsPeerOnlyAfterAccept() throws {
+        let path = directory + "/held.sock"
+        let listener = try LocalSocket.listen(at: path) { _ in false }
+        defer { close(listener) }
+        let client = try LocalSocket.connect(to: path)
+        defer { close(client) }
+
+        XCTAssertFalse(try LocalSocket.process(getpid(), holdsPeerOf: client))
+
+        let server = try LocalSocket.accept(listener)
+        defer { close(server) }
+        XCTAssertTrue(try LocalSocket.process(getpid(), holdsPeerOf: client))
+        XCTAssertTrue(try LocalSocket.process(getpid(), holdsPeerOf: server))
+        XCTAssertFalse(try LocalSocket.process(getppid(), holdsPeerOf: client))
+
+        let token = try LocalSocket.peerAuditToken(of: client)
+        XCTAssertNoThrow(try LocalSocket.checkPeerHoldsConnection(client, token: token, timeout: .zero))
+    }
+
+    func testPeerCheckReportsClosedConnection() throws {
+        let path = directory + "/closed.sock"
+        let listener = try LocalSocket.listen(at: path) { _ in false }
+        defer { close(listener) }
+        let client = try LocalSocket.connect(to: path)
+        defer { close(client) }
+        close(try LocalSocket.accept(listener))
+
+        XCTAssertThrowsError(try LocalSocket.process(getpid(), holdsPeerOf: client)) { error in
+            XCTAssertEqual((error as? LocalSocket.Error)?.code, ECONNRESET)
+        }
     }
 
     func testConnectRejectsListenerThatFailsRequirement() throws {
@@ -324,6 +392,24 @@ final class LocalSocketTests: XCTestCase {
         XCTAssertEqual(data.last, UInt8(ascii: "\n"))
         XCTAssertEqual(try LocalSocketHello.decode(data.dropLast()), hello)
         XCTAssertLessThanOrEqual(data.count - 1, LocalSocketHello.maximumLength)
+    }
+
+    /// Accepts one connection on a background thread.
+    ///
+    /// - Returns: A function that waits for the accepted descriptor.
+    private func acceptInBackground(_ listener: Int32) -> () throws -> Int32 {
+        let done = DispatchSemaphore(value: 0)
+        nonisolated(unsafe) var result: Result<Int32, any Error> = .failure(
+            LocalSocket.Error.posix(call: "accept", code: EAGAIN)
+        )
+        Thread {
+            result = Result { try LocalSocket.accept(listener) }
+            done.signal()
+        }.start()
+        return {
+            done.wait()
+            return try result.get()
+        }
     }
 
     private func socketPair() throws -> (Int32, Int32) {
