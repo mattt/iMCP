@@ -32,9 +32,17 @@ actor MCPService: Service {
                     sessionError = error
                 }
 
-                switch MCPServiceLoop.decision(error: sessionError) {
+                let hasReadClientInput = await proxy.hasReadInput
+                switch MCPServiceLoop.decision(error: sessionError, hasReadClientInput: hasReadClientInput) {
                 case .terminate:
-                    await log.critical("Connection closed, terminating...")
+                    if let sessionError {
+                        // A new connection wouldn't have this session's approval.
+                        await log.critical(
+                            "Connection error: \(sessionError). Exiting so that the MCP client can start a new session."
+                        )
+                    } else {
+                        await log.critical("Connection closed, terminating...")
+                    }
                     return
                 case .reconnect(let seconds):
                     if let sessionError {

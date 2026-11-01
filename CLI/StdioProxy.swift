@@ -12,6 +12,12 @@ actor StdioProxy {
     private let stdinBufferSize: Int
     private var isRunning = false
 
+    /// Whether the proxy has read anything from stdin.
+    ///
+    /// Once it has, the session belongs to this connection,
+    /// and `imcp-server` must not continue it on another one.
+    private(set) var hasReadInput = false
+
     /// Creates a proxy that forwards stdin to `socket` and socket data to stdout.
     ///
     /// The proxy owns `socket` and closes it when it stops.
@@ -142,6 +148,7 @@ actor StdioProxy {
                 throw StdioProxyError.connectionClosed
             }
 
+            hasReadInput = true
             for frame in try frames.append(Data(buffer[0 ..< bytesRead])) {
                 try await write(frame)
                 await log.debug("Sent \(frame.count) bytes to iMCP")
