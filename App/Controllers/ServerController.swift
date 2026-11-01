@@ -589,6 +589,7 @@ actor MCPConnectionManager {
     private let server: MCP.Server
     private var transport: NetworkTransport
     private let parentManager: ServerNetworkManager
+    private let approvalGate = ConnectionApprovalGate()
     private var isStopping = false
 
     init(connectionID: UUID, connection: NWConnection, parentManager: ServerNetworkManager) {
@@ -626,27 +627,32 @@ actor MCPConnectionManager {
     func start(approvalHandler: @escaping (MCP.Client.Info) async -> Bool) async throws {
         do {
             log.notice("Starting MCP server for connection: \(self.connectionID)")
-            try await server.start(transport: transport) { [weak self] clientInfo, capabilities in
-                guard let self = self else { throw MCPError.connectionClosed }
+            // Register handlers only after the user approves the connection.
+            try await server.start(
+                transport: transport,
+                gate: approvalGate,
+                approve: { [weak self] clientInfo in
+                    guard let self = self else { return false }
 
-                log.info("Received initialize request from client: \(clientInfo.name)")
+                    log.info("Received initialize request from client: \(clientInfo.name)")
 
-                // Request user approval for the connection.
-                let approved = await approvalHandler(clientInfo)
-                log.info(
-                    "Approval result for connection \(connectionID): \(approved ? "Approved" : "Denied")"
-                )
+                    // Request user approval for the connection.
+                    let approved = await approvalHandler(clientInfo)
+                    log.info(
+                        "Approval result for connection \(self.connectionID): \(approved ? "Approved" : "Denied")"
+                    )
 
-                if !approved {
-                    await self.parentManager.removeConnection(self.connectionID)
-                    throw MCPError.connectionClosed
+                    if !approved {
+                        await self.parentManager.removeConnection(self.connectionID)
+                    }
+                    return approved
+                },
+                registerHandlers: { [weak self] in
+                    await self?.registerHandlers()
                 }
-            }
+            )
 
             log.notice("MCP Server started successfully for connection: \(self.connectionID)")
-
-            // Register handlers after successful approval.
-            await registerHandlers()
 
             // Monitor connection health for early disconnects.
             await startHealthMonitoring()
@@ -665,7 +671,11 @@ actor MCPConnectionManager {
     }
 
     private func registerHandlers() async {
-        await parentManager.registerHandlers(for: server, connectionID: connectionID)
+        await parentManager.registerHandlers(
+            for: server,
+            connectionID: connectionID,
+            gate: approvalGate
+        )
     }
 
     private func startHealthMonitoring() async {
@@ -1088,18 +1098,25 @@ actor ServerNetworkManager {
         setupTimeoutTasks.removeValue(forKey: connectionID)?.cancel()
     }
 
-    func registerHandlers(for server: MCP.Server, connectionID: UUID) async {
-        await server.withMethodHandler(ListPrompts.self) { _ in
+    /// Registers the handlers for an approved connection.
+    /// Each handler checks `gate` again,
+    /// so that no request reaches a tool before approval.
+    func registerHandlers(
+        for server: MCP.Server,
+        connectionID: UUID,
+        gate: ConnectionApprovalGate
+    ) async {
+        await server.withApprovedMethodHandler(ListPrompts.self, gate: gate) { _ in
             log.debug("Handling ListPrompts request for \(connectionID)")
             return ListPrompts.Result(prompts: [])
         }
 
-        await server.withMethodHandler(ListResources.self) { _ in
+        await server.withApprovedMethodHandler(ListResources.self, gate: gate) { _ in
             log.debug("Handling ListResources request for \(connectionID)")
             return ListResources.Result(resources: [])
         }
 
-        await server.withMethodHandler(ListTools.self) { [weak self] _ in
+        await server.withApprovedMethodHandler(ListTools.self, gate: gate) { [weak self] _ in
             guard let self = self else {
                 return ListTools.Result(tools: [])
             }
@@ -1138,7 +1155,7 @@ actor ServerNetworkManager {
             return ListTools.Result(tools: tools)
         }
 
-        await server.withMethodHandler(CallTool.self) { [weak self] params in
+        await server.withApprovedMethodHandler(CallTool.self, gate: gate) { [weak self] params in
             guard let self = self else {
                 return CallTool.Result(
                     content: [.text(text: "Server unavailable", annotations: nil, _meta: nil)],
