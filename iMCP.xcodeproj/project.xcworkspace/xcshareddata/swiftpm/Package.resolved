@@ -33,8 +33,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/mattt/libtailscale",
       "state" : {
-        "revision" : "b1d6fafd37dfe5271ad2d3f844b5fb73abb88633",
-        "version" : "0.2.0-imcp.1"
+        "revision" : "73c25e6250a0220219107ab545d6ab4fdc110563",
+        "version" : "0.2.0-imcp.2"
       }
     },
     {

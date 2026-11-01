@@ -136,7 +136,7 @@ Then follow the instructions for your AI app:
 ### Download and open the app
 
 First, [download the iMCP app](https://iMCP.app/download)
-(requires macOS 15.6 or later on a Mac with Apple silicon).
+(requires macOS 15.3 or later).
 
 Or, if you have [Homebrew](https://brew.sh) installed,
 you can run the following command:
