@@ -58,6 +58,37 @@ enum ClientCredential {
     }
 }
 
+/// The name that a client reports, made safe to show.
+enum ClientName {
+    /// The most characters of a reported name that iMCP shows.
+    static let maximumLength = 64
+
+    /// The name to show when a client reports an empty name.
+    static let unnamed = "Unnamed Client"
+
+    /// Returns `name` on one line, without control or invisible formatting characters,
+    /// such as bidirectional overrides, and at most ``maximumLength`` characters long.
+    ///
+    /// A client chooses its name freely,
+    /// so it could otherwise imitate other text in the approval dialog.
+    static func sanitized(_ name: String) -> String {
+        var scalars = String.UnicodeScalarView()
+        for scalar in name.unicodeScalars {
+            switch scalar.properties.generalCategory {
+            case .control, .format, .lineSeparator, .paragraphSeparator, .privateUse, .surrogate, .unassigned:
+                scalars.append(" ")
+            default:
+                scalars.append(scalar)
+            }
+        }
+        let words = String(scalars).split(whereSeparator: \.isWhitespace)
+        let line = words.joined(separator: " ")
+        guard !line.isEmpty else { return unnamed }
+        guard line.count > maximumLength else { return line }
+        return line.prefix(maximumLength - 1).trimmingCharacters(in: .whitespaces) + "…"
+    }
+}
+
 /// What iMCP stores about a credential that it issued.
 struct ClientRecord: Codable, Equatable, Identifiable, Sendable {
     /// The credential's identifier, from ``ClientCredential/identifier(for:)``.
@@ -327,7 +358,8 @@ final class ClientCredentialStore {
 
     /// What iMCP knows about a connection that asks for approval.
     struct Request: Equatable {
-        /// The name that the client reported, which it can choose freely.
+        /// The name that the client reported, which it can choose freely,
+        /// after ``ClientName/sanitized(_:)``.
         var claimedName: String
         /// The record for the credential that the connection presented.
         var record: ClientRecord?
@@ -363,7 +395,8 @@ final class ClientCredentialStore {
     ///
     /// Only a trusted credential approves a connection.
     /// The claimed name never does, even if an earlier version trusted it.
-    func evaluate(credential: String?, claimedName: String) -> Decision {
+    func evaluate(credential: String?, claimedName reportedName: String) -> Decision {
+        let claimedName = ClientName.sanitized(reportedName)
         let record = record(for: credential)
         if let record, record.isTrusted {
             return .approve(record)

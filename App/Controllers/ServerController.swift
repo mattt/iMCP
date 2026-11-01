@@ -520,6 +520,9 @@ final class ServerController: ObservableObject {
     init() {
         Task { [self] in
             // Initialize bindings from AppStorage before the server starts.
+            // The menu sends the enabled state only when its content first appears,
+            // so read the stored value here, before the socket accepts connections.
+            await networkManager.setEnabled(UserDefaults.standard.object(forKey: "isEnabled") as? Bool ?? true)
             await networkManager.updateServiceBindings(self.currentServiceBindings)
             await networkManager.updateDisabledTools(self.disabledTools, generation: 0)
 
@@ -696,9 +699,11 @@ final class ServerController: ObservableObject {
 
         NSApp.activate(ignoringOtherApps: true)
         if alert.runModal() == .alertFirstButtonReturn {
+            // Keep the credential off other devices and out of clipboard history.
             let pasteboard = NSPasteboard.general
-            pasteboard.clearContents()
+            pasteboard.prepareForNewContents(with: .currentHostOnly)
             pasteboard.setString(credential, forType: .string)
+            pasteboard.setString("", forType: NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType"))
         }
     }
 

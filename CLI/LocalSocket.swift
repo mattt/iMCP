@@ -338,16 +338,11 @@ enum LocalSocket {
     /// - Parameters:
     ///   - descriptor: A blocking socket.
     ///   - maximumLength: The most bytes to read before the newline.
-    ///   - timeout: How long to wait for each byte.
+    ///   - timeout: How long to wait for the whole line.
     /// - Returns: The line without its newline.
     static func readLine(from descriptor: Int32, maximumLength: Int, timeout: Duration) throws -> Data {
-        let (seconds, attoseconds) = timeout.components
-        var interval = timeval(tv_sec: Int(seconds), tv_usec: Int32(attoseconds / 1_000_000_000_000))
-        guard
-            setsockopt(descriptor, SOL_SOCKET, SO_RCVTIMEO, &interval, socklen_t(MemoryLayout<timeval>.size)) == 0
-        else {
-            throw Error.posix(call: "setsockopt(SO_RCVTIMEO)", code: errno)
-        }
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: timeout)
         defer {
             var none = timeval()
             _ = setsockopt(descriptor, SOL_SOCKET, SO_RCVTIMEO, &none, socklen_t(MemoryLayout<timeval>.size))
@@ -356,6 +351,23 @@ enum LocalSocket {
         var line = Data()
         var byte: UInt8 = 0
         while true {
+            // `SO_RCVTIMEO` limits each read, so give each read only the time that's left.
+            let remaining = clock.now.duration(to: deadline)
+            guard remaining > .zero else {
+                throw Error.posix(call: "read", code: EAGAIN)
+            }
+            let (seconds, attoseconds) = remaining.components
+            var interval = timeval(
+                tv_sec: Int(seconds),
+                tv_usec: max(1, Int32(attoseconds / 1_000_000_000_000))
+            )
+            guard
+                setsockopt(descriptor, SOL_SOCKET, SO_RCVTIMEO, &interval, socklen_t(MemoryLayout<timeval>.size))
+                    == 0
+            else {
+                throw Error.posix(call: "setsockopt(SO_RCVTIMEO)", code: errno)
+            }
+
             let count = read(descriptor, &byte, 1)
             if count < 0 {
                 if errno == EINTR { continue }

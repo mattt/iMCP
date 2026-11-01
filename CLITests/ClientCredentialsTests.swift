@@ -72,6 +72,28 @@ final class ClientCredentialsTests: XCTestCase {
         XCTAssertLessThanOrEqual(data.count - 1, LocalSocketHello.maximumLength)
     }
 
+    // MARK: - Names
+
+    func testReportedNamesAreSanitizedForDisplay() {
+        XCTAssertEqual(ClientName.sanitized("Claude Desktop"), "Claude Desktop")
+        XCTAssertEqual(ClientName.sanitized(" Claude\n\nDesktop\t"), "Claude Desktop")
+        XCTAssertEqual(ClientName.sanitized("Claude\u{202E}potkseD"), "Claude potkseD")
+        XCTAssertEqual(ClientName.sanitized("Zero\u{200B}Width"), "Zero Width")
+        XCTAssertEqual(ClientName.sanitized("\u{0007}\n "), ClientName.unnamed)
+
+        let long = ClientName.sanitized(String(repeating: "a", count: 500))
+        XCTAssertEqual(long.count, ClientName.maximumLength)
+        XCTAssertTrue(long.hasSuffix("…"))
+    }
+
+    func testEvaluateShowsSanitizedName() {
+        let store = makeStore()
+        guard case .ask(let request) = store.evaluate(credential: nil, claimedName: "Evil\nThis client uses") else {
+            return XCTFail("A connection without a credential must ask")
+        }
+        XCTAssertEqual(request.claimedName, "Evil This client uses")
+    }
+
     // MARK: - Issuing and checking
 
     func testTrustedCredentialApprovesWithoutDialog() throws {
