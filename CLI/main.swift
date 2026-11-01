@@ -9,7 +9,7 @@ var log = Logger(label: "me.mattt.iMCP.server") { StreamLogHandler.standardError
 #endif
 
 // `.gracefullyShutdownGroup` is load-bearing: `MCPService.run()` returns
-// when the Bonjour connection to the menubar app drops. With the library
+// when the socket connection to the menubar app drops. With the library
 // default of `.cancelGroup`, that return raises `ServiceGroupError` at the
 // top level → Swift runtime fatal error. See ServiceGroupConfigurationTests.
 let lifecycle = ServiceGroup(

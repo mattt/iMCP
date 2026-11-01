@@ -528,14 +528,36 @@ iMCP is a macOS app that bundles a command-line executable, `imcp-server`.
   uses standard input/output for communication
   ([stdio transport][mcp-transports]).
 
-The app and CLI communicate with each other on the local network
-using [Bonjour][bonjour] for automatic discovery.
-Both advertise a service with type "\_mcp.\_tcp" and domain "local".
+The app and CLI communicate over a Unix domain socket
+in the app's sandbox container, at
+`~/Library/Containers/co.dododo.iMCP/Data/Library/Caches/imcp.sock`.
+The CLI derives that path from the app's bundle identifier,
+so it needs no network access or service discovery.
+Before either side sends anything,
+it reads the other's audit token from the socket
+and checks the other's code signature.
+The CLI accepts only an app signed by team `TTY35UM57S`
+with the identifier `co.dododo.iMCP`,
+and the app accepts only a CLI signed by the same team
+with the identifier `imcp-server`.
 Requests from MCP clients are read by the CLI from `stdin`
 and relayed to the app;
 responses from the app are received by the CLI and written to `stdout`.
-See [`StdioProxy`](https://github.com/mattt/iMCP/blob/8cf9d250286288b06bf5d3dda78f5905ad0d7729/CLI/main.swift#L47)
+See [`LocalSocket`](/CLI/LocalSocket.swift)
+and [`StdioProxy`](/CLI/StdioProxy.swift)
 for implementation details.
+
+Debug builds made with `CODE_SIGNING_ALLOWED=NO` are signed ad hoc,
+so they have no team to check and no App Sandbox entitlement.
+In Debug builds only,
+each side also accepts a peer that has the expected identifier
+(`imcp-server`, or `iMCP` or `co.dododo.iMCP` for the app),
+and an unsandboxed app listens at
+`~/Library/Caches/co.dododo.iMCP/imcp.sock`,
+which the Debug CLI tries after the container path.
+Any process can claim an identifier,
+so don't use Debug builds with your own data.
+Release builds don't contain this code.
 
 For this project, we created what became
 [the official Swift SDK][swift-sdk]
@@ -845,16 +867,17 @@ xcodebuild -scheme iMCP -configuration Debug -destination "platform=macOS" \
 
 ## Debugging
 
-### Allowing local network access
+### Connecting `imcp-server` to the app
 
-`imcp-server` finds the iMCP app with Bonjour,
-so it needs permission to access the local network.
-`imcp-server` has its own entry in
-System Settings > Privacy & Security > Local Network,
-separate from iMCP and from the app that runs it, such as your terminal.
-If that entry is turned off,
-`imcp-server` can't find the app
-and reports that Bonjour service discovery timed out.
+`imcp-server` writes its log to `stderr`,
+which most MCP clients save with their own logs.
+If it reports that it couldn't connect to iMCP,
+make sure that iMCP is open and that its server is turned on;
+`imcp-server` keeps trying until the app is available.
+If it reports that the process listening at the socket path
+isn't a signed copy of iMCP,
+something other than iMCP created the socket.
+Quit and reopen iMCP, which replaces a socket that it can't verify.
 
 ### Using the MCP Inspector
 
@@ -923,7 +946,6 @@ This project is not affiliated with, endorsed, or sponsored by Apple Inc.
 
 [app-sandbox]: https://developer.apple.com/documentation/security/app-sandbox
 [apple-cloud-notes-parser]: https://github.com/threeplanetssoftware/apple_cloud_notes_parser
-[bonjour]: https://developer.apple.com/bonjour/
 [chatgpt-app]: https://chatgpt.com/download
 [claude-app]: https://claude.ai/download
 [claude-code]: https://claude.com/product/claude-code

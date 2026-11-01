@@ -1,8 +1,5 @@
-import Network
-
 /// Errors thrown by ``StdioProxy`` I/O handlers.
 enum StdioProxyError: Swift.Error {
-    case networkTimeout
     case connectionClosed
 }
 
@@ -17,7 +14,7 @@ enum MCPServiceLoop {
     ///
     /// A `nil` error means the proxy returned normally, which happens when the
     /// MCP client closed stdin. Reconnecting in that state opens and drops
-    /// Bonjour connections in a tight loop until the process is killed.
+    /// connections to the app in a tight loop until the process is killed.
     static func decision(error: (any Error)?) -> Decision {
         guard let error else {
             return .terminate
@@ -29,17 +26,9 @@ enum MCPServiceLoop {
 
         if let proxyError = error as? StdioProxyError {
             switch proxyError {
-            case .networkTimeout:
-                return .reconnect(seconds: 1)
             case .connectionClosed:
                 return .terminate
             }
-        }
-
-        if let nwError = error as? NWError,
-            nwError.errorCode == 54 || nwError.errorCode == 57
-        {
-            return .terminate
         }
 
         return .reconnect(seconds: 5)

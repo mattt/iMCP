@@ -1,6 +1,5 @@
 import AppKit
 import MCP
-import Network
 import OSLog
 import Ontology
 import SwiftUI
@@ -11,9 +10,6 @@ import struct Foundation.Data
 import struct Foundation.Date
 import class Foundation.JSONDecoder
 import class Foundation.JSONEncoder
-
-private let serviceType = "_mcp._tcp"
-private let serviceDomain = "local."
 
 private let log = Logger.server
 
@@ -428,8 +424,8 @@ final class ServerController: ObservableObject {
             await networkManager.updateServiceBindings(self.currentServiceBindings)
             await networkManager.updateDisabledTools(self.disabledTools, generation: 0)
 
-            // Register the approval handler before advertising the Bonjour
-            // service. Otherwise the first connection after launch is rejected
+            // Register the approval handler before listening on the socket.
+            // Otherwise the first connection after launch is rejected
             // immediately because the handler is still nil.
             await networkManager.setConnectionApprovalHandler {
                 [weak self] connectionID, clientInfo in
@@ -585,25 +581,18 @@ final class ServerController: ObservableObject {
 // Manages a single MCP connection.
 actor MCPConnectionManager {
     private let connectionID: UUID
-    private let connection: NWConnection
     private let server: MCP.Server
-    private var transport: NetworkTransport
+    private let transport: SocketTransport
     private let parentManager: ServerNetworkManager
     private let approvalGate = ConnectionApprovalGate()
     private var isStopping = false
 
-    init(connectionID: UUID, connection: NWConnection, parentManager: ServerNetworkManager) {
+    /// Creates a manager for a socket whose client passed the code-signing check.
+    /// The manager owns `descriptor` and closes it when it stops.
+    init(connectionID: UUID, descriptor: Int32, parentManager: ServerNetworkManager) {
         self.connectionID = connectionID
-        self.connection = connection
         self.parentManager = parentManager
-
-        self.transport = NetworkTransport(
-            connection: connection,
-            logger: nil,
-            heartbeatConfig: .init(enabled: false),
-            reconnectionConfig: .disabled,
-            bufferConfig: .unlimited
-        )
+        self.transport = SocketTransport(descriptor: descriptor)
 
         // MCP server instance for this connection.
         // Some clients, such as ChatGPT,
@@ -654,11 +643,8 @@ actor MCPConnectionManager {
 
             log.notice("MCP Server started successfully for connection: \(self.connectionID)")
 
-            // Monitor connection health for early disconnects.
-            await startHealthMonitoring()
-
             // The SDK ends the message loop when the client disconnects,
-            // but leaves the socket open. Close it without waiting for the health poll.
+            // but leaves the socket open. Close it.
             Task { [weak self] in
                 guard let self else { return }
                 await self.server.waitUntilCompleted()
@@ -678,32 +664,6 @@ actor MCPConnectionManager {
         )
     }
 
-    private func startHealthMonitoring() async {
-        // Monitor until the manager stops or the connection fails.
-        Task {
-            outer: while await parentManager.isRunning() {
-                switch connection.state {
-                case .ready, .setup, .preparing, .waiting:
-                    break
-                case .cancelled:
-                    log.error("Connection \(self.connectionID) was cancelled, removing")
-                    await parentManager.removeConnection(connectionID)
-                    break outer
-                case .failed(let error):
-                    log.error(
-                        "Connection \(self.connectionID) failed with error \(error), removing"
-                    )
-                    await parentManager.removeConnection(connectionID)
-                    break outer
-                @unknown default:
-                    log.debug("Connection \(self.connectionID) in unknown state, skipping")
-                }
-
-                try? await Task.sleep(nanoseconds: 30_000_000_000)  // 30 seconds
-            }
-        }
-    }
-
     func notifyToolListChanged() async {
         do {
             log.info("Notifying client that tool list changed")
@@ -711,10 +671,8 @@ actor MCPConnectionManager {
         } catch {
             log.error("Failed to notify client of tool list change: \(error)")
 
-            // Clean up if the underlying NWConnection is closed.
-            if let nwError = error as? NWError,
-                nwError.errorCode == 57 || nwError.errorCode == 54
-            {
+            // Clean up if the socket is closed.
+            if let mcpError = error as? MCPError, case .transportError = mcpError {
                 log.debug("Connection appears to be closed")
                 await parentManager.removeConnection(connectionID)
             }
@@ -726,108 +684,79 @@ actor MCPConnectionManager {
         guard !isStopping else { return }
         isStopping = true
         await server.stop()
-        connection.cancel()
+        // The server disconnects only a transport that it started.
+        await transport.disconnect()
     }
 }
 
-// Manages Bonjour service discovery and advertisement.
-actor NetworkDiscoveryManager {
-    private let serviceType: String
-    private let serviceDomain: String
-    var listener: NWListener
-    private let browser: NWBrowser
+/// Listens for `imcp-server` connections on the app's Unix domain socket.
+final class LocalSocketListener: @unchecked Sendable {
+    let path: String
+    private let source: DispatchSourceRead
+    private let inode: ino_t
 
-    init(serviceType: String, serviceDomain: String) throws {
-        self.serviceType = serviceType
-        self.serviceDomain = serviceDomain
-
-        // Local-only Bonjour advertisement.
-        let parameters = NWParameters.tcp
-        parameters.acceptLocalOnly = true
-        parameters.includePeerToPeer = false
-        // Accept connections from this Mac only; the CLI connects over loopback (#229).
-        // IPv4 matches the protocol below and avoids NECP errors for an IPv6 wildcard.
-        parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)
-
-        if let tcpOptions = parameters.defaultProtocolStack.internetProtocol
-            as? NWProtocolIP.Options
-        {
-            tcpOptions.version = .v4
+    /// Binds the socket at `path` and calls `onConnection` with each accepted descriptor.
+    ///
+    /// - Throws: ``LocalSocket/Error/addressInUse(_:)`` if another copy of iMCP listens at `path`.
+    init(path: String, onConnection: @escaping @Sendable (Int32) -> Void) throws {
+        let descriptor = try LocalSocket.listen(at: path) { occupant in
+            LocalSocket.peerSatisfies(CodeRequirement.server, descriptor: occupant, usesDynamicCode: true)
         }
+        let flags = fcntl(descriptor, F_GETFL)
+        _ = fcntl(descriptor, F_SETFL, flags | O_NONBLOCK)
 
-        // Listen and advertise via Bonjour.
-        self.listener = try NWListener(using: parameters)
-        self.listener.service = NWListener.Service(name: "iMCP", type: serviceType, domain: serviceDomain)
+        var status = stat()
+        _ = lstat(path, &status)
+        self.path = path
+        self.inode = status.st_ino
 
-        // Browser is used for monitoring and diagnostics.
-        self.browser = NWBrowser(
-            for: .bonjour(type: serviceType, domain: serviceDomain),
-            using: parameters
+        let source = DispatchSource.makeReadSource(
+            fileDescriptor: descriptor,
+            queue: DispatchQueue(label: "me.mattt.iMCP.socket-listener")
         )
+        source.setEventHandler {
+            while true {
+                do {
+                    onConnection(try LocalSocket.accept(descriptor))
+                } catch {
+                    if (error as? LocalSocket.Error)?.code != EAGAIN {
+                        log.error("Failed to accept a connection: \(String(describing: error), privacy: .public)")
+                    }
+                    break
+                }
+            }
+        }
+        source.setCancelHandler {
+            close(descriptor)
+        }
+        self.source = source
+        source.resume()
 
-        log.info("Network discovery manager initialized with Bonjour service type: \(serviceType)")
+        log.info("Listening at \(path, privacy: .public)")
     }
 
-    func start(
-        stateHandler: @escaping @Sendable (NWListener.State) -> Void,
-        connectionHandler: @escaping @Sendable (NWConnection) -> Void
-    ) {
-        listener.stateUpdateHandler = stateHandler
-
-        listener.newConnectionHandler = connectionHandler
-
-        listener.start(queue: .main)
-        browser.start(queue: .main)
-
-        log.info("Started network discovery and advertisement")
+    /// Stops listening and removes the socket file if no other listener replaced it.
+    func cancel() {
+        source.cancel()
+        var status = stat()
+        if lstat(path, &status) == 0, status.st_ino == inode {
+            unlink(path)
+        }
+        log.info("Stopped listening at \(self.path, privacy: .public)")
     }
 
-    func stop() {
-        listener.cancel()
-        browser.cancel()
-        log.info("Stopped network discovery and advertisement")
-    }
-
-    func restartWithRandomPort() async throws {
-        listener.cancel()
-
-        // Recreate listener on an ephemeral port.
-        let parameters: NWParameters = NWParameters.tcp  // Explicit type
-        parameters.acceptLocalOnly = true
-        parameters.includePeerToPeer = false
-        // Accept connections from this Mac only; the CLI connects over loopback (#229).
-        // IPv4 matches the protocol below and avoids NECP errors for an IPv6 wildcard.
-        parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)
-
-        if let tcpOptions = parameters.defaultProtocolStack.internetProtocol
-            as? NWProtocolIP.Options
-        {
-            tcpOptions.version = .v4
+    deinit {
+        if !source.isCancelled {
+            cancel()
         }
-
-        let newListener: NWListener = try NWListener(using: parameters)
-        newListener.service = NWListener.Service(name: "iMCP", type: self.serviceType, domain: self.serviceDomain)
-
-        if let currentStateHandler = listener.stateUpdateHandler {
-            newListener.stateUpdateHandler = currentStateHandler
-        }
-
-        if let currentConnectionHandler = listener.newConnectionHandler {
-            newListener.newConnectionHandler = currentConnectionHandler
-        }
-
-        newListener.start(queue: .main)
-
-        self.listener = newListener
-
-        log.notice("Restarted listener with a dynamic port")
     }
 }
 
 actor ServerNetworkManager {
     private var isRunningState: Bool = false
     private var isEnabledState: Bool = true
-    private var discoveryManager: NetworkDiscoveryManager?
+    private var listener: LocalSocketListener?
+    private var listenerRetryTask: Task<Void, Never>?
     private var connections: [UUID: MCPConnectionManager] = [:]
     private var connectionTasks: [UUID: Task<Void, Never>] = [:]
     /// Setup timers, keyed by connection.
@@ -846,17 +775,6 @@ actor ServerNetworkManager {
     private var disabledTools: Set<String> = []
     private var disabledToolsLastGeneration = -1
 
-    init() {
-        do {
-            self.discoveryManager = try NetworkDiscoveryManager(
-                serviceType: serviceType,
-                serviceDomain: serviceDomain
-            )
-        } catch {
-            log.error("Failed to initialize network discovery manager: \(error)")
-        }
-    }
-
     func isRunning() -> Bool {
         isRunningState
     }
@@ -870,96 +788,32 @@ actor ServerNetworkManager {
         log.info("Starting network manager")
         isRunningState = true
 
-        guard let discoveryManager = discoveryManager else {
-            log.error("Cannot start network manager: discovery manager not initialized")
-            return
-        }
-
-        await discoveryManager.start(
-            stateHandler: { [weak self] (state: NWListener.State) -> Void in
-                guard let strongSelf = self else { return }
-
-                Task {
-                    await strongSelf.handleListenerStateChange(state)
+        // Keep trying while another copy of iMCP holds the socket.
+        listenerRetryTask?.cancel()
+        listenerRetryTask = Task {
+            while !Task.isCancelled, self.isRunningState {
+                if self.listener == nil {
+                    self.startListening()
                 }
-            },
-            connectionHandler: { [weak self] (connection: NWConnection) -> Void in
-                guard let strongSelf = self else { return }
-
-                Task {
-                    await strongSelf.handleNewConnection(connection)
-                }
-            }
-        )
-
-        // Monitor listener health and auto-restart if it stops advertising.
-        Task {
-            while self.isRunningState {
-                if let currentDM = self.discoveryManager,
-                    self.isRunningState
-                {
-                    let listenerState: NWListener.State = await currentDM.listener.state
-
-                    if listenerState != .ready {
-                        log.warning(
-                            "Listener not in ready state, current state: \\(listenerState)"
-                        )
-
-                        let shouldAttemptRestart: Bool
-                        switch listenerState {
-                        case .failed, .cancelled:
-                            shouldAttemptRestart = true
-                        default:
-                            shouldAttemptRestart = false
-                        }
-
-                        if shouldAttemptRestart {
-                            log.info(
-                                "Attempting to restart listener (state: \\(listenerState)) because it was failed or cancelled."
-                            )
-                            try? await currentDM.restartWithRandomPort()
-                        }
-                    }
-                }
-
-                try? await Task.sleep(nanoseconds: 10_000_000_000)  // 10s
+                try? await Task.sleep(for: .seconds(10))
             }
         }
     }
 
-    private func handleListenerStateChange(_ state: NWListener.State) async {
-        switch state {
-        case .ready:
-            log.info("Server ready and advertising via Bonjour as \(serviceType)")
-        case .setup:
-            log.debug("Server setting up...")
-        case .waiting(let error):
-            log.warning("Server waiting: \(error)")
-
-            // If the port is already in use, try a new one.
-            if error.errorCode == 48 {
-                log.error("Port already in use, will try to restart service")
-
-                try? await Task.sleep(nanoseconds: 2_000_000_000)  // 2 seconds
-
-                if isRunningState {
-                    try? await discoveryManager?.restartWithRandomPort()
+    private func startListening() {
+        let path = LocalSocket.serverPath(isSandboxed: LocalSocket.isSandboxed)
+        do {
+            listener = try LocalSocketListener(path: path) { [weak self] descriptor in
+                guard let self else {
+                    close(descriptor)
+                    return
+                }
+                Task {
+                    await self.handleNewConnection(descriptor)
                 }
             }
-        case .failed(let error):
-            log.error("Server failed: \(error)")
-
-            // Attempt recovery after a brief delay.
-            if isRunningState {
-                log.info("Attempting to recover from server failure")
-                try? await Task.sleep(nanoseconds: 1_000_000_000)  // 1 second
-
-                try? await discoveryManager?.restartWithRandomPort()
-            }
-        case .cancelled:
-            log.info("Server cancelled")
-        @unknown default:
-            log.warning("Unknown server state")
+        } catch {
+            log.error("Failed to listen at \(path, privacy: .public): \(String(describing: error), privacy: .public)")
         }
     }
 
@@ -978,7 +832,10 @@ actor ServerNetworkManager {
         pendingConnections.removeAll()
         removedConnections.removeAll()
 
-        await discoveryManager?.stop()
+        listenerRetryTask?.cancel()
+        listenerRetryTask = nil
+        listener?.cancel()
+        listener = nil
     }
 
     func removeConnection(_ id: UUID) async {
@@ -1006,13 +863,26 @@ actor ServerNetworkManager {
     }
 
     // Handle new incoming connections.
-    private func handleNewConnection(_ connection: NWConnection) async {
+    private func handleNewConnection(_ descriptor: Int32) async {
         let connectionID = UUID()
         log.info("Handling new connection: \(connectionID)")
 
+        // Check the client's code signature before reading anything from it.
+        let hello: LocalSocketHello
+        do {
+            hello = try await Self.admit(descriptor)
+        } catch {
+            log.error(
+                "Rejected connection \(connectionID): \(String(describing: error), privacy: .public)"
+            )
+            close(descriptor)
+            return
+        }
+        log.debug("Connection \(connectionID) sent hello version \(hello.version)")
+
         let connectionManager = MCPConnectionManager(
             connectionID: connectionID,
-            connection: connection,
+            descriptor: descriptor,
             parentManager: self
         )
 
@@ -1056,6 +926,32 @@ actor ServerNetworkManager {
 
         // Time out stalled setups to avoid orphaned connections.
         scheduleSetupTimeout(for: connectionID)
+    }
+
+    /// Checks that `imcp-server` is on the other end of `descriptor`, then reads its hello.
+    ///
+    /// Both steps block, so they run off the actor.
+    private nonisolated static func admit(_ descriptor: Int32) async throws -> LocalSocketHello {
+        try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                continuation.resume(
+                    with: Result {
+                        let token = try LocalSocket.peerAuditToken(of: descriptor)
+                        try CodeRequirement.check(
+                            auditToken: token,
+                            against: CodeRequirement.client,
+                            usesDynamicCode: true
+                        )
+                        let line = try LocalSocket.readLine(
+                            from: descriptor,
+                            maximumLength: LocalSocketHello.maximumLength,
+                            timeout: .seconds(5)
+                        )
+                        return try LocalSocketHello.decode(line)
+                    }
+                )
+            }
+        }
     }
 
     /// Gives the connection a fresh setup budget.
