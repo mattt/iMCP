@@ -377,10 +377,33 @@ final class ClientCredentialStore {
             record.map { "credential:\($0.id)" } ?? "connection:\(connectionID.uuidString)"
         }
 
-        /// The key for refusing requests for a while after a denial:
-        /// the credential, or else the claimed name.
-        var cooldownKey: String {
-            record.map { "credential:\($0.id)" } ?? "name:\(claimedName)"
+        /// The key for refusing requests for a while after a denial,
+        /// or `nil` if nothing identifies the client.
+        ///
+        /// A client without a recognized credential gets no cooldown.
+        /// Its claimed name can't key one:
+        /// a client could change its name to evade a cooldown,
+        /// or claim another client's name to lock that client out.
+        /// The limits on open and waiting requests bound such clients instead.
+        var cooldownKey: String? {
+            record.map { "credential:\($0.id)" }
+        }
+
+        /// What iMCP knows about the client beyond the name it reported.
+        var identityNote: String {
+            if let record {
+                let date = record.issuedAt.formatted(date: .abbreviated, time: .omitted)
+                return "This client uses the credential that iMCP created for \"\(record.name)\" on \(date)."
+            }
+            if hasUnrecognizedCredential {
+                return "This client presented a credential that iMCP didn't create or has removed."
+            }
+            let note = "This client presented no credential, so any app could have sent this name."
+            if wasTrustedByName {
+                return note
+                    + " You trusted a client with this name before. iMCP now trusts clients by credential instead of by name."
+            }
+            return note
         }
     }
 

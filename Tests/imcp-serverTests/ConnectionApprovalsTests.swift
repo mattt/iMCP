@@ -93,20 +93,46 @@ final class ConnectionApprovalsTests: XCTestCase {
 
     func testDenialStartsCooldown() {
         var queue = Queue(policy: policy)
-        _ = enqueue(&queue, key: "connection:1", cooldownKey: "name:Client", waiter: 1)
+        _ = enqueue(&queue, key: "connection:1", cooldownKey: "credential:a", waiter: 1)
         _ = queue.resolve(key: "connection:1", approved: false, now: start)
 
         XCTAssertEqual(
-            enqueue(&queue, key: "connection:2", cooldownKey: "name:Client", waiter: 2, after: .seconds(29)),
+            enqueue(&queue, key: "connection:2", cooldownKey: "credential:a", waiter: 2, after: .seconds(29)),
             .rejected(.coolingDown)
         )
         XCTAssertEqual(
-            enqueue(&queue, key: "connection:3", cooldownKey: "name:Other", waiter: 3, after: .seconds(29)),
+            enqueue(&queue, key: "connection:3", cooldownKey: "credential:b", waiter: 3, after: .seconds(29)),
             .show(deadline: start + .seconds(149))
         )
         XCTAssertEqual(
-            enqueue(&queue, key: "connection:4", cooldownKey: "name:Client", waiter: 4, after: .seconds(30)),
+            enqueue(&queue, key: "connection:4", cooldownKey: "credential:a", waiter: 4, after: .seconds(30)),
             .show(deadline: start + .seconds(150))
+        )
+    }
+
+    func testRequestWithoutCooldownKeyHasNoCooldown() {
+        var queue = Queue(policy: policy)
+        for (offset, waiter) in [(Duration.zero, 1), (.seconds(1), 2)] {
+            XCTAssertEqual(
+                queue.enqueue(
+                    key: "connection:\(waiter)",
+                    cooldownKey: nil,
+                    request: "connection:\(waiter)",
+                    id: waiter,
+                    waiter: waiter,
+                    now: start.advanced(by: offset)
+                ),
+                .show(deadline: start + offset + .seconds(120))
+            )
+            _ = queue.resolve(key: "connection:\(waiter)", approved: false, now: start.advanced(by: offset))
+        }
+
+        _ = enqueue(&queue, key: "connection:3", waiter: 3, after: .seconds(2))
+        _ = queue.expire(now: start + .seconds(122))
+        XCTAssertEqual(
+            enqueue(&queue, key: "connection:3", waiter: 4, after: .seconds(123)),
+            .rejected(.coolingDown),
+            "A request with a cooldown key still cools down after it expires"
         )
     }
 

@@ -212,7 +212,8 @@ with the name the app reports
 and the services that the app can use.
 Click "Allow" to connect.
 If you don't answer within two minutes, iMCP denies the connection.
-After you deny a client, iMCP denies its connections
+After you deny a client that presents a credential,
+iMCP denies connections with that credential
 without asking for 30 seconds.
 iMCP shows up to three dialogs at once,
 and refuses connections while "Enable MCP Server" is off.
@@ -459,8 +460,8 @@ a result of `true` means that iMCP received the request.
 - **ChatGPT can't use iMCP tools.**
   Make sure that you're in a Codex conversation
   and that iMCP is turned on in ChatGPT's "MCP servers" settings.
-  If you clicked "Deny", wait 30 seconds,
-  and then click "Restart" to see the dialog again.
+  If you clicked "Deny", click "Restart" to see the dialog again.
+  If ChatGPT presents a credential, wait 30 seconds first.
   If you turned on a service after connecting, click "Restart"
   so that ChatGPT loads its tools.
 - **A service doesn't turn on in iMCP.**

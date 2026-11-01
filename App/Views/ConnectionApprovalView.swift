@@ -11,22 +11,6 @@ struct ConnectionApprovalView: View {
 
     private var clientName: String { request.claimedName }
 
-    /// What iMCP knows about the client beyond the name it reported.
-    private var identityNote: String? {
-        if let record = request.record {
-            let date = record.issuedAt.formatted(date: .abbreviated, time: .omitted)
-            return "This client uses the credential that iMCP created for \"\(record.name)\" on \(date)."
-        }
-        if request.hasUnrecognizedCredential {
-            return "This client presented a credential that iMCP didn't create or has removed."
-        }
-        if request.wasTrustedByName {
-            return
-                "You trusted a client with this name before. iMCP now trusts clients by credential instead of by name."
-        }
-        return nil
-    }
-
     /// What selecting "Always trust this client" does.
     private var alwaysTrustNote: String {
         if request.record != nil {
@@ -53,13 +37,11 @@ struct ConnectionApprovalView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Allow \"\(clientName)\" to connect to iMCP?")
 
-                if let identityNote {
-                    Text(identityNote)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                Text(request.identityNote)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 if enabledServiceNames.isEmpty {
                     Text("No services are currently enabled.")

@@ -55,7 +55,7 @@ struct ApprovalQueue<Request, Waiter> {
 
     struct Entry {
         let key: String
-        let cooldownKey: String
+        let cooldownKey: String?
         let request: Request
         let deadline: Instant
         fileprivate(set) var waiters: [(id: AnyHashable, waiter: Waiter)]
@@ -109,16 +109,17 @@ struct ApprovalQueue<Request, Waiter> {
     /// - Parameters:
     ///   - key: Requests with the same key share a dialog and a decision.
     ///   - cooldownKey: A denial refuses later requests with this key for a while.
+    ///     A request without one has no cooldown.
     ///   - id: Identifies the waiter for ``cancel(id:)``.
     mutating func enqueue(
         key: String,
-        cooldownKey: String,
+        cooldownKey: String?,
         request: Request,
         id: AnyHashable,
         waiter: Waiter,
         now: Instant
     ) -> Admission {
-        if let until = cooldowns[cooldownKey] {
+        if let cooldownKey, let until = cooldowns[cooldownKey] {
             if now < until {
                 return .rejected(.coolingDown)
             }
@@ -157,8 +158,8 @@ struct ApprovalQueue<Request, Waiter> {
             return Resolution()
         }
         let entry = entries.remove(at: index)
-        if !approved {
-            cooldowns[entry.cooldownKey] = now.advanced(by: policy.denialCooldown)
+        if !approved, let cooldownKey = entry.cooldownKey {
+            cooldowns[cooldownKey] = now.advanced(by: policy.denialCooldown)
         }
         return Resolution(removed: [entry], promoted: promote())
     }
@@ -168,8 +169,8 @@ struct ApprovalQueue<Request, Waiter> {
         let expired = entries.filter { $0.deadline <= now }
         guard !expired.isEmpty else { return Resolution() }
         entries.removeAll { $0.deadline <= now }
-        for entry in expired {
-            cooldowns[entry.cooldownKey] = now.advanced(by: policy.denialCooldown)
+        for case let cooldownKey? in expired.map(\.cooldownKey) {
+            cooldowns[cooldownKey] = now.advanced(by: policy.denialCooldown)
         }
         return Resolution(removed: expired, promoted: promote())
     }
