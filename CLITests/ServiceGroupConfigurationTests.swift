@@ -8,7 +8,7 @@ import XCTest
 /// These tests guard against the fatal crash first diagnosed on 2026-04-23:
 /// if `successTerminationBehavior` is left at its default of `.cancelGroup`, a
 /// `Service.run()` that returns normally (as `MCPService.run()` does when the
-/// Bonjour connection drops) causes `ServiceGroup` to throw
+/// connection to the app drops) causes `ServiceGroup` to throw
 /// `ServiceGroupError.serviceFinishedUnexpectedly`, which becomes a Swift
 /// top-level fatal error. See `CLI/main.swift` for the production configuration
 /// this file mirrors.
