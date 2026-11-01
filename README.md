@@ -211,6 +211,10 @@ iMCP shows a "Client Connection Request" dialog
 with the name the app reports
 and the services that the app can use.
 Click "Allow" to connect.
+"Allow" turns on a second after the dialog opens,
+and pressing Return doesn't click it,
+so that a click or a key press meant for another window
+doesn't approve a client as the dialog opens.
 If you don't answer within two minutes, iMCP denies the connection.
 After you deny a client that presents a credential,
 iMCP denies connections with that credential

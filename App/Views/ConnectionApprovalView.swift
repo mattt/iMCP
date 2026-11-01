@@ -7,7 +7,14 @@ struct ConnectionApprovalView: View {
     let onApprove: (Bool) -> Void  // Bool parameter is for "always trust"
     let onDeny: () -> Void
 
+    /// How long "Allow" stays off after the dialog appears.
+    ///
+    /// The dialog takes focus when it opens,
+    /// so a click or a key press meant for another window could land on it.
+    static let allowDelay: Duration = .seconds(1)
+
     @State private var alwaysTrust = false
+    @State private var canAllow = false
 
     private var clientName: String { request.claimedName }
 
@@ -79,12 +86,17 @@ struct ConnectionApprovalView: View {
                 .buttonStyle(.bordered)
                 .keyboardShortcut(.cancelAction)
 
+                // "Allow" has no keyboard shortcut, so that Return doesn't approve a connection.
                 Button("Allow") {
                     onApprove(alwaysTrust)
                 }
                 .buttonStyle(.borderedProminent)
-                .keyboardShortcut(.defaultAction)
+                .disabled(!canAllow)
             }
+        }
+        .task {
+            guard (try? await Task.sleep(for: Self.allowDelay)) != nil else { return }
+            canAllow = true
         }
         .padding(24)
         .frame(width: 400, alignment: .leading)
