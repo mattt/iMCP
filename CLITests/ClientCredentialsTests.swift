@@ -228,6 +228,41 @@ final class ClientCredentialsTests: XCTestCase {
         )
     }
 
+    func testCooldownKeyFollowsCredentialAndIgnoresName() throws {
+        let store = makeStore()
+        let credential = try store.credentialForSettings(name: "Client", existing: nil)
+
+        guard case .ask(let withCredential) = store.evaluate(credential: credential, claimedName: "Client"),
+            case .ask(let renamed) = store.evaluate(credential: credential, claimedName: "Other Name"),
+            case .ask(let withoutCredential) = store.evaluate(credential: nil, claimedName: "Client"),
+            case .ask(let withUnknownCredential) = store.evaluate(
+                credential: ClientCredential.generate(),
+                claimedName: "Client"
+            )
+        else { return XCTFail("Every connection must ask") }
+
+        XCTAssertNotNil(withCredential.cooldownKey)
+        XCTAssertEqual(withCredential.cooldownKey, renamed.cooldownKey)
+        // A name or an unrecognized credential can be changed freely, so it keys no cooldown.
+        XCTAssertNil(withoutCredential.cooldownKey)
+        XCTAssertNil(withUnknownCredential.cooldownKey)
+    }
+
+    func testIdentityNoteSaysWhenClientPresentsNoCredential() throws {
+        defaults.set(try JSONEncoder().encode(Set(["Claude"])), forKey: "trustedClients")
+        let store = makeStore()
+
+        guard case .ask(let unnamed) = store.evaluate(credential: nil, claimedName: "Client"),
+            case .ask(let formerlyTrusted) = store.evaluate(credential: nil, claimedName: "Claude"),
+            case .ask(let unknown) = store.evaluate(credential: ClientCredential.generate(), claimedName: "Client")
+        else { return XCTFail("Every connection must ask") }
+
+        XCTAssertTrue(unnamed.identityNote.hasPrefix("This client presented no credential"))
+        XCTAssertTrue(formerlyTrusted.identityNote.hasPrefix("This client presented no credential"))
+        XCTAssertTrue(formerlyTrusted.identityNote.contains("You trusted a client with this name before"))
+        XCTAssertFalse(unknown.identityNote.contains("no credential"))
+    }
+
     // MARK: - Trust by name from earlier versions
 
     func testNameTrustedByEarlierVersionMustReenroll() throws {
