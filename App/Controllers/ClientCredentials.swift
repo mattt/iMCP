@@ -247,6 +247,38 @@ struct KeychainClientRecordStorage: ClientRecordStorage {
     }
 }
 
+/// The open connections that each credential let in or was issued to.
+///
+/// Revoking a credential stops it from approving new connections,
+/// and this record lets iMCP close the connections that it already approved.
+struct CredentialSessions: Equatable {
+    private(set) var connections: [String: Set<UUID>] = [:]
+
+    /// Records that `connectionID` presented, or was issued, the credential with `credentialID`.
+    mutating func add(_ connectionID: UUID, credentialID: String) {
+        connections[credentialID, default: []].insert(connectionID)
+    }
+
+    /// Forgets a connection that closed.
+    mutating func remove(_ connectionID: UUID) {
+        for (credentialID, var ids) in connections where ids.contains(connectionID) {
+            ids.remove(connectionID)
+            connections[credentialID] = ids.isEmpty ? nil : ids
+        }
+    }
+
+    /// Forgets the credential with `credentialID` and returns its connections to close.
+    mutating func revoke(credentialID: String) -> Set<UUID> {
+        connections.removeValue(forKey: credentialID) ?? []
+    }
+
+    /// Forgets every credential and returns all their connections to close.
+    mutating func revokeAll() -> Set<UUID> {
+        defer { connections.removeAll() }
+        return connections.values.reduce(into: []) { $0.formUnion($1) }
+    }
+}
+
 /// Issues, checks, and revokes client credentials,
 /// and tracks clients that were trusted by name before credentials.
 @MainActor

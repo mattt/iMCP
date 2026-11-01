@@ -242,7 +242,7 @@ iMCP then shows a notification each time the client connects.
 You can remove trusted clients in
 <img style="display: inline" width="20" height="16" src="/Assets/icon.svg" />
 \> "Settings" > "Clients",
-which revokes their credentials.
+which revokes their credentials and closes their connections.
 
 > [!NOTE]
 > Earlier versions of iMCP trusted clients by name.
