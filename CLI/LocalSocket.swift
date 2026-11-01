@@ -231,6 +231,24 @@ enum LocalSocket {
         return descriptor
     }
 
+    /// What exists at a socket path.
+    enum PathStatus: Equatable {
+        /// Nothing, or something that `lstat` can't read.
+        case missing
+        /// A socket file, identified by its device and inode.
+        case socket(device: dev_t, inode: ino_t)
+        /// A file that isn't a socket.
+        case notASocket
+    }
+
+    /// Returns what exists at `path`, without following a symbolic link.
+    static func status(at path: String) -> PathStatus {
+        var status = stat()
+        guard lstat(path, &status) == 0 else { return .missing }
+        guard status.st_mode & S_IFMT == S_IFSOCK else { return .notASocket }
+        return .socket(device: status.st_dev, inode: status.st_ino)
+    }
+
     /// Removes the socket file at `path` unless a copy of iMCP listens on it.
     static func removeStaleSocket(at path: String, isServer: (Int32) -> Bool) throws {
         var status = stat()

@@ -847,7 +847,8 @@ actor MCPConnectionManager {
 final class LocalSocketListener: @unchecked Sendable {
     let path: String
     private let source: DispatchSourceRead
-    private let inode: ino_t
+    /// The socket file that this listener bound.
+    let fileStatus: LocalSocket.PathStatus
 
     /// Binds the socket at `path` and calls `onConnection` with each accepted descriptor.
     ///
@@ -859,10 +860,8 @@ final class LocalSocketListener: @unchecked Sendable {
         let flags = fcntl(descriptor, F_GETFL)
         _ = fcntl(descriptor, F_SETFL, flags | O_NONBLOCK)
 
-        var status = stat()
-        _ = lstat(path, &status)
         self.path = path
-        self.inode = status.st_ino
+        self.fileStatus = LocalSocket.status(at: path)
 
         let source = DispatchSource.makeReadSource(
             fileDescriptor: descriptor,
@@ -889,11 +888,15 @@ final class LocalSocketListener: @unchecked Sendable {
         log.info("Listening at \(path, privacy: .public)")
     }
 
+    /// Whether the socket file that this listener bound is still at its path.
+    var isAtPath: Bool {
+        LocalSocket.status(at: path) == fileStatus
+    }
+
     /// Stops listening and removes the socket file if no other listener replaced it.
     func cancel() {
         source.cancel()
-        var status = stat()
-        if lstat(path, &status) == 0, status.st_ino == inode {
+        if isAtPath {
             unlink(path)
         }
         log.info("Stopped listening at \(self.path, privacy: .public)")
@@ -911,6 +914,8 @@ actor ServerNetworkManager {
     private var isEnabledState: Bool = true
     private var listener: LocalSocketListener?
     private var listenerRetryTask: Task<Void, Never>?
+    /// The last reason that listening failed, so that each reason is reported once.
+    private var listenerFailure: String?
     private var connections: [UUID: MCPConnectionManager] = [:]
     private var connectionTasks: [UUID: Task<Void, Never>] = [:]
     /// Timers that close connections that aren't approved in time, keyed by connection.
@@ -963,16 +968,32 @@ actor ServerNetworkManager {
         log.info("Starting network manager")
         isRunningState = true
 
-        // Keep trying while another copy of iMCP holds the socket.
+        // Keep trying while another copy of iMCP holds the socket,
+        // and listen again if the socket file is removed or replaced.
         listenerRetryTask?.cancel()
         listenerRetryTask = Task {
             while !Task.isCancelled, self.isRunningState {
-                if self.listener == nil {
-                    self.startListening()
-                }
+                self.checkListener()
                 try? await Task.sleep(for: .seconds(10))
             }
         }
+    }
+
+    /// Listens if the app doesn't, or if its socket file is no longer at its path.
+    ///
+    /// Clients connect by path, so a listener whose file was removed or replaced
+    /// gets no connections. Listening again replaces a file that another process put there,
+    /// unless a copy of iMCP listens on it.
+    private func checkListener() {
+        if let listener {
+            guard !listener.isAtPath else { return }
+            log.notice(
+                "The socket file at \(listener.path, privacy: .public) was removed or replaced. Listening again."
+            )
+            listener.cancel()
+            self.listener = nil
+        }
+        startListening()
     }
 
     private func startListening() {
@@ -987,8 +1008,19 @@ actor ServerNetworkManager {
                     await self.handleNewConnection(descriptor)
                 }
             }
+            listenerFailure = nil
         } catch {
-            log.error("Failed to listen at \(path, privacy: .public): \(String(describing: error), privacy: .public)")
+            // Report each reason once, not on every retry.
+            let failure = String(describing: error)
+            guard failure != listenerFailure else { return }
+            listenerFailure = failure
+            if case .notASocket = error as? LocalSocket.Error {
+                log.fault(
+                    "Clients can't connect: a file that isn't a socket is at \(path, privacy: .public). iMCP listens there again after the file is removed."
+                )
+            } else {
+                log.error("Failed to listen at \(path, privacy: .public): \(failure, privacy: .public)")
+            }
         }
     }
 
@@ -1020,6 +1052,7 @@ actor ServerNetworkManager {
         listenerRetryTask = nil
         listener?.cancel()
         listener = nil
+        listenerFailure = nil
     }
 
     func removeConnection(_ id: UUID) async {

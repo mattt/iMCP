@@ -203,6 +203,22 @@ final class LocalSocketTests: XCTestCase {
         close(try LocalSocket.accept(listener))
     }
 
+    func testStatusDistinguishesSocketsFromOtherFiles() throws {
+        let path = directory + "/status.sock"
+        XCTAssertEqual(LocalSocket.status(at: path), .missing)
+
+        let listener = try LocalSocket.listen(at: path) { _ in false }
+        defer { close(listener) }
+        guard case .socket = LocalSocket.status(at: path) else {
+            return XCTFail("A listening socket's file is a socket")
+        }
+
+        XCTAssertEqual(unlink(path), 0)
+        XCTAssertEqual(LocalSocket.status(at: path), .missing)
+        FileManager.default.createFile(atPath: path, contents: Data())
+        XCTAssertEqual(LocalSocket.status(at: path), .notASocket)
+    }
+
     func testListenDoesNotRemoveOtherFiles() throws {
         let path = directory + "/file.sock"
         FileManager.default.createFile(atPath: path, contents: Data("keep".utf8))
