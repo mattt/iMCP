@@ -70,6 +70,7 @@
 		F9E9902DC72D90F6C423EFE2 /* Logging in Frameworks */ = {isa = PBXBuildFile; productRef = 48ABEE9E6903427DD79096A1 /* Logging */; };
 		AA0011000000000000000001 /* Envelope in Frameworks */ = {isa = PBXBuildFile; productRef = AA0011000000000000000002 /* Envelope */; };
 		AB0055000000000000000001 /* TSRP in Frameworks */ = {isa = PBXBuildFile; productRef = AB0055000000000000000002 /* TSRP */; };
+		7A115CA1E000000000000003 /* TailscaleKit in Frameworks */ = {isa = PBXBuildFile; productRef = 7A115CA1E000000000000002 /* TailscaleKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -225,6 +226,7 @@
 				F80955702D7888920055B911 /* iMessage in Frameworks */,
 				C0FFEE0000000000000000A1 /* TopoText in Frameworks */,
 				F8D8C48E2DCE0E6800369E5C /* JSONSchema in Frameworks */,
+				7A115CA1E000000000000003 /* TailscaleKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -418,6 +420,7 @@
 				F8D7C3192DCBD32100A4775F /* MCP */,
 				F8D8C48D2DCE0E6800369E5C /* JSONSchema */,
 				B75D49165A453E912E36DBFE /* Sparkle */,
+				7A115CA1E000000000000002 /* TailscaleKit */,
 			);
 			productName = iMCP;
 			productReference = F8F44E6D2D59038D0075D79C /* iMCP.app */;
@@ -501,6 +504,7 @@
 				F8D7C3182DCBD32100A4775F /* XCRemoteSwiftPackageReference "swift-sdk" */,
 				F8D8C48C2DCE0E6800369E5C /* XCRemoteSwiftPackageReference "JSONSchema" */,
 				26120478122FBFCB2B073DE5 /* XCRemoteSwiftPackageReference "Sparkle" */,
+				7A115CA1E000000000000001 /* XCRemoteSwiftPackageReference "libtailscale" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = F8F44E6E2D59038D0075D79C /* Products */;
@@ -859,6 +863,7 @@
 		F8F44E932D59038E0075D79C /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ARCHS = arm64;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				AUTOMATION_APPLE_EVENTS = YES;
@@ -912,7 +917,7 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 18.2;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
-				MACOSX_DEPLOYMENT_TARGET = 15.1;
+				MACOSX_DEPLOYMENT_TARGET = 15.6;
 				MARKETING_VERSION = 1.8.1;
 				PRODUCT_BUNDLE_IDENTIFIER = co.dododo.iMCP;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -929,6 +934,7 @@
 		F8F44E942D59038E0075D79C /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ARCHS = arm64;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				AUTOMATION_APPLE_EVENTS = YES;
@@ -983,7 +989,7 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 18.2;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
-				MACOSX_DEPLOYMENT_TARGET = 15.1;
+				MACOSX_DEPLOYMENT_TARGET = 15.6;
 				MARKETING_VERSION = 1.8.1;
 				PRODUCT_BUNDLE_IDENTIFIER = co.dododo.iMCP;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1163,6 +1169,14 @@
 				minimumVersion = 0.1.1;
 			};
 		};
+		7A115CA1E000000000000001 /* XCRemoteSwiftPackageReference "libtailscale" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/mattt/libtailscale";
+			requirement = {
+				kind = exactVersion;
+				version = "0.2.0-imcp.1";
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -1274,6 +1288,11 @@
 			productName = Envelope;
 		};
 		AB0055000000000000000002 /* TSRP */ = {isa = XCSwiftPackageProductDependency; package = AB0055000000000000000003 /* XCRemoteSwiftPackageReference "TSRP" */; productName = TSRP; };
+		7A115CA1E000000000000002 /* TailscaleKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7A115CA1E000000000000001 /* XCRemoteSwiftPackageReference "libtailscale" */;
+			productName = TailscaleKit;
+		};
 /* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = F8F44E652D59038D0075D79C /* Project object */;
