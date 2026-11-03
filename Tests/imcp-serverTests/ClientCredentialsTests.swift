@@ -42,17 +42,18 @@ final class ClientCredentialsTests: XCTestCase {
 
     func testIdentifierRejectsMalformedCredentials() {
         let valid = ClientCredential.generate()
-        for credential in [
+        let malformed: [String] = [
             "",
             "imcp_",
             "imcp_short",
-            "IMCP_" + valid.dropFirst(5),
+            "IMCP_" + String(valid.dropFirst(5)),
             String(valid.dropLast()),
             valid + "A",
             String(valid.dropLast()) + "!",
             String(valid.dropLast()) + "=",
-        ] {
-            XCTAssertNil(ClientCredential.identifier(for: String(credential)), String(credential))
+        ]
+        for credential in malformed {
+            XCTAssertNil(ClientCredential.identifier(for: credential), credential)
         }
     }
 
