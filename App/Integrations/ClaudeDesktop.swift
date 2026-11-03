@@ -38,17 +38,23 @@ enum ClaudeDesktop {
         }
     }
 
-    static func showConfigurationPanel() {
+    /// The name that iMCP gives the credential it writes for Claude Desktop.
+    static let clientName = "Claude Desktop"
+
+    @MainActor
+    static func showConfigurationPanel(serverController: ServerController) {
         do {
             log.debug("Loading existing Claude Desktop configuration")
-            let (config, imcpServer) = try loadConfig()
+            let (config, defaultServer) = try loadConfig()
+            var imcpServer = defaultServer
 
             let fileExists = FileManager.default.fileExists(atPath: configPath)
 
             let alert = NSAlert()
             alert.messageText = "Set Up iMCP Server"
             alert.informativeText = """
-                This will \(fileExists ? "update" : "create") the iMCP server settings in Claude Desktop.
+                This will \(fileExists ? "update" : "create") the iMCP server settings in Claude Desktop, \
+                including a credential that identifies Claude Desktop to iMCP.
 
                 Location: \(configPath)
 
@@ -63,7 +69,26 @@ enum ClaudeDesktop {
             let alertResponse = alert.runModal()
             if alertResponse == .alertFirstButtonReturn {
                 log.debug("User clicked Save, updating configuration")
-                try updateConfig(config, upserting: imcpServer)
+
+                // Keep the existing entry's environment and credential, if iMCP issued it.
+                let existing = config["mcpServers"]?.objectValue?["iMCP"]?.objectValue?["env"]?.objectValue
+                var environment = existing?.compactMapValues(\.stringValue) ?? [:]
+                let existingCredential = environment[ClientCredential.environmentVariable]
+                let credential = try serverController.credentialForClientSettings(
+                    name: clientName,
+                    existing: existingCredential
+                )
+                environment[ClientCredential.environmentVariable] = credential
+                imcpServer.env = environment
+
+                do {
+                    try updateConfig(config, upserting: imcpServer)
+                } catch {
+                    if credential != existingCredential {
+                        serverController.discardCredential(credential)
+                    }
+                    throw error
+                }
                 log.notice("Configuration updated successfully")
             } else {
                 log.debug("User cancelled configuration update")
@@ -300,5 +325,7 @@ private func writeConfig(_ config: [String: Value], to url: URL) throws {
     log.debug("Encoding and writing configuration")
     let data = try jsonEncoder.encode(config)
     try data.write(to: url, options: .atomic)
+    // The file holds a client credential, so keep it private to the user.
+    try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
     log.notice("Successfully saved config to \(url.path)")
 }

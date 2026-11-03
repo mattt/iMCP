@@ -40,9 +40,14 @@ actor ConnectionApprovalGate {
         }
     }
 
+    /// Whether the user approved the connection.
+    var isApproved: Bool {
+        state == .approved
+    }
+
     /// Throws unless the user approved the connection.
     func requireApproval() throws {
-        guard state == .approved else {
+        guard isApproved else {
             throw MCPError.invalidRequest("Connection is not approved")
         }
     }
@@ -67,6 +72,22 @@ extension MCP.Server {
             try await gate.approve { await approve(clientInfo) }
             await registerHandlers()
         }
+    }
+
+    /// Sends `notification` only if the user approved the connection.
+    ///
+    /// A connection that waits for approval has no handlers,
+    /// so it must not learn that iMCP's tools changed.
+    ///
+    /// - Returns: Whether the server sent the notification.
+    @discardableResult
+    func notify<N: MCP.Notification>(
+        _ notification: Message<N>,
+        ifApprovedBy gate: ConnectionApprovalGate
+    ) async throws -> Bool {
+        guard await gate.isApproved else { return false }
+        try await notify(notification)
+        return true
     }
 
     /// Registers a handler that refuses requests

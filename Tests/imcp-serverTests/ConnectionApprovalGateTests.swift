@@ -118,6 +118,41 @@ final class ConnectionApprovalGateTests: XCTestCase {
 
         await server.stop()
     }
+
+    /// A connection that waits for approval has no tools to list again,
+    /// so it gets no `tools/list_changed` notification.
+    func testToolListChangedIsSentOnlyAfterApproval() async throws {
+        let (clientTransport, serverTransport) = await InMemoryTransport.createConnectedPair()
+        let gate = ConnectionApprovalGate()
+        let server = MCP.Server(
+            name: "test",
+            version: "1.0",
+            capabilities: .init(tools: .init(listChanged: true))
+        )
+        try await server.start(transport: serverTransport)
+        let client = try await RawClient(transport: clientTransport)
+
+        let sentBeforeApproval = try await server.notify(
+            ToolListChangedNotification.message(),
+            ifApprovedBy: gate
+        )
+        XCTAssertFalse(sentBeforeApproval)
+
+        try await gate.approve { true }
+        let sentAfterApproval = try await server.notify(
+            ToolListChangedNotification.message(),
+            ifApprovedBy: gate
+        )
+        XCTAssertTrue(sentAfterApproval)
+
+        // The transport keeps order, so a notification sent before approval
+        // would arrive before the response to this ping.
+        try await client.send(id: "ping", method: Ping.name)
+        try await client.assertResult(id: "ping")
+        XCTAssertEqual(client.notifications, [ToolListChangedNotification.name])
+
+        await server.stop()
+    }
 }
 
 private let initializeParameters: [String: Any] = [
@@ -225,6 +260,8 @@ private final class RawClient {
     private let transport: InMemoryTransport
     private var messages: AsyncThrowingStream<Data, Error>.AsyncIterator
     private var responses: [String: [String: Any]] = [:]
+    /// The methods of the notifications received so far, in order.
+    private(set) var notifications: [String] = []
 
     init(transport: InMemoryTransport) async throws {
         self.transport = transport
@@ -265,6 +302,8 @@ private final class RawClient {
             let message = try JSONSerialization.jsonObject(with: data) as? [String: Any]
             if let message, let responseID = message["id"] as? String {
                 responses[responseID] = message
+            } else if let message, let method = message["method"] as? String {
+                notifications.append(method)
             }
         }
         return responses.removeValue(forKey: id)!
