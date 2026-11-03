@@ -42,7 +42,15 @@
 		A50000000000000000000022 /* ../../App/Extensions/Foundation+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000012 /* ../../App/Extensions/Foundation+Extensions.swift */; };
 		A50000000000000000000030 /* Envelope in Frameworks */ = {isa = PBXBuildFile; productRef = A50000000000000000000040 /* Envelope */; };
 		B0D1DEADBEEF000000000002 /* BonjourDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF000000000001 /* BonjourDiscovery.swift */; };
-		B0D1DEADBEEF000000000004 /* BonjourDiscoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF000000000003 /* BonjourDiscoveryTests.swift */; };
+		5EC5A1E70000000000000002 /* LocalSocket.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EC5A1E70000000000000001 /* LocalSocket.swift */; };
+		5EC5A1E70000000000000003 /* LocalSocket.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EC5A1E70000000000000001 /* LocalSocket.swift */; };
+		5EC5A1E70000000000000005 /* LocalSocketTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EC5A1E70000000000000004 /* LocalSocketTests.swift */; };
+		5EC5A1E70000000000000007 /* SocketTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EC5A1E70000000000000006 /* SocketTransport.swift */; };
+		5EC5A1E70000000000000009 /* SocketTransportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EC5A1E70000000000000008 /* SocketTransportTests.swift */; };
+		5EC5A1E7000000000000000B /* ClientCredentials.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EC5A1E7000000000000000A /* ClientCredentials.swift */; };
+		5EC5A1E7000000000000000D /* ClientCredentialsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EC5A1E7000000000000000C /* ClientCredentialsTests.swift */; };
+		5EC5A1E7000000000000000F /* ConnectionApprovals.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EC5A1E7000000000000000E /* ConnectionApprovals.swift */; };
+		5EC5A1E70000000000000011 /* ConnectionApprovalsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EC5A1E70000000000000010 /* ConnectionApprovalsTests.swift */; };
 		B0D1DEADBEEF000000000006 /* MCPServiceLoop.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF000000000005 /* MCPServiceLoop.swift */; };
 		B0D1DEADBEEF000000000008 /* MCPServiceLoopTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF000000000007 /* MCPServiceLoopTests.swift */; };
 		B0D1DEADBEEF00000000000A /* MCPInitializeCompatibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF000000000009 /* MCPInitializeCompatibility.swift */; };
@@ -116,7 +124,14 @@
 		A50000000000000000000011 /* ../../App/Services/Mail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/Mail.swift; sourceTree = "<group>"; };
 		A50000000000000000000012 /* ../../App/Extensions/Foundation+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../../App/Extensions/Foundation+Extensions.swift"; sourceTree = "<group>"; };
 		B0D1DEADBEEF000000000001 /* BonjourDiscovery.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = BonjourDiscovery.swift; path = ../../CLI/BonjourDiscovery.swift; sourceTree = "<group>"; };
-		B0D1DEADBEEF000000000003 /* BonjourDiscoveryTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BonjourDiscoveryTests.swift; sourceTree = "<group>"; };
+		5EC5A1E70000000000000001 /* LocalSocket.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = LocalSocket.swift; path = ../../CLI/LocalSocket.swift; sourceTree = "<group>"; };
+		5EC5A1E70000000000000004 /* LocalSocketTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LocalSocketTests.swift; sourceTree = "<group>"; };
+		5EC5A1E70000000000000006 /* SocketTransport.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SocketTransport.swift; path = ../../App/Controllers/SocketTransport.swift; sourceTree = "<group>"; };
+		5EC5A1E70000000000000008 /* SocketTransportTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SocketTransportTests.swift; sourceTree = "<group>"; };
+		5EC5A1E7000000000000000A /* ClientCredentials.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ClientCredentials.swift; path = ../../App/Controllers/ClientCredentials.swift; sourceTree = "<group>"; };
+		5EC5A1E7000000000000000C /* ClientCredentialsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ClientCredentialsTests.swift; sourceTree = "<group>"; };
+		5EC5A1E7000000000000000E /* ConnectionApprovals.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ConnectionApprovals.swift; path = ../../App/Controllers/ConnectionApprovals.swift; sourceTree = "<group>"; };
+		5EC5A1E70000000000000010 /* ConnectionApprovalsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ConnectionApprovalsTests.swift; sourceTree = "<group>"; };
 		B0D1DEADBEEF000000000005 /* MCPServiceLoop.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MCPServiceLoop.swift; path = ../../CLI/MCPServiceLoop.swift; sourceTree = "<group>"; };
 		B0D1DEADBEEF000000000007 /* MCPServiceLoopTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MCPServiceLoopTests.swift; sourceTree = "<group>"; };
 		B0D1DEADBEEF000000000009 /* MCPInitializeCompatibility.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MCPInitializeCompatibility.swift; path = ../../CLI/MCPInitializeCompatibility.swift; sourceTree = "<group>"; };
@@ -268,12 +283,19 @@
 				A30000000000000000000015 /* ../../Shared/Models/Tool.swift */,
 				A30000000000000000000016 /* ../../Shared/Models/Value.swift */,
 				75E148EAC5AC8B3263C5AA13 /* ServiceGroupConfigurationTests.swift */,
-				B0D1DEADBEEF000000000003 /* BonjourDiscoveryTests.swift */,
 				B0D1DEADBEEF000000000001 /* BonjourDiscovery.swift */,
 				B0D1DEADBEEF000000000007 /* MCPServiceLoopTests.swift */,
 				B0D1DEADBEEF000000000009 /* MCPInitializeCompatibility.swift */,
 				B0D1DEADBEEF00000000000B /* MCPInitializeCompatibilityTests.swift */,
 				B0D1DEADBEEF000000000005 /* MCPServiceLoop.swift */,
+				5EC5A1E70000000000000001 /* LocalSocket.swift */,
+				5EC5A1E70000000000000004 /* LocalSocketTests.swift */,
+				5EC5A1E70000000000000006 /* SocketTransport.swift */,
+				5EC5A1E70000000000000008 /* SocketTransportTests.swift */,
+				5EC5A1E7000000000000000A /* ClientCredentials.swift */,
+				5EC5A1E7000000000000000C /* ClientCredentialsTests.swift */,
+				5EC5A1E7000000000000000E /* ConnectionApprovals.swift */,
+				5EC5A1E70000000000000010 /* ConnectionApprovalsTests.swift */,
 			);
 			path = "imcp-serverTests";
 			sourceTree = "<group>";
@@ -580,12 +602,19 @@
 				930214FCD680D7D74158F215 /* ServiceGroupConfigurationTests.swift in Sources */,
 				C0A7E00000000000000000B2 /* ConnectionApprovalGateTests.swift in Sources */,
 				C0A7E00000000000000000A2 /* ../../App/Controllers/ConnectionApprovalGate.swift in Sources */,
-				B0D1DEADBEEF000000000004 /* BonjourDiscoveryTests.swift in Sources */,
 				B0D1DEADBEEF000000000002 /* BonjourDiscovery.swift in Sources */,
 				B0D1DEADBEEF000000000008 /* MCPServiceLoopTests.swift in Sources */,
 				B0D1DEADBEEF000000000006 /* MCPServiceLoop.swift in Sources */,
 				B0D1DEADBEEF00000000000A /* MCPInitializeCompatibility.swift in Sources */,
 				B0D1DEADBEEF00000000000C /* MCPInitializeCompatibilityTests.swift in Sources */,
+				5EC5A1E70000000000000002 /* LocalSocket.swift in Sources */,
+				5EC5A1E70000000000000005 /* LocalSocketTests.swift in Sources */,
+				5EC5A1E70000000000000007 /* SocketTransport.swift in Sources */,
+				5EC5A1E70000000000000009 /* SocketTransportTests.swift in Sources */,
+				5EC5A1E7000000000000000B /* ClientCredentials.swift in Sources */,
+				5EC5A1E7000000000000000D /* ClientCredentialsTests.swift in Sources */,
+				5EC5A1E7000000000000000F /* ConnectionApprovals.swift in Sources */,
+				5EC5A1E70000000000000011 /* ConnectionApprovalsTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -594,6 +623,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A20000000000000000000030 /* BonjourDiscovery.swift in Sources */,
+				5EC5A1E70000000000000003 /* LocalSocket.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -878,7 +908,7 @@
 				INFOPLIST_KEY_NSCameraUsageDescription = "iMCP needs access to the camera to take pictures for the MCP server.";
 				INFOPLIST_KEY_NSContactsUsageDescription = "iMCP needs access to provide contact information to the MCP server.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 dododo, LLC. All rights reserved.";
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "iMCP uses the local network to connect to the MCP server.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "iMCP connects to iMCP Helper on this Mac.";
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "iMCP needs access to provide location information to the MCP server.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "iMCP needs access to provide location information to the MCP server.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "iMCP needs access to the microphone to record audio for the MCP server.";
@@ -949,7 +979,7 @@
 				INFOPLIST_KEY_NSCameraUsageDescription = "iMCP needs access to the camera to take pictures for the MCP server.";
 				INFOPLIST_KEY_NSContactsUsageDescription = "iMCP needs access to provide contact information to the MCP server.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 dododo, LLC. All rights reserved.";
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "iMCP uses the local network to connect to the MCP server.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "iMCP connects to iMCP Helper on this Mac.";
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "iMCP needs access to provide location information to the MCP server.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "iMCP needs access to provide location information to the MCP server.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "iMCP needs access to the microphone to record audio for the MCP server.";

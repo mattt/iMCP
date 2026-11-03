@@ -1,81 +1,48 @@
+import Darwin
 import Foundation
 import Logging
-import MCP
-import Network
 import ServiceLifecycle
 
-private let serviceType = ProcessInfo.processInfo.environment["IMCP_SERVICE_TYPE"] ?? "_mcp._tcp"
-
-private let parameters: NWParameters = {
-    let parameters = NWParameters.tcp
-    parameters.acceptLocalOnly = true
-    parameters.includePeerToPeer = false
-    parameters.requiredInterfaceType = .loopback
-
-    if let tcpOptions = parameters.defaultProtocolStack.internetProtocol as? NWProtocolIP.Options {
-        tcpOptions.version = .v4
-    }
-
-    return parameters
-}()
-
-/// Discovers the menubar app over Bonjour and proxies stdio to it.
+/// Connects to the menubar app over its Unix domain socket and proxies stdio to it.
 actor MCPService: Service {
     private var currentProxy: StdioProxy?
 
     func run() async throws {
+        var hasReportedUnavailable = false
         while !Task.isShuttingDownGracefully {
             do {
-                await log.info("Starting Bonjour service discovery...")
-
-                let browser = NWBrowser(
-                    for: .bonjour(type: serviceType, domain: nil),
-                    using: parameters
+                // Check the app's code signature before writing anything to the socket.
+                let (socket, path) = try LocalSocket.connect(
+                    toFirstOf: LocalSocket.clientPaths(),
+                    requiring: CodeRequirement.server
                 )
+                hasReportedUnavailable = false
+                await log.info("Connected to iMCP at \(path)")
 
-                // Prefer a service advertised as iMCP; fall back to any MCP service on this Mac.
-                // The helper cancels the browser on every exit path,
-                // so a timed-out attempt doesn't leak a DNS-SD connection (#192).
-                let endpoint: NWEndpoint
-                do {
-                    endpoint = try await BonjourDiscovery.discoverEndpoint(
-                        using: browser,
-                        timeout: .seconds(30),
-                        preferring: { String(describing: $0.endpoint).contains("iMCP") }
-                    )
-                } catch BonjourDiscovery.Error.timeout {
-                    await log.error(
-                        """
-                        Bonjour service discovery timed out after 30 seconds. \
-                        Check that iMCP is running, and that imcp-server is turned on in \
-                        System Settings > Privacy & Security > Local Network.
-                        """
-                    )
-                    throw MCPError.internalError("Service discovery timeout")
-                }
-                await log.info("Selected endpoint: \(endpoint)")
-
-                await log.info("Creating connection to endpoint...")
-
-                let proxy = StdioProxy(
-                    endpoint: endpoint,
-                    parameters: parameters,
-                    stdinBufferSize: 10 * 1024 * 1024,
-                    networkBufferSize: 10 * 1024 * 1024
-                )
+                let proxy = StdioProxy(socket: socket, stdinBufferSize: 10 * 1024 * 1024)
                 self.currentProxy = proxy
 
                 let sessionError: (any Swift.Error)?
                 do {
-                    try await proxy.start()
+                    // Send the client's credential only to an app that passed the check.
+                    let hello = LocalSocketHello.fromEnvironment(ProcessInfo.processInfo.environment)
+                    try await proxy.start(hello: hello.encoded())
                     sessionError = nil
                 } catch {
                     sessionError = error
                 }
 
-                switch MCPServiceLoop.decision(error: sessionError) {
+                let hasReadClientInput = await proxy.hasReadInput
+                switch MCPServiceLoop.decision(error: sessionError, hasReadClientInput: hasReadClientInput) {
                 case .terminate:
-                    await log.critical("Connection closed, terminating...")
+                    if let sessionError {
+                        // A new connection wouldn't have this session's approval.
+                        await log.critical(
+                            "Connection error: \(sessionError). Exiting so that the MCP client can start a new session."
+                        )
+                    } else {
+                        await log.critical("Connection closed, terminating...")
+                    }
                     return
                 case .reconnect(let seconds):
                     if let sessionError {
@@ -84,6 +51,18 @@ actor MCPService: Service {
                     await log.info("Will retry connection in \(Int(seconds)) seconds...")
                     try await Task.sleep(for: .seconds(seconds))
                 }
+            } catch let error as CodeRequirement.UntrustedPeer {
+                await log.critical("\(error)")
+                try await Task.sleep(for: .seconds(5))
+            } catch let error as LocalSocket.Error {
+                // Report once while the app isn't running, then keep trying quietly.
+                if !hasReportedUnavailable {
+                    hasReportedUnavailable = true
+                    await log.error(
+                        "Couldn't connect to iMCP: \(error). Check that iMCP is open and that its server is turned on."
+                    )
+                }
+                try await Task.sleep(for: .seconds(2))
             } catch {
                 await log.error("Connection error: \(error)")
                 await log.info("Will retry connection in 5 seconds...")
