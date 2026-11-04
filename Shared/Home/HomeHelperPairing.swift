@@ -207,9 +207,10 @@ enum HomeHelperPairing {
                 case errSecSuccess:
                     guard let data = result as? Data, data.count == 32 else { return nil }
                     return SymmetricKey(data: data)
-                case errSecItemNotFound:
-                    return nil
-                case errSecMissingEntitlement:
+                // Apps without an application identifier get errSecItemNotFound
+                // from the data protection keychain, not errSecMissingEntitlement,
+                // so check the file-based keychain in both cases.
+                case errSecItemNotFound, errSecMissingEntitlement:
                     continue
                 default:
                     throw HomeError("Cannot read the pairing from the keychain (\(status)).")
