@@ -22,12 +22,14 @@ final class AppleScriptTests: XCTestCase {
     }
 
     func testCancellingAQueuedScriptStopsItBeforeItRuns() async throws {
-        // The queue runs one script at a time, so the second waits behind the first.
-        let blocker = Task { try await NSAppleScript.execute("delay 0.5\nreturn 1").int32Value }
-        try await Task.sleep(for: .milliseconds(100))
+        // Hold the serial queue, so that the script waits until after it is cancelled.
+        let release = DispatchSemaphore(value: 0)
+        NSAppleScript.executionQueue.async { release.wait() }
+
         let queued = Task { try await NSAppleScript.execute("return 2").int32Value }
         try await Task.sleep(for: .milliseconds(50))
         queued.cancel()
+        release.signal()
 
         do {
             let result = try await queued.value
@@ -35,8 +37,6 @@ final class AppleScriptTests: XCTestCase {
         } catch {
             XCTAssertTrue(error is CancellationError, "\(error)")
         }
-        let blocked = try await blocker.value
-        XCTAssertEqual(blocked, 1)
     }
 
     func testScriptErrorsKeepTheirNumberAndMessage() async {

@@ -159,7 +159,8 @@ extension NSAppleScript {
 
     /// Creates and runs each script in one block, off the main thread.
     /// Script objects are not shared between queue blocks.
-    private static let executionQueue = DispatchQueue(label: "me.mattt.iMCP.AppleScript")
+    /// Tests hold this queue to keep a script waiting.
+    static let executionQueue = DispatchQueue(label: "me.mattt.iMCP.AppleScript")
 
     /// Compiles `source` and runs it on a serial queue, off the main thread.
     ///
