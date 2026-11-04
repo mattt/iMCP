@@ -33,6 +33,7 @@
 		A40000000000000000000021 /* ../../App/Services/Home.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000011 /* ../../App/Services/Home.swift */; };
 		A40000000000000000000029 /* ../../App/Services/HomeHelperLocator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000019 /* ../../App/Services/HomeHelperLocator.swift */; };
 		B13300000000000000000020 /* MusicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13300000000000000000010 /* MusicTests.swift */; };
+		B13400000000000000000020 /* AppleScriptTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13400000000000000000010 /* AppleScriptTests.swift */; };
 		B13300000000000000000021 /* ../../App/Services/Music.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13300000000000000000011 /* ../../App/Services/Music.swift */; };
 		A40000000000000000000022 /* ../../Shared/Extensions/Logger+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000012 /* ../../Shared/Extensions/Logger+Extensions.swift */; };
 		A40000000000000000000023 /* ../../Shared/Extensions/Bundle+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000013 /* ../../Shared/Extensions/Bundle+Extensions.swift */; };
@@ -116,6 +117,7 @@
 		A40000000000000000000011 /* ../../App/Services/Home.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/Home.swift; sourceTree = "<group>"; };
 		A40000000000000000000019 /* ../../App/Services/HomeHelperLocator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/HomeHelperLocator.swift; sourceTree = "<group>"; };
 		B13300000000000000000010 /* MusicTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicTests.swift; sourceTree = "<group>"; };
+		B13400000000000000000010 /* AppleScriptTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleScriptTests.swift; sourceTree = "<group>"; };
 		B13300000000000000000011 /* ../../App/Services/Music.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/Music.swift; sourceTree = "<group>"; };
 		A40000000000000000000012 /* ../../Shared/Extensions/Logger+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../../Shared/Extensions/Logger+Extensions.swift"; sourceTree = "<group>"; };
 		A40000000000000000000013 /* ../../Shared/Extensions/Bundle+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../../Shared/Extensions/Bundle+Extensions.swift"; sourceTree = "<group>"; };
@@ -271,6 +273,7 @@
 				A50000000000000000000010 /* MailTests.swift */,
 				A50000000000000000000011 /* ../../App/Services/Mail.swift */,
 				A50000000000000000000012 /* ../../App/Extensions/Foundation+Extensions.swift */,
+				B13400000000000000000010 /* AppleScriptTests.swift */,
 				C0A7E00000000000000000B1 /* ConnectionApprovalGateTests.swift */,
 				C0A7E00000000000000000A1 /* ../../App/Controllers/ConnectionApprovalGate.swift */,
 				A30000000000000000000010 /* HomeToolsTests.swift */,
@@ -590,6 +593,7 @@
 				A50000000000000000000020 /* MailTests.swift in Sources */,
 				A50000000000000000000021 /* ../../App/Services/Mail.swift in Sources */,
 				A50000000000000000000022 /* ../../App/Extensions/Foundation+Extensions.swift in Sources */,
+				B13400000000000000000020 /* AppleScriptTests.swift in Sources */,
 				A30000000000000000000020 /* HomeToolsTests.swift in Sources */,
 				A30000000000000000000021 /* ../../Shared/Home/HomeBackend.swift in Sources */,
 				A30000000000000000000022 /* ../../Shared/Home/HomeError.swift in Sources */,
