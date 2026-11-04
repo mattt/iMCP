@@ -1,11 +1,27 @@
 import Foundation
 import XCTest
+import os
 
 /// These scripts send no Apple events to other apps.
 final class AppleScriptTests: XCTestCase {
+    @MainActor
     func testScriptsRunOffTheMainThread() async throws {
-        let sum = try await NSAppleScript.execute("return 1 + 1")
-        XCTAssertEqual(sum.int32Value, 2)
+        // Hold the serial queue. A script that ran on the main actor
+        // would finish anyway; a script on the queue waits.
+        let release = DispatchSemaphore(value: 0)
+        NSAppleScript.executionQueue.async { release.wait() }
+
+        let finished = OSAllocatedUnfairLock(initialState: false)
+        let script = Task { @MainActor in
+            defer { finished.withLock { $0 = true } }
+            return try await NSAppleScript.execute("return 1 + 1").int32Value
+        }
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertFalse(finished.withLock { $0 }, "the script did not wait for the queue")
+
+        release.signal()
+        let sum = try await script.value
+        XCTAssertEqual(sum, 2)
     }
 
     func testCancelledTasksRunNoScript() async {
