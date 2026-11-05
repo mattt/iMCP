@@ -188,12 +188,16 @@ final class MusicTests: XCTestCase {
             ])
             XCTAssertNil(
                 MusicService.nextPlaylistTrackOffset(
-                    offset: page.offset, limit: page.limit, total: Int.max
+                    offset: page.offset,
+                    limit: page.limit,
+                    total: Int.max
                 )
             )
             XCTAssertTrue(
                 MusicService.playlistTracksScript(
-                    id: "A0B8C1E7B52DD217", offset: page.offset, limit: page.limit
+                    id: "A0B8C1E7B52DD217",
+                    offset: page.offset,
+                    limit: page.limit
                 ).contains("set lastIndex to \(Int.max)")
             )
         }
@@ -206,6 +210,31 @@ final class MusicTests: XCTestCase {
         XCTAssertNil(MusicService.nextPlaylistTrackOffset(offset: 0, limit: 100, total: 100))
         XCTAssertNil(MusicService.nextPlaylistTrackOffset(offset: 700, limit: 100, total: 607))
         XCTAssertNil(MusicService.nextPlaylistTrackOffset(offset: 0, limit: 100, total: 0))
+    }
+
+    func testPlaylistTracksEncodeNextOffset() throws {
+        for (offset, total) in [(600, 607), (0, 0), (700, 607), (0, 607)] {
+            let nextOffset = MusicService.nextPlaylistTrackOffset(
+                offset: offset,
+                limit: 100,
+                total: total
+            )
+            let response = MusicPlaylistTracks(
+                id: "A0B8C1E7B52DD217",
+                name: "Library",
+                total: total,
+                offset: offset,
+                nextOffset: nextOffset,
+                tracks: []
+            )
+            let data = try JSONEncoder().encode(response)
+            let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+            if let nextOffset {
+                XCTAssertEqual(json["nextOffset"] as? Int, nextOffset)
+            } else {
+                XCTAssertTrue(json["nextOffset"] is NSNull)
+            }
+        }
     }
 
     /// Compiling reads the Music dictionary but runs nothing.

@@ -793,7 +793,7 @@ private struct MusicPlaylist: Encodable {
     let parentID: String?
 }
 
-private struct MusicPlaylistTrack: Encodable {
+struct MusicPlaylistTrack: Encodable {
     let id: String
     let name: String
     let artist: String
@@ -801,7 +801,7 @@ private struct MusicPlaylistTrack: Encodable {
     let duration: Double?
 }
 
-private struct MusicPlaylistTracks: Encodable {
+struct MusicPlaylistTracks: Encodable {
     let id: String
     let name: String
     let total: Int
@@ -809,6 +809,24 @@ private struct MusicPlaylistTracks: Encodable {
     /// The offset of the next page, or `nil` when this page reaches the end.
     let nextOffset: Int?
     let tracks: [MusicPlaylistTrack]
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, total, offset, nextOffset, tracks
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(total, forKey: .total)
+        try container.encode(offset, forKey: .offset)
+        if let nextOffset {
+            try container.encode(nextOffset, forKey: .nextOffset)
+        } else {
+            try container.encodeNil(forKey: .nextOffset)
+        }
+        try container.encode(tracks, forKey: .tracks)
+    }
 }
 
 extension MusicService {
