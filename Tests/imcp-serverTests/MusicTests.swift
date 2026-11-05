@@ -175,6 +175,30 @@ final class MusicTests: XCTestCase {
         XCTAssertThrowsError(try MusicService.playlistTrackPage(from: ["offset": .double(1.5)]))
     }
 
+    func testPlaylistTrackPageRejectsOffsetsThatWouldOverflow() throws {
+        XCTAssertThrowsError(try MusicService.playlistTrackPage(from: ["offset": .int(Int.max)]))
+        for limit in [1, 100, 500] {
+            XCTAssertThrowsError(
+                try MusicService.playlistTrackPage(from: [
+                    "offset": .int(Int.max - limit + 1), "limit": .int(limit),
+                ])
+            )
+            let page = try MusicService.playlistTrackPage(from: [
+                "offset": .int(Int.max - limit), "limit": .int(limit),
+            ])
+            XCTAssertNil(
+                MusicService.nextPlaylistTrackOffset(
+                    offset: page.offset, limit: page.limit, total: Int.max
+                )
+            )
+            XCTAssertTrue(
+                MusicService.playlistTracksScript(
+                    id: "A0B8C1E7B52DD217", offset: page.offset, limit: page.limit
+                ).contains("set lastIndex to \(Int.max)")
+            )
+        }
+    }
+
     func testNextPlaylistTrackOffsetStopsAtTheEnd() {
         XCTAssertEqual(MusicService.nextPlaylistTrackOffset(offset: 0, limit: 100, total: 607), 100)
         XCTAssertEqual(MusicService.nextPlaylistTrackOffset(offset: 500, limit: 100, total: 607), 600)

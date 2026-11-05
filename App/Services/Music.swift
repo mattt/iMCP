@@ -893,6 +893,14 @@ extension MusicService {
             limit = parsed
         }
 
+        guard offset <= Int.max - limit else {
+            throw NSError(
+                domain: "MusicServiceError",
+                code: 10,
+                userInfo: [NSLocalizedDescriptionKey: "Offset is too large for the requested limit"]
+            )
+        }
+
         return (offset, limit)
     }
 
