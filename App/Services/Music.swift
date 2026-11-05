@@ -837,7 +837,7 @@ extension MusicService {
     static let playlistsScript = """
         tell application "Music"
             set playlistInfo to {}
-            repeat with aPlaylist in (every user playlist)
+            repeat with aPlaylist in ((every library playlist) & (every user playlist))
                 set playlistKind to "user"
                 if (special kind of aPlaylist) is folder then
                     set playlistKind to "folder"

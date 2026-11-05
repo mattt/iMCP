@@ -239,6 +239,8 @@ final class MusicTests: XCTestCase {
 
     /// Compiling reads the Music dictionary but runs nothing.
     func testPlaylistsScriptCompiles() throws {
+        XCTAssertTrue(MusicService.playlistsScript.contains("every library playlist"))
+        XCTAssertTrue(MusicService.playlistsScript.contains("every user playlist"))
         var errorInfo: NSDictionary?
         XCTAssertTrue(
             try XCTUnwrap(NSAppleScript(source: MusicService.playlistsScript))
