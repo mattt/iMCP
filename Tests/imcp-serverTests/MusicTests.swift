@@ -138,4 +138,74 @@ final class MusicTests: XCTestCase {
         XCTAssertNil(MusicService.exactInt(from: .bool(true)))
         XCTAssertNil(MusicService.exactInt(from: .null))
     }
+
+    // MARK: - Playlists
+
+    func testPlaylistIDsMustBePersistentIDs() throws {
+        XCTAssertEqual(
+            try MusicService.playlistID(from: .string("A0B8C1E7B52DD217")),
+            "A0B8C1E7B52DD217"
+        )
+        XCTAssertEqual(
+            try MusicService.playlistID(from: .string("a0b8c1e7b52dd217")),
+            "A0B8C1E7B52DD217"
+        )
+
+        for value: Value? in [
+            nil, .null, .string(""), .string("A0B8C1E7B52DD21"), .string("A0B8C1E7B52DD2170"),
+            .string("G0B8C1E7B52DD217"), .string("\" & quit & \""), .int(1),
+        ] {
+            XCTAssertThrowsError(try MusicService.playlistID(from: value), String(describing: value))
+        }
+    }
+
+    func testPlaylistTrackPageDefaultsAndBounds() throws {
+        let defaults = try MusicService.playlistTrackPage(from: [:])
+        XCTAssertEqual(defaults.offset, 0)
+        XCTAssertEqual(defaults.limit, 100)
+
+        let page = try MusicService.playlistTrackPage(from: ["offset": .int(200), "limit": .double(500)])
+        XCTAssertEqual(page.offset, 200)
+        XCTAssertEqual(page.limit, 500)
+
+        XCTAssertThrowsError(try MusicService.playlistTrackPage(from: ["limit": .int(0)]))
+        XCTAssertThrowsError(try MusicService.playlistTrackPage(from: ["limit": .int(501)]))
+        XCTAssertThrowsError(try MusicService.playlistTrackPage(from: ["limit": .string("10")]))
+        XCTAssertThrowsError(try MusicService.playlistTrackPage(from: ["offset": .int(-1)]))
+        XCTAssertThrowsError(try MusicService.playlistTrackPage(from: ["offset": .double(1.5)]))
+    }
+
+    func testNextPlaylistTrackOffsetStopsAtTheEnd() {
+        XCTAssertEqual(MusicService.nextPlaylistTrackOffset(offset: 0, limit: 100, total: 607), 100)
+        XCTAssertEqual(MusicService.nextPlaylistTrackOffset(offset: 500, limit: 100, total: 607), 600)
+        XCTAssertNil(MusicService.nextPlaylistTrackOffset(offset: 600, limit: 100, total: 607))
+        XCTAssertNil(MusicService.nextPlaylistTrackOffset(offset: 0, limit: 100, total: 100))
+        XCTAssertNil(MusicService.nextPlaylistTrackOffset(offset: 700, limit: 100, total: 607))
+        XCTAssertNil(MusicService.nextPlaylistTrackOffset(offset: 0, limit: 100, total: 0))
+    }
+
+    /// Compiling reads the Music dictionary but runs nothing.
+    func testPlaylistsScriptCompiles() throws {
+        var errorInfo: NSDictionary?
+        XCTAssertTrue(
+            try XCTUnwrap(NSAppleScript(source: MusicService.playlistsScript))
+                .compileAndReturnError(&errorInfo),
+            String(describing: errorInfo)
+        )
+    }
+
+    /// Compiling reads the Music dictionary but runs nothing.
+    func testPlaylistTracksScriptReadsOnePageAndCompiles() throws {
+        let script = MusicService.playlistTracksScript(id: "A0B8C1E7B52DD217", offset: 100, limit: 50)
+        XCTAssertTrue(script.contains("persistent ID is \"A0B8C1E7B52DD217\""), script)
+        XCTAssertTrue(script.contains("set firstIndex to 101"), script)
+        XCTAssertTrue(script.contains("set lastIndex to 150"), script)
+        XCTAssertEqual(script.components(separatedBy: "tell application").count - 1, 1, script)
+
+        var errorInfo: NSDictionary?
+        XCTAssertTrue(
+            try XCTUnwrap(NSAppleScript(source: script)).compileAndReturnError(&errorInfo),
+            String(describing: errorInfo)
+        )
+    }
 }

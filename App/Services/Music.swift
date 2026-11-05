@@ -5,6 +5,8 @@ import OSLog
 private let log = Logger.service("music")
 private let defaultSearchLimit = 10
 private let artworkSize = 512
+private let defaultPlaylistTrackLimit = 100
+private let maximumPlaylistTrackLimit = 500
 
 final class MusicService: Service {
     static let shared = MusicService()
@@ -135,6 +137,58 @@ final class MusicService: Service {
         ) { arguments in
             try await self.authorizeCatalogAccess()
             return try await self.searchCatalog(with: arguments)
+        }
+
+        Tool(
+            name: "music_playlists_list",
+            description:
+                "List the playlists in the user's Music library, with each playlist's ID, kind, and number of tracks. Pass an ID to music_playlist_tracks to read a playlist's tracks.",
+            inputSchema: .object(
+                properties: [:],
+                additionalProperties: false
+            ),
+            annotations: .init(
+                title: "List Playlists",
+                readOnlyHint: true,
+                openWorldHint: false
+            )
+        ) { _ in
+            return try await self.fetchPlaylists()
+        }
+
+        Tool(
+            name: "music_playlist_tracks",
+            description:
+                "Get the tracks of a playlist in the user's Music library, in playlist order, one page at a time. The result includes the playlist's total track count and nextOffset; pass nextOffset as offset to get the next page, until it is null.",
+            inputSchema: .object(
+                properties: [
+                    "id": .string(
+                        description: "The playlist's ID, from music_playlists_list"
+                    ),
+                    "limit": .integer(
+                        description: "Maximum number of tracks to return",
+                        default: .int(defaultPlaylistTrackLimit),
+                        minimum: 1,
+                        maximum: 500
+                    ),
+                    "offset": .integer(
+                        description: "Number of tracks to skip from the start of the playlist",
+                        default: .int(0),
+                        minimum: 0
+                    ),
+                ],
+                required: ["id"],
+                additionalProperties: false
+            ),
+            annotations: .init(
+                title: "Get Playlist Tracks",
+                readOnlyHint: true,
+                openWorldHint: false
+            )
+        ) { arguments in
+            let id = try Self.playlistID(from: arguments["id"])
+            let (offset, limit) = try Self.playlistTrackPage(from: arguments)
+            return try await self.fetchPlaylistTracks(id: id, offset: offset, limit: limit)
         }
     }
 }
@@ -723,5 +777,231 @@ extension MusicService {
         @unknown default:
             return []
         }
+    }
+}
+
+// MARK: - Library playlists
+
+private struct MusicPlaylist: Encodable {
+    let id: String
+    let name: String
+    /// `user`, `smart`, `folder`, or `system` for playlists Music manages itself,
+    /// such as the library.
+    let kind: String
+    let trackCount: Int
+    /// The ID of the folder that contains the playlist, if any.
+    let parentID: String?
+}
+
+private struct MusicPlaylistTrack: Encodable {
+    let id: String
+    let name: String
+    let artist: String
+    let album: String
+    let duration: Double?
+}
+
+private struct MusicPlaylistTracks: Encodable {
+    let id: String
+    let name: String
+    let total: Int
+    let offset: Int
+    /// The offset of the next page, or `nil` when this page reaches the end.
+    let nextOffset: Int?
+    let tracks: [MusicPlaylistTrack]
+}
+
+extension MusicService {
+    /// The script that lists the user's playlists.
+    ///
+    /// Each playlist is a list of its persistent ID, name, kind, track count,
+    /// and the persistent ID of its folder, or an empty string.
+    static let playlistsScript = """
+        tell application "Music"
+            set playlistInfo to {}
+            repeat with aPlaylist in (every user playlist)
+                set playlistKind to "user"
+                if (special kind of aPlaylist) is folder then
+                    set playlistKind to "folder"
+                else if (special kind of aPlaylist) is not none then
+                    set playlistKind to "system"
+                else if smart of aPlaylist then
+                    set playlistKind to "smart"
+                end if
+                set folderID to ""
+                try
+                    set folderID to persistent ID of parent of aPlaylist
+                end try
+                set end of playlistInfo to {persistent ID of aPlaylist, name of aPlaylist, playlistKind, count of tracks of aPlaylist, folderID}
+            end repeat
+            return playlistInfo
+        end tell
+        """
+
+    /// Parses the `id` argument of `music_playlist_tracks`.
+    ///
+    /// Music's persistent IDs are 16 hexadecimal digits.
+    /// Accepting only those keeps the ID safe to put in a script.
+    ///
+    /// - Returns: The ID in uppercase, as Music reports it.
+    /// - Throws: An error when the value isn't a persistent ID.
+    static func playlistID(from value: Value?) throws -> String {
+        guard let id = value?.stringValue?.uppercased(),
+            id.count == 16,
+            id.allSatisfy(\.isHexDigit)
+        else {
+            throw NSError(
+                domain: "MusicServiceError",
+                code: 14,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Playlist ID must be a 16-digit hexadecimal ID from music_playlists_list"
+                ]
+            )
+        }
+        return id
+    }
+
+    /// Parses the `offset` and `limit` arguments of `music_playlist_tracks`.
+    static func playlistTrackPage(from arguments: [String: Value]) throws -> (offset: Int, limit: Int) {
+        var offset = 0
+        if let value = arguments["offset"], !value.isNull {
+            guard let parsed = exactInt(from: value), parsed >= 0 else {
+                throw NSError(
+                    domain: "MusicServiceError",
+                    code: 10,
+                    userInfo: [NSLocalizedDescriptionKey: "Offset must be a non-negative integer"]
+                )
+            }
+            offset = parsed
+        }
+
+        var limit = defaultPlaylistTrackLimit
+        if let value = arguments["limit"], !value.isNull {
+            guard let parsed = exactInt(from: value),
+                (1 ... maximumPlaylistTrackLimit).contains(parsed)
+            else {
+                throw NSError(
+                    domain: "MusicServiceError",
+                    code: 15,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Limit must be an integer between 1 and \(maximumPlaylistTrackLimit)"
+                    ]
+                )
+            }
+            limit = parsed
+        }
+
+        return (offset, limit)
+    }
+
+    /// The offset of the page after one that starts at `offset`,
+    /// or `nil` when that page reaches the end of the playlist.
+    static func nextPlaylistTrackOffset(offset: Int, limit: Int, total: Int) -> Int? {
+        let next = offset + limit
+        return next < total ? next : nil
+    }
+
+    /// The script that reads one page of a playlist's tracks.
+    ///
+    /// It returns an empty list when no playlist has the ID.
+    /// Otherwise it returns the playlist's name, its track count,
+    /// and lists of the page's persistent IDs, names, artists, albums, and durations.
+    /// Each property is read for the whole page in one Apple event.
+    ///
+    /// - Parameter id: A persistent ID checked by ``playlistID(from:)``.
+    static func playlistTracksScript(id: String, offset: Int, limit: Int) -> String {
+        """
+        tell application "Music"
+            set matchingPlaylists to (every playlist whose persistent ID is "\(id)")
+            if (count of matchingPlaylists) is 0 then return {}
+            set thePlaylist to item 1 of matchingPlaylists
+            set trackCount to count of tracks of thePlaylist
+            set firstIndex to \(offset + 1)
+            if firstIndex > trackCount then return {name of thePlaylist, trackCount, {}, {}, {}, {}, {}}
+            set lastIndex to \(offset + limit)
+            if lastIndex > trackCount then set lastIndex to trackCount
+            set trackIDs to (persistent ID of tracks firstIndex thru lastIndex of thePlaylist) as list
+            set trackNames to (name of tracks firstIndex thru lastIndex of thePlaylist) as list
+            set trackArtists to (artist of tracks firstIndex thru lastIndex of thePlaylist) as list
+            set trackAlbums to (album of tracks firstIndex thru lastIndex of thePlaylist) as list
+            set trackDurations to (duration of tracks firstIndex thru lastIndex of thePlaylist) as list
+            return {name of thePlaylist, trackCount, trackIDs, trackNames, trackArtists, trackAlbums, trackDurations}
+        end tell
+        """
+    }
+
+    private func fetchPlaylists() async throws -> [MusicPlaylist] {
+        let descriptor = try await executeAppleScript(Self.playlistsScript)
+        return listItems(from: descriptor).compactMap { item in
+            let fields = listItems(from: item)
+            guard fields.count >= 5, let id = fields[0].stringValue else {
+                return nil
+            }
+            let parentID = fields[4].stringValue ?? ""
+            return MusicPlaylist(
+                id: id,
+                name: fields[1].stringValue ?? "",
+                kind: fields[2].stringValue ?? "user",
+                trackCount: Int(fields[3].int32Value),
+                parentID: parentID.isEmpty ? nil : parentID
+            )
+        }
+    }
+
+    private func fetchPlaylistTracks(id: String, offset: Int, limit: Int) async throws
+        -> MusicPlaylistTracks
+    {
+        let script = Self.playlistTracksScript(id: id, offset: offset, limit: limit)
+        let fields = listItems(from: try await executeAppleScript(script))
+        guard !fields.isEmpty else {
+            throw NSError(
+                domain: "MusicServiceError",
+                code: 16,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "No playlist has ID \(id). Use music_playlists_list to find playlist IDs."
+                ]
+            )
+        }
+        guard fields.count >= 7 else {
+            throw NSError(
+                domain: "MusicServiceError",
+                code: 5,
+                userInfo: [NSLocalizedDescriptionKey: "Unexpected Music app response"]
+            )
+        }
+
+        let ids = listItems(from: fields[2])
+        let names = listItems(from: fields[3])
+        let artists = listItems(from: fields[4])
+        let albums = listItems(from: fields[5])
+        let durations = listItems(from: fields[6])
+
+        var tracks: [MusicPlaylistTrack] = []
+        for index in ids.indices {
+            guard let trackID = ids[index].stringValue else { continue }
+            let duration = index < durations.count ? durations[index].doubleValue : 0
+            tracks.append(
+                MusicPlaylistTrack(
+                    id: trackID,
+                    name: index < names.count ? names[index].stringValue ?? "" : "",
+                    artist: index < artists.count ? artists[index].stringValue ?? "" : "",
+                    album: index < albums.count ? albums[index].stringValue ?? "" : "",
+                    duration: duration > 0 ? duration : nil
+                )
+            )
+        }
+
+        let total = Int(fields[1].int32Value)
+        return MusicPlaylistTracks(
+            id: id,
+            name: fields[0].stringValue ?? "",
+            total: total,
+            offset: offset,
+            nextOffset: Self.nextPlaylistTrackOffset(offset: offset, limit: limit, total: total),
+            tracks: tracks
+        )
     }
 }
