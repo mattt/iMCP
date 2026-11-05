@@ -157,9 +157,10 @@ final class AccessTokenTests: XCTestCase {
     func testStoreFindsTokensBySecretAndPersists() throws {
         let suite = "RemoteAccessTests.\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let storage = InMemoryAccessTokenStorage()
         defer { defaults.removePersistentDomain(forName: suite) }
 
-        let store = AccessTokenStore(defaults: defaults)
+        let store = AccessTokenStore(storage: storage, defaults: defaults)
         let (token, secret) = AccessToken.make(name: "Laptop", permissions: .readOnly)
         store.add(token)
         XCTAssertEqual(store.token(secret: secret)?.id, token.id)
@@ -167,22 +168,27 @@ final class AccessTokenTests: XCTestCase {
         XCTAssertNil(store.token(secret: "wrong"))
 
         // A new store reads the same tokens.
-        XCTAssertEqual(AccessTokenStore(defaults: defaults).all, [token])
+        XCTAssertEqual(AccessTokenStore(storage: storage, defaults: defaults).all, [token])
+        XCTAssertNil(defaults.object(forKey: "remoteAccessTokens"))
 
         store.modify(id: token.id) { $0.permissions = .custom(["write"]) }
-        XCTAssertEqual(AccessTokenStore(defaults: defaults).token(id: token.id)?.permissions, .custom(["write"]))
+        XCTAssertEqual(
+            AccessTokenStore(storage: storage, defaults: defaults).token(id: token.id)?.permissions,
+            .custom(["write"])
+        )
 
         store.remove(id: token.id)
         XCTAssertNil(store.token(secret: secret))
-        XCTAssertTrue(AccessTokenStore(defaults: defaults).all.isEmpty)
+        XCTAssertTrue(AccessTokenStore(storage: storage, defaults: defaults).all.isEmpty)
     }
 
     func testRerollReplacesSecretAndKeepsSettings() throws {
         let suite = "RemoteAccessTests.\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let storage = InMemoryAccessTokenStorage()
         defer { defaults.removePersistentDomain(forName: suite) }
 
-        let store = AccessTokenStore(defaults: defaults)
+        let store = AccessTokenStore(storage: storage, defaults: defaults)
         var (token, oldSecret) = AccessToken.make(name: "Laptop", permissions: .allTools)
         token.lastUsedAt = Date()
         token.lastUsedDevice = "MacBook Pro"
@@ -202,28 +208,32 @@ final class AccessTokenTests: XCTestCase {
         XCTAssertNil(rerolled.boundDevice)
         try store.bind(rerolled, to: .init(stableID: "node-b", name: "Other Mac"))
         XCTAssertEqual(store.token(id: token.id)?.boundDevice?.stableID, "node-b")
+        XCTAssertEqual(AccessTokenStore(storage: storage, defaults: defaults).all, store.all)
     }
 
-    func testOldStoredTokenDecodesWithoutBinding() throws {
+    func testDiscardsLegacyTokensWithoutMigration() throws {
         let suite = "RemoteAccessTests.\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let storage = InMemoryAccessTokenStorage()
         defer { defaults.removePersistentDomain(forName: suite) }
         let data = Data(
             #"[{"id":"BFA1562C-E2D4-4914-9BD3-0487301CC00B","name":"Old token","permissions":{"readOnly":{}},"secretHash":"AQID","createdAt":0,"lastUsedAt":1,"lastUsedDevice":"Old Mac"}]"#
                 .utf8
         )
         defaults.set(data, forKey: "remoteAccessTokens")
-        let token = try XCTUnwrap(AccessTokenStore(defaults: defaults).all.first)
-        XCTAssertEqual(token.name, "Old token")
-        XCTAssertNil(token.boundDevice)
-        XCTAssertEqual(token.lastUsedDevice, "Old Mac")
+        let (savedToken, _) = AccessToken.make(name: "Keychain token", permissions: .allTools)
+        try storage.save([savedToken])
+        let store = AccessTokenStore(storage: storage, defaults: defaults)
+        XCTAssertEqual(store.all, [savedToken])
+        XCTAssertNil(defaults.object(forKey: "remoteAccessTokens"))
     }
 
     func testConcurrentBindingPersistsOnlyOneNode() async throws {
         let suite = "RemoteAccessTests.\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let storage = InMemoryAccessTokenStorage()
         defer { defaults.removePersistentDomain(forName: suite) }
-        let store = AccessTokenStore(defaults: defaults)
+        let store = AccessTokenStore(storage: storage, defaults: defaults)
         let (token, _) = AccessToken.make(name: "Race", permissions: .readOnly)
         store.add(token)
 
@@ -247,14 +257,15 @@ final class AccessTokenTests: XCTestCase {
         }
         XCTAssertEqual(winners.count, 1)
         XCTAssertEqual(store.token(id: token.id)?.boundDevice?.stableID, winners.first)
-        XCTAssertEqual(AccessTokenStore(defaults: defaults).all, store.all)
+        XCTAssertEqual(AccessTokenStore(storage: storage, defaults: defaults).all, store.all)
     }
 
     func testStaleTokenCannotBindAfterRerollOrDeletion() throws {
         let suite = "RemoteAccessTests.\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let storage = InMemoryAccessTokenStorage()
         defer { defaults.removePersistentDomain(forName: suite) }
-        let store = AccessTokenStore(defaults: defaults)
+        let store = AccessTokenStore(storage: storage, defaults: defaults)
         let (token, _) = AccessToken.make(name: "Laptop", permissions: .readOnly)
         let device = AccessToken.BoundDevice(stableID: "node-a", name: "Mac")
         store.add(token)
@@ -274,8 +285,9 @@ final class RemoteAccessBindingTests: XCTestCase {
     private func makeStore() throws -> AccessTokenStore {
         let suite = "RemoteAccessTests.\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let storage = InMemoryAccessTokenStorage()
         addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
-        return AccessTokenStore(defaults: defaults)
+        return AccessTokenStore(storage: storage, defaults: defaults)
     }
 
     private func request(secret: String, method: String = "POST", sessionID: String? = nil) -> HTTPRequestMessage {
@@ -631,8 +643,9 @@ final class RemoteAccessAuthorizationTests: XCTestCase {
     private func makeStore() throws -> (AccessTokenStore, String) {
         let suite = "RemoteAccessTests.\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let storage = InMemoryAccessTokenStorage()
         addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
-        let store = AccessTokenStore(defaults: defaults)
+        let store = AccessTokenStore(storage: storage, defaults: defaults)
         let (token, secret) = AccessToken.make(name: "iPad", permissions: .readOnly)
         store.add(token)
         return (store, secret)

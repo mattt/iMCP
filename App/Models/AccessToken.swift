@@ -1,5 +1,7 @@
 import CryptoKit
 import Foundation
+import OSLog
+import Security
 
 /// A named credential that lets a client on another device use iMCP over HTTP.
 ///
@@ -95,24 +97,89 @@ enum ToolPermissions: Codable, Hashable, Sendable {
     }
 }
 
+/// Storage for the complete access token list.
+protocol AccessTokenStorage {
+    func load() throws -> [AccessToken]
+    func save(_ tokens: [AccessToken]) throws
+}
+
+/// Stores access tokens in memory, for tests.
+final class InMemoryAccessTokenStorage: AccessTokenStorage {
+    var tokens: [AccessToken] = []
+
+    func load() throws -> [AccessToken] { tokens }
+
+    func save(_ tokens: [AccessToken]) throws {
+        self.tokens = tokens
+    }
+}
+
+/// Stores the token list as password data in a separate Keychain item.
+/// Uses the same Release protection and Debug fallback as client credentials.
+struct KeychainAccessTokenStorage: AccessTokenStorage {
+    private var baseQuery: [CFString: Any] {
+        var query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: "\(Bundle.main.bundleIdentifier ?? LocalSocket.appBundleIdentifier).access-tokens",
+            kSecAttrAccount: "remote-access-tokens",
+        ]
+        if KeychainClientRecordStorage.usesDataProtectionKeychain {
+            query[kSecUseDataProtectionKeychain] = true
+        }
+        return query
+    }
+
+    func load() throws -> [AccessToken] {
+        var query = baseQuery
+        query[kSecMatchLimit] = kSecMatchLimitOne
+        query[kSecReturnData] = true
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecItemNotFound { return [] }
+        guard status == errSecSuccess else { throw KeychainClientRecordStorage.Error.status(status) }
+        guard let data = result as? Data else {
+            throw KeychainClientRecordStorage.Error.status(errSecDecode)
+        }
+        return try JSONDecoder().decode([AccessToken].self, from: data)
+    }
+
+    func save(_ tokens: [AccessToken]) throws {
+        let data = try JSONEncoder().encode(tokens)
+        let attributes: [CFString: Any] = [kSecValueData: data]
+        var item = baseQuery
+        var status = SecItemUpdate(item as CFDictionary, attributes as CFDictionary)
+        if status == errSecItemNotFound {
+            item.merge(attributes) { $1 }
+            if KeychainClientRecordStorage.usesDataProtectionKeychain {
+                item[kSecAttrAccessible] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            }
+            status = SecItemAdd(item as CFDictionary, nil)
+        }
+        guard status == errSecSuccess else { throw KeychainClientRecordStorage.Error.status(status) }
+    }
+}
+
 /// The access tokens, shared by Settings and the HTTP server.
 final class AccessTokenStore: @unchecked Sendable {
     static let shared = AccessTokenStore()
 
-    private let defaults: UserDefaults
-    private let key: String
+    private let storage: any AccessTokenStorage
     private let lock = NSLock()
     private var tokens: [AccessToken]
 
-    init(defaults: UserDefaults = .standard, key: String = "remoteAccessTokens") {
-        self.defaults = defaults
-        self.key = key
-        if let data = defaults.data(forKey: key),
-            let tokens = try? JSONDecoder().decode([AccessToken].self, from: data)
-        {
-            self.tokens = tokens
-        } else {
-            self.tokens = []
+    init(
+        storage: any AccessTokenStorage = KeychainAccessTokenStorage(),
+        defaults: UserDefaults = .standard,
+        key: String = "remoteAccessTokens"
+    ) {
+        self.storage = storage
+        // Earlier builds of this unreleased branch used preferences. Discard those tokens.
+        defaults.removeObject(forKey: key)
+        do {
+            tokens = try storage.load()
+        } catch {
+            Logger.server.error("Failed to load access tokens: \(String(describing: error), privacy: .public)")
+            tokens = []
         }
     }
 
@@ -183,8 +250,10 @@ final class AccessTokenStore: @unchecked Sendable {
 
     /// Called with the lock held, so an older write cannot replace a newer binding.
     private func persist() {
-        if let data = try? JSONEncoder().encode(tokens) {
-            defaults.set(data, forKey: key)
+        do {
+            try storage.save(tokens)
+        } catch {
+            Logger.server.error("Failed to save access tokens: \(String(describing: error), privacy: .public)")
         }
     }
 }
