@@ -68,7 +68,7 @@ and a [growing list of clients][mcp-clients] that support the
       <img src="Assets/music.svg" width="48" height="48" alt="" role="presentation"/>
     </th>
     <td><strong>Music</strong></td>
-    <td>See what's playing in the Music app, control playback, and search the Apple Music catalog. Playback tools need Automation permission for Music; catalog search needs Apple Music access.</td>
+    <td>See what's playing in the Music app, control playback, list your playlists and their tracks, and search the Apple Music catalog. Playback and playlist tools need Automation permission for Music; catalog search needs Apple Music access.</td>
   </tr>
   <tr>
     <th width="48">
