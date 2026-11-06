@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <circle fill="#ff9500" cx="50" cy="50" r="50" />
+  <g fill="#fff" opacity=".85">
+    <path fill-rule="evenodd" d="M50,29a25,25 0 1 1 0,50a25,25 0 1 1 0-50ZM50,36a18,18 0 1 0 0,36a18,18 0 1 0 0-36Z" />
+    <path d="M47,42h6v12h10v6H47Z" />
+    <path d="M21,34a11,11 0 0 1 15-14ZM79,34a11,11 0 0 0-15-14Z" />
+  </g>
+</svg>
