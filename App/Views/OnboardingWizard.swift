@@ -113,6 +113,14 @@ struct OnboardingWizardView: View {
 
     private var isLocationOn: Bool { locationConfig?.binding.wrappedValue == true }
 
+    /// Whether the Location service is both on in iMCP and allowed by macOS.
+    private var isLocationReady: Bool { isLocationOn && isLocationAuthorized }
+
+    /// Whether the Weather service is on, so that the test can ask about the weather.
+    private var isWeatherOn: Bool {
+        serverController.computedServiceConfigs.first { $0.name == "Weather" }?.binding.wrappedValue == true
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 8) {
@@ -175,8 +183,8 @@ struct OnboardingWizardView: View {
     private var canContinue: Bool {
         switch step {
         case 1: serverController.hasConnected
-        case 2: isLocationAuthorized
-        case 3: serverController.hasConnected && isLocationAuthorized
+        case 2: isLocationReady
+        case 3: serverController.hasConnected && isLocationReady
         default: true
         }
     }
@@ -420,17 +428,20 @@ struct OnboardingWizardView: View {
                 Button("Copy Prompt") {
                     let pasteboard = NSPasteboard.general
                     pasteboard.clearContents()
-                    pasteboard.setString(Self.samplePrompt, forType: .string)
+                    pasteboard.setString(Self.samplePrompt(includesWeather: isWeatherOn), forType: .string)
                     _ = NSSound.play(.pop)
                 }
                 .controlSize(.small)
             }
 
-            FakeConversation(lookupEnabled: isLocationAuthorized)
+            FakeConversation(lookupEnabled: isLocationReady, includesWeather: isWeatherOn)
         }
     }
 
-    static let samplePrompt = "Where am I right now, and what's the weather there?"
+    /// The test prompt, which asks about the weather only when the Weather service is on.
+    static func samplePrompt(includesWeather: Bool) -> String {
+        includesWeather ? "Where am I right now, and what's the weather there?" : "Where am I right now?"
+    }
 
     // MARK: - What's possible
 
@@ -631,13 +642,20 @@ private struct StepIndicator: View {
     }
 }
 
-/// What the fake reply says, from a real lookup or from the Portland fallback.
+/// What the fake reply says, from a real lookup or from the Portland example.
 private struct SampleResult {
     let place: String
     let city: String
     let weather: String
+    /// The Portland text, which the conversation marks as a sample.
+    var isExample = false
 
-    static let portland = SampleResult(place: "Portland, Oregon", city: "Portland", weather: "54°F and cloudy")
+    static let portland = SampleResult(
+        place: "Portland, Oregon",
+        city: "Portland",
+        weather: "54°F and cloudy",
+        isExample: true
+    )
 }
 
 /// A short fake chat that shows the test, with iMCP's tool use visible in the reply.
@@ -646,12 +664,16 @@ private struct SampleResult {
 /// The whole sequence takes about two seconds, it never blocks Continue,
 /// and with Reduce Motion on, every part is visible at once with its result.
 ///
-/// When Location is authorized, the place and weather come from iMCP's own
-/// Location and Weather services, with a four-second limit.
+/// When the Location service is on and allowed, the place comes from iMCP's own
+/// Location service, and the weather from its Weather service when that is on too,
+/// with a four-second limit.
+/// The conversation asks about the weather only when the Weather service is on.
 /// The wizard only shows the result and stores nothing.
-/// Any failure, or a slow answer, falls back to the Portland text.
+/// Any failure, a slow answer, or a service that is off gives the Portland text,
+/// marked as a sample.
 private struct FakeConversation: View {
     let lookupEnabled: Bool
+    let includesWeather: Bool
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Stages 1 to 6: user message, first tool working, its result, second tool working, its result, answer.
@@ -663,7 +685,7 @@ private struct FakeConversation: View {
             if shownParts >= 1 {
                 HStack {
                     Spacer(minLength: 60)
-                    Text(OnboardingWizardView.samplePrompt)
+                    Text(OnboardingWizardView.samplePrompt(includesWeather: includesWeather))
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
                         .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 14))
@@ -680,7 +702,7 @@ private struct FakeConversation: View {
                     )
                     .transition(.opacity)
                 }
-                if shownParts >= 4 {
+                if includesWeather && shownParts >= 4 {
                     ToolUseRow(
                         tool: "weather_current",
                         result: shownParts >= 5 ? "Weather there: \(sample.weather)" : nil
@@ -689,8 +711,10 @@ private struct FakeConversation: View {
                 }
                 if shownParts >= 6 {
                     Text(
-                        "You are in \(sample.city). It is \(sample.weather) there right now, "
-                            + "so a light jacket should be enough if you go out."
+                        includesWeather
+                            ? "You are in \(sample.city). It is \(sample.weather) there right now, "
+                                + "so a light jacket should be enough if you go out."
+                            : "You are in \(sample.place)."
                     )
                     .fixedSize(horizontal: false, vertical: true)
                     .transition(.opacity)
@@ -699,6 +723,16 @@ private struct FakeConversation: View {
             .padding(12)
             .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14))
             .frame(maxWidth: .infinity, alignment: .leading)
+
+            if shownParts >= 6 && sample.isExample {
+                Label(
+                    "This is a sample answer. iMCP did not look up your location this time.",
+                    systemImage: "info.circle"
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
 
             Text(
                 "Your app shows its own tool names. What matters is that it answers from your Mac, without asking for your address."
@@ -710,32 +744,40 @@ private struct FakeConversation: View {
         .padding(12)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
         .animation(.easeIn(duration: 0.25), value: shownParts)
-        .task {
+        // Start again when a service turns on or off, so that the test matches it.
+        .task(id: [lookupEnabled, includesWeather]) {
+            sample = .portland
             if reduceMotion {
-                if lookupEnabled { sample = await Self.lookup() }
+                if lookupEnabled { sample = await Self.lookup(includesWeather: includesWeather) }
                 shownParts = 6
                 return
             }
             shownParts = 1
             try? await Task.sleep(for: .milliseconds(300))
             shownParts = 2
-            if lookupEnabled { sample = await Self.lookup() }
+            if lookupEnabled { sample = await Self.lookup(includesWeather: includesWeather) }
             shownParts = 3
-            try? await Task.sleep(for: .milliseconds(300))
-            shownParts = 4
-            try? await Task.sleep(for: .milliseconds(400))
-            shownParts = 5
+            if includesWeather {
+                try? await Task.sleep(for: .milliseconds(300))
+                shownParts = 4
+                try? await Task.sleep(for: .milliseconds(400))
+                shownParts = 5
+            }
             try? await Task.sleep(for: .milliseconds(300))
             shownParts = 6
         }
     }
 
-    /// The current place and weather from iMCP's services, or Portland after four seconds or on any error.
-    private static func lookup() async -> SampleResult {
+    /// The current place, and the weather when `includesWeather` is true, from iMCP's services,
+    /// or Portland after four seconds or on any error.
+    private static func lookup(includesWeather: Bool) async -> SampleResult {
         await withTaskGroup(of: SampleResult?.self) { group in
             group.addTask {
                 do {
                     let place = try await LocationService.shared.currentPlace()
+                    guard includesWeather else {
+                        return SampleResult(place: place.displayName, city: place.city, weather: "")
+                    }
                     let conditions = try await WeatherService.shared.currentConditions(at: place.coordinate)
                     let temperature = conditions.temperature.formatted(
                         .measurement(width: .abbreviated, usage: .weather)
