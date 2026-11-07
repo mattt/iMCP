@@ -89,6 +89,8 @@ struct OnboardingWizardView: View {
     @State private var selectedClient: WizardClient
     @State private var locationPhase = LocationPhase.idle
     @State private var isLocationAuthorized = false
+    /// Whether `isLocationAuthorized` comes from a check, so that the step does not warn before one.
+    @State private var hasCheckedLocationAuthorization = false
 
     private enum LocationPhase: Equatable {
         case idle
@@ -177,6 +179,10 @@ struct OnboardingWizardView: View {
         .task(id: step) {
             await refreshLocationAuthorization()
         }
+        // Access can change in System Settings while the wizard is open.
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            Task { await refreshLocationAuthorization() }
+        }
     }
 
     /// Whether Continue may leave this screen. Each step states its own requirement.
@@ -202,6 +208,15 @@ struct OnboardingWizardView: View {
     private func refreshLocationAuthorization() async {
         guard let locationConfig else { return }
         isLocationAuthorized = await locationConfig.isActivated
+        hasCheckedLocationAuthorization = true
+    }
+
+    /// Whether the step warns that macOS does not give iMCP the location:
+    /// after a refused request, or when Location is on in iMCP but macOS no longer allows it.
+    private var showsLocationDenied: Bool {
+        locationPhase == .denied
+            || (isLocationOn && hasCheckedLocationAuthorization && !isLocationAuthorized
+                && locationPhase != .working)
     }
 
     /// Whether the wizard has seen a connection from `client`.
@@ -346,7 +361,7 @@ struct OnboardingWizardView: View {
             )
             .fixedSize(horizontal: false, vertical: true)
 
-            if isLocationOn && locationPhase != .denied {
+            if isLocationReady && locationPhase != .denied {
                 Label("Location is on.", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
                 Button("Turn Location Off") {
@@ -361,7 +376,7 @@ struct OnboardingWizardView: View {
                 .disabled(locationPhase == .working)
             }
 
-            if locationPhase == .denied {
+            if showsLocationDenied {
                 GroupBox {
                     VStack(alignment: .leading, spacing: 10) {
                         Label("Location is off.", systemImage: "exclamationmark.triangle.fill")
