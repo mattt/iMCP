@@ -530,7 +530,8 @@ private struct WelcomeView: View {
     }
 }
 
-/// One app on the connect screen, with its icon, its connect button, or its connected checkmark.
+/// One app on the connect screen, with its icon, its connect button,
+/// and its connected checkmark after a connection.
 private struct ClientCard: View {
     let client: WizardClient
     let isConnected: Bool
@@ -570,11 +571,14 @@ private struct ClientCard: View {
             Spacer(minLength: 0)
 
             // The connected checkmark and the connect button share this bottom slot.
-            Group {
+            // The button stays after a connection, so that a moved iMCP can be set up again.
+            HStack(spacing: 10) {
                 if isConnected {
                     Label("Connected", systemImage: "checkmark.circle.fill")
                         .foregroundStyle(.green)
                         .fontWeight(.medium)
+                    Button("Set Up Again…") { onConnect() }
+                        .disabled(!client.isInstalled)
                 } else {
                     Button(client == .claudeDesktop ? "Connect Claude Desktop…" : "Connect ChatGPT…") {
                         onConnect()
