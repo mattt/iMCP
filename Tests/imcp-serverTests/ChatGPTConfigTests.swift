@@ -175,3 +175,62 @@ final class ChatGPTConfigTests: XCTestCase {
         try TOMLDecoder().decode(DynamicTOMLValue.self, from: text)
     }
 }
+
+/// Edits of a real file, in a temporary folder.
+final class ChatGPTConfigFileTests: XCTestCase {
+    private let command = "/Applications/iMCP.app/Contents/MacOS/imcp-server"
+    private var folder: URL!
+    private var configURL: URL { folder.appendingPathComponent("config.toml") }
+    private var backupURL: URL { ChatGPTConfig.backupURL(for: configURL) }
+
+    override func setUpWithError() throws {
+        folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ChatGPTConfigFileTests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    }
+
+    override func tearDownWithError() throws {
+        // Restore permissions that a test removed, so that the folder can be deleted.
+        try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: configURL.path)
+        try? FileManager.default.removeItem(at: folder)
+    }
+
+    func testMissingFileIsCreatedWithoutBackup() throws {
+        try ChatGPTConfig.updateFile(at: configURL, command: command)
+        XCTAssertEqual(
+            try String(contentsOf: configURL, encoding: .utf8),
+            "[mcp_servers.iMCP]\ncommand = \"\(command)\"\n"
+        )
+        XCTAssertFalse(FileManager.default.fileExists(atPath: backupURL.path))
+    }
+
+    func testBackupHasOriginalBytes() throws {
+        let original = Data("# Mine\nmodel = \"gpt-5\"\n".utf8)
+        try original.write(to: configURL)
+        try ChatGPTConfig.updateFile(at: configURL, command: command)
+        XCTAssertEqual(try Data(contentsOf: backupURL), original)
+        XCTAssertTrue(try String(contentsOf: configURL, encoding: .utf8).contains("[mcp_servers.iMCP]"))
+    }
+
+    func testFileThatIsNotUTF8IsLeftUnchanged() throws {
+        let original = Data([0x6D, 0x6F, 0x64, 0x65, 0x6C, 0x20, 0x3D, 0x20, 0x22, 0xFF, 0xFE, 0x22, 0x0A])
+        try original.write(to: configURL)
+        XCTAssertThrowsError(try ChatGPTConfig.updateFile(at: configURL, command: command)) { error in
+            guard case ChatGPTConfig.ConfigError.notUTF8 = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+        }
+        XCTAssertEqual(try Data(contentsOf: configURL), original)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: backupURL.path))
+    }
+
+    func testUnreadableFileIsLeftUnchanged() throws {
+        let original = Data("model = \"gpt-5\"\n".utf8)
+        try original.write(to: configURL)
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: configURL.path)
+        XCTAssertThrowsError(try ChatGPTConfig.updateFile(at: configURL, command: command))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: backupURL.path))
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: configURL.path)
+        XCTAssertEqual(try Data(contentsOf: configURL), original)
+    }
+}

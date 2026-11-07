@@ -17,11 +17,16 @@ import TOML
 enum ChatGPTConfig {
     enum ConfigError: LocalizedError {
         case doesNotParse(String)
+        case notUTF8
         case ambiguousIMCPEntry
         case verificationFailed
 
         var errorDescription: String? {
             switch self {
+            case .notUTF8:
+                "That file is not UTF-8 text, so iMCP left it unchanged. "
+                    + "Add iMCP in ChatGPT instead: open ChatGPT Settings > MCP servers, "
+                    + "add a STDIO server named iMCP, and paste the server command."
             case .doesNotParse(let detail):
                 "That file is not valid TOML, so iMCP left it unchanged. \(detail) "
                     + "Add iMCP in ChatGPT instead: open ChatGPT Settings > MCP servers, "
@@ -67,6 +72,68 @@ enum ChatGPTConfig {
             case .string(let command)? = imcp["command"]
         else { return nil }
         return command
+    }
+
+    // MARK: - File
+
+    enum FileError: LocalizedError {
+        /// The backup could not be written, so the file was left unchanged.
+        case backupFailed(any Error)
+
+        var errorDescription: String? {
+            switch self {
+            case .backupFailed(let error):
+                "iMCP could not keep a backup of that file, so it left the file unchanged. "
+                    + error.localizedDescription
+            }
+        }
+    }
+
+    /// The backup file next to `url`.
+    static func backupURL(for url: URL) -> URL {
+        url.deletingLastPathComponent().appendingPathComponent("config.toml.imcp-backup")
+    }
+
+    /// Edits the file at `url` so that `mcp_servers.iMCP.command` is `command`.
+    ///
+    /// Only a missing file starts empty.
+    /// Any other read error, or bytes that are not UTF-8,
+    /// stops the edit before anything is written.
+    /// An existing file's original bytes are copied to the backup
+    /// before the new contents replace the file with an atomic write.
+    ///
+    /// - Throws: `ConfigError` when the contents cannot be edited safely,
+    ///   `FileError.backupFailed` when the backup cannot be written,
+    ///   and the underlying error when the file cannot be read or written.
+    static func updateFile(at url: URL, command: String) throws {
+        let originalBytes = try readBytes(at: url)
+        let original: String
+        if let originalBytes {
+            guard let text = String(data: originalBytes, encoding: .utf8) else { throw ConfigError.notUTF8 }
+            original = text
+        } else {
+            original = ""
+        }
+        let updated = try updatedConfig(original: original, command: command)
+
+        if let originalBytes {
+            do {
+                try originalBytes.write(to: backupURL(for: url), options: .atomic)
+            } catch {
+                throw FileError.backupFailed(error)
+            }
+        }
+
+        try Data(updated.utf8).write(to: url, options: .atomic)
+    }
+
+    /// The file's bytes, or nil when no file exists at `url`.
+    private static func readBytes(at url: URL) throws -> Data? {
+        do {
+            return try Data(contentsOf: url)
+        } catch CocoaError.fileReadNoSuchFile {
+            return nil
+        }
     }
 
     // MARK: - Parsing

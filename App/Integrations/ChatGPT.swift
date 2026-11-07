@@ -80,28 +80,17 @@ enum ChatGPT {
 
     private static func chooseAndWriteConfig() throws {
         let selectedURL = try pickConfigFile()
-        let existing = (try? String(contentsOf: selectedURL, encoding: .utf8)) ?? ""
-        let updated = try ChatGPTConfig.updatedConfig(original: existing, command: ServerCommand.path)
-
-        // Keep the original next to the file before replacing it.
         do {
-            try writeBackup(of: selectedURL, original: existing)
-        } catch {
-            // A file grant may not cover a new file next to it. Ask for the folder, then retry.
+            try ChatGPTConfig.updateFile(at: selectedURL, command: ServerCommand.path)
+        } catch ChatGPTConfig.FileError.backupFailed(let error) {
+            // A file grant may not cover a new file next to it.
+            // Ask for the folder, then start again from a new read of the file.
             log.debug("Backup under the file grant failed: \(error.localizedDescription)")
             guard let folderURL = pickCodexFolder() else { throw Error.noLocationSelected }
             let scoped = folderURL.startAccessingSecurityScopedResource()
             defer { if scoped { folderURL.stopAccessingSecurityScopedResource() } }
-            try writeBackup(of: selectedURL, original: existing)
+            try ChatGPTConfig.updateFile(at: selectedURL, command: ServerCommand.path)
         }
-
-        try updated.write(to: selectedURL, atomically: true, encoding: .utf8)
-    }
-
-    private static func writeBackup(of selectedURL: URL, original: String) throws {
-        let backup = selectedURL.deletingLastPathComponent()
-            .appendingPathComponent("config.toml.imcp-backup")
-        try original.write(to: backup, atomically: true, encoding: .utf8)
     }
 
     /// Opens the open panel in `~/.codex`, or a save panel there when no file exists yet.
