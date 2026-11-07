@@ -731,8 +731,7 @@ private struct FakeConversation: View {
                 if shownParts >= 6 {
                     Text(
                         includesWeather
-                            ? "You are in \(sample.city). It is \(sample.weather) there right now, "
-                                + "so a light jacket should be enough if you go out."
+                            ? "You are in \(sample.city). It is \(sample.weather) there right now."
                             : "You are in \(sample.place)."
                     )
                     .fixedSize(horizontal: false, vertical: true)
