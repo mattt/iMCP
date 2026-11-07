@@ -166,10 +166,6 @@ struct OnboardingWizardView: View {
             .padding(.vertical, 14)
         }
         .frame(width: 620, height: 580)
-        .task {
-            if !isEnabled { isEnabled = true }
-            await refreshLocationAuthorization()
-        }
         .task(id: step) {
             await refreshLocationAuthorization()
         }
@@ -221,6 +217,27 @@ struct OnboardingWizardView: View {
             Text("Choose the app that you want to use with iMCP. You can connect another app later.")
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+
+            // The wizard never turns the server on by itself; the person does it here.
+            if !isEnabled {
+                GroupBox {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Label("iMCP is off.", systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                            .fontWeight(.medium)
+                        Text("Apps cannot connect to iMCP until you turn it on.")
+                            .fixedSize(horizontal: false, vertical: true)
+                        Button("Turn On iMCP") {
+                            isEnabled = true
+                            // Apply it here too, because the menu that also applies it may be closed.
+                            Task { await serverController.setEnabled(true) }
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(6)
+                }
+            }
 
             HStack(alignment: .top, spacing: 12) {
                 ClientCard(
