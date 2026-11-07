@@ -163,7 +163,7 @@ iMCP must be open for AI apps to use it.
 
 The first time you open the app, the "Set Up iMCP" wizard opens.
 It takes you through connecting an app and turning on a service.
-Choose "Finish Later" to leave it;
+Choose "Finish Later" or close its window to leave it;
 you can open it again from the menu at any time.
 
 Below the switch, the menu lists the available services.
@@ -440,7 +440,9 @@ you can [download it here][chatgpt-app].
    choose "ChatGPT Desktop", and click "Connect ChatGPT…".
 2. Click "Set Up", and choose `config.toml` in the `~/.codex` folder.
    iMCP adds its server entry to that file and keeps a copy of the file
-   as `config.toml.imcp-backup` next to it.
+   as `config.toml.imcp-backup` next to it,
+   or as a numbered copy such as `config.toml.imcp-backup-2`
+   when that backup already exists.
    ChatGPT Desktop shares `~/.codex/config.toml` with the Codex CLI
    and the IDE extension,
    so they use the same entry.
