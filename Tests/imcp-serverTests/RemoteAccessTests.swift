@@ -544,6 +544,32 @@ final class RemoteAccessBindingTests: XCTestCase {
         await server.closeSessions(forToken: token.id)
     }
 
+    func testConcurrentStartsStayWithinTheSessionLimit() async throws {
+        let store = try makeStore()
+        let (token, secret) = AccessToken.make(name: "Laptop", permissions: .readOnly)
+        try store.add(token)
+        let limit = RemoteAccessServer.maximumSessions
+        let barrier = SessionStartBarrier(count: limit)
+        let server = RemoteAccessServer.forTesting(tokenStore: store) { _ in
+            await barrier.wait()
+            return MCP.Server(name: "test", version: "1")
+        }
+        let message = request(secret: secret)
+        let peer = first
+        let statuses = await withTaskGroup(of: Int.self) { group in
+            for _ in 0 ... limit {
+                group.addTask { await server.respond(to: message, from: peer).statusCode }
+            }
+            var statuses: [Int] = []
+            for await status in group { statuses.append(status) }
+            return statuses
+        }
+        // Every session is still starting when the last request arrives, so none can make room.
+        XCTAssertEqual(statuses.filter { $0 == 200 }.count, limit)
+        XCTAssertEqual(statuses.filter { $0 == 503 }.count, 1)
+        await server.closeSessions(forToken: token.id)
+    }
+
     func testRejectedInitializationDoesNotBind() async throws {
         let store = try makeStore()
         let (token, secret) = AccessToken.make(name: "Laptop", permissions: .readOnly)
@@ -559,18 +585,31 @@ final class RemoteAccessBindingTests: XCTestCase {
     }
 }
 
-/// Makes both requests reach session creation before either can claim the token.
+/// Holds session starts until a number of them arrive, or until the test opens it.
 private actor SessionStartBarrier {
+    private let count: Int
     private var arrivals = 0
-    private var waiting: CheckedContinuation<Void, Never>?
+    private var waiting: [CheckedContinuation<Void, Never>] = []
+
+    /// By default, makes two requests reach session creation before either can claim the token.
+    init(count: Int = 2) {
+        self.count = count
+    }
+
+    var arrived: Int { arrivals }
 
     func wait() async {
         arrivals += 1
-        if arrivals == 2 {
-            waiting?.resume()
+        if arrivals >= count {
+            open()
         } else {
-            await withCheckedContinuation { waiting = $0 }
+            await withCheckedContinuation { waiting.append($0) }
         }
+    }
+
+    func open() {
+        for continuation in waiting { continuation.resume() }
+        waiting.removeAll()
     }
 }
 
@@ -731,6 +770,35 @@ final class RemoteAccessAuthorizationTests: XCTestCase {
             XCTAssertTrue(again.hasPrefix("HTTP/1.1 404 Not Found\r\n"), "\(change): \(again)")
             await server.stop()
         }
+    }
+
+    func testSessionThatFinishesStartingAfterStopIsRejected() async throws {
+        let node = FakeTailnetNode(state: .running(me), peers: ["100.64.0.2": owner])
+        let (store, secret) = try makeStore()
+        let barrier = SessionStartBarrier(count: .max)
+        let server = RemoteAccessServer(
+            tokenStore: store,
+            stateDirectory: URL(filePath: "/nonexistent/Tailscale"),
+            makeNode: { _ in node },
+            makeSessionServer: { _ in
+                await barrier.wait()
+                return MCP.Server(name: "test", version: "1")
+            }
+        )
+        await server.configure(.init(isEnabled: true, port: 4627, hostname: "mac-imcp"))
+        try await waitUntil { !node.listenedAddresses.isEmpty }
+
+        let request = initializeRequest(secret: secret)
+        let pending = Task { try await node.connect(from: "100.64.0.2", sending: request) }
+        try await waitUntil { await barrier.arrived == 1 }
+        await server.stop()
+        await barrier.open()
+
+        let response = try await pending.value
+        XCTAssertTrue(response.hasPrefix("HTTP/1.1 503 "), response)
+        XCTAssertFalse(response.lowercased().contains("mcp-session-id"), response)
+        XCTAssertNil(store.all.first?.boundDevice)
+        XCTAssertNil(store.all.first?.lastUsedAt)
     }
 
     func testValidatesHostAgainstTheNode() async throws {

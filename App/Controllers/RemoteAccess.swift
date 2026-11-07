@@ -253,9 +253,15 @@ actor RemoteAccessServer {
     /// The node's identity, while the server listens on its address.
     private var identity: TailnetSelf?
     private var isListening = false
-    private var connectionCount = 0
+    /// The tasks that serve open connections.
+    private var connections: [UUID: Task<Void, Never>] = [:]
     private var peers: [String: (peer: TailnetPeer?, expires: Date)] = [:]
     private var sessions: [String: Session] = [:]
+    /// Counts the times that every session closed,
+    /// so that a session that was starting then can tell that it's stale.
+    private var sessionEpoch = 0
+    /// Sessions that are starting, which count toward the session limit.
+    private var pendingSessions = 0
 
     init(
         tokenStore: AccessTokenStore,
@@ -316,7 +322,7 @@ actor RemoteAccessServer {
         guard configuration.isEnabled, let node else { return }
         let current = generation
         state = .loggingOut
-        await closeSessions { _ in true }
+        await closeAllSessions()
         do {
             try await node.logout()
         } catch {
@@ -357,7 +363,10 @@ actor RemoteAccessServer {
         identity = nil
         isListening = false
         peers.removeAll()
-        await closeSessions { _ in true }
+        // A cancelled connection ends its stream and handles no more requests.
+        // Each task closes its own connection, because closing it during a read isn't safe.
+        for task in connections.values { task.cancel() }
+        await closeAllSessions()
         await node?.close()
     }
 
@@ -402,7 +411,7 @@ actor RemoteAccessServer {
                 // The node left the tailnet, such as when its key expired.
                 identity = nil
                 peers.removeAll()
-                await closeSessions { _ in true }
+                await closeAllSessions()
             }
             switch status.state {
             case .needsLogin(let url): state = .needsLogin(url)
@@ -416,7 +425,7 @@ actor RemoteAccessServer {
             if identity != nil {
                 identity = nil
                 peers.removeAll()
-                await closeSessions { _ in true }
+                await closeAllSessions()
             }
             state = .failed(
                 "This node has tags, so iMCP can't tell which user owns it. Log out, then log in with your own account."
@@ -430,7 +439,7 @@ actor RemoteAccessServer {
                 return
             }
             peers.removeAll()
-            await closeSessions { _ in true }
+            await closeAllSessions()
         }
         identity = me
 
@@ -492,16 +501,15 @@ actor RemoteAccessServer {
     // MARK: Connections
 
     private func accept(_ connection: any TailnetConnection, node: any TailnetNode, generation current: Int) async {
-        guard current == generation, identity != nil, connectionCount < Self.maximumConnections,
+        guard current == generation, identity != nil, connections.count < Self.maximumConnections,
             let address = connection.remoteAddress
         else {
             await connection.close()
             return
         }
-        connectionCount += 1
-
+        let id = UUID()
         let http = HTTPServerConnection(connection)
-        Task {
+        connections[id] = Task {
             await http.serve(
                 { request in
                     // Check the device for each request,
@@ -518,12 +526,12 @@ actor RemoteAccessServer {
                 },
                 streamEnded: { sessionID in await self.streamEnded(sessionID: sessionID) }
             )
-            self.connectionClosed()
+            self.connectionClosed(id)
         }
     }
 
-    private func connectionClosed() {
-        connectionCount -= 1
+    private func connectionClosed(_ id: UUID) {
+        connections.removeValue(forKey: id)
     }
 
     /// Whether a peer may use the server:
@@ -659,7 +667,13 @@ actor RemoteAccessServer {
         token: AccessToken,
         peer: TailnetPeer
     ) async -> MCP.HTTPResponse {
-        if sessions.count >= Self.maximumSessions {
+        // Each wait below can outlast a shutdown or a change of node,
+        // so check the epoch after each one.
+        let epoch = sessionEpoch
+        // Reserve a slot first, so that concurrent starts can't exceed the limit.
+        pendingSessions += 1
+        defer { pendingSessions -= 1 }
+        if sessions.count + pendingSessions > Self.maximumSessions {
             // Make room by ending the session that has waited longest without a request or stream.
             if let oldest = sessions.values.filter({ $0.openStreams == 0 })
                 .min(by: { $0.lastActivity < $1.lastActivity })
@@ -669,8 +683,8 @@ actor RemoteAccessServer {
                 return .error(statusCode: 503, .internalError("Service Unavailable: Too many sessions."))
             }
         }
-        guard let server = await makeSessionServer(token.id) else {
-            return .error(statusCode: 503, .internalError("Service Unavailable"))
+        guard epoch == sessionEpoch, let server = await makeSessionServer(token.id), epoch == sessionEpoch else {
+            return Self.unavailableResponse
         }
 
         let transport = StatefulHTTPServerTransport(
@@ -689,8 +703,17 @@ actor RemoteAccessServer {
             log.error("Couldn't start a remote session: \(error)")
             return .error(statusCode: 500, .internalError("Internal error: The session couldn't start."))
         }
+        guard epoch == sessionEpoch else {
+            await server.stop()
+            return Self.unavailableResponse
+        }
 
         let response = await transport.handleRequest(request)
+        guard epoch == sessionEpoch else {
+            await transport.disconnect()
+            await server.stop()
+            return Self.unavailableResponse
+        }
         guard let sessionID = response.headers[HTTPHeaderName.sessionID] else {
             await server.stop()
             return response
@@ -727,6 +750,10 @@ actor RemoteAccessServer {
         return response
     }
 
+    private static var unavailableResponse: MCP.HTTPResponse {
+        .error(statusCode: 503, .internalError("Service Unavailable"))
+    }
+
     private static var unauthorizedResponse: MCP.HTTPResponse {
         .error(
             statusCode: 401,
@@ -751,6 +778,12 @@ actor RemoteAccessServer {
     private func closeIdleSessions() async {
         let cutoff = Date().addingTimeInterval(-Self.sessionIdleTimeout)
         await closeSessions { $0.openStreams == 0 && $0.lastActivity < cutoff }
+    }
+
+    /// Closes every session, including the ones that are starting.
+    private func closeAllSessions() async {
+        sessionEpoch += 1
+        await closeSessions { _ in true }
     }
 
     private func closeSessions(where predicate: (Session) -> Bool) async {
@@ -852,6 +885,8 @@ final class HTTPServerConnection: @unchecked Sendable {
 
     private func serveRequests(_ handler: Handler, streamEnded: @Sendable (String?) async -> Void) async {
         while let result = await readRequest() {
+            // The server cancels the connection when it stops.
+            guard !Task.isCancelled else { return }
             switch result {
             case .request(let message, _):
                 let (response, keepAlive) = await handler(message)
