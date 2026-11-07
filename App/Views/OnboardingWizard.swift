@@ -826,54 +826,26 @@ private struct ToolUseRow: View {
     }
 }
 
-/// Shows the wizard window, and brings it to the front if it is already open.
-///
-/// The app has no Dock icon, so this follows the About window's controller pattern
-/// rather than a SwiftUI `Window` scene, which the system may not present for an accessory app.
-@MainActor
-final class OnboardingWizardWindowController: NSWindowController {
-    private var hostingView: NSHostingView<OnboardingWizardView>?
+/// The wizard's window controller, which records the wizard as seen when its window closes.
+typealias OnboardingWizardWindowController = OnboardingWindowController
 
-    convenience init() {
-        self.init(window: nil)
-    }
-
+extension OnboardingWindowController {
+    /// Shows the wizard window, and brings it to the front if it is already open.
     func show(
         serverController: ServerController,
         isEnabled: Binding<Bool>,
         onSeen: @escaping () -> Void
     ) {
-        let rootView = OnboardingWizardView(
-            serverController: serverController,
-            isEnabled: isEnabled,
-            onFinish: { [weak self] _ in
-                // Done and Finish Later both count as seen.
-                onSeen()
-                self?.close()
-            }
+        show(
+            OnboardingWizardView(
+                serverController: serverController,
+                isEnabled: isEnabled,
+                onFinish: { [weak self] _ in
+                    // Done and Finish Later both count as seen, as closing the window does.
+                    self?.close()
+                }
+            ),
+            onSeen: onSeen
         )
-
-        if let hostingView {
-            hostingView.rootView = rootView
-        } else {
-            let hostingView = NSHostingView(rootView: rootView)
-            self.hostingView = hostingView
-
-            let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 620, height: 580),
-                styleMask: [.titled, .closable],
-                backing: .buffered,
-                defer: false
-            )
-            window.center()
-            window.title = "Set Up iMCP"
-            window.contentView = hostingView
-            window.isReleasedWhenClosed = false
-            self.window = window
-        }
-
-        NSApp.activate(ignoringOtherApps: true)
-        showWindow(nil)
-        window?.makeKeyAndOrderFront(nil)
     }
 }

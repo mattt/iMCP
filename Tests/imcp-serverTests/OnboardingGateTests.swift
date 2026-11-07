@@ -1,4 +1,6 @@
+import AppKit
 import Foundation
+import SwiftUI
 import XCTest
 
 final class OnboardingGateTests: XCTestCase {
@@ -120,5 +122,41 @@ final class OnboardingLookupTests: XCTestCase {
         let value = await task.value
         XCTAssertNil(value)
         XCTAssertLessThan(start.duration(to: .now), .milliseconds(500))
+    }
+}
+
+@MainActor
+final class OnboardingWindowControllerTests: XCTestCase {
+    func testCloseButtonRecordsSeen() throws {
+        let controller = OnboardingWindowController()
+        var seenCount = 0
+        controller.show(Text("Setup"), onSeen: { seenCount += 1 })
+        let window = try XCTUnwrap(controller.window)
+        XCTAssertTrue(window.isVisible)
+
+        let closeButton = try XCTUnwrap(window.standardWindowButton(.closeButton))
+        closeButton.performClick(nil)
+
+        XCTAssertFalse(window.isVisible)
+        XCTAssertEqual(seenCount, 1)
+    }
+
+    func testFinishRecordsSeenOnce() {
+        let controller = OnboardingWindowController()
+        var seenCount = 0
+        controller.show(Text("Setup"), onSeen: { seenCount += 1 })
+        controller.close()
+        controller.close()
+        XCTAssertEqual(seenCount, 1)
+    }
+
+    func testReopenedWindowRecordsSeenAgain() throws {
+        let controller = OnboardingWindowController()
+        var seenCount = 0
+        controller.show(Text("Setup"), onSeen: { seenCount += 1 })
+        controller.close()
+        controller.show(Text("Setup"), onSeen: { seenCount += 1 })
+        try XCTUnwrap(controller.window).performClose(nil)
+        XCTAssertEqual(seenCount, 2)
     }
 }

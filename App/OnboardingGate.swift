@@ -1,9 +1,12 @@
+import AppKit
 import Foundation
+import SwiftUI
 
 /// Whether the setup wizard should open on its own at launch.
 ///
 /// It opens automatically only at the first launch.
-/// Once a person has seen it, by finishing or by choosing Finish Later,
+/// Once a person has seen it, by finishing, by choosing Finish Later,
+/// or by closing its window,
 /// it never opens on its own again; "Set Up iMCP…" in the menu still opens it.
 /// An install that was already set up before the wizard existed counts as seen:
 /// a trusted client, a past connection, or a service on beyond the defaults
@@ -86,5 +89,57 @@ enum OnboardingLookup {
             tasks.forEach { $0.cancel() }
             continuation?.resume(returning: value)
         }
+    }
+}
+
+/// Shows the setup wizard's window, and brings it to the front if it is already open.
+///
+/// The app has no Dock icon, so this follows the About window's controller pattern
+/// rather than a SwiftUI `Window` scene, which the system may not present for an accessory app.
+/// Every way the window closes records the wizard as seen:
+/// Done, Finish Later, and the window's close button.
+@MainActor
+final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
+    private var hostingView: NSHostingView<AnyView>?
+    private var onSeen: (() -> Void)?
+
+    convenience init() {
+        self.init(window: nil)
+    }
+
+    /// Shows `content` in the window, and calls `onSeen` once when the window closes.
+    func show(_ content: some View, onSeen: @escaping () -> Void) {
+        self.onSeen = onSeen
+        let rootView = AnyView(content)
+
+        if let hostingView {
+            hostingView.rootView = rootView
+        } else {
+            let hostingView = NSHostingView(rootView: rootView)
+            self.hostingView = hostingView
+
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 620, height: 580),
+                styleMask: [.titled, .closable],
+                backing: .buffered,
+                defer: false
+            )
+            window.center()
+            window.title = "Set Up iMCP"
+            window.contentView = hostingView
+            window.isReleasedWhenClosed = false
+            window.delegate = self
+            self.window = window
+        }
+
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        showWindow(nil)
+        window?.makeKeyAndOrderFront(nil)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        let onSeen = self.onSeen
+        self.onSeen = nil
+        onSeen?()
     }
 }
