@@ -23,7 +23,10 @@ private let defaultConfigURL = codexDirectoryURL.appendingPathComponent("config.
 /// `~/.codex`, which grants access to it. Before writing, the original is
 /// copied to `config.toml.imcp-backup` next to it, and the new contents go in
 /// with an atomic write. When the backup cannot be written under the file's
-/// grant, the person picks the `.codex` folder, which grants the folder.
+/// grant, the person picks the `.codex` folder, which grants the folder,
+/// and the edit starts again from a new read, after every grant is in place.
+/// The file is read once more just before it is replaced,
+/// and the edit stops when it changed.
 enum ChatGPT {
     enum Error: LocalizedError {
         case noLocationSelected

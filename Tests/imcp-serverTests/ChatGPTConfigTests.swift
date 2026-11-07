@@ -224,6 +224,31 @@ final class ChatGPTConfigFileTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: backupURL.path))
     }
 
+    func testChangeBetweenReadAndWriteStopsTheEdit() throws {
+        try Data("model = \"gpt-5\"\n".utf8).write(to: configURL)
+        let saved = Data("model = \"gpt-5\"\nsaved = true\n".utf8)
+        XCTAssertThrowsError(
+            try ChatGPTConfig.updateFile(at: configURL, command: command) {
+                try saved.write(to: self.configURL)
+            }
+        ) { error in
+            guard case ChatGPTConfig.FileError.changedDuringEdit = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+        }
+        XCTAssertEqual(try Data(contentsOf: configURL), saved)
+    }
+
+    func testFileCreatedBetweenReadAndWriteStopsTheEdit() throws {
+        let saved = Data("model = \"gpt-5\"\n".utf8)
+        XCTAssertThrowsError(
+            try ChatGPTConfig.updateFile(at: configURL, command: command) {
+                try saved.write(to: self.configURL)
+            }
+        )
+        XCTAssertEqual(try Data(contentsOf: configURL), saved)
+    }
+
     func testUnreadableFileIsLeftUnchanged() throws {
         let original = Data("model = \"gpt-5\"\n".utf8)
         try original.write(to: configURL)

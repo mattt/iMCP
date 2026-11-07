@@ -79,12 +79,17 @@ enum ChatGPTConfig {
     enum FileError: LocalizedError {
         /// The backup could not be written, so the file was left unchanged.
         case backupFailed(any Error)
+        /// The file changed after iMCP read it, so the edit stopped before replacing it.
+        case changedDuringEdit
 
         var errorDescription: String? {
             switch self {
             case .backupFailed(let error):
                 "iMCP could not keep a backup of that file, so it left the file unchanged. "
                     + error.localizedDescription
+            case .changedDuringEdit:
+                "That file changed while iMCP was editing it, so iMCP left it unchanged. "
+                    + "Set up ChatGPT again to edit the new version."
             }
         }
     }
@@ -102,10 +107,23 @@ enum ChatGPTConfig {
     /// An existing file's original bytes are copied to the backup
     /// before the new contents replace the file with an atomic write.
     ///
+    /// Just before the replacement, the file is read again.
+    /// When its bytes differ from the first read, or a file now exists where none did,
+    /// the edit stops, so that a save by ChatGPT or an editor is not lost.
+    /// The check and the write are not one atomic step,
+    /// so a save in the short gap between them can still be lost.
+    ///
+    /// - Parameter beforeReplacing: Runs after the backup and before the check.
+    ///   Tests use it to change the file at that point.
     /// - Throws: `ConfigError` when the contents cannot be edited safely,
     ///   `FileError.backupFailed` when the backup cannot be written,
+    ///   `FileError.changedDuringEdit` when the file changed after the first read,
     ///   and the underlying error when the file cannot be read or written.
-    static func updateFile(at url: URL, command: String) throws {
+    static func updateFile(
+        at url: URL,
+        command: String,
+        beforeReplacing: () throws -> Void = {}
+    ) throws {
         let originalBytes = try readBytes(at: url)
         let original: String
         if let originalBytes {
@@ -124,7 +142,11 @@ enum ChatGPTConfig {
             }
         }
 
-        try Data(updated.utf8).write(to: url, options: .atomic)
+        try beforeReplacing()
+        guard try readBytes(at: url) == originalBytes else { throw FileError.changedDuringEdit }
+
+        // A new file must not replace one that appeared after the check.
+        try Data(updated.utf8).write(to: url, options: originalBytes == nil ? .withoutOverwriting : .atomic)
     }
 
     /// The file's bytes, or nil when no file exists at `url`.
