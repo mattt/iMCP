@@ -191,6 +191,20 @@ actor RemoteAccessServer {
         case running(Endpoint)
         case loggingOut
         case failed(String)
+
+        /// The state's name without its values,
+        /// so that logs don't include a login URL or an error message.
+        var name: String {
+            switch self {
+            case .off: "off"
+            case .starting: "starting"
+            case .needsLogin: "needsLogin"
+            case .needsApproval: "needsApproval"
+            case .running: "running"
+            case .loggingOut: "loggingOut"
+            case .failed: "failed"
+            }
+        }
     }
 
     /// Where clients reach the server.
@@ -241,7 +255,7 @@ actor RemoteAccessServer {
     private var state: State = .off {
         didSet {
             guard state != oldValue else { return }
-            log.info("Remote access state: \(String(describing: self.state), privacy: .public)")
+            log.info("Remote access state: \(self.state.name, privacy: .public)")
             stateHandler?(state)
         }
     }

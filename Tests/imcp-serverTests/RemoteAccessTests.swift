@@ -669,6 +669,14 @@ final class TailnetStatusTests: XCTestCase {
         XCTAssertThrowsError(try state(#"{"AuthURL":""}"#))
     }
 
+    func testStateNamesLeaveOutLoginURLs() throws {
+        let url = try XCTUnwrap(URL(string: "https://login.tailscale.com/a/secret-login-path"))
+        let state = RemoteAccessServer.State.needsLogin(url)
+        XCTAssertEqual(state.name, "needsLogin")
+        XCTAssertFalse(state.name.contains("secret-login-path"))
+        XCTAssertEqual(RemoteAccessServer.State.failed("details").name, "failed")
+    }
+
     func testHostnames() {
         XCTAssertEqual(
             RemoteAccessServer.defaultHostname(computerName: "Mattt's MacBook Pro"),
