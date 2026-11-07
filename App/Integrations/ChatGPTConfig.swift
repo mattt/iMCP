@@ -265,7 +265,9 @@ enum ChatGPTConfig {
                     && isCommandKeyLine(lines[$0])
             }
             if let commandIndex = commandIndexes.first {
-                lines[commandIndex] = commandLine
+                // Keep a comment after the old value on the new line.
+                let comment = trailingComment(of: lines[commandIndex])
+                lines[commandIndex] = comment.map { "\(commandLine) \($0)" } ?? commandLine
             } else {
                 lines.insert(commandLine, at: headerIndex + 1)
             }
@@ -300,6 +302,38 @@ enum ChatGPTConfig {
         guard trimmed.hasPrefix("command") else { return false }
         let rest = trimmed.dropFirst("command".count).trimmingCharacters(in: .whitespaces)
         return rest.hasPrefix("=")
+    }
+
+    /// The comment at the end of a key line, from its `#`, or nil when it has none.
+    ///
+    /// This skips `#` inside single-line strings.
+    /// A value that starts a multiline string can give a wrong result here,
+    /// and the check after the edit then refuses the change.
+    private static func trailingComment(of line: String) -> String? {
+        var inBasic = false
+        var inLiteral = false
+        var index = line.startIndex
+        while index < line.endIndex {
+            let character = line[index]
+            if inBasic {
+                if character == "\\" {
+                    index = line.index(index, offsetBy: min(2, line.distance(from: index, to: line.endIndex)))
+                    continue
+                }
+                if character == "\"" { inBasic = false }
+            } else if inLiteral {
+                if character == "'" { inLiteral = false }
+            } else {
+                switch character {
+                case "\"": inBasic = true
+                case "'": inLiteral = true
+                case "#": return String(line[index...])
+                default: break
+                }
+            }
+            index = line.index(after: index)
+        }
+        return nil
     }
 
     /// The line after a section: its next section header, or the end of the file.

@@ -136,6 +136,21 @@ final class ChatGPTConfigTests: XCTestCase {
         XCTAssertEqual(ChatGPTConfig.commandValue(in: try parse(result)), command)
     }
 
+    func testTrailingCommentOnCommandLineSurvives() throws {
+        let original = """
+            [mcp_servers.iMCP]
+            command = "old # not a comment" # moved in October
+            """
+        XCTAssertEqual(
+            try updated(original),
+            "[mcp_servers.iMCP]\ncommand = \"\(command)\" # moved in October\n"
+        )
+        XCTAssertEqual(
+            try updated("[mcp_servers.iMCP]\ncommand = 'old \\ path'\n"),
+            "[mcp_servers.iMCP]\ncommand = \"\(command)\"\n"
+        )
+    }
+
     func testCommandWithQuotesAndBackslashes() throws {
         let tricky = "C:\\Program Files\\\"iMCP\"\\imcp-server"
         let result = try ChatGPTConfig.updatedConfig(original: "", command: tricky)
