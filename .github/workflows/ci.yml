@@ -19,12 +19,12 @@ jobs:
         strategy:
             fail-fast: false
             matrix:
+                # TailscaleKit ships only a Swift interface made by Swift 6.4,
+                # so the app needs Xcode 27.1 or later.
+                # Only the xcode-27 image has Xcode 27.1.
                 include:
-                    - macos: "26"
-                      xcode: "26.0"
-                      runner: macos-26
                     - macos: "27"
-                      xcode: "27.0"
+                      xcode: "27.1"
                       runner: xcode-27
         timeout-minutes: 10
         steps:

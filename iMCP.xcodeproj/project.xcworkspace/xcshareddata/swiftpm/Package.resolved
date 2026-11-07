@@ -1,5 +1,5 @@
 {
-  "originHash" : "450ac4d8543f84390d057b51a87a83fcb32680354677e9c533e5baec6743b22b",
+  "originHash" : "72f3048571502b62f4b66f7cbb2f8dd9ecbf531e38c9030d7fb68ce803a8f438",
   "pins" : [
     {
       "identity" : "envelope",
@@ -26,6 +26,15 @@
       "state" : {
         "revision" : "4c6f2467d5bc72b062c7a9b7e4cd77a09635ea8b",
         "version" : "1.3.1"
+      }
+    },
+    {
+      "identity" : "libtailscale",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/mattt/libtailscale",
+      "state" : {
+        "revision" : "73c25e6250a0220219107ab545d6ab4fdc110563",
+        "version" : "0.2.0-imcp.2"
       }
     },
     {
