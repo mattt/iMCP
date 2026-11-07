@@ -72,11 +72,11 @@ final class LocationService: NSObject, Service, CLLocationManagerDelegate {
 
         if latestLocation == nil {
             locationManager.startUpdatingLocation()
+            // Stop the updates on every exit, including cancellation.
+            defer { locationManager.stopUpdatingLocation() }
             while latestLocation == nil {
-                try Task.checkCancellation()
                 try await Task.sleep(for: .milliseconds(100))
             }
-            locationManager.stopUpdatingLocation()
         }
 
         guard let location = latestLocation else {
@@ -87,7 +87,12 @@ final class LocationService: NSObject, Service, CLLocationManagerDelegate {
             )
         }
 
-        let placemarks = try await CLGeocoder().reverseGeocodeLocation(location)
+        let geocoder = CLGeocoder()
+        let placemarks = try await withTaskCancellationHandler {
+            try await geocoder.reverseGeocodeLocation(location)
+        } onCancel: {
+            geocoder.cancelGeocode()
+        }
         guard let placemark = placemarks.first else {
             throw NSError(
                 domain: "LocationServiceError",

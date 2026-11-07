@@ -771,40 +771,24 @@ private struct FakeConversation: View {
     /// The current place, and the weather when `includesWeather` is true, from iMCP's services,
     /// or Portland after four seconds or on any error.
     private static func lookup(includesWeather: Bool) async -> SampleResult {
-        await withTaskGroup(of: SampleResult?.self) { group in
-            group.addTask {
-                do {
-                    let place = try await LocationService.shared.currentPlace()
-                    guard includesWeather else {
-                        return SampleResult(place: place.displayName, city: place.city, weather: "")
-                    }
-                    let conditions = try await WeatherService.shared.currentConditions(at: place.coordinate)
-                    let temperature = conditions.temperature.formatted(
-                        .measurement(width: .abbreviated, usage: .weather)
-                    )
-                    let condition = conditions.condition
-                    let lowered = condition.prefix(1).lowercased() + condition.dropFirst()
-                    return SampleResult(
-                        place: place.displayName,
-                        city: place.city,
-                        weather: "\(temperature) and \(lowered)"
-                    )
-                } catch {
-                    return nil
-                }
+        let result = await OnboardingLookup.result(within: .seconds(4)) {
+            let place = try await LocationService.shared.currentPlace()
+            guard includesWeather else {
+                return SampleResult(place: place.displayName, city: place.city, weather: "")
             }
-            group.addTask {
-                try? await Task.sleep(for: .seconds(4))
-                return nil
-            }
-            for await result in group {
-                if let result {
-                    group.cancelAll()
-                    return result
-                }
-            }
-            return .portland
+            let conditions = try await WeatherService.shared.currentConditions(at: place.coordinate)
+            let temperature = conditions.temperature.formatted(
+                .measurement(width: .abbreviated, usage: .weather)
+            )
+            let condition = conditions.condition
+            let lowered = condition.prefix(1).lowercased() + condition.dropFirst()
+            return SampleResult(
+                place: place.displayName,
+                city: place.city,
+                weather: "\(temperature) and \(lowered)"
+            )
         }
+        return result ?? .portland
     }
 }
 
