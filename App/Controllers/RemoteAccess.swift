@@ -175,9 +175,9 @@ struct TailnetStatus: Equatable, Sendable {
 ///
 /// iMCP runs its own Tailscale node, so the server's address belongs only to iMCP.
 /// The server listens only on that node's tailnet IPv4 address.
-/// Each connection must come from an untagged device
+/// Each request must come from an untagged device
 /// that belongs to the same Tailscale user as the node,
-/// and each request must carry an access token.
+/// and must carry an access token.
 /// Sessions follow the 2025-11-25 Streamable HTTP transport.
 actor RemoteAccessServer {
     enum State: Equatable, Sendable {
@@ -220,6 +220,8 @@ actor RemoteAccessServer {
 
     private struct Session {
         let tokenID: UUID
+        /// The stable ID of the device that started the session.
+        let deviceID: String
         let transport: StatefulHTTPServerTransport
         let server: MCP.Server
         var lastActivity: Date
@@ -230,6 +232,8 @@ actor RemoteAccessServer {
     private let stateDirectory: URL
     private let makeNode: @Sendable (TailnetNodeConfiguration) async throws -> any TailnetNode
     private let makeSessionServer: @Sendable (UUID) async -> MCP.Server?
+    /// How long iMCP trusts a whois answer before it asks again.
+    private let peerLifetime: TimeInterval
 
     private var configuration = Configuration(isEnabled: false, port: defaultPort, hostname: "")
     private var stateHandler: (@Sendable (State) -> Void)?
@@ -257,12 +261,14 @@ actor RemoteAccessServer {
         tokenStore: AccessTokenStore,
         stateDirectory: URL,
         makeNode: @escaping @Sendable (TailnetNodeConfiguration) async throws -> any TailnetNode,
-        makeSessionServer: @escaping @Sendable (UUID) async -> MCP.Server?
+        makeSessionServer: @escaping @Sendable (UUID) async -> MCP.Server?,
+        peerLifetime: TimeInterval = 60
     ) {
         self.tokenStore = tokenStore
         self.stateDirectory = stateDirectory
         self.makeNode = makeNode
         self.makeSessionServer = makeSessionServer
+        self.peerLifetime = peerLifetime
     }
 
     func setHandlers(
@@ -373,6 +379,7 @@ actor RemoteAccessServer {
 
         while current == generation, !Task.isCancelled {
             await refresh(node, generation: current)
+            await revalidatePeers(node, generation: current)
             await closeIdleSessions()
             try? await Task.sleep(for: identity == nil ? Self.startingRefreshInterval : Self.refreshInterval)
         }
@@ -406,7 +413,11 @@ actor RemoteAccessServer {
         }
 
         guard !me.isTagged else {
-            identity = nil
+            if identity != nil {
+                identity = nil
+                peers.removeAll()
+                await closeSessions { _ in true }
+            }
             state = .failed(
                 "This node has tags, so iMCP can't tell which user owns it. Log out, then log in with your own account."
             )
@@ -481,7 +492,7 @@ actor RemoteAccessServer {
     // MARK: Connections
 
     private func accept(_ connection: any TailnetConnection, node: any TailnetNode, generation current: Int) async {
-        guard current == generation, let me = identity, connectionCount < Self.maximumConnections,
+        guard current == generation, identity != nil, connectionCount < Self.maximumConnections,
             let address = connection.remoteAddress
         else {
             await connection.close()
@@ -491,10 +502,11 @@ actor RemoteAccessServer {
 
         let http = HTTPServerConnection(connection)
         Task {
-            let peer = await self.authorizedPeer(at: address, node: node, identity: me)
             await http.serve(
                 { request in
-                    guard let peer else {
+                    // Check the device for each request,
+                    // because its owner or tags can change while the connection is open.
+                    guard let peer = await self.authorizedPeer(at: address, node: node, generation: current) else {
                         let error = MCPError.invalidRequest(
                             "Forbidden: Only devices that belong to the owner of this node can connect."
                         )
@@ -520,30 +532,53 @@ actor RemoteAccessServer {
         !node.isTagged && !peer.isTagged && !peer.stableID.isEmpty && peer.userID == node.userID
     }
 
-    /// The device at an address, if it may use the server.
-    private func authorizedPeer(at address: String, node: any TailnetNode, identity: TailnetSelf) async -> TailnetPeer?
+    /// The device at an address, if it may use the server now.
+    /// Returns `nil` if the node is stopped, changed, or not on the tailnet.
+    /// When the answer changes, closes the sessions of the device that was there.
+    private func authorizedPeer(at address: String, node: any TailnetNode, generation current: Int) async
+        -> TailnetPeer?
     {
-        if let cached = peers[address], cached.expires > Date() {
+        guard current == generation, let identity else { return nil }
+        let cached = peers[address]
+        if let cached, cached.expires > Date() {
             return cached.peer
         }
-        let peer: TailnetPeer
+        var authorized: TailnetPeer?
+        var identified = true
         do {
-            peer = try await node.whois(address)
+            let peer = try await node.whois(address)
+            if Self.isAuthorized(peer, for: identity) {
+                authorized = peer
+            } else {
+                log.notice(
+                    "Rejected remote request from \(address, privacy: .public): another user or a tagged device"
+                )
+            }
         } catch {
             log.error("Couldn't identify the remote device at \(address, privacy: .public): \(error)")
-            return nil
-        }
-        let authorized = Self.isAuthorized(peer, for: identity) ? peer : nil
-        if authorized == nil {
-            log.notice(
-                "Rejected remote connection from \(address, privacy: .public): another user or a tagged device"
-            )
+            identified = false
         }
         // Keep the decision only for the node that made it.
-        if identity == self.identity {
-            peers[address] = (authorized, Date().addingTimeInterval(60))
+        guard current == generation, identity == self.identity else { return nil }
+        // Don't keep a failed lookup, so that the next request asks again.
+        peers[address] = identified ? (authorized, Date().addingTimeInterval(peerLifetime)) : nil
+        if let previous = cached?.peer, previous.stableID != authorized?.stableID {
+            await closeSessions { $0.deviceID == previous.stableID }
         }
         return authorized
+    }
+
+    /// Asks again about the devices whose answers expired,
+    /// so that a device that loses access loses its open streams too.
+    private func revalidatePeers(_ node: any TailnetNode, generation current: Int) async {
+        let now = Date()
+        for (address, entry) in peers where entry.expires <= now {
+            if entry.peer == nil {
+                peers.removeValue(forKey: address)
+            } else {
+                _ = await authorizedPeer(at: address, node: node, generation: current)
+            }
+        }
     }
 
     // MARK: Requests
@@ -679,6 +714,7 @@ actor RemoteAccessServer {
         if case .stream = response { openStreams = 1 }
         sessions[sessionID] = Session(
             tokenID: tokenID,
+            deviceID: peer.stableID,
             transport: transport,
             server: server,
             lastActivity: Date(),

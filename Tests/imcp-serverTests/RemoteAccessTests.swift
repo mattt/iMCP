@@ -698,6 +698,41 @@ final class RemoteAccessAuthorizationTests: XCTestCase {
         XCTAssertEqual(node.closeCount, 1)
     }
 
+    func testChecksTheDeviceForEachRequestOnAnOpenConnection() async throws {
+        let changes: [(String, TailnetPeer)] = [
+            ("another user", otherUser),
+            ("tags", TailnetPeer(stableID: owner.stableID, deviceName: "iPad", userID: 1, isTagged: true)),
+        ]
+        for (change, changed) in changes {
+            let node = FakeTailnetNode(state: .running(me), peers: ["100.64.0.2": owner])
+            let (store, secret) = try makeStore()
+            // Every request asks whois again.
+            let server = makeServer(store: store, node: node, peerLifetime: 0)
+            await server.configure(.init(isEnabled: true, port: 4627, hostname: "mac-imcp"))
+            try await waitUntil { !node.listenedAddresses.isEmpty }
+
+            let connection = try node.open(from: "100.64.0.2")
+            connection.write(initializeRequest(secret: secret))
+            try await waitUntil { connection.output.contains("0\r\n\r\n") }
+            XCTAssertTrue(connection.output.hasPrefix("HTTP/1.1 200 OK\r\n"), change)
+            let sessionID = try XCTUnwrap(Self.sessionID(in: connection.output), change)
+
+            node.setPeer(changed, at: "100.64.0.2")
+            connection.write(pingRequest(secret: secret, sessionID: sessionID))
+            try await waitUntil { connection.isClosed }
+            XCTAssertTrue(connection.output.contains("HTTP/1.1 403 Forbidden\r\n"), change)
+
+            // The session ended, so the device can't use it after it gets access back.
+            node.setPeer(owner, at: "100.64.0.2")
+            let again = try await node.connect(
+                from: "100.64.0.2",
+                sending: pingRequest(secret: secret, sessionID: sessionID)
+            )
+            XCTAssertTrue(again.hasPrefix("HTTP/1.1 404 Not Found\r\n"), "\(change): \(again)")
+            await server.stop()
+        }
+    }
+
     func testValidatesHostAgainstTheNode() async throws {
         let node = FakeTailnetNode(state: .running(me), peers: ["100.64.0.2": owner])
         let (store, secret) = try makeStore()
@@ -803,13 +838,43 @@ final class RemoteAccessAuthorizationTests: XCTestCase {
         return (store, secret)
     }
 
-    private func makeServer(store: AccessTokenStore, node: FakeTailnetNode) -> RemoteAccessServer {
+    private func makeServer(
+        store: AccessTokenStore,
+        node: FakeTailnetNode,
+        peerLifetime: TimeInterval = 60
+    ) -> RemoteAccessServer {
         RemoteAccessServer(
             tokenStore: store,
             stateDirectory: URL(filePath: "/nonexistent/Tailscale"),
             makeNode: { _ in node },
-            makeSessionServer: { _ in MCP.Server(name: "test", version: "1") }
+            makeSessionServer: { _ in MCP.Server(name: "test", version: "1") },
+            peerLifetime: peerLifetime
         )
+    }
+
+    private static func sessionID(in response: String) -> String? {
+        for line in response.components(separatedBy: "\r\n") {
+            let parts = line.split(separator: ":", maxSplits: 1)
+            if parts.count == 2, parts[0].lowercased() == "mcp-session-id" {
+                return parts[1].trimmingCharacters(in: .whitespaces)
+            }
+        }
+        return nil
+    }
+
+    private func pingRequest(secret: String, sessionID: String) -> Data {
+        let body = #"{"jsonrpc":"2.0","id":2,"method":"ping"}"#
+        let head = [
+            "POST /mcp HTTP/1.1",
+            "Host: mac-imcp.example.ts.net:4627",
+            "Authorization: Bearer \(secret)",
+            "Accept: application/json, text/event-stream",
+            "Content-Type: application/json",
+            "MCP-Protocol-Version: 2025-11-25",
+            "Mcp-Session-Id: \(sessionID)",
+            "Content-Length: \(body.utf8.count)",
+        ]
+        return Data((head.joined(separator: "\r\n") + "\r\n\r\n" + body).utf8)
     }
 
     private func initializeRequest(
@@ -885,7 +950,7 @@ private typealias ConfigurationLog = LockedList<TailnetNodeConfiguration>
 private final class FakeTailnetNode: TailnetNode, @unchecked Sendable {
     private let lock = NSLock()
     private var _state: TailnetStatus.State
-    private let peers: [String: TailnetPeer]
+    private var peers: [String: TailnetPeer]
     private var listeners: [FakeTailnetListener] = []
     private var _listenedAddresses: [String] = []
     private var _logoutCount = 0
@@ -909,8 +974,13 @@ private final class FakeTailnetNode: TailnetNode, @unchecked Sendable {
     }
 
     func whois(_ address: String) async throws -> TailnetPeer {
-        guard let peer = peers[address] else { throw URLError(.cannotFindHost) }
+        guard let peer = lock.withLock({ peers[address] }) else { throw URLError(.cannotFindHost) }
         return peer
+    }
+
+    /// Changes the device at an address, such as when its owner or tags change.
+    func setPeer(_ peer: TailnetPeer?, at address: String) {
+        lock.withLock { peers[address] = peer }
     }
 
     func listen(on address: String, port: UInt16) async throws -> any TailnetListener {
@@ -945,20 +1015,70 @@ private final class FakeTailnetNode: TailnetNode, @unchecked Sendable {
         listener.yield(connection)
         return String(decoding: await connection.output(), as: UTF8.self)
     }
+
+    /// Opens a connection that stays open for more requests.
+    func open(from address: String) throws -> OpenTailnetConnection {
+        let listener = try XCTUnwrap(lock.withLock { listeners.last })
+        let connection = OpenTailnetConnection(remoteAddress: address)
+        listener.yield(connection)
+        return connection
+    }
+}
+
+/// A connection whose peer sends requests when the test asks it to.
+private final class OpenTailnetConnection: TailnetConnection, @unchecked Sendable {
+    let remoteAddress: String?
+    private let continuation: AsyncStream<Data>.Continuation
+    private let lock = NSLock()
+    private var iterator: AsyncStream<Data>.AsyncIterator?
+    private var sent = Data()
+    private var _isClosed = false
+
+    init(remoteAddress: String) {
+        self.remoteAddress = remoteAddress
+        let (stream, continuation) = AsyncStream<Data>.makeStream()
+        self.continuation = continuation
+        iterator = stream.makeAsyncIterator()
+    }
+
+    var output: String { lock.withLock { String(decoding: sent, as: UTF8.self) } }
+    var isClosed: Bool { lock.withLock { _isClosed } }
+
+    func write(_ request: Data) { continuation.yield(request) }
+
+    func receive(timeout: Duration) async throws -> Data {
+        // Only the server's connection task calls this, one call at a time.
+        var iterator = lock.withLock { self.iterator }
+        let next = await iterator?.next()
+        lock.withLock { self.iterator = iterator }
+        return next ?? Data()
+    }
+
+    func send(_ data: Data, timeout: Duration) async throws {
+        try lock.withLock {
+            guard !_isClosed else { throw CancellationError() }
+            sent.append(data)
+        }
+    }
+
+    func close() async {
+        lock.withLock { _isClosed = true }
+        continuation.finish()
+    }
 }
 
 private final class FakeTailnetListener: TailnetListener, @unchecked Sendable {
-    private let stream: AsyncStream<FakeTailnetConnection>
-    private let continuation: AsyncStream<FakeTailnetConnection>.Continuation
+    private let stream: AsyncStream<any TailnetConnection>
+    private let continuation: AsyncStream<any TailnetConnection>.Continuation
     private let lock = NSLock()
-    private var iterator: AsyncStream<FakeTailnetConnection>.AsyncIterator?
+    private var iterator: AsyncStream<any TailnetConnection>.AsyncIterator?
 
     init() {
         (stream, continuation) = AsyncStream.makeStream()
         iterator = stream.makeAsyncIterator()
     }
 
-    func yield(_ connection: FakeTailnetConnection) { continuation.yield(connection) }
+    func yield(_ connection: any TailnetConnection) { continuation.yield(connection) }
     func finish() { continuation.finish() }
 
     func accept() async throws -> any TailnetConnection {
