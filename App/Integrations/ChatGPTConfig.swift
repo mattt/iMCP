@@ -81,6 +81,8 @@ enum ChatGPTConfig {
         case backupFailed(any Error)
         /// The file changed after iMCP read it, so the edit stopped before replacing it.
         case changedDuringEdit
+        /// The file cannot be written, so the edit stopped before the backup.
+        case notWritable
 
         var errorDescription: String? {
             switch self {
@@ -90,13 +92,39 @@ enum ChatGPTConfig {
             case .changedDuringEdit:
                 "That file changed while iMCP was editing it, so iMCP left it unchanged. "
                     + "Set up ChatGPT again to edit the new version."
+            case .notWritable:
+                "iMCP cannot write to that file, so it left the file unchanged."
             }
         }
     }
 
-    /// The backup file next to `url`.
-    static func backupURL(for url: URL) -> URL {
-        url.deletingLastPathComponent().appendingPathComponent("config.toml.imcp-backup")
+    /// What `updateFile` did.
+    enum FileUpdate: Equatable {
+        /// The file already had the command, so nothing was written.
+        case unchanged
+        /// The file was written, after a backup of the original when one existed.
+        case updated(backup: URL?)
+    }
+
+    /// The backup file next to `url`: `config.toml.imcp-backup`,
+    /// then `config.toml.imcp-backup-2` and on for later backups.
+    static func backupURL(for url: URL, number: Int = 1) -> URL {
+        let name = number == 1 ? "config.toml.imcp-backup" : "config.toml.imcp-backup-\(number)"
+        return url.deletingLastPathComponent().appendingPathComponent(name)
+    }
+
+    /// Writes `bytes` to the first backup name that is not in use, and never replaces a backup.
+    private static func writeBackup(_ bytes: Data, nextTo url: URL) throws -> URL {
+        for number in 1 ... 1000 {
+            let backup = backupURL(for: url, number: number)
+            do {
+                try bytes.write(to: backup, options: .withoutOverwriting)
+                return backup
+            } catch CocoaError.fileWriteFileExists {
+                continue
+            }
+        }
+        throw CocoaError(.fileWriteFileExists)
     }
 
     /// Edits the file at `url` so that `mcp_servers.iMCP.command` is `command`.
@@ -104,7 +132,9 @@ enum ChatGPTConfig {
     /// Only a missing file starts empty.
     /// Any other read error, or bytes that are not UTF-8,
     /// stops the edit before anything is written.
-    /// An existing file's original bytes are copied to the backup
+    /// When the edit changes nothing, nothing is written.
+    /// Otherwise an existing file's original bytes are copied to a new backup,
+    /// which never replaces an earlier one,
     /// before the new contents replace the file with an atomic write.
     ///
     /// Just before the replacement, the file is read again.
@@ -116,14 +146,16 @@ enum ChatGPTConfig {
     /// - Parameter beforeReplacing: Runs after the backup and before the check.
     ///   Tests use it to change the file at that point.
     /// - Throws: `ConfigError` when the contents cannot be edited safely,
+    ///   `FileError.notWritable` when the file cannot be written,
     ///   `FileError.backupFailed` when the backup cannot be written,
     ///   `FileError.changedDuringEdit` when the file changed after the first read,
     ///   and the underlying error when the file cannot be read or written.
+    @discardableResult
     static func updateFile(
         at url: URL,
         command: String,
         beforeReplacing: () throws -> Void = {}
-    ) throws {
+    ) throws -> FileUpdate {
         let originalBytes = try readBytes(at: url)
         let original: String
         if let originalBytes {
@@ -133,10 +165,13 @@ enum ChatGPTConfig {
             original = ""
         }
         let updated = try updatedConfig(original: original, command: command)
+        if updated == original { return .unchanged }
 
+        var backup: URL?
         if let originalBytes {
+            guard FileManager.default.isWritableFile(atPath: url.path) else { throw FileError.notWritable }
             do {
-                try originalBytes.write(to: backupURL(for: url), options: .atomic)
+                backup = try writeBackup(originalBytes, nextTo: url)
             } catch {
                 throw FileError.backupFailed(error)
             }
@@ -147,6 +182,7 @@ enum ChatGPTConfig {
 
         // A new file must not replace one that appeared after the check.
         try Data(updated.utf8).write(to: url, options: originalBytes == nil ? .withoutOverwriting : .atomic)
+        return .updated(backup: backup)
     }
 
     /// The file's bytes, or nil when no file exists at `url`.

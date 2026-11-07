@@ -249,6 +249,72 @@ final class ChatGPTConfigFileTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: configURL), saved)
     }
 
+    func testSecondRunWithSameCommandWritesNothing() throws {
+        let original = Data("model = \"gpt-5\"\n".utf8)
+        try original.write(to: configURL)
+        XCTAssertEqual(
+            try ChatGPTConfig.updateFile(at: configURL, command: command),
+            .updated(backup: backupURL)
+        )
+        let edited = try Data(contentsOf: configURL)
+
+        XCTAssertEqual(try ChatGPTConfig.updateFile(at: configURL, command: command), .unchanged)
+        XCTAssertEqual(try Data(contentsOf: configURL), edited)
+        XCTAssertEqual(try Data(contentsOf: backupURL), original)
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: ChatGPTConfig.backupURL(for: configURL, number: 2).path)
+        )
+    }
+
+    func testSecondRunWithNewCommandKeepsTheFirstBackup() throws {
+        let original = Data("model = \"gpt-5\"\n".utf8)
+        try original.write(to: configURL)
+        try ChatGPTConfig.updateFile(at: configURL, command: command)
+        let firstEdit = try Data(contentsOf: configURL)
+
+        let secondBackup = ChatGPTConfig.backupURL(for: configURL, number: 2)
+        XCTAssertEqual(
+            try ChatGPTConfig.updateFile(at: configURL, command: "/Applications/Moved/imcp-server"),
+            .updated(backup: secondBackup)
+        )
+        XCTAssertEqual(try Data(contentsOf: backupURL), original)
+        XCTAssertEqual(try Data(contentsOf: secondBackup), firstEdit)
+    }
+
+    func testReadOnlyFileIsLeftUnchangedWithEarlierBackupKept() throws {
+        let earlierBackup = Data("earlier = true\n".utf8)
+        try earlierBackup.write(to: backupURL)
+        let original = Data("model = \"gpt-5\"\n".utf8)
+        try original.write(to: configURL)
+        try FileManager.default.setAttributes([.posixPermissions: 0o444], ofItemAtPath: configURL.path)
+
+        XCTAssertThrowsError(try ChatGPTConfig.updateFile(at: configURL, command: command)) { error in
+            guard case ChatGPTConfig.FileError.notWritable = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+        }
+        XCTAssertEqual(try Data(contentsOf: configURL), original)
+        XCTAssertEqual(try Data(contentsOf: backupURL), earlierBackup)
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: ChatGPTConfig.backupURL(for: configURL, number: 2).path)
+        )
+    }
+
+    func testFailedWriteKeepsEarlierBackup() throws {
+        let earlierBackup = Data("earlier = true\n".utf8)
+        try earlierBackup.write(to: backupURL)
+        try Data("model = \"gpt-5\"\n".utf8).write(to: configURL)
+
+        // Replace the file with a folder after the backup, so that the check fails.
+        XCTAssertThrowsError(
+            try ChatGPTConfig.updateFile(at: configURL, command: command) {
+                try FileManager.default.removeItem(at: self.configURL)
+                try FileManager.default.createDirectory(at: self.configURL, withIntermediateDirectories: false)
+            }
+        )
+        XCTAssertEqual(try Data(contentsOf: backupURL), earlierBackup)
+    }
+
     func testUnreadableFileIsLeftUnchanged() throws {
         let original = Data("model = \"gpt-5\"\n".utf8)
         try original.write(to: configURL)

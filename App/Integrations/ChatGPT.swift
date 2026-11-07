@@ -20,8 +20,9 @@ private let defaultConfigURL = codexDirectoryURL.appendingPathComponent("config.
 /// comments and formatting. The text edit keeps them.
 ///
 /// iMCP is sandboxed, so the person picks the file in a panel that opens in
-/// `~/.codex`, which grants access to it. Before writing, the original is
-/// copied to `config.toml.imcp-backup` next to it, and the new contents go in
+/// `~/.codex`, which grants access to it. An edit that changes nothing writes nothing.
+/// Otherwise the original is copied to a new backup next to it,
+/// `config.toml.imcp-backup` or a numbered copy, and the new contents go in
 /// with an atomic write. When the backup cannot be written under the file's
 /// grant, the person picks the `.codex` folder, which grants the folder,
 /// and the edit starts again from a new read, after every grant is in place.
@@ -46,7 +47,7 @@ enum ChatGPT {
 
             Location: \(defaultConfigURL.path)
 
-            Your existing server configurations won't be affected. iMCP keeps a copy of the file as config.toml.imcp-backup first. Then restart ChatGPT so that it starts iMCP.
+            Your existing server configurations won't be affected. iMCP first keeps a copy of the file as config.toml.imcp-backup, or as a numbered copy when that backup already exists. Then restart ChatGPT so that it starts iMCP.
             """
         alert.addButton(withTitle: "Set Up")
         alert.addButton(withTitle: "Cancel")
@@ -84,7 +85,8 @@ enum ChatGPT {
     private static func chooseAndWriteConfig() throws {
         let selectedURL = try pickConfigFile()
         do {
-            try ChatGPTConfig.updateFile(at: selectedURL, command: ServerCommand.path)
+            let result = try ChatGPTConfig.updateFile(at: selectedURL, command: ServerCommand.path)
+            log.debug("ChatGPT configuration result: \(String(describing: result))")
         } catch ChatGPTConfig.FileError.backupFailed(let error) {
             // A file grant may not cover a new file next to it.
             // Ask for the folder, then start again from a new read of the file.
@@ -92,7 +94,8 @@ enum ChatGPT {
             guard let folderURL = pickCodexFolder() else { throw Error.noLocationSelected }
             let scoped = folderURL.startAccessingSecurityScopedResource()
             defer { if scoped { folderURL.stopAccessingSecurityScopedResource() } }
-            try ChatGPTConfig.updateFile(at: selectedURL, command: ServerCommand.path)
+            let result = try ChatGPTConfig.updateFile(at: selectedURL, command: ServerCommand.path)
+            log.debug("ChatGPT configuration result: \(String(describing: result))")
         }
     }
 
