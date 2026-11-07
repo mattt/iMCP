@@ -160,12 +160,40 @@ struct KeychainAccessTokenStorage: AccessTokenStorage {
 }
 
 /// The access tokens, shared by Settings and the HTTP server.
+///
+/// Every change saves the complete list before it takes effect,
+/// and a change that iMCP can't save throws.
+/// If the list can't be read, the store has no tokens
+/// and rejects changes until a later read succeeds,
+/// so that a save can't replace tokens that iMCP never read.
 final class AccessTokenStore: @unchecked Sendable {
     static let shared = AccessTokenStore()
 
+    enum StorageError: LocalizedError {
+        /// iMCP couldn't read the saved tokens.
+        case unavailable(any Error)
+        /// iMCP couldn't save a change.
+        case saveFailed(any Error)
+
+        var errorDescription: String? {
+            switch self {
+            case .unavailable(let error):
+                "iMCP couldn't read its access tokens from the Keychain: \(error.localizedDescription)"
+            case .saveFailed(let error):
+                "iMCP couldn't save its access tokens to the Keychain: \(error.localizedDescription)"
+            }
+        }
+    }
+
     private let storage: any AccessTokenStorage
     private let lock = NSLock()
-    private var tokens: [AccessToken]
+    private var tokens: [AccessToken] = []
+    /// Why the last read failed, until a read succeeds.
+    private var loadError: (any Error)?
+    /// Tokens whose deletion, re-roll, or edit iMCP couldn't save.
+    /// They can't be used until a change to them is saved,
+    /// so that a failed save never leaves a revoked token in use.
+    private var suspended: Set<UUID> = []
 
     init(
         storage: any AccessTokenStorage = KeychainAccessTokenStorage(),
@@ -175,31 +203,47 @@ final class AccessTokenStore: @unchecked Sendable {
         self.storage = storage
         // Earlier builds of this unreleased branch used preferences. Discard those tokens.
         defaults.removeObject(forKey: key)
-        do {
-            tokens = try storage.load()
-        } catch {
-            Logger.server.error("Failed to load access tokens: \(String(describing: error), privacy: .public)")
-            tokens = []
+        lock.withLock { _ = try? loadIfNeeded(force: true) }
+    }
+
+    /// Why iMCP can't read its tokens, or `nil` if it can.
+    var storageError: StorageError? {
+        lock.withLock {
+            do {
+                try loadIfNeeded()
+                return nil
+            } catch let error as StorageError {
+                return error
+            } catch {
+                return .unavailable(error)
+            }
         }
     }
 
     var all: [AccessToken] {
-        lock.withLock { tokens }
+        lock.withLock {
+            _ = try? loadIfNeeded()
+            return tokens
+        }
     }
 
+    /// The token with this ID, unless it's suspended.
     func token(id: UUID) -> AccessToken? {
-        lock.withLock { tokens.first { $0.id == id } }
+        lock.withLock { tokens.first { $0.id == id && !suspended.contains(id) } }
     }
 
-    /// The token whose secret this is, if any.
+    /// The token whose secret this is, if any, unless it's suspended.
     func token(secret: String) -> AccessToken? {
         guard secret.hasPrefix(AccessToken.secretPrefix) else { return nil }
         let hash = AccessToken.hash(secret)
-        return lock.withLock { tokens.first { $0.secretHash == hash } }
+        return lock.withLock {
+            guard (try? loadIfNeeded()) != nil else { return nil }
+            return tokens.first { $0.secretHash == hash && !suspended.contains($0.id) }
+        }
     }
 
-    func add(_ token: AccessToken) {
-        update { $0.append(token) }
+    func add(_ token: AccessToken) throws {
+        try update { $0.append(token) }
     }
 
     enum BindingError: Error {
@@ -209,10 +253,13 @@ final class AccessTokenStore: @unchecked Sendable {
 
     /// Claims an unbound token, or records another session from its bound node.
     /// Checks the secret again in case it was replaced while the session started.
+    /// Throws a ``StorageError`` if iMCP can't save the binding,
+    /// and then the token stays as it was.
     func bind(_ token: AccessToken, to device: AccessToken.BoundDevice, now: Date = Date()) throws {
-        try lock.withLock {
+        try update { tokens in
             guard let index = tokens.firstIndex(where: { $0.id == token.id }),
-                tokens[index].secretHash == token.secretHash
+                tokens[index].secretHash == token.secretHash,
+                !suspended.contains(token.id)
             else {
                 throw BindingError.invalidToken
             }
@@ -222,38 +269,62 @@ final class AccessTokenStore: @unchecked Sendable {
             tokens[index].boundDevice = device
             tokens[index].lastUsedAt = now
             tokens[index].lastUsedDevice = device.name
-            persist()
         }
     }
 
-    func remove(id: UUID) {
-        update { $0.removeAll { $0.id == id } }
+    /// Deletes a token.
+    /// If iMCP can't save the deletion, the token is suspended and this throws.
+    func remove(id: UUID) throws {
+        try update(suspendingOnFailure: id) { $0.removeAll { $0.id == id } }
     }
 
-    /// Changes one token and returns the changed copy.
+    /// Changes one token and returns the result of the change.
+    /// If iMCP can't save the change, the token is suspended and this throws.
     @discardableResult
-    func modify<T>(id: UUID, _ body: (inout AccessToken) -> T) -> T? {
+    func modify<T>(id: UUID, _ body: (inout AccessToken) -> T) throws -> T? {
         var result: T?
-        update { tokens in
+        try update(suspendingOnFailure: id) { tokens in
             guard let index = tokens.firstIndex(where: { $0.id == id }) else { return }
             result = body(&tokens[index])
         }
         return result
     }
 
-    private func update(_ body: (inout [AccessToken]) -> Void) {
-        lock.withLock {
-            body(&tokens)
-            persist()
+    /// Changes a copy of the list, saves it, and then keeps it.
+    /// The lock stays held, so an older write cannot replace a newer binding.
+    private func update(
+        suspendingOnFailure id: UUID? = nil,
+        _ body: (inout [AccessToken]) throws -> Void
+    ) throws {
+        try lock.withLock {
+            try loadIfNeeded()
+            var changed = tokens
+            try body(&changed)
+            do {
+                try storage.save(changed)
+            } catch {
+                Logger.server.error("Failed to save access tokens: \(String(describing: error), privacy: .public)")
+                if let id { suspended.insert(id) }
+                throw StorageError.saveFailed(error)
+            }
+            tokens = changed
+            if let id { suspended.remove(id) }
         }
     }
 
-    /// Called with the lock held, so an older write cannot replace a newer binding.
-    private func persist() {
+    /// Reads the tokens if the last read failed. Called with the lock held.
+    private func loadIfNeeded(force: Bool = false) throws {
+        guard force || loadError != nil else { return }
         do {
-            try storage.save(tokens)
+            tokens = try storage.load()
+            loadError = nil
         } catch {
-            Logger.server.error("Failed to save access tokens: \(String(describing: error), privacy: .public)")
+            if loadError == nil {
+                Logger.server.error("Failed to load access tokens: \(String(describing: error), privacy: .public)")
+            }
+            tokens = []
+            loadError = error
+            throw StorageError.unavailable(error)
         }
     }
 }

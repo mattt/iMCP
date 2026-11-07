@@ -539,36 +539,51 @@ final class ServerController: ObservableObject {
         return names
     }
 
+    /// Why iMCP can't read its access tokens, or `nil` if it can.
+    var accessTokenStorageError: String? {
+        tokenStore.storageError?.localizedDescription
+    }
+
     /// Creates an access token and returns its secret, which iMCP can't show again.
-    func createAccessToken(name: String, permissions: ToolPermissions) -> String {
+    /// Throws if iMCP can't save the token.
+    func createAccessToken(name: String, permissions: ToolPermissions) throws -> String {
         let (token, secret) = AccessToken.make(name: name, permissions: permissions)
         objectWillChange.send()
-        tokenStore.add(token)
+        try tokenStore.add(token)
         return secret
     }
 
-    func updateAccessToken(id: UUID, name: String, permissions: ToolPermissions) {
+    /// Changes a token's name and permissions.
+    /// If iMCP can't save the change, the token stops working until a change saves.
+    func updateAccessToken(id: UUID, name: String, permissions: ToolPermissions) throws {
         objectWillChange.send()
-        tokenStore.modify(id: id) {
-            $0.name = name
-            $0.permissions = permissions
+        do {
+            try tokenStore.modify(id: id) {
+                $0.name = name
+                $0.permissions = permissions
+            }
+        } catch {
+            Task { await networkManager.remoteAccess.closeSessions(forToken: id) }
+            throw error
         }
         Task { await networkManager.remoteAccess.notifyToolListChanged(forToken: id) }
     }
 
     /// Gives a token a new secret and returns it.
-    /// Clients that use the old secret lose access.
-    func rerollAccessToken(id: UUID) -> String? {
+    /// Clients that use the old secret lose access,
+    /// even if iMCP can't save the new secret.
+    func rerollAccessToken(id: UUID) throws -> String? {
         objectWillChange.send()
-        let secret = tokenStore.modify(id: id) { $0.reroll() }
-        Task { await networkManager.remoteAccess.closeSessions(forToken: id) }
-        return secret
+        defer { Task { await networkManager.remoteAccess.closeSessions(forToken: id) } }
+        return try tokenStore.modify(id: id) { $0.reroll() }
     }
 
-    func deleteAccessToken(id: UUID) {
+    /// Deletes a token.
+    /// Clients that use it lose access, even if iMCP can't save the deletion.
+    func deleteAccessToken(id: UUID) throws {
         objectWillChange.send()
-        tokenStore.remove(id: id)
-        Task { await networkManager.remoteAccess.closeSessions(forToken: id) }
+        defer { Task { await networkManager.remoteAccess.closeSessions(forToken: id) } }
+        try tokenStore.remove(id: id)
     }
 
     private func applyRemoteAccessConfiguration() {

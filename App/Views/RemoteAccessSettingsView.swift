@@ -14,9 +14,11 @@ struct RemoteAccessSettingsView: View {
     @State private var revealedSecret: RevealedSecret?
     @State private var tokenToReroll: AccessToken?
     @State private var tokenToDelete: AccessToken?
+    @State private var tokenError: String?
 
     var body: some View {
         let tokens = serverController.accessTokens
+        let storageError = serverController.accessTokenStorageError
 
         Form {
             Section {
@@ -64,7 +66,10 @@ struct RemoteAccessSettingsView: View {
             }
 
             Section {
-                if tokens.isEmpty {
+                if let storageError {
+                    Label(storageError, systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.secondary)
+                } else if tokens.isEmpty {
                     VStack(spacing: 4) {
                         Text("No Access Tokens")
                         Text("Create a token for each client that connects from another device.")
@@ -92,6 +97,7 @@ struct RemoteAccessSettingsView: View {
                     Button("Create Token…") {
                         editingToken = EditingToken(token: nil)
                     }
+                    .disabled(storageError != nil)
                 }
             } footer: {
                 Text(
@@ -118,11 +124,13 @@ struct RemoteAccessSettingsView: View {
         }
         .sheet(item: $editingToken) { editing in
             AccessTokenEditor(serverController: serverController, token: editing.token) { name, permissions in
-                if let token = editing.token {
-                    serverController.updateAccessToken(id: token.id, name: name, permissions: permissions)
-                } else {
-                    let secret = serverController.createAccessToken(name: name, permissions: permissions)
-                    revealedSecret = RevealedSecret(name: name, secret: secret)
+                reportingTokenError(suspendsToken: editing.token != nil) {
+                    if let token = editing.token {
+                        try serverController.updateAccessToken(id: token.id, name: name, permissions: permissions)
+                    } else {
+                        let secret = try serverController.createAccessToken(name: name, permissions: permissions)
+                        revealedSecret = RevealedSecret(name: name, secret: secret)
+                    }
                 }
             }
         }
@@ -139,8 +147,10 @@ struct RemoteAccessSettingsView: View {
             presenting: tokenToReroll
         ) { token in
             Button("Re-roll", role: .destructive) {
-                if let secret = serverController.rerollAccessToken(id: token.id) {
-                    revealedSecret = RevealedSecret(name: token.name, secret: secret)
+                reportingTokenError {
+                    if let secret = try serverController.rerollAccessToken(id: token.id) {
+                        revealedSecret = RevealedSecret(name: token.name, secret: secret)
+                    }
                 }
             }
             Button("Cancel", role: .cancel) {}
@@ -155,11 +165,19 @@ struct RemoteAccessSettingsView: View {
             presenting: tokenToDelete
         ) { token in
             Button("Delete", role: .destructive) {
-                serverController.deleteAccessToken(id: token.id)
+                reportingTokenError { try serverController.deleteAccessToken(id: token.id) }
             }
             Button("Cancel", role: .cancel) {}
         } message: { _ in
             Text("Clients that use this token lose access right away.")
+        }
+        .alert(
+            "Couldn't Save Access Tokens",
+            isPresented: Binding(get: { tokenError != nil }, set: { if !$0 { tokenError = nil } })
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(tokenError ?? "")
         }
     }
 
@@ -244,6 +262,19 @@ struct RemoteAccessSettingsView: View {
             get: { serverController.remoteAccessPort },
             set: { serverController.remoteAccessPort = $0 }
         )
+    }
+
+    /// Runs a token change and shows an alert if iMCP can't save it.
+    /// A change to an existing token that doesn't save suspends the token.
+    private func reportingTokenError(suspendsToken: Bool = true, _ change: () throws -> Void) {
+        do {
+            try change()
+        } catch {
+            tokenError =
+                suspendsToken
+                ? "\(error.localizedDescription) The token doesn't work until a change to it saves."
+                : error.localizedDescription
+        }
     }
 
     private func isPresented(_ item: Binding<AccessToken?>) -> Binding<Bool> {

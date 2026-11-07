@@ -664,10 +664,16 @@ actor RemoteAccessServer {
             try tokenStore.bind(token, to: .init(stableID: peer.stableID, name: peer.deviceName))
         } catch {
             await server.stop()
-            if case AccessTokenStore.BindingError.differentDevice = error {
+            switch error {
+            case AccessTokenStore.BindingError.differentDevice:
                 return Self.rejectDevice(peer)
+            case is AccessTokenStore.StorageError:
+                // A binding that isn't saved could let another device claim the token later.
+                log.error("Couldn't save a remote access token's device: \(error)")
+                return .error(statusCode: 503, .internalError("Service Unavailable: iMCP couldn't save the token."))
+            default:
+                return Self.unauthorizedResponse
             }
-            return Self.unauthorizedResponse
         }
         var openStreams = 0
         if case .stream = response { openStreams = 1 }

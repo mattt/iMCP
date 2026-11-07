@@ -162,7 +162,7 @@ final class AccessTokenTests: XCTestCase {
 
         let store = AccessTokenStore(storage: storage, defaults: defaults)
         let (token, secret) = AccessToken.make(name: "Laptop", permissions: .readOnly)
-        store.add(token)
+        try store.add(token)
         XCTAssertEqual(store.token(secret: secret)?.id, token.id)
         XCTAssertNil(store.token(secret: "imcp_wrong"))
         XCTAssertNil(store.token(secret: "wrong"))
@@ -171,13 +171,13 @@ final class AccessTokenTests: XCTestCase {
         XCTAssertEqual(AccessTokenStore(storage: storage, defaults: defaults).all, [token])
         XCTAssertNil(defaults.object(forKey: "remoteAccessTokens"))
 
-        store.modify(id: token.id) { $0.permissions = .custom(["write"]) }
+        try store.modify(id: token.id) { $0.permissions = .custom(["write"]) }
         XCTAssertEqual(
             AccessTokenStore(storage: storage, defaults: defaults).token(id: token.id)?.permissions,
             .custom(["write"])
         )
 
-        store.remove(id: token.id)
+        try store.remove(id: token.id)
         XCTAssertNil(store.token(secret: secret))
         XCTAssertTrue(AccessTokenStore(storage: storage, defaults: defaults).all.isEmpty)
     }
@@ -193,7 +193,7 @@ final class AccessTokenTests: XCTestCase {
         token.lastUsedAt = Date()
         token.lastUsedDevice = "MacBook Pro"
         token.boundDevice = .init(stableID: "node-a", name: "MacBook Pro")
-        store.add(token)
+        try store.add(token)
 
         let newSecret = try XCTUnwrap(store.modify(id: token.id) { $0.reroll() })
         XCTAssertNotEqual(newSecret, oldSecret)
@@ -235,7 +235,7 @@ final class AccessTokenTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
         let store = AccessTokenStore(storage: storage, defaults: defaults)
         let (token, _) = AccessToken.make(name: "Race", permissions: .readOnly)
-        store.add(token)
+        try store.add(token)
 
         let winners = await withTaskGroup(of: String?.self) { group in
             for index in 0 ..< 32 {
@@ -268,12 +268,164 @@ final class AccessTokenTests: XCTestCase {
         let store = AccessTokenStore(storage: storage, defaults: defaults)
         let (token, _) = AccessToken.make(name: "Laptop", permissions: .readOnly)
         let device = AccessToken.BoundDevice(stableID: "node-a", name: "Mac")
-        store.add(token)
-        store.modify(id: token.id) { $0.reroll() }
+        try store.add(token)
+        try store.modify(id: token.id) { $0.reroll() }
         XCTAssertThrowsError(try store.bind(token, to: device))
         XCTAssertNil(store.token(id: token.id)?.boundDevice)
-        store.remove(id: token.id)
+        try store.remove(id: token.id)
         XCTAssertThrowsError(try store.bind(token, to: device))
+    }
+}
+
+final class AccessTokenStorageFailureTests: XCTestCase {
+    private func makeStore(_ storage: FailingAccessTokenStorage) throws -> AccessTokenStore {
+        let suite = "RemoteAccessTests.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+        return AccessTokenStore(storage: storage, defaults: defaults)
+    }
+
+    func testUnreadableStorageIsUnavailableUntilARead() throws {
+        let (saved, secret) = AccessToken.make(name: "Saved", permissions: .readOnly)
+        let storage = FailingAccessTokenStorage(tokens: [saved])
+        storage.failsLoad = true
+        let store = try makeStore(storage)
+
+        XCTAssertNotNil(store.storageError)
+        XCTAssertTrue(store.all.isEmpty)
+        XCTAssertNil(store.token(secret: secret))
+        let (other, _) = AccessToken.make(name: "Other", permissions: .readOnly)
+        XCTAssertThrowsError(try store.add(other)) { error in
+            guard case AccessTokenStore.StorageError.unavailable = error else {
+                return XCTFail("Expected unavailable storage, got \(error)")
+            }
+        }
+        // A change must not replace the tokens that iMCP couldn't read.
+        XCTAssertEqual(storage.tokens, [saved])
+        XCTAssertEqual(storage.saveCount, 0)
+
+        storage.failsLoad = false
+        XCTAssertNil(store.storageError)
+        XCTAssertEqual(store.token(secret: secret)?.id, saved.id)
+        try store.add(other)
+        XCTAssertEqual(storage.tokens, [saved, other])
+    }
+
+    func testFailedBindingLeavesTokenUnbound() throws {
+        let storage = FailingAccessTokenStorage()
+        let store = try makeStore(storage)
+        let (token, secret) = AccessToken.make(name: "Laptop", permissions: .readOnly)
+        try store.add(token)
+
+        storage.failsSave = true
+        XCTAssertThrowsError(try store.bind(token, to: .init(stableID: "node-a", name: "Mac"))) { error in
+            guard case AccessTokenStore.StorageError.saveFailed = error else {
+                return XCTFail("Expected a save failure, got \(error)")
+            }
+        }
+        XCTAssertNil(store.token(id: token.id)?.boundDevice)
+        XCTAssertNil(storage.tokens.first?.boundDevice)
+        // A failed binding doesn't suspend the token.
+        XCTAssertEqual(store.token(secret: secret)?.id, token.id)
+    }
+
+    func testFailedRevocationsAndEditsSuspendTheToken() throws {
+        let storage = FailingAccessTokenStorage()
+        let store = try makeStore(storage)
+        let (deleted, deletedSecret) = AccessToken.make(name: "Deleted", permissions: .allTools)
+        let (rerolled, rerolledSecret) = AccessToken.make(name: "Rerolled", permissions: .allTools)
+        let (edited, editedSecret) = AccessToken.make(name: "Edited", permissions: .allTools)
+        for token in [deleted, rerolled, edited] { try store.add(token) }
+
+        storage.failsSave = true
+        XCTAssertThrowsError(try store.remove(id: deleted.id))
+        XCTAssertThrowsError(try store.modify(id: rerolled.id) { $0.reroll() })
+        XCTAssertThrowsError(try store.modify(id: edited.id) { $0.permissions = .readOnly })
+
+        // The saved list is unchanged, but none of the tokens work.
+        XCTAssertEqual(storage.tokens, [deleted, rerolled, edited])
+        XCTAssertEqual(store.all, [deleted, rerolled, edited])
+        for (token, secret) in [(deleted, deletedSecret), (rerolled, rerolledSecret), (edited, editedSecret)] {
+            XCTAssertNil(store.token(secret: secret), token.name)
+            XCTAssertNil(store.token(id: token.id), token.name)
+            XCTAssertThrowsError(try store.bind(token, to: .init(stableID: "node-a", name: "Mac")), token.name)
+        }
+
+        storage.failsSave = false
+        try store.modify(id: edited.id) { $0.permissions = .readOnly }
+        XCTAssertEqual(store.token(secret: editedSecret)?.permissions, .readOnly)
+        try store.remove(id: deleted.id)
+        XCTAssertEqual(storage.tokens.map(\.id), [rerolled.id, edited.id])
+        XCTAssertNil(store.token(secret: rerolledSecret))
+    }
+
+    func testUnsavedBindingRejectsTheSession() async throws {
+        let storage = FailingAccessTokenStorage()
+        let store = try makeStore(storage)
+        let (token, secret) = AccessToken.make(name: "Laptop", permissions: .readOnly)
+        try store.add(token)
+        storage.failsSave = true
+        let server = RemoteAccessServer.forTesting(tokenStore: store) { _ in MCP.Server(name: "test", version: "1") }
+        let body =
+            #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}"#
+        let message = HTTPRequestMessage(
+            method: "POST",
+            path: "/mcp",
+            headers: [
+                "Authorization": "Bearer \(secret)",
+                "Accept": "application/json, text/event-stream",
+                "Content-Type": "application/json",
+                "MCP-Protocol-Version": "2025-11-25",
+            ],
+            body: Data(body.utf8),
+            keepAlive: true
+        )
+        let peer = TailnetPeer(stableID: "node-a", deviceName: "Mac", userID: 1, isTagged: false)
+        let response = await server.respond(to: message, from: peer)
+        XCTAssertEqual(response.statusCode, 503)
+        XCTAssertNil(response.headers[HTTPHeaderName.sessionID])
+        XCTAssertNil(store.token(id: token.id)?.boundDevice)
+    }
+}
+
+/// Storage that can fail to read or save.
+private final class FailingAccessTokenStorage: AccessTokenStorage, @unchecked Sendable {
+    struct Failure: Error {}
+
+    private let lock = NSLock()
+    private var _tokens: [AccessToken]
+    private var _failsLoad = false
+    private var _failsSave = false
+    private var _saveCount = 0
+
+    init(tokens: [AccessToken] = []) {
+        _tokens = tokens
+    }
+
+    var tokens: [AccessToken] { lock.withLock { _tokens } }
+    var saveCount: Int { lock.withLock { _saveCount } }
+    var failsLoad: Bool {
+        get { lock.withLock { _failsLoad } }
+        set { lock.withLock { _failsLoad = newValue } }
+    }
+    var failsSave: Bool {
+        get { lock.withLock { _failsSave } }
+        set { lock.withLock { _failsSave = newValue } }
+    }
+
+    func load() throws -> [AccessToken] {
+        try lock.withLock {
+            if _failsLoad { throw Failure() }
+            return _tokens
+        }
+    }
+
+    func save(_ tokens: [AccessToken]) throws {
+        try lock.withLock {
+            if _failsSave { throw Failure() }
+            _saveCount += 1
+            _tokens = tokens
+        }
     }
 }
 
@@ -316,7 +468,7 @@ final class RemoteAccessBindingTests: XCTestCase {
     func testFirstSessionBindsAndSameNodeCanStartAnotherSession() async throws {
         let store = try makeStore()
         let (token, secret) = AccessToken.make(name: "Laptop", permissions: .readOnly)
-        store.add(token)
+        try store.add(token)
         let server = RemoteAccessServer.forTesting(tokenStore: store) { _ in MCP.Server(name: "test", version: "1") }
         let response = await server.respond(to: request(secret: secret), from: first)
         XCTAssertEqual(response.statusCode, 200)
@@ -335,7 +487,7 @@ final class RemoteAccessBindingTests: XCTestCase {
     func testOtherNodeIsRejectedForNewAndExistingSessions() async throws {
         let store = try makeStore()
         let (token, secret) = AccessToken.make(name: "Laptop", permissions: .readOnly)
-        store.add(token)
+        try store.add(token)
         let server = RemoteAccessServer.forTesting(tokenStore: store) { _ in MCP.Server(name: "test", version: "1") }
         let initial = await server.respond(to: request(secret: secret), from: first)
         let sessionID = try XCTUnwrap(initial.headers[HTTPHeaderName.sessionID])
@@ -372,7 +524,7 @@ final class RemoteAccessBindingTests: XCTestCase {
     func testConcurrentFirstSessionsAcceptOnlyOneNode() async throws {
         let store = try makeStore()
         let (token, secret) = AccessToken.make(name: "Race", permissions: .readOnly)
-        store.add(token)
+        try store.add(token)
         let barrier = SessionStartBarrier()
         let server = RemoteAccessServer.forTesting(tokenStore: store) { _ in
             await barrier.wait()
@@ -395,7 +547,7 @@ final class RemoteAccessBindingTests: XCTestCase {
     func testRejectedInitializationDoesNotBind() async throws {
         let store = try makeStore()
         let (token, secret) = AccessToken.make(name: "Laptop", permissions: .readOnly)
-        store.add(token)
+        try store.add(token)
         let server = RemoteAccessServer.forTesting(tokenStore: store) { _ in MCP.Server(name: "test", version: "1") }
         var message = request(secret: secret)
         message.headers["Content-Type"] = "text/plain"
@@ -647,7 +799,7 @@ final class RemoteAccessAuthorizationTests: XCTestCase {
         addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
         let store = AccessTokenStore(storage: storage, defaults: defaults)
         let (token, secret) = AccessToken.make(name: "iPad", permissions: .readOnly)
-        store.add(token)
+        try store.add(token)
         return (store, secret)
     }
 
