@@ -1,4 +1,5 @@
 import Foundation
+import MCP
 import XCTest
 
 final class MCPInitializeCompatibilityTests: XCTestCase {
@@ -67,12 +68,83 @@ final class MCPInitializeCompatibilityTests: XCTestCase {
         }
     }
 
-    func testUnknownCapabilitiesAreNotRemoved() {
+    func testRemovesChatGPTVisibilityCapability() throws {
         let input = Data(
-            #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{"experimental":{"other/auth-change":{}}}}}"#
+            #"{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-06-18","clientInfo":{"name":"openai-mcp","version":"1.0.0"},"capabilities":{"experimental":{"openai/visibility":{"enabled":true}}}}}"#
                 .utf8
         )
-        XCTAssertEqual(MCPInitializeCompatibility.normalize(input), input)
+        let expected = Data(
+            #"{"id":0,"jsonrpc":"2.0","method":"initialize","params":{"capabilities":{},"clientInfo":{"name":"openai-mcp","version":"1.0.0"},"protocolVersion":"2025-06-18"}}"#
+                .utf8
+        )
+        XCTAssertEqual(MCPInitializeCompatibility.normalize(input), expected)
+    }
+
+    func testSDKDecodesNormalizedChatGPTAndCodexInitialize() throws {
+        let input = Data(
+            #"{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-06-18","clientInfo":{"name":"openai-mcp","version":"1.0.0"},"capabilities":{"experimental":{"openai/visibility":{"enabled":true},"codex/auth-change":{},"legacy":"unchanged"}}}}"#
+                .utf8
+        )
+        XCTAssertThrowsError(try JSONDecoder().decode(Request<Initialize>.self, from: input))
+        let request = try JSONDecoder().decode(
+            Request<Initialize>.self,
+            from: MCPInitializeCompatibility.normalize(input)
+        )
+        XCTAssertEqual(request.params.capabilities.experimental, ["legacy": "unchanged"])
+    }
+
+    func testRemovesEveryNonStringValueAndKeepsStrings() throws {
+        let input = Data(
+            #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{"experimental":{"a/string":"kept","b/empty":"","openai/visibility":{"enabled":false},"other/object":{},"array":[1,"two"],"empty/array":[],"integer":1,"double":1.5,"zero":0,"true":true,"false":false,"null":null}}}}"#
+                .utf8
+        )
+        let result = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: MCPInitializeCompatibility.normalize(input)) as? [String: Any]
+        )
+        let params = try XCTUnwrap(result["params"] as? [String: Any])
+        let capabilities = try XCTUnwrap(params["capabilities"] as? [String: Any])
+        XCTAssertEqual(
+            capabilities["experimental"] as? NSDictionary,
+            ["a/string": "kept", "b/empty": ""] as NSDictionary
+        )
+    }
+
+    func testRemovesEachNonStringKind() throws {
+        let values = [#"{"enabled":true}"#, "{}", "[]", #"["a"]"#, "0", "1", "-2.5", "true", "false", "null"]
+        for value in values {
+            let input = Data(
+                #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{"experimental":{"x":\#(value)}}}}"#
+                    .utf8
+            )
+            let result = try XCTUnwrap(
+                JSONSerialization.jsonObject(with: MCPInitializeCompatibility.normalize(input)) as? [String: Any],
+                value
+            )
+            let params = try XCTUnwrap(result["params"] as? [String: Any], value)
+            let capabilities = try XCTUnwrap(params["capabilities"] as? [String: Any], value)
+            XCTAssertNil(capabilities["experimental"], value)
+        }
+    }
+
+    func testStringOnlyExperimentalStaysByteIdentical() {
+        let inputs = [
+            #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{"experimental":{}}}}"#,
+            #"{"jsonrpc":"2.0", "id":1, "method":"initialize", "params":{"capabilities":{"experimental":{"a":"1","b":"true","c":"{}"}}}}"#,
+        ]
+        for input in inputs {
+            let data = Data(input.utf8)
+            XCTAssertEqual(MCPInitializeCompatibility.normalize(data), data)
+        }
+    }
+
+    func testNonObjectExperimentalStaysByteIdentical() {
+        for value in ["\"string\"", "[{}]", "1", "true", "null"] {
+            let data = Data(
+                #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{"experimental":\#(value)}}}"#
+                    .utf8
+            )
+            XCTAssertEqual(MCPInitializeCompatibility.normalize(data), data)
+        }
     }
 
     func testFragmentedInitializeIsNormalizedOnceComplete() throws {
