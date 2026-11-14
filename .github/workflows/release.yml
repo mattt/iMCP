@@ -31,7 +31,7 @@ concurrency:
     cancel-in-progress: false
 
 env:
-    DEVELOPER_DIR: "/Applications/Xcode_26.0.app/Contents/Developer"
+    DEVELOPER_DIR: "/Applications/Xcode_27.1.app/Contents/Developer"
     TEAM_ID: TTY35UM57S
     SIGNING_CERTIFICATE: "Developer ID Application: dododo, LLC (TTY35UM57S)"
     SPARKLE_VERSION: "2.9.6"
@@ -40,7 +40,9 @@ env:
 jobs:
     release:
         name: Build, notarize, and publish
-        runs-on: macos-26
+        # Only the xcode-27 image has Xcode 27.1,
+        # which TailscaleKit's Swift interface requires.
+        runs-on: xcode-27
         timeout-minutes: 60
         steps:
             - name: Checkout code
