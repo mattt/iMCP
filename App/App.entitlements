@@ -4,6 +4,8 @@
 <dict>
 	<key>com.apple.developer.weatherkit</key>
 	<true/>
+	<key>com.apple.security.automation.apple-events</key>
+	<true/>
 	<key>com.apple.security.inherit</key>
 	<true/>
 	<key>com.apple.security.personal-information.health</key>
@@ -11,6 +13,7 @@
 	<key>com.apple.security.temporary-exception.apple-events</key>
 	<array>
 		<string>com.apple.Music</string>
+		<string>com.apple.Safari</string>
 	</array>
 	<key>com.apple.security.temporary-exception.files.absolute-path.read-write</key>
 	<array>
