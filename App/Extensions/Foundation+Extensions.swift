@@ -176,6 +176,8 @@ extension NSAppleScript {
             case boolean(Bool)
             /// A list of strings, as an AppleScript list.
             case strings([String])
+            /// An enumerator of a scripting dictionary, by its four-character code.
+            case enumCode(FourCharCode)
         }
 
         /// The handler's name, as the script declares it.
@@ -220,16 +222,26 @@ extension NSAppleScript {
     /// and again on the queue, after compiling and before any Apple event is sent.
     /// A script that has started runs to the end.
     ///
+    /// `beforeSending` runs on the queue after that last check,
+    /// immediately before the script runs;
+    /// when it throws, the script doesn't run and its error is rethrown.
+    ///
     /// - Parameters:
     ///   - source: The script's source. Pass a fixed script, not one built from untrusted text.
     ///   - subroutine: A handler of the script to run in place of the script's own `run` handler.
+    ///   - beforeSending: A check that runs right before the script, on the queue.
     /// - Returns: The result of the script.
     /// - Throws: ``ExecutionError`` when the script does not compile or fails,
-    ///   or `CancellationError` when the task is cancelled before the script starts.
-    static func execute(_ source: String, calling subroutine: Subroutine? = nil) async throws
-        -> NSAppleEventDescriptor
-    {
+    ///   `CancellationError` when the task is cancelled before the script starts,
+    ///   or the error from `beforeSending`.
+    static func execute(
+        _ source: String,
+        calling subroutine: Subroutine? = nil,
+        beforeSending: @escaping () throws -> Void = {}
+    ) async throws -> NSAppleEventDescriptor {
         try Task.checkCancellation()
+        // Callers must not access the closure after passing it to this queue.
+        nonisolated(unsafe) let beforeSending = beforeSending
         let isCancelled = OSAllocatedUnfairLock(initialState: false)
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
@@ -249,6 +261,12 @@ extension NSAppleScript {
                     // The last point before an Apple event can be sent.
                     if isCancelled.withLock({ $0 }) {
                         continuation.resume(throwing: CancellationError())
+                        return
+                    }
+                    do {
+                        try beforeSending()
+                    } catch {
+                        continuation.resume(throwing: error)
                         return
                     }
                     let result =
@@ -283,6 +301,8 @@ extension NSAppleScript.Subroutine.Parameter {
                 list.insert(NSAppleEventDescriptor(string: value), at: index + 1)
             }
             return list
+        case .enumCode(let code):
+            return NSAppleEventDescriptor(enumCode: code)
         }
     }
 }

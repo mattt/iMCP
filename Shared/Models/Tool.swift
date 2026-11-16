@@ -76,3 +76,9 @@ public struct JSONLDGraph<Element: Encodable>: Encodable {
         }
     }
 }
+
+/// Context for the current tool call.
+enum ToolCallContext {
+    /// The client name from its initialize request, if available.
+    @TaskLocal static var clientName: String?
+}
