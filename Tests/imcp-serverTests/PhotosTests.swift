@@ -186,6 +186,17 @@ final class PhotosTests: XCTestCase {
         return pages
     }
 
+    /// Items with identifiers from a format and dates that fall by one from the first item to the last.
+    private func descendingItems(count: Int, format: String, firstDate: Double) -> [Item] {
+        var items: [Item] = []
+        for index in 0 ..< count {
+            let id: String = String(format: format, index)
+            let date: Double = firstDate - Double(index)
+            items.append(Item(id: id, date: date))
+        }
+        return items
+    }
+
     private func key(of item: Item) -> Cursor? {
         item.date.map { Cursor(creationDate: Date(timeIntervalSinceReferenceDate: $0), localIdentifier: item.id) }
     }
@@ -202,12 +213,16 @@ final class PhotosTests: XCTestCase {
     }
 
     func testPagesNeitherRepeatNorDropItems() {
-        let items = (0 ..< 50).map { index in
-            Item(id: String(format: "%03d", (index * 37) % 50), date: Double(index / 4))
+        // Runs of four items share a date, newest first, with identifiers in no particular order.
+        var items: [Item] = []
+        for index in 0 ..< 50 {
+            let id: String = String(format: "%03d", (index * 37) % 50)
+            let date: Double = Double(12 - index / 4)
+            items.append(Item(id: id, date: date))
         }
-        .sorted { ($0.date ?? 0) > ($1.date ?? 0) }
         for limit in [1, 3, 7, 30, 60] {
-            let ids = allPages(items, limit: limit).flatMap { $0 }
+            let pages: [[String]] = allPages(items, limit: limit)
+            let ids: [String] = pages.flatMap { $0 }
             XCTAssertEqual(ids.count, 50, "limit \(limit)")
             XCTAssertEqual(Set(ids).count, 50, "limit \(limit)")
         }
@@ -250,7 +265,7 @@ final class PhotosTests: XCTestCase {
     }
 
     func testFilteredPagingStopsAtTheScanLimitWithACursor() {
-        let items = (0 ..< 20).map { Item(id: String(format: "%02d", $0), date: Double(100 - $0)) }
+        let items: [Item] = descendingItems(count: 20, format: "%02d", firstDate: 100)
         let even: (Item) -> Bool = { Int($0.id)! % 2 == 0 }
 
         let first = PhotosService.page(
@@ -266,12 +281,16 @@ final class PhotosTests: XCTestCase {
         XCTAssertEqual(first.nextCursor?.localIdentifier, "04")
 
         let pages = allPages(items, limit: 30, scanLimit: 5, matches: even)
-        XCTAssertEqual(pages.flatMap { $0 }, stride(from: 0, to: 20, by: 2).map { String(format: "%02d", $0) })
+        let ids: [String] = pages.flatMap { $0 }
+        let expected: [String] = stride(from: 0, to: 20, by: 2).map { (index: Int) -> String in
+            String(format: "%02d", index)
+        }
+        XCTAssertEqual(ids, expected)
         XCTAssertEqual(pages.count, 4)
     }
 
     func testFullPageDoesNotReadTheNextRun() {
-        let items = (0 ..< 100).map { Item(id: String(format: "%03d", $0), date: Double(1000 - $0)) }
+        let items: [Item] = descendingItems(count: 100, format: "%03d", firstDate: 1000)
         var reads: [Int] = []
         let page = PhotosService.page(
             count: items.count,
@@ -291,9 +310,11 @@ final class PhotosTests: XCTestCase {
 
     func testScanLimitIsExceededByAtMostOneRunOfEqualDates() {
         // Three items with their own dates, a run of 20 with one date, then 10 more.
-        var items = (0 ..< 3).map { Item(id: "a\($0)", date: Double(1000 - $0)) }
-        items += (0 ..< 20).map { Item(id: String(format: "b%02d", $0), date: 500) }
-        items += (0 ..< 10).map { Item(id: "c\($0)", date: Double(100 - $0)) }
+        var items: [Item] = descendingItems(count: 3, format: "a%d", firstDate: 1000)
+        for index in 0 ..< 20 {
+            items.append(Item(id: String(format: "b%02d", index), date: 500))
+        }
+        items += descendingItems(count: 10, format: "c%d", firstDate: 100)
         var reads = 0
         let page = PhotosService.page(
             count: items.count,
@@ -313,7 +334,7 @@ final class PhotosTests: XCTestCase {
         XCTAssertEqual(page.nextCursor?.localIdentifier, "b18")
 
         reads = 0
-        let distinct = (0 ..< 100).map { Item(id: String(format: "%03d", $0), date: Double(1000 - $0)) }
+        let distinct: [Item] = descendingItems(count: 100, format: "%03d", firstDate: 1000)
         _ = PhotosService.page(
             count: distinct.count,
             item: { index in
@@ -483,8 +504,10 @@ final class PhotosTests: XCTestCase {
     }
 
     func testContactSheetFitsTheSizeLimit() throws {
-        let thumbnails: [CGImage?] = (0 ..< 30).map { index in
-            index == 7 ? nil : noiseImage(width: 240, height: 180, seed: UInt64(index + 1))
+        var thumbnails: [CGImage?] = []
+        for index in 0 ..< 30 {
+            let seed: UInt64 = UInt64(index + 1)
+            thumbnails.append(index == 7 ? nil : noiseImage(width: 240, height: 180, seed: seed))
         }
         let sheet = try PhotosService.ContactSheet.render(thumbnails)
         XCTAssertEqual(PhotosService.ContactSheet.columns(for: 30), 6)
@@ -727,9 +750,11 @@ final class PhotosTests: XCTestCase {
     private func keyPaths(in predicate: NSPredicate) -> Set<String> {
         switch predicate {
         case let compound as NSCompoundPredicate:
-            return compound.subpredicates.reduce(into: Set<String>()) {
-                $0.formUnion(keyPaths(in: $1 as! NSPredicate))
+            var keyPaths: Set<String> = []
+            for case let subpredicate as NSPredicate in compound.subpredicates {
+                keyPaths.formUnion(self.keyPaths(in: subpredicate))
             }
+            return keyPaths
         case let comparison as NSComparisonPredicate:
             return keyPaths(in: comparison.leftExpression).union(keyPaths(in: comparison.rightExpression))
         default:
@@ -742,7 +767,11 @@ final class PhotosTests: XCTestCase {
         case .keyPath:
             return [expression.keyPath]
         case .function:
-            return (expression.arguments ?? []).reduce(into: Set<String>()) { $0.formUnion(keyPaths(in: $1)) }
+            var keyPaths: Set<String> = []
+            for argument in expression.arguments ?? [] {
+                keyPaths.formUnion(self.keyPaths(in: argument))
+            }
+            return keyPaths
         default:
             return []
         }
