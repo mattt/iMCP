@@ -1130,7 +1130,8 @@ final class PhotosService: Service {
         }
 
         let thumbnailSize = CGSize(width: ContactSheet.thumbnailSize, height: ContactSheet.thumbnailSize)
-        let thumbnails = await withTaskGroup(of: (Int, CGImage?).self) { group in
+        // Cancellation ends the call; any other failure leaves a "Not available" cell.
+        let thumbnails = try await withThrowingTaskGroup(of: (Int, CGImage?).self) { group in
             for (index, asset) in assets.enumerated() {
                 group.addTask {
                     do {
@@ -1141,25 +1142,30 @@ final class PhotosService: Service {
                             original: false
                         )
                         return (index, image)
+                    } catch is CancellationError {
+                        throw CancellationError()
                     } catch {
+                        try Task.checkCancellation()
                         log.error("Contact sheet thumbnail \(index + 1) failed: \(error.localizedDescription)")
                         return (index, nil)
                     }
                 }
             }
             var thumbnails = [CGImage?](repeating: nil, count: assets.count)
-            for await (index, image) in group {
+            for try await (index, image) in group {
                 thumbnails[index] = image
             }
             return thumbnails
         }
 
+        try Task.checkCancellation()
         let sheet = try ContactSheet.render(thumbnails)
         let data = try ContactSheet.jpegData(sheet)
         switch request.output {
         case .image:
             return .data(mimeType: "image/jpeg", data)
         case .reference:
+            try Task.checkCancellation()
             let url = try Self.writeReferenceFile(data, pathExtension: "jpg")
             return Self.referenceValue(
                 id: nil,
