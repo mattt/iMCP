@@ -20,21 +20,19 @@ enum FilesOperations {
         }
     }
 
-    private static func entry(path: String, url: URL) -> Value {
-        guard let attributes = try? attributes(of: url) else {
-            return ["path": .string(path), "name": .string(url.lastPathComponent), "type": "unreadable"]
+    private static func entry(path: String, name: String, info: stat?) -> Value {
+        guard let info else {
+            return ["path": .string(path), "name": .string(name), "type": "unreadable"]
         }
         var value: [String: Value] = [
-            "name": .string(url.lastPathComponent),
+            "name": .string(name),
             "path": .string(path),
-            "type": .string(kind(of: attributes)),
+            "type": .string(
+                info.isRegularFile ? "file" : info.isDirectory ? "directory" : info.isSymbolicLink ? "symlink" : "other"
+            ),
+            "modified": .string(FilesDate.string(info.modified)),
         ]
-        if kind(of: attributes) == "file", let size = (attributes[.size] as? NSNumber)?.intValue {
-            value["size"] = .int(size)
-        }
-        if let modified = attributes[.modificationDate] as? Date {
-            value["modified"] = .string(FilesDate.string(modified))
-        }
+        if info.isRegularFile { value["size"] = .int(Int(info.st_size)) }
         return .object(value)
     }
 
@@ -63,7 +61,8 @@ enum FilesOperations {
         let entries = page.items.map { name in
             entry(
                 path: directory.displayPath + "/" + name,
-                url: URL(fileURLWithPath: folder.path).appendingPathComponent(name)
+                name: name,
+                info: try? folder.status(of: name, displayPath: directory.displayPath)
             )
         }
         return [
@@ -75,33 +74,62 @@ enum FilesOperations {
         ]
     }
 
+    /// Describes an item from its folder's descriptor, without following a link.
+    ///
+    /// - Parameters:
+    ///   - item: The path followed to its target, which is what is described.
+    ///   - linkItem: The same path not followed, which says whether the client's path is a link.
     static func stat(
         _ item: FilesAccess.Resolved,
-        isSymlink: Bool,
+        linkItem: FilesAccess.Resolved,
         includeHash: Bool
     ) throws -> Value {
-        guard FilesAccess.lexists(item.url.path) else { throw FilesError.notFound(item.displayPath) }
-        let attributes = try attributes(of: item.url)
+        var info = Darwin.stat()
+        var parent: FilesDirectory?
+        if item.isRoot {
+            let folder = try FilesDirectory.open(item.root, components: [], displayPath: item.displayPath)
+            guard fstat(folder.fd, &info) == 0 else { throw FilesError.posix(errno, item.displayPath) }
+        } else {
+            let folder = try FilesDirectory.openParent(of: item)
+            guard let found = try folder.status(of: item.canonicalComponents.last!, displayPath: item.displayPath)
+            else { throw FilesError.notFound(item.displayPath) }
+            info = found
+            parent = folder
+        }
+        var isSymlink = false
+        if !linkItem.isRoot, let name = linkItem.canonicalComponents.last {
+            let folder = try FilesDirectory.openParent(of: linkItem)
+            isSymlink = try folder.status(of: name, displayPath: linkItem.displayPath)?.isSymbolicLink ?? false
+        }
+
+        let name = item.isRoot ? item.root.name : item.canonicalComponents.last!
         var value: [String: Value] = [
-            "name": .string(item.isRoot ? item.root.name : item.url.lastPathComponent),
+            "name": .string(name),
             "path": .string(item.displayPath),
-            "type": .string(kind(of: attributes)),
+            "type": .string(
+                info.isRegularFile ? "file" : info.isDirectory ? "directory" : info.isSymbolicLink ? "symlink" : "other"
+            ),
             "isSymlink": .bool(isSymlink),
-            "isHidden": .bool(item.url.lastPathComponent.hasPrefix(".")),
+            "isHidden": .bool(name.hasPrefix(".")),
+            "modified": .string(FilesDate.string(info.modified)),
+            "created": .string(
+                FilesDate.string(
+                    Date(
+                        timeIntervalSince1970: TimeInterval(info.st_birthtimespec.tv_sec)
+                            + TimeInterval(info.st_birthtimespec.tv_nsec) / 1e9
+                    )
+                )
+            ),
+            "permissions": .string(String(info.st_mode & 0o7777, radix: 8)),
         ]
-        if let size = (attributes[.size] as? NSNumber)?.intValue, kind(of: attributes) == "file" {
-            value["size"] = .int(size)
-        }
-        if let created = attributes[.creationDate] as? Date { value["created"] = .string(FilesDate.string(created)) }
-        if let modified = attributes[.modificationDate] as? Date {
-            value["modified"] = .string(FilesDate.string(modified))
-        }
-        if let permissions = (attributes[.posixPermissions] as? NSNumber)?.intValue {
-            value["permissions"] = .string(String(permissions, radix: 8))
-        }
+        if info.isRegularFile { value["size"] = .int(Int(info.st_size)) }
         if includeHash {
-            guard kind(of: attributes) == "file" else { throw FilesError.notAFile(item.displayPath) }
-            value["sha256"] = .string(try FilesHash.sha256(of: item.url))
+            guard info.isRegularFile, let parent else { throw FilesError.notAFile(item.displayPath) }
+            let descriptor = try parent.openFile(name, flags: O_RDONLY, displayPath: item.displayPath)
+            defer { close(descriptor) }
+            var opened = Darwin.stat()
+            guard fstat(descriptor, &opened) == 0 else { throw FilesError.posix(errno, item.displayPath) }
+            value["sha256"] = .string(try FilesHash.sha256(descriptor: descriptor, size: Int(opened.st_size)))
         }
         return .object(value)
     }
@@ -228,6 +256,22 @@ enum FilesOperations {
 
     // MARK: - Searching
 
+    /// What a search has found so far, and the limits that end it.
+    private struct SearchState {
+        var matches: [Value] = []
+        var truncated = false
+        var timedOut = false
+        var scanned = 0
+        var skippedLarge = 0
+        let limit: Int
+        let deadline: Date
+    }
+
+    /// Searches shared folders without following a link.
+    ///
+    /// The walk reads each folder through a descriptor and opens each subfolder and file relative to its folder
+    /// with `O_NOFOLLOW`, so an item swapped for a link while the search runs is skipped, never followed.
+    /// - Parameter beforeOpening: Called with an item's name just before it is opened. Tests use it to swap items.
     static func search(
         in roots: [FilesAccess.Resolved],
         name: String?,
@@ -235,95 +279,135 @@ enum FilesOperations {
         includeHidden: Bool,
         limit: Int,
         seconds: Double,
-        now: () -> Date = Date.init
+        now: () -> Date = Date.init,
+        beforeOpening: (String) -> Void = { _ in }
     ) throws -> Value {
-        let deadline = now().addingTimeInterval(seconds)
-        var matches: [Value] = []
-        var truncated = false
-        var timedOut = false
-        var scanned = 0
-        var skippedLarge = 0
-
-        search: for root in roots {
-            // Walk from where the opened folder points, so a folder swapped for a link since the check isn't searched.
+        var state = SearchState(limit: limit, deadline: now().addingTimeInterval(seconds))
+        for root in roots {
             let folder = try FilesDirectory.open(
                 root.root,
                 components: root.canonicalComponents,
                 displayPath: root.displayPath
             )
-            guard
-                let enumerator = FileManager.default.enumerator(
-                    at: URL(fileURLWithPath: folder.path),
-                    includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey, .fileSizeKey],
-                    options: includeHidden ? [] : [.skipsHiddenFiles]
-                )
-            else { continue }
+            walk(
+                folder,
+                displayPath: root.displayPath,
+                name: name,
+                content: content,
+                includeHidden: includeHidden,
+                now: now,
+                beforeOpening: beforeOpening,
+                state: &state
+            )
+            if state.truncated || state.timedOut { break }
+        }
+        return [
+            "matches": .array(state.matches),
+            "truncated": .bool(state.truncated),
+            "timedOut": .bool(state.timedOut),
+            "scanned": .int(state.scanned),
+            "skippedLargeFiles": .int(state.skippedLarge),
+        ]
+    }
 
-            for case let url as URL in enumerator {
-                if now() > deadline || Task.isCancelled {
-                    timedOut = true
-                    break search
-                }
-                let itemName = url.lastPathComponent
-                if FilesAccess.isPhotosLibraryName(itemName) {
-                    enumerator.skipDescendants()
-                    continue
-                }
-                scanned += 1
+    private static func walk(
+        _ folder: FilesDirectory,
+        displayPath: String,
+        name query: String?,
+        content: String?,
+        includeHidden: Bool,
+        now: () -> Date,
+        beforeOpening: (String) -> Void,
+        state: inout SearchState
+    ) {
+        guard let names = try? folder.entryNames(displayPath: displayPath) else { return }
+        for name in names.sorted() {
+            if state.truncated || state.timedOut { return }
+            if now() > state.deadline || Task.isCancelled {
+                state.timedOut = true
+                return
+            }
+            if !includeHidden, name.hasPrefix(".") { continue }
+            if FilesAccess.isPhotosLibraryName(name) { continue }
+            guard let info = try? folder.status(of: name, displayPath: displayPath) else { continue }
+            state.scanned += 1
+            let itemPath = displayPath + "/" + name
+            let isDirectory = info.isDirectory
+            let isSymlink = info.isSymbolicLink
 
-                let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey, .fileSizeKey])
-                let isDirectory = values?.isDirectory == true
-                let isSymlink = values?.isSymbolicLink == true
-                let relative = url.pathComponents.dropFirst(root.root.url.pathComponents.count)
-                let displayPath = ([root.root.name] + relative).joined(separator: "/")
-
-                if let name, !FilesGlob.nameMatches(name, name: itemName) { continue }
-
+            if query.map({ FilesGlob.nameMatches($0, name: name) }) ?? true {
                 if let content {
                     // Content is searched in files only, and never through a symbolic link.
-                    guard !isDirectory, !isSymlink else { continue }
-                    if (values?.fileSize ?? 0) > FilesLimits.maximumSearchFileBytes {
-                        skippedLarge += 1
-                        continue
-                    }
-                    for hit in lines(of: url, containing: content) {
-                        if matches.count >= limit {
-                            truncated = true
-                            break search
+                    if info.isRegularFile {
+                        if Int(info.st_size) > FilesLimits.maximumSearchFileBytes {
+                            state.skippedLarge += 1
+                        } else {
+                            beforeOpening(name)
+                            for hit in lines(in: folder, named: name, containing: content) {
+                                if state.matches.count >= state.limit {
+                                    state.truncated = true
+                                    return
+                                }
+                                state.matches.append([
+                                    "path": .string(itemPath),
+                                    "line": .int(hit.line),
+                                    "text": .string(hit.text),
+                                ])
+                            }
                         }
-                        matches.append([
-                            "path": .string(displayPath),
-                            "line": .int(hit.line),
-                            "text": .string(hit.text),
-                        ])
                     }
                 } else {
-                    if matches.count >= limit {
-                        truncated = true
-                        break search
+                    if state.matches.count >= state.limit {
+                        state.truncated = true
+                        return
                     }
-                    matches.append([
-                        "path": .string(displayPath),
+                    state.matches.append([
+                        "path": .string(itemPath),
                         "type": .string(isSymlink ? "symlink" : isDirectory ? "directory" : "file"),
                     ])
                 }
             }
-        }
 
-        return [
-            "matches": .array(matches),
-            "truncated": .bool(truncated),
-            "timedOut": .bool(timedOut),
-            "scanned": .int(scanned),
-            "skippedLargeFiles": .int(skippedLarge),
-        ]
+            if isDirectory {
+                beforeOpening(name)
+                // A folder that became a link, or can't be opened, is skipped.
+                guard let child = try? folder.child(name, displayPath: itemPath) else { continue }
+                walk(
+                    child,
+                    displayPath: itemPath,
+                    name: query,
+                    content: content,
+                    includeHidden: includeHidden,
+                    now: now,
+                    beforeOpening: beforeOpening,
+                    state: &state
+                )
+            }
+        }
     }
 
-    /// The lines of a text file that contain `needle`, ignoring case.
-    /// Binary files and files that aren't UTF-8 or Windows text have none.
-    static func lines(of url: URL, containing needle: String) -> [(line: Int, text: String)] {
-        guard let data = try? Data(contentsOf: url, options: .mappedIfSafe),
-            let detected = FilesText.detect(sample: data.prefix(8192), isWholeFile: data.count <= 8192),
+    /// The lines of a text file that contain `needle`, ignoring case, read from a descriptor opened without
+    /// following links. Binary files and files that aren't UTF-8 or Windows text have none.
+    static func lines(
+        in folder: FilesDirectory,
+        named name: String,
+        containing needle: String
+    ) -> [(line: Int, text: String)] {
+        guard let descriptor = try? folder.openFile(name, flags: O_RDONLY | O_NONBLOCK, displayPath: name) else {
+            return []
+        }
+        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+        defer { try? handle.close() }
+        var info = Darwin.stat()
+        guard fstat(descriptor, &info) == 0, info.isRegularFile,
+            Int(info.st_size) <= FilesLimits.maximumSearchFileBytes,
+            let data = try? handle.read(upToCount: FilesLimits.maximumSearchFileBytes + 1)
+        else { return [] }
+        return lines(in: data, containing: needle)
+    }
+
+    static func lines(in data: Data, containing needle: String) -> [(line: Int, text: String)] {
+        guard let detected = FilesText.detect(sample: data.prefix(8192), isWholeFile: data.count <= 8192),
             detected.encoding == .utf8 || detected.encoding == .windows1252,
             let text = String(data: data, encoding: detected.encoding.stringEncoding)
         else { return [] }
@@ -559,18 +643,51 @@ enum FilesOperations {
 
     /// Moves an item to the Trash, from which the person can put it back.
     ///
-    /// The Trash API takes a path, so the item's folder is opened and checked first,
-    /// and the path is built from where that descriptor points.
-    static func trash(_ item: FilesAccess.Resolved) throws -> Value {
+    /// The Trash API takes a path, and a sandboxed app can't rename into the real Trash by descriptor:
+    /// `~/.Trash` is outside the app's container and outside every folder that the person shared.
+    /// So the item is pinned instead. A descriptor to the item is opened from its folder's descriptor,
+    /// the path is built from where that folder points, and the item at the path must be the pinned one
+    /// just before the move. After the move the pinned descriptor says where the item went (`F_GETPATH`
+    /// follows the file), and if that isn't the Trash, something else was swapped in and trashed:
+    /// iMCP puts it back where it was and reports it.
+    /// - Parameter beforeMove: Called just before the move. Tests use it to swap the item.
+    static func trash(_ item: FilesAccess.Resolved, beforeMove: () -> Void = {}) throws -> Value {
         guard !item.isRoot, let name = item.canonicalComponents.last else {
             throw FilesError.invalidPath("a shared folder can't be trashed: remove it in iMCP's Files settings")
         }
         let parent = try FilesDirectory.openParent(of: item)
-        guard try parent.status(of: name, displayPath: item.displayPath) != nil else {
+        guard let found = try parent.status(of: name, displayPath: item.displayPath) else {
             throw FilesError.notFound(item.displayPath)
         }
+        // O_EVTONLY needs no read permission, and O_SYMLINK pins a link itself and not what it points to.
+        let pin = openat(parent.fd, name, O_EVTONLY | O_SYMLINK | O_CLOEXEC)
+        guard pin >= 0 else { throw FilesError.posix(errno, item.displayPath) }
+        defer { close(pin) }
+        func isPinned(_ other: stat) -> Bool {
+            var pinned = Darwin.stat()
+            return fstat(pin, &pinned) == 0 && pinned.st_dev == other.st_dev && pinned.st_ino == other.st_ino
+        }
+        guard isPinned(found) else { throw FilesError.changedWhileWorking(item.displayPath) }
+
+        beforeMove()
+        guard let current = try parent.status(of: name, displayPath: item.displayPath), isPinned(current) else {
+            throw FilesError.changedWhileWorking(item.displayPath)
+        }
         let url = URL(fileURLWithPath: parent.path).appendingPathComponent(name)
-        try FileManager.default.trashItem(at: url, resultingItemURL: nil)
+        var trashed: NSURL?
+        try FileManager.default.trashItem(at: url, resultingItemURL: &trashed)
+
+        var buffer = [CChar](repeating: 0, count: Int(MAXPATHLEN))
+        if fcntl(pin, F_GETPATH, &buffer) == 0 {
+            let components = URL(fileURLWithPath: String(cString: buffer)).pathComponents
+            if !components.contains(where: { $0 == ".Trash" || $0 == ".Trashes" }) {
+                // Another item was trashed in its place. Put it back, and leave the pinned one where it is.
+                if let trashed = trashed as URL?, !FilesAccess.lexists(url.path) {
+                    try? FileManager.default.moveItem(at: trashed, to: url)
+                }
+                throw FilesError.changedWhileWorking(item.displayPath)
+            }
+        }
         return ["path": .string(item.displayPath), "trashed": true]
     }
 

@@ -387,7 +387,11 @@ final class FilesTests: XCTestCase {
 
     func testWriteChecksTheModifiedDate() throws {
         let url = try write("v1", to: "doc.txt")
-        let stat = try FilesOperations.stat(try access.resolve("Shared/doc.txt"), isSymlink: false, includeHash: false)
+        let stat = try FilesOperations.stat(
+            try access.resolve("Shared/doc.txt"),
+            linkItem: try access.resolve("Shared/doc.txt", followingFinalSymlink: false),
+            includeHash: false
+        )
         let modified = try XCTUnwrap(FilesDate.parse(try XCTUnwrap(stat.objectValue?["modified"]?.stringValue)))
 
         // Someone else edits the file after it was read.
@@ -722,5 +726,196 @@ final class FilesTests: XCTestCase {
 
         XCTAssertThrowsError(try FilesOperations.write(resolved, content: "x", overwrite: false, precondition: .init()))
         XCTAssertFalse(FileManager.default.fileExists(atPath: outside.path))
+    }
+
+    // MARK: - Search, stat, and trash under swaps
+
+    func testASearchDoesNotFollowAFolderSwappedForALinkWhileItRuns() throws {
+        try FileManager.default.createDirectory(
+            at: shared.appendingPathComponent("sub"),
+            withIntermediateDirectories: true
+        )
+        _ = try write("needle", to: "a.txt", in: shared.appendingPathComponent("sub"))
+        _ = try write("needle", to: "secret.txt", in: sibling)
+
+        var swapped = false
+        let result = try FilesOperations.search(
+            in: [try access.resolve("Shared")],
+            name: nil,
+            content: "needle",
+            includeHidden: false,
+            limit: 10,
+            seconds: 5,
+            beforeOpening: { name in
+                guard name == "sub", !swapped else { return }
+                swapped = true
+                try? self.swapFolderForLink("sub", to: self.sibling)
+            }
+        )
+        XCTAssertTrue(swapped)
+        XCTAssertEqual(result.objectValue?["matches"]?.arrayValue?.count, 0)
+    }
+
+    func testASearchDoesNotReadAFileSwappedForALinkWhileItRuns() throws {
+        let outside = try write("needle", to: "secret.txt", in: sibling)
+        _ = try write("needle", to: "f.txt")
+        let result = try FilesOperations.search(
+            in: [try access.resolve("Shared")],
+            name: nil,
+            content: "needle",
+            includeHidden: false,
+            limit: 10,
+            seconds: 5,
+            beforeOpening: { name in
+                guard name == "f.txt" else { return }
+                try? FileManager.default.removeItem(at: self.shared.appendingPathComponent("f.txt"))
+                try? self.link("f.txt", to: outside)
+            }
+        )
+        XCTAssertEqual(result.objectValue?["matches"]?.arrayValue?.count, 0)
+    }
+
+    func testStatRefusesAFolderSwappedForALinkAfterTheCheck() throws {
+        try FileManager.default.createDirectory(
+            at: shared.appendingPathComponent("sub"),
+            withIntermediateDirectories: true
+        )
+        _ = try write("x", to: "f.txt", in: shared.appendingPathComponent("sub"))
+        _ = try write("y", to: "f.txt", in: sibling)
+        let item = try access.resolve("Shared/sub/f.txt")
+        let link = try access.resolve("Shared/sub/f.txt", followingFinalSymlink: false)
+        try swapFolderForLink("sub", to: sibling)
+        XCTAssertThrowsError(try FilesOperations.stat(item, linkItem: link, includeHash: true))
+    }
+
+    func testStatReportsLinksAndHashesThroughTheDescriptor() throws {
+        _ = try write("abc", to: "a.txt")
+        try link("alias", to: shared.appendingPathComponent("a.txt"))
+        let plain = try FilesOperations.stat(
+            try access.resolve("Shared/a.txt"),
+            linkItem: try access.resolve("Shared/a.txt", followingFinalSymlink: false),
+            includeHash: true
+        )
+        XCTAssertEqual(plain.objectValue?["isSymlink"], false)
+        XCTAssertEqual(plain.objectValue?["sha256"], .string(FilesHash.sha256(of: Data("abc".utf8))))
+        let alias = try FilesOperations.stat(
+            try access.resolve("Shared/alias"),
+            linkItem: try access.resolve("Shared/alias", followingFinalSymlink: false),
+            includeHash: false
+        )
+        XCTAssertEqual(alias.objectValue?["isSymlink"], true)
+        XCTAssertEqual(alias.objectValue?["path"], "Shared/alias")
+        let root = try FilesOperations.stat(
+            try access.resolve("Shared"),
+            linkItem: try access.resolve("Shared"),
+            includeHash: false
+        )
+        XCTAssertEqual(root.objectValue?["type"], "directory")
+    }
+
+    func testAPipeInASharedFolderIsRefusedAndNeverBlocks() throws {
+        let pipe = shared.appendingPathComponent("pipe")
+        XCTAssertEqual(mkfifo(pipe.path, 0o644), 0)
+        _ = try write("needle", to: "plain.txt")
+
+        XCTAssertThrowsError(try read("Shared/pipe")) {
+            XCTAssertEqual($0 as? FilesError, .notAFile("Shared/pipe"))
+        }
+        XCTAssertThrowsError(try writeFile("Shared/pipe", "x", overwrite: true))
+        XCTAssertThrowsError(
+            try FilesOperations.append(try access.resolve("Shared/pipe"), content: "x", createIfMissing: true)
+        )
+        let stat = try FilesOperations.stat(
+            try access.resolve("Shared/pipe"),
+            linkItem: try access.resolve("Shared/pipe", followingFinalSymlink: false),
+            includeHash: false
+        )
+        XCTAssertEqual(stat.objectValue?["type"], "other")
+        XCTAssertThrowsError(
+            try FilesOperations.stat(
+                try access.resolve("Shared/pipe"),
+                linkItem: try access.resolve("Shared/pipe", followingFinalSymlink: false),
+                includeHash: true
+            )
+        )
+        let listing = try FilesOperations.list(
+            try access.resolve("Shared"),
+            glob: "pipe",
+            includeHidden: false,
+            offset: 0,
+            limit: 10
+        )
+        XCTAssertEqual(listing.objectValue?["entries"]?.arrayValue?.first?.objectValue?["type"], "other")
+
+        let found = try FilesOperations.search(
+            in: [try access.resolve("Shared")],
+            name: nil,
+            content: "needle",
+            includeHidden: false,
+            limit: 10,
+            seconds: 5
+        )
+        XCTAssertEqual(found.objectValue?["matches"]?.arrayValue?.count, 1)
+    }
+
+    private func removeFromTrash(_ name: String) {
+        if let trash = try? FileManager.default.url(
+            for: .trashDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: false
+        ) {
+            try? FileManager.default.removeItem(at: trash.appendingPathComponent(name))
+        }
+    }
+
+    func testTrashMovesThePinnedItem() throws {
+        let name = "imcp-trash-\(UUID().uuidString).txt"
+        defer { removeFromTrash(name) }
+        let url = try write("x", to: name)
+        let result = try FilesOperations.trash(try access.resolve("Shared/\(name)", followingFinalSymlink: false))
+        XCTAssertEqual(result.objectValue?["trashed"], true)
+        XCTAssertFalse(FilesAccess.lexists(url.path))
+    }
+
+    func testTrashPutsBackAnItemThatWasSwappedInAfterTheCheck() throws {
+        let name = "imcp-trash-\(UUID().uuidString).txt"
+        defer { removeFromTrash(name) }
+        let outside = try write("outside", to: "outside.txt", in: sibling)
+        let url = try write("original", to: name)
+        let item = try access.resolve("Shared/\(name)", followingFinalSymlink: false)
+
+        XCTAssertThrowsError(
+            try FilesOperations.trash(
+                item,
+                beforeMove: {
+                    // Another process moves the file away and puts a link to an outside file in its place.
+                    try? FileManager.default.moveItem(at: url, to: self.shared.appendingPathComponent("moved-away.txt"))
+                    try? self.link(name, to: outside)
+                }
+            )
+        ) { XCTAssertEqual($0 as? FilesError, .changedWhileWorking("Shared/\(name)")) }
+
+        // What was trashed is back where it was, and nothing outside was touched.
+        XCTAssertNotNil(try? FileManager.default.destinationOfSymbolicLink(atPath: url.path))
+        XCTAssertEqual(try text(at: outside), "outside")
+        XCTAssertEqual(try text(at: shared.appendingPathComponent("moved-away.txt")), "original")
+    }
+
+    func testTrashRefusesAnItemSwappedBeforeThePinIsChecked() throws {
+        let name = "imcp-trash-\(UUID().uuidString).txt"
+        defer { removeFromTrash(name) }
+        let url = try write("original", to: name)
+        let item = try access.resolve("Shared/\(name)", followingFinalSymlink: false)
+        XCTAssertThrowsError(
+            try FilesOperations.trash(
+                item,
+                beforeMove: {
+                    try? FileManager.default.removeItem(at: url)
+                    _ = try? self.write("replacement", to: name)
+                }
+            )
+        ) { XCTAssertEqual($0 as? FilesError, .changedWhileWorking("Shared/\(name)")) }
+        XCTAssertEqual(try text(at: url), "replacement")
     }
 }

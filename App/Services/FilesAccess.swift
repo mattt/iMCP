@@ -35,7 +35,7 @@ enum FilesError: Error, LocalizedError, Equatable {
         case ENOENT: return .notFound(path)
         case ENOTDIR: return .notADirectory(path)
         case EEXIST, ENOTEMPTY: return .alreadyExists(path)
-        case EISDIR: return .notAFile(path)
+        case EISDIR, ENXIO: return .notAFile(path)
         default: return .invalidArgument("\"\(path)\": \(String(cString: strerror(code)))")
         }
     }
@@ -300,6 +300,19 @@ final class FilesDirectory {
         )
     }
 
+    /// Opens a subfolder, which fails if it is a link.
+    func child(_ name: String, displayPath: String) throws -> FilesDirectory {
+        let next = openat(fd, name, Self.flags)
+        guard next >= 0 else {
+            var code = errno
+            if code == ENOTDIR, let info = try? status(of: name, displayPath: displayPath), info.isSymbolicLink {
+                code = ELOOP
+            }
+            throw FilesError.posix(code, displayPath)
+        }
+        return FilesDirectory(fd: next, path: path + "/" + name)
+    }
+
     /// The names of the entries of the folder, read through the descriptor.
     func entryNames(displayPath: String) throws -> [String] {
         let copy = dup(fd)
@@ -327,10 +340,19 @@ final class FilesDirectory {
         return nil
     }
 
-    /// Opens `name` in the folder, which fails if it is a link.
+    /// Opens a regular file in the folder, which fails if it is a link or anything else.
+    ///
+    /// Opening a pipe or a device can block, so the open doesn't wait, the type is checked on the descriptor,
+    /// and only then does the descriptor go back to blocking.
     func openFile(_ name: String, flags: Int32, mode: mode_t = 0o644, displayPath: String) throws -> Int32 {
-        let file = openat(fd, name, flags | O_NOFOLLOW | O_CLOEXEC, mode)
+        let file = openat(fd, name, flags | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK, mode)
         guard file >= 0 else { throw FilesError.posix(errno, displayPath) }
+        var info = stat()
+        guard fstat(file, &info) == 0, info.isRegularFile else {
+            close(file)
+            throw FilesError.notAFile(displayPath)
+        }
+        _ = fcntl(file, F_SETFL, fcntl(file, F_GETFL) & ~O_NONBLOCK)
         return file
     }
 }

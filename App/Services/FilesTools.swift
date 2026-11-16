@@ -209,10 +209,11 @@ enum FilesTools {
                 let path = try requiredString("path", in: arguments)
                 let includeHash = try bool("includeHash", in: arguments) ?? false
                 return try await run(provider) { access in
-                    let item = try access.resolve(path)
-                    let link = try access.resolve(path, followingFinalSymlink: false)
-                    let isSymlink = (try? FileManager.default.destinationOfSymbolicLink(atPath: link.url.path)) != nil
-                    return try FilesOperations.stat(item, isSymlink: isSymlink, includeHash: includeHash)
+                    try FilesOperations.stat(
+                        try access.resolve(path),
+                        linkItem: try access.resolve(path, followingFinalSymlink: false),
+                        includeHash: includeHash
+                    )
                 }
             },
 
