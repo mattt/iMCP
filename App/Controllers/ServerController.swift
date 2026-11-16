@@ -289,6 +289,8 @@ final class ServerController: ObservableObject {
     @AppStorage("remoteAccessPort") private var remoteAccessPortValue = Int(RemoteAccessServer.defaultPort)
     /// The host name for iMCP's node, or empty for one made from the Mac's name.
     @AppStorage("remoteAccessHostname") private var remoteAccessHostnameValue = ""
+    /// Whether the server is also open to the internet through Tailscale Funnel. Off by default.
+    @AppStorage("remoteAccessFunnelEnabled") private var remoteAccessFunnelEnabled = false
     @Published private(set) var remoteAccessState: RemoteAccessServer.State = .off
     private let tokenStore = AccessTokenStore.shared
     /// Applies remote access settings in the order that they change.
@@ -461,6 +463,16 @@ final class ServerController: ObservableObject {
         }
     }
 
+    var isRemoteAccessFunnelEnabled: Bool {
+        get { remoteAccessFunnelEnabled }
+        set {
+            guard newValue != remoteAccessFunnelEnabled else { return }
+            objectWillChange.send()
+            remoteAccessFunnelEnabled = newValue
+            applyRemoteAccessConfiguration()
+        }
+    }
+
     var remoteAccessPort: Int {
         get { remoteAccessPortValue }
         set {
@@ -590,7 +602,8 @@ final class ServerController: ObservableObject {
         let configuration = RemoteAccessServer.Configuration(
             isEnabled: remoteAccessEnabled,
             port: UInt16(clamping: remoteAccessPortValue),
-            hostname: remoteAccessHostname
+            hostname: remoteAccessHostname,
+            funnelEnabled: remoteAccessFunnelEnabled
         )
         afterRemoteAccessConfiguration { await $0.configure(configuration) }
     }

@@ -25,6 +25,27 @@ enum HTTPRequestParser {
     static let maximumHeaderLength = 16 * 1024
     static let maximumBodyLength = 8 * 1024 * 1024
 
+    /// The sizes that a request may reach.
+    struct Limits: Equatable, Sendable {
+        var maximumHeaderLength: Int
+        var maximumBodyLength: Int
+        var maximumHeaderFields: Int
+
+        /// For devices on the owner's tailnet.
+        static let tailnet = Limits(
+            maximumHeaderLength: HTTPRequestParser.maximumHeaderLength,
+            maximumBodyLength: HTTPRequestParser.maximumBodyLength,
+            maximumHeaderFields: 200
+        )
+
+        /// For anyone on the internet, such as through Tailscale Funnel.
+        static let publicInternet = Limits(
+            maximumHeaderLength: 8 * 1024,
+            maximumBodyLength: 1024 * 1024,
+            maximumHeaderFields: 50
+        )
+    }
+
     enum Result: Equatable {
         /// The buffer doesn't hold a whole request yet.
         /// `expectsContinue` is true when the client waits for `100 Continue` before it sends the body.
@@ -37,15 +58,15 @@ enum HTTPRequestParser {
 
     private static let headerTerminator = Data("\r\n\r\n".utf8)
 
-    static func parse(_ buffer: Data) -> Result {
+    static func parse(_ buffer: Data, limits: Limits = .tailnet) -> Result {
         guard let terminator = buffer.range(of: headerTerminator) else {
-            if buffer.count > maximumHeaderLength {
+            if buffer.count > limits.maximumHeaderLength {
                 return .failure(status: 431, reason: "Request header fields are too large.")
             }
             return .incomplete(expectsContinue: false)
         }
         let headerLength = terminator.upperBound - buffer.startIndex
-        guard headerLength <= maximumHeaderLength else {
+        guard headerLength <= limits.maximumHeaderLength else {
             return .failure(status: 431, reason: "Request header fields are too large.")
         }
         guard let head = String(data: buffer[buffer.startIndex ..< terminator.lowerBound], encoding: .utf8) else {
@@ -62,6 +83,9 @@ enum HTTPRequestParser {
             return .failure(status: 505, reason: "Only HTTP/1.1 is supported.")
         }
 
+        guard lines.count <= limits.maximumHeaderFields else {
+            return .failure(status: 431, reason: "Request header fields are too large.")
+        }
         var headers: [String: String] = [:]
         for line in lines {
             guard let colon = line.firstIndex(of: ":") else {
@@ -97,7 +121,7 @@ enum HTTPRequestParser {
         } else {
             contentLength = 0
         }
-        guard contentLength <= maximumBodyLength else {
+        guard contentLength <= limits.maximumBodyLength else {
             return .failure(status: 413, reason: "The request body is too large.")
         }
 
@@ -177,6 +201,7 @@ enum HTTPResponseEncoder {
         case 413: "Content Too Large"
         case 415: "Unsupported Media Type"
         case 421: "Misdirected Request"
+        case 429: "Too Many Requests"
         case 431: "Request Header Fields Too Large"
         case 500: "Internal Server Error"
         case 503: "Service Unavailable"

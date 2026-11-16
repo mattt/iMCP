@@ -1,6 +1,7 @@
 import Foundation
 import JSONSchema
 import MCP
+import Network
 import XCTest
 
 final class HTTPRequestParserTests: XCTestCase {
@@ -903,6 +904,168 @@ final class RemoteAccessAuthorizationTests: XCTestCase {
 
     // MARK: Helpers
 
+    // MARK: Funnel
+
+    private func makeFunnelServer(
+        store: AccessTokenStore,
+        node: FakeTailnetNode,
+        local: FakeLocalListener
+    ) -> RemoteAccessServer {
+        RemoteAccessServer(
+            tokenStore: store,
+            stateDirectory: URL(filePath: "/nonexistent/Tailscale"),
+            makeNode: { _ in node },
+            makeSessionServer: { _ in MCP.Server(name: "test", version: "1") },
+            makeLocalListener: { local }
+        )
+    }
+
+    func testFunnelIsOffUnlessEnabled() async throws {
+        let node = FakeTailnetNode(state: .running(me), peers: [:])
+        let (store, _) = try makeStore()
+        let local = FakeLocalListener()
+        let states = StateLog()
+        let server = makeFunnelServer(store: store, node: node, local: local)
+        await server.setHandlers(state: { states.append($0) }, tokenUsage: {})
+        await server.configure(.init(isEnabled: true, port: 4627, hostname: "mac-imcp"))
+        try await waitUntil { node.disableFunnelCount == 1 }
+        try await waitUntil {
+            if case .running = states.last { return true }
+            return false
+        }
+
+        XCTAssertEqual(node.funnelPorts, [])
+        guard case .running(let endpoint) = states.last else { return XCTFail("Expected running") }
+        XCTAssertEqual(endpoint.funnel, .off)
+        await server.stop()
+    }
+
+    func testFunnelRequestsNeedATokenWhateverTheirAddress() async throws {
+        let node = FakeTailnetNode(state: .running(me), peers: ["127.0.0.1": owner])
+        let (store, secret) = try makeStore()
+        let local = FakeLocalListener()
+        let states = StateLog()
+        let server = makeFunnelServer(store: store, node: node, local: local)
+        await server.setHandlers(state: { states.append($0) }, tokenUsage: {})
+        await server.configure(.init(isEnabled: true, port: 4627, hostname: "mac-imcp", funnelEnabled: true))
+        try await waitUntil { node.funnelPorts == [54321] }
+        try await waitUntil {
+            if case .running(let endpoint) = states.last, case .active = endpoint.funnel { return true }
+            return false
+        }
+        guard case .running(let endpoint) = states.last else { return XCTFail("Expected running") }
+        XCTAssertEqual(endpoint.funnel, .active(url: "https://mac-imcp.example.ts.net/mcp"))
+
+        // A good token works, and does not bind the token to a device.
+        let accepted = await local.connect(sending: initializeRequest(secret: secret, host: "mac-imcp.example.ts.net"))
+        XCTAssertTrue(accepted.hasPrefix("HTTP/1.1 200 OK\r\n"), accepted)
+        XCTAssertNil(store.all.first?.boundDevice)
+
+        // No token fails, even though the tailnet would trust a device at this address.
+        let noToken = await local.connect(sending: initializeRequest(secret: "", host: "mac-imcp.example.ts.net"))
+        XCTAssertTrue(noToken.hasPrefix("HTTP/1.1 401 Unauthorized\r\n"), noToken)
+        XCTAssertTrue(noToken.contains("Connection: close"), noToken)
+        let wrong = await local.connect(
+            sending: initializeRequest(secret: AccessToken.makeSecret(), host: "mac-imcp.example.ts.net")
+        )
+        XCTAssertTrue(wrong.hasPrefix("HTTP/1.1 401 Unauthorized\r\n"), wrong)
+
+        // Only the public name is accepted, without the tailnet port.
+        for host in ["mac-imcp.example.ts.net:443", "mac-imcp.example.ts.net"] {
+            let response = await local.connect(sending: initializeRequest(secret: secret, host: host))
+            XCTAssertTrue(response.hasPrefix("HTTP/1.1 200 OK\r\n"), host)
+        }
+        for host in ["mac-imcp.example.ts.net:4627", "127.0.0.1", "100.64.0.1", "evil.example"] {
+            let response = await local.connect(sending: initializeRequest(secret: secret, host: host))
+            XCTAssertTrue(response.hasPrefix("HTTP/1.1 421 "), "\(host): \(response)")
+        }
+        let badOrigin = await local.connect(
+            sending: initializeRequest(
+                secret: secret,
+                host: "mac-imcp.example.ts.net",
+                origin: "http://mac-imcp.example.ts.net"
+            )
+        )
+        XCTAssertTrue(badOrigin.hasPrefix("HTTP/1.1 403 Forbidden\r\n"), badOrigin)
+        let goodOrigin = await local.connect(
+            sending: initializeRequest(
+                secret: secret,
+                host: "mac-imcp.example.ts.net",
+                origin: "https://mac-imcp.example.ts.net"
+            )
+        )
+        XCTAssertTrue(goodOrigin.hasPrefix("HTTP/1.1 200 OK\r\n"), goodOrigin)
+
+        await server.stop()
+        // Stopping clears Funnel, so that it doesn't come back on the next start.
+        XCTAssertEqual(node.disableFunnelCount, 1)
+        XCTAssertEqual(local.shutdownCount, 1)
+    }
+
+    func testFunnelRejectsTokensBoundToTailnetDevices() async throws {
+        let node = FakeTailnetNode(state: .running(me), peers: ["100.64.0.2": owner])
+        let (store, secret) = try makeStore()
+        let local = FakeLocalListener()
+        let server = makeFunnelServer(store: store, node: node, local: local)
+        await server.configure(.init(isEnabled: true, port: 4627, hostname: "mac-imcp", funnelEnabled: true))
+        try await waitUntil { node.funnelPorts == [54321] }
+        try await waitUntil { !node.listenedAddresses.isEmpty }
+
+        // The first tailnet session binds the token to the iPad.
+        let bound = try await node.connect(from: "100.64.0.2", sending: initializeRequest(secret: secret))
+        XCTAssertTrue(bound.hasPrefix("HTTP/1.1 200 OK\r\n"), bound)
+        XCTAssertNotNil(store.all.first?.boundDevice)
+
+        try await waitUntil {
+            await server.hasFunnelHost
+        }
+        let response = await local.connect(sending: initializeRequest(secret: secret, host: "mac-imcp.example.ts.net"))
+        XCTAssertTrue(response.hasPrefix("HTTP/1.1 403 Forbidden\r\n"), response)
+        await server.stop()
+    }
+
+    func testFunnelFailureLeavesTheTailnetServerRunning() async throws {
+        let node = FakeTailnetNode(state: .running(me), peers: [:])
+        node.funnelError = URLError(.userAuthenticationRequired)
+        let (store, _) = try makeStore()
+        let local = FakeLocalListener()
+        let states = StateLog()
+        let server = makeFunnelServer(store: store, node: node, local: local)
+        await server.setHandlers(state: { states.append($0) }, tokenUsage: {})
+        await server.configure(.init(isEnabled: true, port: 4627, hostname: "mac-imcp", funnelEnabled: true))
+        try await waitUntil {
+            if case .running(let endpoint) = states.last, case .failed = endpoint.funnel { return true }
+            return false
+        }
+        XCTAssertEqual(node.listenedAddresses, ["100.64.0.1:4627"])
+        XCTAssertEqual(local.shutdownCount, 1)
+        await server.stop()
+    }
+
+    func testFunnelBlocksRepeatedBadTokensButNotGoodOnes() async throws {
+        let node = FakeTailnetNode(state: .running(me), peers: [:])
+        let (store, secret) = try makeStore()
+        let local = FakeLocalListener()
+        let server = makeFunnelServer(store: store, node: node, local: local)
+        await server.configure(.init(isEnabled: true, port: 4627, hostname: "mac-imcp", funnelEnabled: true))
+        try await waitUntil { node.funnelPorts == [54321] }
+        try await waitUntil { await server.hasFunnelHost }
+
+        var statuses: [String] = []
+        for _ in 0 ..< FailedAuthLimiter().maximumFailures + 2 {
+            let response = await local.connect(
+                sending: initializeRequest(secret: "imcp_bad", host: "mac-imcp.example.ts.net")
+            )
+            statuses.append(String(response.prefix(12)))
+        }
+        XCTAssertEqual(statuses.first, "HTTP/1.1 401")
+        XCTAssertEqual(statuses.last, "HTTP/1.1 429")
+
+        let good = await local.connect(sending: initializeRequest(secret: secret, host: "mac-imcp.example.ts.net"))
+        XCTAssertTrue(good.hasPrefix("HTTP/1.1 200 OK\r\n"), good)
+        await server.stop()
+    }
+
     private func makeStore() throws -> (AccessTokenStore, String) {
         let suite = "RemoteAccessTests.\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -974,6 +1137,158 @@ final class RemoteAccessAuthorizationTests: XCTestCase {
     }
 }
 
+final class FunnelPolicyTests: XCTestCase {
+    private func makeToken(bound: Bool = false) -> (AccessToken, String) {
+        var (token, secret) = AccessToken.make(name: "Phone", permissions: .readOnly)
+        if bound { token.boundDevice = .init(stableID: "nOwner", name: "iPad") }
+        return (token, secret)
+    }
+
+    private func authorize(
+        _ field: String?,
+        tokens: [AccessToken],
+        limiter: inout FailedAuthLimiter,
+        now: Date = Date()
+    ) -> FunnelPolicy.Decision {
+        FunnelPolicy.authorize(
+            authorizationField: field,
+            lookup: { secret in tokens.first { $0.secretHash == AccessToken.hash(secret) } },
+            limiter: &limiter,
+            now: now
+        )
+    }
+
+    func testAllowListAcceptsOnlyThePublicName() {
+        let validator = FunnelPolicy.originValidator(host: "mac.tail1234.ts.net")
+        func rejection(host: String, origin: String? = nil) -> Int? {
+            var headers = ["Host": host]
+            if let origin { headers["Origin"] = origin }
+            let request = MCP.HTTPRequest(method: "POST", headers: headers, body: nil, path: "/mcp")
+            let context = HTTPValidationContext(
+                httpMethod: "POST",
+                sessionID: nil,
+                isInitializationRequest: false,
+                supportedProtocolVersions: MCP.Version.supported
+            )
+            return validator.validate(request, context: context)?.statusCode
+        }
+        XCTAssertNil(rejection(host: "mac.tail1234.ts.net"))
+        XCTAssertNil(rejection(host: "mac.tail1234.ts.net:443"))
+        XCTAssertNil(rejection(host: "mac.tail1234.ts.net", origin: "https://mac.tail1234.ts.net"))
+        XCTAssertNotNil(rejection(host: "mac.tail1234.ts.net:4627"))
+        XCTAssertNotNil(rejection(host: "other.tail1234.ts.net"))
+        XCTAssertNotNil(rejection(host: "127.0.0.1"))
+        XCTAssertNotNil(rejection(host: "localhost:4627"))
+        XCTAssertNotNil(rejection(host: "mac.tail1234.ts.net", origin: "http://mac.tail1234.ts.net"))
+        XCTAssertNotNil(rejection(host: "mac.tail1234.ts.net", origin: "https://evil.example"))
+    }
+
+    func testNormalizesTheHostAndBuildsTheURL() {
+        XCTAssertEqual(FunnelPolicy.normalizedHost("Mac.Tail1234.ts.net."), "mac.tail1234.ts.net")
+        XCTAssertEqual(FunnelPolicy.publicURL(host: "mac.tail1234.ts.net"), "https://mac.tail1234.ts.net/mcp")
+    }
+
+    func testBearerTokenIsRequiredOnEveryRequest() {
+        let (token, secret) = makeToken()
+        var limiter = FailedAuthLimiter()
+        XCTAssertEqual(authorize("Bearer \(secret)", tokens: [token], limiter: &limiter), .allowed(token))
+        XCTAssertEqual(authorize("bearer \(secret)", tokens: [token], limiter: &limiter), .allowed(token))
+        for field in [nil, "", "Bearer", "Basic \(secret)", "Bearer wrong", secret] {
+            XCTAssertEqual(authorize(field, tokens: [token], limiter: &limiter), .unauthorized, field ?? "nil")
+        }
+    }
+
+    func testTokensBoundToTailnetDevicesAreRejected() {
+        let (token, secret) = makeToken(bound: true)
+        var limiter = FailedAuthLimiter()
+        XCTAssertEqual(authorize("Bearer \(secret)", tokens: [token], limiter: &limiter), .boundToDevice)
+    }
+
+    func testFailedAuthBlocksBadTokensForAWhile() {
+        let (token, secret) = makeToken()
+        var limiter = FailedAuthLimiter(maximumFailures: 3, window: 60, blockDuration: 120)
+        let start = Date(timeIntervalSince1970: 1_000_000)
+        for _ in 0 ..< 3 {
+            XCTAssertEqual(authorize("Bearer x", tokens: [token], limiter: &limiter, now: start), .unauthorized)
+        }
+        XCTAssertEqual(
+            authorize("Bearer x", tokens: [token], limiter: &limiter, now: start.addingTimeInterval(1)),
+            .rateLimited(retryAfter: 119)
+        )
+        // The owner's token still works while others are blocked.
+        XCTAssertEqual(
+            authorize("Bearer \(secret)", tokens: [token], limiter: &limiter, now: start.addingTimeInterval(1)),
+            .allowed(token)
+        )
+        // After the block, bad tokens count again.
+        XCTAssertEqual(
+            authorize("Bearer x", tokens: [token], limiter: &limiter, now: start.addingTimeInterval(121)),
+            .unauthorized
+        )
+    }
+
+    func testOldFailuresDoNotAddUp() {
+        var limiter = FailedAuthLimiter(maximumFailures: 3, window: 60, blockDuration: 60)
+        let start = Date(timeIntervalSince1970: 1_000_000)
+        limiter.recordFailure(now: start)
+        limiter.recordFailure(now: start.addingTimeInterval(10))
+        limiter.recordFailure(now: start.addingTimeInterval(100))
+        XCTAssertNil(limiter.retryAfter(now: start.addingTimeInterval(100)))
+    }
+
+    func testPublicRequestLimitsAreSmallerThanTheTailnet() {
+        let publicLimits = HTTPRequestParser.Limits.publicInternet
+        let tailnet = HTTPRequestParser.Limits.tailnet
+        XCTAssertLessThan(publicLimits.maximumBodyLength, tailnet.maximumBodyLength)
+        XCTAssertLessThan(publicLimits.maximumHeaderLength, tailnet.maximumHeaderLength)
+
+        let tooBig = Data(
+            "POST /mcp HTTP/1.1\r\nContent-Length: \(publicLimits.maximumBodyLength + 1)\r\n\r\n".utf8
+        )
+        guard case .failure(let status, _) = HTTPRequestParser.parse(tooBig, limits: publicLimits) else {
+            return XCTFail("Expected a failure")
+        }
+        XCTAssertEqual(status, 413)
+        // The tailnet's limit still takes the same body.
+        XCTAssertEqual(HTTPRequestParser.parse(tooBig), .incomplete(expectsContinue: false))
+
+        let manyFields =
+            "GET / HTTP/1.1\r\n" + (0 ... publicLimits.maximumHeaderFields).map { "X-\($0): a\r\n" }.joined() + "\r\n"
+        guard case .failure(let fieldStatus, _) = HTTPRequestParser.parse(Data(manyFields.utf8), limits: publicLimits)
+        else { return XCTFail("Expected a failure") }
+        XCTAssertEqual(fieldStatus, 431)
+    }
+
+    func testLoopbackListenerAcceptsAndExchangesBytes() async throws {
+        let listener = try await LoopbackListener.start()
+        defer { listener.shutdown() }
+        XCTAssertNotEqual(listener.port, 0)
+
+        let client = NWConnection(
+            host: "127.0.0.1",
+            port: try XCTUnwrap(NWEndpoint.Port(rawValue: listener.port)),
+            using: .tcp
+        )
+        client.start(queue: .global())
+        defer { client.cancel() }
+        client.send(content: Data("ping".utf8), completion: .contentProcessed { _ in })
+
+        let connection = try await listener.accept()
+        XCTAssertNil(connection.remoteAddress)
+        let received = try await connection.receive(timeout: .seconds(5))
+        XCTAssertEqual(String(decoding: received, as: UTF8.self), "ping")
+        try await connection.send(Data("pong".utf8), timeout: .seconds(5))
+        let reply: Data = await withCheckedContinuation { continuation in
+            client.receive(minimumIncompleteLength: 1, maximumLength: 16) { data, _, _, _ in
+                continuation.resume(returning: data ?? Data())
+            }
+        }
+        XCTAssertEqual(String(decoding: reply, as: UTF8.self), "pong")
+
+        await connection.close()
+    }
+}
+
 /// Waits for a condition that another task makes true.
 private func waitUntil(
     timeout: Duration = .seconds(5),
@@ -1031,6 +1346,10 @@ private final class FakeTailnetNode: TailnetNode, @unchecked Sendable {
     private var _listenedAddresses: [String] = []
     private var _logoutCount = 0
     private var _closeCount = 0
+    private var _funnelPorts: [UInt16] = []
+    private var _disableFunnelCount = 0
+    /// The error that `enableFunnel` throws, such as when the tailnet's policy doesn't allow Funnel.
+    var funnelError: Error?
 
     init(state: TailnetStatus.State, peers: [String: TailnetPeer]) {
         _state = state
@@ -1044,6 +1363,18 @@ private final class FakeTailnetNode: TailnetNode, @unchecked Sendable {
     var listenedAddresses: [String] { lock.withLock { _listenedAddresses } }
     var logoutCount: Int { lock.withLock { _logoutCount } }
     var closeCount: Int { lock.withLock { _closeCount } }
+    var funnelPorts: [UInt16] { lock.withLock { _funnelPorts } }
+    var disableFunnelCount: Int { lock.withLock { _disableFunnelCount } }
+
+    func enableFunnel(localPort: UInt16) async throws -> String {
+        if let funnelError { throw funnelError }
+        lock.withLock { _funnelPorts.append(localPort) }
+        return "Mac-iMCP.example.ts.net."
+    }
+
+    func disableFunnel() async throws {
+        lock.withLock { _disableFunnelCount += 1 }
+    }
 
     func status() async throws -> TailnetStatus {
         TailnetStatus(state: state)
@@ -1143,6 +1474,31 @@ private final class OpenTailnetConnection: TailnetConnection, @unchecked Sendabl
     }
 }
 
+/// A listener on a pretend 127.0.0.1 port, where Funnel forwards public connections.
+private final class FakeLocalListener: LocalForwardListener, @unchecked Sendable {
+    let port: UInt16 = 54321
+    private let inner = FakeTailnetListener()
+    private let lock = NSLock()
+    private var _shutdownCount = 0
+
+    var shutdownCount: Int { lock.withLock { _shutdownCount } }
+
+    func accept() async throws -> any TailnetConnection { try await inner.accept() }
+
+    func shutdown() {
+        lock.withLock { _shutdownCount += 1 }
+        inner.finish()
+    }
+
+    /// Sends the bytes as a forwarded connection, which has no address,
+    /// and returns what the server sends before it closes the connection.
+    func connect(sending request: Data) async -> String {
+        let connection = FakeTailnetConnection(remoteAddress: nil, request: request)
+        inner.yield(connection)
+        return String(decoding: await connection.output(), as: UTF8.self)
+    }
+}
+
 private final class FakeTailnetListener: TailnetListener, @unchecked Sendable {
     private let stream: AsyncStream<any TailnetConnection>
     private let continuation: AsyncStream<any TailnetConnection>.Continuation
@@ -1176,7 +1532,7 @@ private final class FakeTailnetConnection: TailnetConnection, @unchecked Sendabl
     private var isClosed = false
     private var closeWaiters: [CheckedContinuation<Data, Never>] = []
 
-    init(remoteAddress: String, request: Data) {
+    init(remoteAddress: String?, request: Data) {
         self.remoteAddress = remoteAddress
         inbound = request
     }

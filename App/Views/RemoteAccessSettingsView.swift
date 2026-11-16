@@ -65,6 +65,38 @@ struct RemoteAccessSettingsView: View {
                 }
             }
 
+            if serverController.isRemoteAccessEnabled {
+                Section {
+                    Toggle(isOn: funnelBinding) {
+                        Text("Public Access (Funnel)")
+                        Text("Lets clients on the internet use iMCP at a public https address.")
+                    }
+                    if case .running(let endpoint) = serverController.remoteAccessState {
+                        switch endpoint.funnel {
+                        case .active(let url):
+                            LabeledContent("Public URL") {
+                                HStack {
+                                    Text(url)
+                                        .textSelection(.enabled)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                    Button("Copy") { copyToPasteboard(url) }
+                                }
+                            }
+                        case .failed(let reason):
+                            Label(reason, systemImage: "exclamationmark.triangle")
+                                .foregroundStyle(.red)
+                        case .off:
+                            EmptyView()
+                        }
+                    }
+                } footer: {
+                    Text(
+                        "Anyone on the internet can reach the public address, so every request needs an access token, and tokens that belong to a device on your tailnet don't work there. Create a separate token for public access. Funnel needs MagicDNS, HTTPS certificates, and the funnel permission for this device in your Tailscale admin console."
+                    )
+                }
+            }
+
             Section {
                 if let storageError {
                     Label(storageError, systemImage: "exclamationmark.triangle")
@@ -254,6 +286,13 @@ struct RemoteAccessSettingsView: View {
         Binding(
             get: { serverController.isRemoteAccessEnabled },
             set: { serverController.isRemoteAccessEnabled = $0 }
+        )
+    }
+
+    private var funnelBinding: Binding<Bool> {
+        Binding(
+            get: { serverController.isRemoteAccessFunnelEnabled },
+            set: { serverController.isRemoteAccessFunnelEnabled = $0 }
         )
     }
 

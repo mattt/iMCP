@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		485454500000000000000024 /* ../../App/Controllers/FunnelAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 485454500000000000000014 /* ../../App/Controllers/FunnelAccess.swift */; };
 		485454500000000000000023 /* ../../App/Controllers/RemoteAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 485454500000000000000013 /* ../../App/Controllers/RemoteAccess.swift */; };
 		485454500000000000000020 /* RemoteAccessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 485454500000000000000010 /* RemoteAccessTests.swift */; };
 		485454500000000000000021 /* ../../App/Shared/HTTPMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 485454500000000000000011 /* ../../App/Shared/HTTPMessage.swift */; };
@@ -105,6 +106,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		485454500000000000000014 /* ../../App/Controllers/FunnelAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Controllers/FunnelAccess.swift; sourceTree = "<group>"; };
 		485454500000000000000013 /* ../../App/Controllers/RemoteAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Controllers/RemoteAccess.swift; sourceTree = "<group>"; };
 		485454500000000000000010 /* RemoteAccessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteAccessTests.swift; sourceTree = "<group>"; };
 		485454500000000000000011 /* ../../App/Shared/HTTPMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Shared/HTTPMessage.swift; sourceTree = "<group>"; };
@@ -301,6 +303,7 @@
 				485454500000000000000011 /* ../../App/Shared/HTTPMessage.swift */,
 				485454500000000000000012 /* ../../App/Models/AccessToken.swift */,
 				485454500000000000000013 /* ../../App/Controllers/RemoteAccess.swift */,
+				485454500000000000000014 /* ../../App/Controllers/FunnelAccess.swift */,
 				B0D1DEADBEEF000000000005 /* MCPServiceLoop.swift */,
 				5EC5A1E70000000000000001 /* LocalSocket.swift */,
 				5EC5A1E70000000000000004 /* LocalSocketTests.swift */,
@@ -627,6 +630,7 @@
 				485454500000000000000021 /* ../../App/Shared/HTTPMessage.swift in Sources */,
 				485454500000000000000022 /* ../../App/Models/AccessToken.swift in Sources */,
 				485454500000000000000023 /* ../../App/Controllers/RemoteAccess.swift in Sources */,
+				485454500000000000000024 /* ../../App/Controllers/FunnelAccess.swift in Sources */,
 				5EC5A1E70000000000000002 /* LocalSocket.swift in Sources */,
 				5EC5A1E70000000000000005 /* LocalSocketTests.swift in Sources */,
 				5EC5A1E70000000000000007 /* SocketTransport.swift in Sources */,
