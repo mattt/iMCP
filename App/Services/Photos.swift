@@ -165,7 +165,7 @@ final class PhotosService: Service {
             name: "photo_image_fetch",
             description: """
                 Fetch one photo as a JPEG image, scaled to fit maxDimension, \
-                without its metadata or location. \
+                without its location or other metadata. \
                 For a video or a Live Photo, the image is the still frame that Photos shows.
                 """,
             inputSchema: .object(
@@ -1382,7 +1382,9 @@ final class PhotosService: Service {
         return result
     }
 
-    /// Encodes an image as a JPEG with no properties but the compression quality.
+    /// Encodes an image's pixels as a JPEG, with no location or other metadata from the source photo.
+    ///
+    /// ImageIO still writes a small Exif segment with the color space and dimensions.
     static func jpegData(_ image: CGImage, quality: Double) throws -> Data {
         let data = NSMutableData()
         guard
@@ -1400,37 +1402,7 @@ final class PhotosService: Service {
         guard CGImageDestinationFinalize(destination) else {
             throw PhotosError.encodingFailed
         }
-        return removingMetadataSegments(from: data as Data)
-    }
-
-    /// Removes the APP1 (Exif and XMP) and APP13 (IPTC) segments from a JPEG.
-    ///
-    /// ImageIO writes an Exif segment with the color space and dimensions,
-    /// and an IPTC segment, even when the image has no properties.
-    /// The image is sRGB, which is what a JPEG without a color profile is taken to be.
-    /// Returns the data unchanged when it is not a JPEG that this can read.
-    static func removingMetadataSegments(from jpeg: Data) -> Data {
-        let bytes = [UInt8](jpeg)
-        guard bytes.count > 4, bytes[0] == 0xFF, bytes[1] == 0xD8 else { return jpeg }
-        var result: [UInt8] = [0xFF, 0xD8]
-        var index = 2
-        while index + 4 <= bytes.count, bytes[index] == 0xFF {
-            let marker = bytes[index + 1]
-            // The entropy-coded data starts after the start-of-scan segment.
-            if marker == 0xDA {
-                break
-            }
-            let length = Int(bytes[index + 2]) << 8 | Int(bytes[index + 3])
-            let end = index + 2 + length
-            guard length >= 2, end <= bytes.count else { return jpeg }
-            if marker != 0xE1, marker != 0xED {
-                result += bytes[index ..< end]
-            }
-            index = end
-        }
-        guard index + 1 < bytes.count, bytes[index] == 0xFF, bytes[index + 1] == 0xDA else { return jpeg }
-        result += bytes[index...]
-        return Data(result)
+        return data as Data
     }
 
     // MARK: - Contact Sheets

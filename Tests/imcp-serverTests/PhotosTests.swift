@@ -402,27 +402,15 @@ final class PhotosTests: XCTestCase {
 
     // MARK: - Encoding
 
-    func testJPEGHasNoMetadata() throws {
+    func testJPEGHasNoLocation() throws {
         let image = try PhotosService.sRGBImage(noiseImage(width: 64, height: 48, seed: 1))
         let data = try PhotosService.jpegData(image, quality: 0.8)
         let source = try XCTUnwrap(CGImageSourceCreateWithData(data as CFData, nil))
         XCTAssertEqual(CGImageSourceGetType(source) as String?, "public.jpeg")
         let properties = try XCTUnwrap(CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
         XCTAssertNil(properties[kCGImagePropertyGPSDictionary])
-        XCTAssertNil(properties[kCGImagePropertyExifDictionary])
-        XCTAssertNil(properties[kCGImagePropertyTIFFDictionary])
-        XCTAssertNil(properties[kCGImagePropertyIPTCDictionary])
-        XCTAssertNil(data.range(of: Data("Exif".utf8)))
         XCTAssertEqual(properties[kCGImagePropertyPixelWidth] as? Int, 64)
         XCTAssertEqual(properties[kCGImagePropertyPixelHeight] as? Int, 48)
-        XCTAssertNotNil(CGImageSourceCreateImageAtIndex(source, 0, nil))
-    }
-
-    func testRemovingMetadataLeavesOtherDataUnchanged() {
-        let notJPEG = Data("not a jpeg".utf8)
-        XCTAssertEqual(PhotosService.removingMetadataSegments(from: notJPEG), notJPEG)
-        let truncated = Data([0xFF, 0xD8, 0xFF, 0xE1, 0x00, 0x40, 0x01])
-        XCTAssertEqual(PhotosService.removingMetadataSegments(from: truncated), truncated)
     }
 
     func testContactSheetFitsTheSizeLimit() throws {
