@@ -683,10 +683,14 @@ actor HealthObservers {
                     return
                 }
                 Task {
-                    // Concurrent wakes share one sync; HealthKit needs only the changes queued.
-                    await PhoneBackend.shared.sync(.health)
-                    completion()
-                    await PhoneConnection.shared.flushInBackground()
+                    // HealthKit wakes the app briefly; hold a background task until the sync
+                    // and the send finish, so iOS can't suspend the app mid-write.
+                    await BackgroundWork.run("HealthKit sync") {
+                        // Concurrent wakes share one sync; HealthKit needs only the changes queued.
+                        await PhoneBackend.shared.sync(.health)
+                        completion()
+                        await PhoneConnection.shared.flush()
+                    }
                 }
             }
             queries[type.identifier] = query

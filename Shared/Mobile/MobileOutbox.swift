@@ -3,7 +3,7 @@ import Foundation
 /// Changes that iMCP on iOS has collected but the Mac hasn't stored yet,
 /// and the sync state, such as HealthKit anchors, that produced them.
 ///
-/// The outbox lives in the App Group container.
+/// The outbox lives in the app's own Application Support directory, not the App Group container.
 /// Records and the state that follows them are written in one transaction,
 /// so an anchor never advances past changes that aren't queued.
 /// The Mac pulls the oldest batch and acknowledges it after storing it;
@@ -50,9 +50,45 @@ actor MobileOutbox {
         )
     }
 
-    /// The outbox in the App Group container that the app and its extensions share.
+    /// The outbox in the app's own Application Support directory.
+    ///
+    /// It used to live in the App Group container. iOS kills an app with 0xdead10cc
+    /// when it is suspended while holding a SQLite lock on a file in a shared container,
+    /// and background syncs can be suspended mid-write. Nothing else reads the outbox
+    /// (the widget extension has no App Group), so it stays out of the shared container.
     static func shared() throws -> MobileOutbox {
-        try MobileOutbox(url: MobileAppGroup.directory().appendingPathComponent("outbox.sqlite"))
+        let url = try databaseURL(groupContainer: MobileAppGroup.containerURL(), supportDirectory: MobileAppGroup.supportDirectory())
+        migrateFromAppGroup(MobileAppGroup.containerURL(), to: url)
+        return try MobileOutbox(url: url)
+    }
+
+    static let fileName = "outbox.sqlite"
+
+    /// Where the database lives. The App Group container is never used.
+    static func databaseURL(groupContainer: URL?, supportDirectory: URL) throws -> URL {
+        supportDirectory.appendingPathComponent(fileName)
+    }
+
+    /// Moves an outbox that an earlier build left in the App Group container,
+    /// so queued batches and HealthKit anchors survive and nothing is sent twice.
+    /// The old file is checkpointed and closed first, so no lock stays behind in the container.
+    static func migrateFromAppGroup(_ group: URL?, to url: URL) {
+        let manager = FileManager.default
+        guard let group else { return }
+        let old = group.appendingPathComponent(fileName)
+        guard old.standardizedFileURL != url.standardizedFileURL,
+            manager.fileExists(atPath: old.path),
+            !manager.fileExists(atPath: url.path)
+        else { return }
+        if let database = try? MobileDatabase(path: old.path) {
+            try? database.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            database.close()
+        }
+        for suffix in ["", "-wal", "-shm"] {
+            let source = URL(fileURLWithPath: old.path + suffix)
+            guard manager.fileExists(atPath: source.path) else { continue }
+            try? manager.moveItem(at: source, to: URL(fileURLWithPath: url.path + suffix))
+        }
     }
 
     private struct Body: Codable {
@@ -79,6 +115,8 @@ actor MobileOutbox {
         }
         if chunks.isEmpty, !dates.isEmpty || !replacing.isEmpty { chunks = [[]] }
         try database.transaction {
+            // An expired background task cancels the sync; roll back instead of writing.
+            try Task.checkCancellation()
             if let generation, generation != self.generation { throw Superseded() }
             for (index, chunk) in chunks.enumerated() {
                 let last = index == chunks.count - 1
@@ -171,7 +209,7 @@ actor MobileOutbox {
     }
 }
 
-/// The container that iMCP on iOS shares with its extensions.
+/// The container that iMCP on iOS shares with its extensions. It holds preferences only; databases stay out of it.
 enum MobileAppGroup {
     /// The group ID from the `iMCPAppGroup` Info.plist key,
     /// which the build sets from the iOS app's bundle ID.
@@ -179,21 +217,13 @@ enum MobileAppGroup {
         Bundle.main.object(forInfoDictionaryKey: "iMCPAppGroup") as? String
     }
 
-    static func directory() throws -> URL {
-        if let identifier,
-            let url = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: identifier)
-        {
-            return url
-        }
-        // Builds without the App Group entitlement, such as unsigned simulator builds,
-        // keep the outbox in the app's own container.
-        let url = try FileManager.default.url(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask,
-            appropriateFor: nil,
-            create: true
-        )
-        return url
+    static func containerURL() -> URL? {
+        identifier.flatMap { FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: $0) }
+    }
+
+    static func supportDirectory() throws -> URL {
+        try FileManager.default.url(
+            for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
     }
 
     static var defaults: UserDefaults {
