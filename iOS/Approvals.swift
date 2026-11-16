@@ -14,7 +14,8 @@ final class PhoneApprovals: NSObject, ObservableObject, UNUserNotificationCenter
     static let shared = PhoneApprovals()
 
     static let category = "co.dododo.iMCP.approval"
-    private static let approveAction = "approve"
+    // The notification hides the request's details, so it offers only Deny.
+    // Approving happens in the app, where the details and any verification code are shown.
     private static let denyAction = "deny"
 
     @Published private(set) var requests: [RemoteApprovalRequest] = []
@@ -26,11 +27,6 @@ final class PhoneApprovals: NSObject, ObservableObject, UNUserNotificationCenter
     func configureNotifications() {
         let center = UNUserNotificationCenter.current()
         center.delegate = self
-        let approve = UNNotificationAction(
-            identifier: Self.approveAction,
-            title: "Approve",
-            options: [.authenticationRequired]
-        )
         let deny = UNNotificationAction(
             identifier: Self.denyAction,
             title: "Deny",
@@ -39,7 +35,7 @@ final class PhoneApprovals: NSObject, ObservableObject, UNUserNotificationCenter
         center.setNotificationCategories([
             UNNotificationCategory(
                 identifier: Self.category,
-                actions: [approve, deny],
+                actions: [deny],
                 intentIdentifiers: [],
                 options: []
             )
@@ -113,7 +109,6 @@ final class PhoneApprovals: NSObject, ObservableObject, UNUserNotificationCenter
         guard let id = response.notification.request.content.userInfo["id"] as? String else { return }
         let decision: RemoteApprovalDecision
         switch response.actionIdentifier {
-        case Self.approveAction: decision = .approve
         case Self.denyAction: decision = .deny
         default: return  // The person opened the app; the request is on screen.
         }
