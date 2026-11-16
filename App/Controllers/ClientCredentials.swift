@@ -104,6 +104,21 @@ struct ClientRecord: Codable, Equatable, Identifiable, Sendable {
     /// iMCP issues an untrusted credential when it writes a client's settings,
     /// so that the first approval can apply to that credential.
     var isTrusted: Bool
+
+    // The fields below describe an app that the person trusted by its code signature.
+    // A record for an issued credential leaves them `nil`.
+
+    /// The app's designated requirement. A connection from an app that satisfies it is trusted.
+    var requirement: String? = nil
+    var bundleIdentifier: String? = nil
+    var bundlePath: String? = nil
+    var teamIdentifier: String? = nil
+    var teamName: String? = nil
+    /// When a connection from the app last got in without a dialog.
+    var lastConnectedAt: Date? = nil
+
+    /// Whether this records trust in an app's code signature rather than a credential.
+    var isApp: Bool { requirement != nil }
 }
 
 /// Persistent storage for ``ClientRecord`` values.
@@ -402,6 +417,33 @@ final class ClientCredentialStore {
         var hasUnrecognizedCredential: Bool
         /// Whether an earlier version trusted a client with the claimed name.
         var wasTrustedByName: Bool
+        /// The app responsible for the connecting `imcp-server`, read from its code signature.
+        var app: ResponsibleApp? = nil
+
+        /// How the person can trust this client so that it stops asking.
+        enum TrustOffer: Equatable {
+            /// Trust the app's code signature.
+            case signature
+            /// Trust the credential that the client already presents.
+            case credential
+            /// Create a credential and write it into Claude Code's settings.
+            case claudeCodeSetup
+            /// Create a credential for the person to copy into the client's settings.
+            case copiedCredential
+        }
+
+        /// Whether the client says it's Claude Code, which runs inside a terminal or an editor.
+        /// The name is only a claim, so it chooses an offer and never grants trust.
+        var claimsClaudeCode: Bool {
+            let name = claimedName.lowercased()
+            return name.hasPrefix("claude-code") || name.hasPrefix("claude code")
+        }
+
+        var offer: TrustOffer {
+            if let app, app.isTrustableBySignature, !claimsClaudeCode { return .signature }
+            if record != nil { return .credential }
+            return claimsClaudeCode ? .claudeCodeSetup : .copiedCredential
+        }
 
         /// The key for coalescing approval dialogs.
         ///
@@ -409,7 +451,8 @@ final class ClientCredentialStore {
         /// Connections without a recognized credential each get their own,
         /// because nothing shows that they come from the same client.
         func approvalKey(connectionID: UUID) -> String {
-            record.map { "credential:\($0.id)" } ?? "connection:\(connectionID.uuidString)"
+            if let key = signatureKey { return key }
+            return record.map { "credential:\($0.id)" } ?? "connection:\(connectionID.uuidString)"
         }
 
         /// The key for refusing requests for a while after a denial,
@@ -421,7 +464,14 @@ final class ClientCredentialStore {
         /// or claim another client's name to lock that client out.
         /// The limits on open and waiting requests bound such clients instead.
         var cooldownKey: String? {
-            record.map { "credential:\($0.id)" }
+            signatureKey ?? record.map { "credential:\($0.id)" }
+        }
+
+        /// A key for the app, which its code signature identifies,
+        /// or `nil` if the request isn't for signature trust.
+        var signatureKey: String? {
+            guard offer == .signature, let requirement = app?.requirement else { return nil }
+            return "app:\(ClientCredentialStore.appRecordID(requirement: requirement))"
         }
 
         /// What iMCP knows about the client beyond the name it reported.
@@ -453,20 +503,70 @@ final class ClientCredentialStore {
     ///
     /// Only a trusted credential approves a connection.
     /// The claimed name never does, even if an earlier version trusted it.
-    func evaluate(credential: String?, claimedName reportedName: String) -> Decision {
+    func evaluate(credential: String?, claimedName reportedName: String, app: ResponsibleApp? = nil) -> Decision {
         let claimedName = ClientName.sanitized(reportedName)
         let record = record(for: credential)
         if let record, record.isTrusted {
             return .approve(record)
         }
-        return .ask(
-            Request(
-                claimedName: claimedName,
-                record: record,
-                hasUnrecognizedCredential: credential != nil && record == nil,
-                wasTrustedByName: legacyTrustedNames.contains(claimedName)
-            )
+        let request = Request(
+            claimedName: claimedName,
+            record: record,
+            hasUnrecognizedCredential: credential != nil && record == nil,
+            wasTrustedByName: legacyTrustedNames.contains(claimedName),
+            app: app
         )
+        if request.offer == .signature, let app, let trusted = trustedAppRecord(matching: app) {
+            return .approve(trusted)
+        }
+        return .ask(request)
+    }
+
+    // MARK: - Trust by code signature
+
+    /// The identifier of the record for an app with `requirement`.
+    nonisolated static func appRecordID(requirement: String) -> String {
+        SHA256.hash(data: Data(requirement.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// The trusted record whose requirement `app` satisfies, if any.
+    func trustedAppRecord(matching app: ResponsibleApp) -> ClientRecord? {
+        guard let code = app.code else { return nil }
+        return records.values.first { record in
+            guard record.isTrusted, let requirement = record.requirement else { return false }
+            return code.satisfies(requirement)
+        }
+    }
+
+    /// Stores trust for `app`, keyed to its designated requirement.
+    @discardableResult
+    func trustApp(_ app: ResponsibleApp) throws -> ClientRecord {
+        guard app.isTrustableBySignature, let requirement = app.requirement else {
+            preconditionFailure("Only an app that can be trusted by signature is stored")
+        }
+        let record = ClientRecord(
+            id: Self.appRecordID(requirement: requirement),
+            name: app.name,
+            issuedAt: now(),
+            isTrusted: true,
+            requirement: requirement,
+            bundleIdentifier: app.bundleIdentifier,
+            bundlePath: app.bundlePath,
+            teamIdentifier: app.teamIdentifier,
+            teamName: app.isAppleSigned ? "Apple" : app.teamName,
+            lastConnectedAt: now()
+        )
+        try storage.save(record)
+        records[record.id] = record
+        return record
+    }
+
+    /// Records that a trusted app just connected.
+    func noteConnection(id: String) {
+        guard var record = records[id], record.isApp else { return }
+        record.lastConnectedAt = now()
+        try? storage.save(record)
+        records[id] = record
     }
 
     /// Records that the person approved `request` and chose to always trust the client.
@@ -490,11 +590,13 @@ final class ClientCredentialStore {
     ///
     /// If `existing` is a credential that iMCP issued, it's returned unchanged,
     /// so that writing the settings again keeps the client's trust.
-    /// Otherwise iMCP issues an untrusted credential named `name`.
-    func credentialForSettings(name: String, existing: String?) throws -> String {
-        if let existing, record(for: existing) != nil {
+    /// Otherwise iMCP issues a credential named `name`.
+    /// The credential is trusted if `trusted` is `true`, and otherwise needs a first approval.
+    func credentialForSettings(name: String, existing: String?, trusted: Bool = false) throws -> String {
+        if let existing, let record = record(for: existing) {
+            if trusted, !record.isTrusted { try trust(id: record.id) }
             return existing
         }
-        return try issue(name: name, trusted: false).credential
+        return try issue(name: name, trusted: trusted).credential
     }
 }
