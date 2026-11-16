@@ -374,6 +374,16 @@ final class PhotosTests: XCTestCase {
         XCTAssertEqual(PhotosService.Subtype.subtypes(in: []), [])
     }
 
+    #if compiler(>=6.4)
+        func testAnimationSubtypeMatchesTheSDK() {
+            // The Xcode 26 SDK does not declare `.photoAnimation`, so the service uses its value.
+            XCTAssertEqual(
+                PhotosService.Subtype.animation.mediaSubtype.rawValue,
+                PHAssetMediaSubtype.photoAnimation.rawValue
+            )
+        }
+    #endif
+
     func testGeoCoordinatesIncludeKnownElevation() {
         let withElevation = CLLocation(
             coordinate: CLLocationCoordinate2D(latitude: 1, longitude: 2),

@@ -433,7 +433,9 @@ final class PhotosService: Service {
             case .panorama: .photoPanorama
             case .hdr: .photoHDR
             case .depthEffect: .photoDepthEffect
-            case .animation: .photoAnimation
+            // The Xcode 26 SDK does not declare `.photoAnimation`, although macOS 10.15 has it,
+            // so this uses its value, which the Xcode 27 SDK declares as `1 << 6`.
+            case .animation: PHAssetMediaSubtype(rawValue: 1 << 6)
             case .spatial: .spatialMedia
             case .slomo: .videoHighFrameRate
             case .timelapse: .videoTimelapse
