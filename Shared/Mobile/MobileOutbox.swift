@@ -57,7 +57,10 @@ actor MobileOutbox {
     /// and background syncs can be suspended mid-write. Nothing else reads the outbox
     /// (the widget extension has no App Group), so it stays out of the shared container.
     static func shared() throws -> MobileOutbox {
-        let url = try databaseURL(groupContainer: MobileAppGroup.containerURL(), supportDirectory: MobileAppGroup.supportDirectory())
+        let url = try databaseURL(
+            groupContainer: MobileAppGroup.containerURL(),
+            supportDirectory: MobileAppGroup.supportDirectory()
+        )
         migrateFromAppGroup(MobileAppGroup.containerURL(), to: url)
         return try MobileOutbox(url: url)
     }
@@ -223,7 +226,11 @@ enum MobileAppGroup {
 
     static func supportDirectory() throws -> URL {
         try FileManager.default.url(
-            for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )
     }
 
     static var defaults: UserDefaults {

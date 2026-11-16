@@ -167,7 +167,28 @@ final class OutboundConfirmationWindowController: NSObject, NSWindowDelegate {
 struct MacOutboundConfirmer: OutboundConfirming {
     func confirm(_ request: OutboundConfirmationRequest) async -> OutboundConfirmationAnswer {
         await OutboundConfirmation.ask { onAnswer in
-            OutboundConfirmationWindowController.shared.show(request, onAnswer: onAnswer)
+            let closeWindow = OutboundConfirmationWindowController.shared.show(request, onAnswer: onAnswer)
+            // The phone shows every recipient and the full text, and answers once, like the window.
+            // A send has no "always allow", on either device.
+            let id = UUID().uuidString
+            RemoteApprovals.shared.offer(
+                RemoteApprovalRequest(
+                    id: id,
+                    kind: .send,
+                    title: request.action,
+                    details: (request.clientName.map { ["Requested by: \($0)"] } ?? [])
+                        + request.details.map { "\($0.label): \($0.value)" },
+                    body: request.body,
+                    expiresAt: Date().addingTimeInterval(Double(OutboundConfirmation.timeout.components.seconds))
+                )
+            ) { outcome in
+                // The window's own timeout reports an expiry.
+                if outcome != .expired { onAnswer(outcome.isApproved) }
+            }
+            return {
+                RemoteApprovals.shared.withdraw(id)
+                closeWindow()
+            }
         }
     }
 }

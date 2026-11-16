@@ -12,6 +12,7 @@ struct MobileSettingsView: View {
     @State private var error: String?
     @State private var confirmingDelete = false
     @State private var removing: MobileDevice?
+    @AppStorage(RemoteApprovals.defaultsKey) private var approveOnIPhone = true
 
     var body: some View {
         Form {
@@ -45,6 +46,21 @@ struct MobileSettingsView: View {
             } footer: {
                 Text(
                     "Build and install iMCP for iOS with Scripts/install-ios.sh from the iMCP repository. The device connects to this Mac over your local network with encryption, and nothing goes through iCloud or another server."
+                )
+            }
+
+            Section {
+                Toggle(
+                    "Approve on iPhone",
+                    isOn: Binding(
+                        get: { approveOnIPhone && !devices.isEmpty },
+                        set: { approveOnIPhone = $0 }
+                    )
+                )
+                .disabled(devices.isEmpty)
+            } footer: {
+                Text(
+                    "Connection requests, public access requests, and message, email, and call confirmations also show on your paired iPhone, and the first answer from either device wins. A request that nobody answers is denied."
                 )
             }
 

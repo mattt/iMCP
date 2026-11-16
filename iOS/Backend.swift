@@ -87,6 +87,7 @@ actor PhoneBackend: MobileBackend {
     /// The tools that the Mac can call: the shared tools and the sync tools.
     nonisolated var tools: [Tool] {
         MobileTools.all(backend: self) + [
+            approvalTool,
             Tool(
                 name: MobileLink.pullTool,
                 description: "Return the oldest queued batch of changes for the Mac's cache.",
@@ -131,7 +132,9 @@ actor PhoneBackend: MobileBackend {
 
     private func pull(cacheID: String) async throws -> Value {
         let outbox = try openOutbox()
-        let pull = try await BackgroundWork.attempt("Queue changes for the Mac") { try await outbox.pull(cacheID: cacheID) }
+        let pull = try await BackgroundWork.attempt("Queue changes for the Mac") {
+            try await outbox.pull(cacheID: cacheID)
+        }
         if pull.reset {
             log.notice("The Mac's cache changed; sending all data again")
             Task { await self.syncAll() }

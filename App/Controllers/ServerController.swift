@@ -704,10 +704,26 @@ final class ServerController: ObservableObject {
             onApprove: { readOnly in self.finishOAuthApproval(key: key, decision: .approved(readOnly: readOnly)) },
             onDeny: { self.finishOAuthApproval(key: key, decision: .denied) }
         )
+        let request = entry.request
+        var details = ["App: \(request.clientName)", "Its response goes to: \(request.redirectHost)"]
+        if request.redirectsToThisMac {
+            details.append("The response goes to this Mac, so any app on it could receive it.")
+        }
+        details.append("Approving on iPhone gives read-only access. Approve on the Mac to allow changes.")
+        offerOnPhone(
+            key: key,
+            kind: .oauth,
+            title: "Allow \(request.clientName) public access?",
+            details: details,
+            lifetime: oauthApprovals.policy.expiry
+        ) { [weak self] outcome in
+            self?.finishOAuthApproval(key: key, decision: outcome.isApproved ? .approved(readOnly: true) : .denied)
+        }
         NSApp.activate(ignoringOtherApps: true)
     }
 
     private func finishOAuthApproval(key: String, decision: OAuthDecision) {
+        withdrawFromPhone(key: key)
         let resolution = oauthApprovals.resolve(key: key, approved: decision != .denied, now: .now)
         guard let entry = resolution.removed.first else { return }
         log.notice(
@@ -723,6 +739,7 @@ final class ServerController: ObservableObject {
             guard let self else { return }
             let resolution = self.oauthApprovals.expire(now: .now)
             for entry in resolution.removed {
+                self.withdrawFromPhone(key: entry.key)
                 self.approvalWindowController.closeWindow(for: entry.key)
                 for (_, waiter) in entry.waiters { waiter.resume(.denied) }
             }
@@ -749,12 +766,68 @@ final class ServerController: ObservableObject {
                 self.finishApproval(key: key, approved: false, alwaysTrust: false)
             }
         )
+        offerOnPhone(
+            key: key,
+            kind: .connection,
+            title: "Allow \(entry.request.claimedName) to connect?",
+            details: connectionDetails(entry.request),
+            lifetime: approvals.policy.expiry
+        ) { [weak self] outcome in
+            // Approving from the phone allows this connection once; it never trusts the client.
+            self?.finishApproval(key: key, approved: outcome.isApproved, alwaysTrust: false)
+        }
 
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    // MARK: - Approve on iPhone
+
+    /// Approvals that are also on the paired phone, by approval key.
+    /// The phone sees a random ID, never the key, which can derive from a credential.
+    private var phoneApprovalIDs: [String: String] = [:]
+
+    private func offerOnPhone(
+        key: String,
+        kind: RemoteApprovalKind,
+        title: String,
+        details: [String],
+        lifetime: Duration,
+        onResolved: @escaping @MainActor (RemoteApprovalOutcome) -> Void
+    ) {
+        let id = UUID().uuidString
+        let seconds = Double(lifetime.components.seconds)
+        phoneApprovalIDs[key] = id
+        RemoteApprovals.shared.offer(
+            RemoteApprovalRequest(
+                id: id,
+                kind: kind,
+                title: title,
+                details: details,
+                expiresAt: Date().addingTimeInterval(seconds)
+            ),
+            onResolved: onResolved
+        )
+    }
+
+    /// Removes an approval from the phone once the Mac has decided it.
+    private func withdrawFromPhone(key: String) {
+        guard let id = phoneApprovalIDs.removeValue(forKey: key) else { return }
+        RemoteApprovals.shared.withdraw(id)
+    }
+
+    private func connectionDetails(_ request: ClientCredentialStore.Request) -> [String] {
+        var details = ["Client: \(request.claimedName)"]
+        if let app = request.app {
+            details.append("App: \(app.name)")
+            if let signer = app.verifiedSigner { details.append("Signed by: \(signer)") }
+        }
+        details.append(request.identityNote)
+        return details
+    }
+
     /// Applies a person's decision to every connection waiting on the dialog for `key`.
     private func finishApproval(key: String, approved: Bool, alwaysTrust: Bool) {
+        withdrawFromPhone(key: key)
         let resolution = approvals.resolve(key: key, approved: approved, now: .now)
         // The request expired or its connections closed while the dialog was open.
         guard let entry = resolution.removed.first else { return }
@@ -814,7 +887,10 @@ final class ServerController: ObservableObject {
 
         if setUpClaudeCode {
             Task { @MainActor in
-                self.setUpClaudeCodeAfterApproval(request: request, connectionIDs: entry.waiters.compactMap { $0.id as? UUID })
+                self.setUpClaudeCodeAfterApproval(
+                    request: request,
+                    connectionIDs: entry.waiters.compactMap { $0.id as? UUID }
+                )
             }
         } else if let newCredential {
             Task { @MainActor in
@@ -828,6 +904,7 @@ final class ServerController: ObservableObject {
         let resolution = approvals.expire(now: .now)
         for entry in resolution.removed {
             log.notice("Approval request for client \(entry.request.claimedName) expired")
+            withdrawFromPhone(key: entry.key)
             approvalWindowController.closeWindow(for: entry.key)
             for (_, waiter) in entry.waiters {
                 waiter.deny()
@@ -847,6 +924,7 @@ final class ServerController: ObservableObject {
         let (waiter, resolution) = approvals.cancel(id: connectionID)
         waiter?.deny()
         for entry in resolution.removed {
+            withdrawFromPhone(key: entry.key)
             approvalWindowController.closeWindow(for: entry.key)
         }
         resolution.promoted.forEach(presentApproval)
@@ -1001,7 +1079,9 @@ final class ServerController: ObservableObject {
         let request: ClientCredentialStore.Request
         switch credentials.evaluate(credential: credential, claimedName: clientName, app: app) {
         case .approve(let record):
-            log.notice("Client \(clientName) is trusted by \(record.isApp ? "signature" : "credential"), auto-approving")
+            log.notice(
+                "Client \(clientName) is trusted by \(record.isApp ? "signature" : "credential"), auto-approving"
+            )
             credentialSessions.add(connectionID, credentialID: record.id)
             if record.isApp {
                 objectWillChange.send()

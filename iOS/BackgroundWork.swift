@@ -26,7 +26,8 @@ enum BackgroundWork {
 
     /// The throwing form of `run`.
     static func attempt<T: Sendable>(
-        _ name: String, _ operation: @escaping @Sendable () async throws -> T
+        _ name: String,
+        _ operation: @escaping @Sendable () async throws -> T
     ) async throws -> T {
         let result: Result<T, Error> = await run(name) {
             do { return .success(try await operation()) } catch { return .failure(error) }
