@@ -75,7 +75,7 @@ and a [growing list of clients][mcp-clients] that support the
       <img src="Assets/notes.svg" width="48" height="48" alt="" role="presentation"/>
     </th>
     <td><strong>Notes</strong></td>
-    <td>Search notes by text, folder, or date, and read them as Markdown with their checklists, tables, and links.</td>
+    <td>Search notes by text, tag, folder, date, pinned state, or what they contain (checklists, tables, links, attachments), and read them as Markdown. List accounts, folders, tags, attachments, and counts.</td>
   </tr>
   <tr>
     <th width="48">
@@ -732,6 +732,15 @@ It builds on the reverse engineering in Jon Baumann's
 [apple_cloud_notes_parser][apple-cloud-notes-parser]
 and Steve Dunham's [notesutils][notesutils].
 The Notes service reads notes with TopoText and returns them as Markdown.
+
+Besides `notes_fetch` and `notes_read`,
+the service lists accounts, folders (with their paths), tags, attachments, and note counts.
+Each note has a `notes://showNote?identifier=` link that opens it in the Notes app.
+Filters on tags, word counts, and what a note contains
+need to read each candidate note's contents,
+so a call reads at most 500 notes and returns a `nextCursor` to continue.
+Notes can't be created or changed, and smart folders aren't listed yet,
+because TopoText doesn't expose them.
 
 ### JSON-LD for Tool Results
 
