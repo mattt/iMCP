@@ -468,10 +468,10 @@ final class VoicemailService: NSObject, Service, NSOpenSavePanelDelegate {
         let alert = NSAlert()
         alert.messageText = "Voicemail Store Access Required"
         alert.informativeText = """
-            To read your voicemails, we need access to their Data Store folder: \
+            To read your voicemails, iMCP needs access to their Data Store folder: \
             the database, its write-ahead log, and the audio files next to it.
 
-            In the next screen, please select the `Data Store` folder and click "Grant Access".
+            Next, select the `Data Store` folder and click "Grant Access".
             """
         alert.alertStyle = .informational
         alert.addButton(withTitle: "Continue")
