@@ -1,0 +1,36 @@
+{
+  "fill" : {
+    "linear-gradient" : [
+      "srgb:0.60784,0.60784,0.62353,1.00000",
+      "srgb:0.43137,0.43137,0.45098,1.00000"
+    ],
+    "orientation" : { "start" : { "x" : 0.5, "y" : 0 }, "stop" : { "x" : 0.5, "y" : 1 } }
+  },
+  "fill-specializations" : [
+    {
+      "appearance" : "dark",
+      "value" : {
+        "linear-gradient" : [
+          "srgb:0.23529,0.23529,0.25490,1.00000",
+          "srgb:0.09804,0.09804,0.11373,1.00000"
+        ],
+        "orientation" : { "start" : { "x" : 0.5, "y" : 0 }, "stop" : { "x" : 0.5, "y" : 1 } }
+      }
+    }
+  ],
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "glass" : true,
+          "image-name" : "knot.svg",
+          "name" : "knot",
+          "fill" : { "solid" : "srgb:1.00000,1.00000,1.00000,1.00000" }
+        }
+      ],
+      "shadow" : { "kind" : "neutral", "opacity" : 0.5 },
+      "translucency" : { "enabled" : true, "value" : 0.4 }
+    }
+  ],
+  "supported-platforms" : { "squares" : [ "iOS" ] }
+}

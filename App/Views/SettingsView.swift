@@ -27,6 +27,8 @@ struct SettingsView: View {
                     .tag(SettingsPane.general)
                 Label("Clients", systemImage: "app.connected.to.app.below.fill")
                     .tag(SettingsPane.clients)
+                Label("iPhone & iPad", systemImage: "ipad.and.iphone")
+                    .tag(SettingsPane.mobile)
 
                 Section("Services") {
                     ForEach(configs) { config in
@@ -49,6 +51,8 @@ struct SettingsView: View {
                     GeneralSettingsView(isMenuBarExtraInserted: isMenuBarExtraInserted)
                 case .clients:
                     ClientsSettingsView(serverController: serverController)
+                case .mobile:
+                    MobileSettingsView()
                 case .service(let id):
                     if let config = configs.first(where: { $0.id == id }) {
                         ServiceSettingsView(serverController: serverController, config: config)
@@ -123,6 +127,7 @@ private struct NonCollapsibleSidebar: NSViewRepresentable {
 enum SettingsPane: Hashable, RawRepresentable {
     case general
     case clients
+    case mobile
     /// The pane for the service with this ``ServiceConfig/id``.
     case service(String)
 
@@ -130,6 +135,7 @@ enum SettingsPane: Hashable, RawRepresentable {
         switch rawValue {
         case "general": self = .general
         case "clients": self = .clients
+        case "mobile": self = .mobile
         default: self = .service(rawValue)
         }
     }
@@ -138,6 +144,7 @@ enum SettingsPane: Hashable, RawRepresentable {
         switch self {
         case .general: "general"
         case .clients: "clients"
+        case .mobile: "mobile"
         case .service(let id): id
         }
     }
