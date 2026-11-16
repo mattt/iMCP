@@ -92,6 +92,11 @@ and a [growing list of clients][mcp-clients] that support the
     <td>View, create, edit, and delete reminders with customizable due dates, recurrence, priorities, and alerts across different reminder lists, and manage the lists themselves.</td>
   </tr>
   <tr>
+    <th width="48"></th>
+    <td><strong>Safari</strong></td>
+    <td>Search and list the bookmarks in a file that you export from Safari with File &gt; Export &gt; Bookmarks. Safari has no scripting interface for bookmarks, so they can be read from that snapshot but not changed or removed. With "Allow writes" on, add pages to Safari's Reading List. Adding needs Automation permission for Safari.</td>
+  </tr>
+  <tr>
     <th width="48">
       <img src="Assets/shortcuts.svg" width="48" height="48" alt="" role="presentation"/>
     </th>

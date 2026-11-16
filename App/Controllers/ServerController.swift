@@ -62,6 +62,7 @@ enum ServiceRegistry {
             NotesService.shared,
             PhoneService.shared,
             RemindersService.shared,
+            SafariService.shared,
             ShortcutsService.shared,
             UtilitiesService.shared,
             VoiceMemosService.shared,
@@ -88,6 +89,7 @@ enum ServiceRegistry {
         notesEnabled: Binding<Bool>,
         phoneEnabled: Binding<Bool>,
         remindersEnabled: Binding<Bool>,
+        safariEnabled: Binding<Bool>,
         shortcutsEnabled: Binding<Bool>,
         utilitiesEnabled: Binding<Bool>,
         voiceMemosEnabled: Binding<Bool>,
@@ -192,6 +194,14 @@ enum ServiceRegistry {
                 binding: remindersEnabled
             ),
             ServiceConfig(
+                name: "Safari",
+                summary: "Search the bookmarks you export from Safari, and add pages to the Reading List.",
+                iconName: "safari.fill",
+                color: .blue,
+                service: SafariService.shared,
+                binding: safariEnabled
+            ),
+            ServiceConfig(
                 name: "Shortcuts",
                 summary: "List and run the shortcuts on your Mac, with optional text input.",
                 iconName: "square.2.layers.3d",
@@ -262,6 +272,7 @@ final class ServerController: ObservableObject {
     @AppStorage("notesEnabled") private var notesEnabled = false
     @AppStorage("phoneEnabled") private var phoneEnabled = false
     @AppStorage("remindersEnabled") private var remindersEnabled = false
+    @AppStorage("safariEnabled") private var safariEnabled = false
     @AppStorage("shortcutsEnabled") private var shortcutsEnabled = false
     @AppStorage("utilitiesEnabled") private var utilitiesEnabled = true  // Default enabled
     @AppStorage("voiceMemosEnabled") private var voiceMemosEnabled = false
@@ -293,6 +304,7 @@ final class ServerController: ObservableObject {
             notesEnabled: $notesEnabled,
             phoneEnabled: $phoneEnabled,
             remindersEnabled: $remindersEnabled,
+            safariEnabled: $safariEnabled,
             shortcutsEnabled: $shortcutsEnabled,
             utilitiesEnabled: $utilitiesEnabled,
             voiceMemosEnabled: $voiceMemosEnabled,
