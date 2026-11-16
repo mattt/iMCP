@@ -33,6 +33,11 @@ struct ServiceSettingsView: View {
                 HomeHelperSection(isHomeOn: isOn)
             }
 
+            if config.service is NotesService {
+                NotesWritesSection(serverController: serverController)
+                    .disabled(!isOn)
+            }
+
             Section {
                 ForEach(config.service.tools, id: \.name) { tool in
                     Toggle(isOn: toolBinding(tool.name)) {
@@ -130,6 +135,25 @@ struct ServiceIcon: View {
             .background(isOn ? config.color : .gray, in: Circle())
             .animation(.default, value: isOn)
             .accessibilityHidden(true)
+    }
+}
+
+/// The switch that lets clients create notes and folders, which is off until the person turns it on.
+private struct NotesWritesSection: View {
+    @ObservedObject var serverController: ServerController
+    @AppStorage(NotesWriteTools.settingKey) private var isWriteEnabled = false
+
+    var body: some View {
+        Section {
+            Toggle("Allow iMCP to create notes and folders", isOn: $isWriteEnabled)
+                .onChange(of: isWriteEnabled) {
+                    serverController.toolListChanged()
+                }
+        } footer: {
+            Text(
+                "Clients can then create notes and folders in Notes. They can't change or delete the notes that you have. The first time, macOS asks whether iMCP may control Notes."
+            )
+        }
     }
 }
 
