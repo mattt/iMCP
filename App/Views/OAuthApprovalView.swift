@@ -29,7 +29,19 @@ struct OAuthApprovalView: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 Text("Allow \"\(request.clientName)\" to use iMCP over the internet?")
-                LabeledContent("Returns to", value: request.redirectHost)
+                VStack(spacing: 2) {
+                    Text(request.verificationCode)
+                        .font(.system(size: 34, weight: .semibold, design: .monospaced))
+                        .textSelection(.enabled)
+                    Text(request.confirmationPrompt)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity)
+                LabeledContent("Client ID", value: request.clientID)
+                    .font(.callout)
+                LabeledContent("Returns to", value: request.redirectURI)
                     .font(.callout)
                 if request.redirectsToThisMac {
                     Text(

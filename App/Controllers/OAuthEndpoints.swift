@@ -167,7 +167,7 @@ final class OAuthEndpoints: @unchecked Sendable {
             return Self.errorPage("The request repeats a parameter or isn't valid.")
         }
         if let pending = query["pending"] {
-            return await continuePending(pending, host: host)
+            return await continuePending(pending, cookie: message.header("Cookie"), host: host)
         }
         if let wait = authority.admitAuthorization() { return tooManyRequests(wait, json: false) }
         // Errors about the client or the redirect URI show a page, and never redirect,
@@ -212,13 +212,39 @@ final class OAuthEndpoints: @unchecked Sendable {
             let decision = await handler?(request) ?? .denied
             authority.setDecision(decision, for: request.id)
         }
-        return waitingPage(request)
+        // The cookie ties the pending request to this browser: only a poll that sends it can get the code.
+        // SameSite=Lax is enough, because the polls are same-site, and the redirect back to the app leaves this site.
+        var response = waitingPage(request)
+        if let secret = authority.takePollSecret(forPending: request.id),
+            case .raw(let status, var headers, let body) = response
+        {
+            headers["Set-Cookie"] = Self.pollCookie(pendingID: request.id, secret: secret)
+            response = .raw(status: status, headers: headers, body: body)
+        }
+        return response
     }
 
-    private func continuePending(_ id: String, host: String) async -> ServedResponse {
+    static func pollCookieName(pendingID: String) -> String { "imcp_\(pendingID)" }
+
+    static func pollCookie(pendingID: String, secret: String) -> String {
+        "\(pollCookieName(pendingID: pendingID))=\(secret); Path=/authorize; Max-Age=\(Int(OAuthAuthority.pendingLifetime)); HttpOnly; Secure; SameSite=Lax"
+    }
+
+    /// The value of the cookie `name` in a `Cookie` header, if it's there exactly once.
+    static func cookieValue(_ name: String, in header: String?) -> String? {
+        let values = (header ?? "").split(separator: ";").compactMap { part -> String? in
+            let pair = part.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+            guard pair.count == 2, pair[0].trimmingCharacters(in: .whitespaces) == name else { return nil }
+            return String(pair[1]).trimmingCharacters(in: .whitespaces)
+        }
+        return values.count == 1 ? values[0] : nil
+    }
+
+    private func continuePending(_ id: String, cookie: String?, host: String) async -> ServedResponse {
+        let secret = Self.cookieValue(Self.pollCookieName(pendingID: id), in: cookie)
         let deadline = ContinuousClock.now + pollWindow
         while true {
-            switch authority.outcome(ofPending: id) {
+            switch authority.outcome(ofPending: id, pollSecret: secret) {
             case .unknown:
                 return Self.errorPage("This request expired. Start again from the app.")
             case .denied(let uri, let state):
@@ -233,7 +259,7 @@ final class OAuthEndpoints: @unchecked Sendable {
                 return Self.redirect(to: uri, parameters: ["code": code, "state": state, "iss": "https://\(host)"])
             case .waiting:
                 guard ContinuousClock.now < deadline else {
-                    guard let request = authority.approvalRequest(forPending: id) else {
+                    guard let request = authority.approvalRequest(forPending: id, pollSecret: secret) else {
                         return Self.errorPage("This request expired. Start again from the app.")
                     }
                     return waitingPage(request)
@@ -246,6 +272,9 @@ final class OAuthEndpoints: @unchecked Sendable {
     private func waitingPage(_ request: OAuthApprovalRequest) -> ServedResponse {
         let body = """
             <p><strong>\(Self.escape(request.clientName))</strong> wants to use iMCP on your Mac.</p>
+            <p>Confirmation code:</p>
+            <p style="font-size:2.2rem;letter-spacing:.2em;font-family:ui-monospace,monospace"><strong>\(Self.escape(request.verificationCode))</strong></p>
+            <p>Approve only if the iMCP window on your Mac shows this same code.</p>
             <p>Approve or deny it in the iMCP window on your Mac. This page continues by itself.</p>
             <p class="note">After approval, you return to \(Self.escape(request.redirectHost)).</p>
             """

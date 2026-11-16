@@ -1152,7 +1152,8 @@ final class RemoteAccessAuthorizationTests: XCTestCase {
             )
         )
         authority.setDecision(.approved(readOnly: true), for: pending.id)
-        guard case .approved(_, _, let code) = authority.outcome(ofPending: pending.id) else {
+        let secret = authority.takePollSecret(forPending: pending.id)
+        guard case .approved(_, _, let code) = authority.outcome(ofPending: pending.id, pollSecret: secret) else {
             return XCTFail("Expected approval")
         }
         let tokens = try authority.exchange(

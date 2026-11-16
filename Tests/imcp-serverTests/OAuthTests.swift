@@ -42,9 +42,10 @@ final class OAuthTests: XCTestCase {
                 resource: requested ?? resource
             )
         )
-        XCTAssertEqual(authority.outcome(ofPending: request.id), .waiting)
+        let secret = authority.takePollSecret(forPending: request.id)
+        XCTAssertEqual(authority.outcome(ofPending: request.id, pollSecret: secret), .waiting)
         authority.setDecision(.approved(readOnly: readOnly), for: request.id)
-        guard case .approved(_, _, let code) = authority.outcome(ofPending: request.id) else {
+        guard case .approved(_, _, let code) = authority.outcome(ofPending: request.id, pollSecret: secret) else {
             throw XCTSkip("Not approved")
         }
         return code
@@ -417,7 +418,31 @@ final class OAuthTests: XCTestCase {
         XCTAssertEqual(asked.value?.redirectHost, "claude.ai")
 
         let pendingID = try XCTUnwrap(asked.value?.id)
-        let done = await endpoints.handle(get("/authorize", query: "pending=\(pendingID)"), host: host)
+        let cookie = try XCTUnwrap(header(waiting, "Set-Cookie"))
+        for attribute in ["HttpOnly", "Secure", "SameSite=Lax", "Path=/authorize"] {
+            XCTAssertTrue(cookie.contains(attribute), cookie)
+        }
+        let cookieHeader = String(try XCTUnwrap(cookie.split(separator: ";").first))
+        // The page and the owner's request show one code, with the full client ID and redirect URI.
+        let code6 = try XCTUnwrap(asked.value?.verificationCode)
+        XCTAssertEqual(code6.count, 6)
+        XCTAssertTrue(page.contains(code6))
+        XCTAssertTrue(try XCTUnwrap(asked.value?.confirmationPrompt).contains(code6))
+        XCTAssertEqual(asked.value?.redirectURI, redirect)
+        XCTAssertEqual(asked.value?.clientID, clientID)
+        // A poll without the cookie, or with another secret, gets nothing.
+        let bare = await endpoints.handle(get("/authorize", query: "pending=\(pendingID)"), host: host)
+        XCTAssertEqual(bare.statusCode, 400)
+        XCTAssertNil(header(bare, "Location"))
+        let wrong = await endpoints.handle(
+            get("/authorize", query: "pending=\(pendingID)", cookie: "imcp_\(pendingID)=nope"),
+            host: host
+        )
+        XCTAssertNil(header(wrong, "Location"))
+        let done = await endpoints.handle(
+            get("/authorize", query: "pending=\(pendingID)", cookie: cookieHeader),
+            host: host
+        )
         XCTAssertEqual(done.statusCode, 302)
         let location = try XCTUnwrap(header(done, "Location"))
         let components = try XCTUnwrap(URLComponents(string: location))
@@ -427,7 +452,10 @@ final class OAuthTests: XCTestCase {
         XCTAssertEqual(items["iss"], "https://\(host)")
         let code = try XCTUnwrap(items["code"])
         // A finished request can't be replayed.
-        let replay = await endpoints.handle(get("/authorize", query: "pending=\(pendingID)"), host: host)
+        let replay = await endpoints.handle(
+            get("/authorize", query: "pending=\(pendingID)", cookie: cookieHeader),
+            host: host
+        )
         XCTAssertEqual(replay.statusCode, 400)
 
         let tokenResponse = await endpoints.handle(
@@ -471,7 +499,8 @@ final class OAuthTests: XCTestCase {
         let waiting = await endpoints.handle(get("/authorize", query: query), host: host)
         let page = String(decoding: try rawBody(waiting), as: UTF8.self)
         let pendingID = try XCTUnwrap(page.components(separatedBy: "pending=").dropFirst().first?.prefix { $0 != "\"" })
-        let done = await endpoints.handle(get("/authorize", query: "pending=\(pendingID)"), host: host)
+        let cookie = String(try XCTUnwrap(header(waiting, "Set-Cookie")?.split(separator: ";").first))
+        let done = await endpoints.handle(get("/authorize", query: "pending=\(pendingID)", cookie: cookie), host: host)
         let location = try XCTUnwrap(header(done, "Location"))
         XCTAssertTrue(location.contains("error=access_denied"), location)
         XCTAssertTrue(location.contains("state=z"), location)
@@ -490,8 +519,11 @@ final class OAuthTests: XCTestCase {
                 resource: resource
             )
         )
+        let secret = authority.takePollSecret(forPending: request.id)
         clock.advance(OAuthAuthority.pendingLifetime + 1)
-        guard case .denied = authority.outcome(ofPending: request.id) else { return XCTFail("Expected denied") }
+        guard case .denied = authority.outcome(ofPending: request.id, pollSecret: secret) else {
+            return XCTFail("Expected denied")
+        }
     }
 
     func testFailedTokenRequestsAreThrottledButGoodOnesAreNot() async throws {
@@ -616,10 +648,83 @@ final class OAuthTests: XCTestCase {
         )
     }
 
+    func testMetadataFetchBlocksTranslationAndTunnelRanges() {
+        func v6(_ prefix: [UInt8], last: UInt8 = 1) -> [UInt8] {
+            prefix + [UInt8](repeating: 0, count: 15 - prefix.count) + [last]
+        }
+        let blocked: [[UInt8]] = [
+            v6([0x00, 0x64, 0xFF, 0x9B], last: 7),  // 64:ff9b::/96
+            [0x00, 0x64, 0xFF, 0x9B] + [0, 0, 0, 0, 0, 0, 0, 0] + [10, 0, 0, 1],  // NAT64 to 10.0.0.1
+            [0x00, 0x64, 0xFF, 0x9B, 0x00, 0x01] + [UInt8](repeating: 0xAB, count: 10),  // 64:ff9b:1::/48
+            [0x20, 0x02, 0x0A, 0x00, 0x00, 0x01] + [UInt8](repeating: 0, count: 10),  // 2002::/16
+            [0xFE, 0xC0] + [UInt8](repeating: 0, count: 14),  // fec0::/10
+            [0xFE, 0xFF] + [UInt8](repeating: 1, count: 14),
+            [UInt8](repeating: 0, count: 12) + [8, 8, 8, 8],  // ::/96, IPv4-compatible
+            [UInt8](repeating: 0, count: 16),
+        ]
+        for address in blocked {
+            XCTAssertFalse(ClientMetadataFetcher.isPublicIPv6(address), "\(address)")
+            XCTAssertFalse(ClientMetadataFetcher.isPublic(bytes: address))
+        }
+        // Neighbors outside the ranges stay reachable.
+        XCTAssertTrue(
+            ClientMetadataFetcher.isPublicIPv6([0x00, 0x64, 0xFF, 0x9B, 0x00, 0x02] + [UInt8](repeating: 1, count: 10))
+        )
+        XCTAssertTrue(ClientMetadataFetcher.isPublicIPv6([0x20, 0x03] + [UInt8](repeating: 1, count: 14)))
+    }
+
+    func testMetadataFetchConnectsToTheCheckedAddress() async throws {
+        let pinned: [UInt8] = [93, 184, 216, 34]
+        let seen = LockedBox<[(String, [UInt8], String)]>([])
+        let url = try XCTUnwrap(URL(string: "https://app.example.com/meta.json?x=1"))
+        let data = try await ClientMetadataFetcher.fetch(
+            url,
+            resolve: { _ in [pinned, [1, 1, 1, 1]] },
+            transport: { host, address, request in
+                seen.value.append((host, address, String(decoding: request, as: UTF8.self)))
+                return Data("HTTP/1.0 200 OK\r\nContent-Type: application/json\r\n\r\n{\"a\":1}".utf8)
+            }
+        )
+        XCTAssertEqual(String(decoding: data, as: UTF8.self), "{\"a\":1}")
+        XCTAssertEqual(seen.value.count, 1)
+        XCTAssertEqual(seen.value[0].0, "app.example.com")
+        XCTAssertEqual(seen.value[0].1, pinned)
+        XCTAssertTrue(seen.value[0].2.hasPrefix("GET /meta.json?x=1 HTTP/1.0\r\nHost: app.example.com\r\n"))
+    }
+
+    func testMetadataFetchRefusesWhenAnyAddressIsPrivateOrTheAnswerIsNotOK() async throws {
+        let url = try XCTUnwrap(URL(string: "https://app.example.com/meta.json"))
+        let called = LockedBox(false)
+        let transport: ClientMetadataFetcher.Transport = { _, _, _ in
+            called.value = true
+            return Data("HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1/\r\n\r\n".utf8)
+        }
+        do {
+            _ = try await ClientMetadataFetcher.fetch(
+                url,
+                resolve: { _ in [[8, 8, 8, 8], [10, 0, 0, 1]] },
+                transport: transport
+            )
+            XCTFail("Expected a refusal")
+        } catch is ClientMetadataFetcher.Refused {}
+        XCTAssertFalse(called.value)
+        do {
+            _ = try await ClientMetadataFetcher.fetch(url, resolve: { _ in [[8, 8, 8, 8]] }, transport: transport)
+            XCTFail("Expected a refusal")
+        } catch is ClientMetadataFetcher.Refused {}
+    }
+
     // MARK: Helpers
 
-    private func get(_ path: String, query: String = "") -> HTTPRequestMessage {
-        HTTPRequestMessage(method: "GET", path: path, query: query, headers: [:], body: Data(), keepAlive: true)
+    private func get(_ path: String, query: String = "", cookie: String? = nil) -> HTTPRequestMessage {
+        HTTPRequestMessage(
+            method: "GET",
+            path: path,
+            query: query,
+            headers: cookie.map { ["Cookie": $0] } ?? [:],
+            body: Data(),
+            keepAlive: true
+        )
     }
 
     private func post(_ path: String, form: [String: String]) -> HTTPRequestMessage {

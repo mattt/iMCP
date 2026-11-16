@@ -1,6 +1,7 @@
 import CryptoKit
 import Foundation
 import OSLog
+import Security
 
 private let log = Logger.server
 
@@ -57,6 +58,17 @@ struct OAuthApprovalRequest: Equatable, Sendable {
     var usesMetadataDocument: Bool
     /// Whether the redirect goes to this Mac, so that any app on the Mac could receive it.
     var redirectsToThisMac: Bool
+    /// The client ID, in full, because the name is whatever the app chose.
+    var clientID: String = ""
+    /// The redirect URI, in full, that the approval goes back to.
+    var redirectURI: String = ""
+    /// A short code that the browser that started the request shows. The owner confirms that it matches.
+    var verificationCode: String = ""
+
+    /// What the approval window asks the owner, here so the iPhone approval can ask the same.
+    var confirmationPrompt: String {
+        "Allow only if your browser is waiting on iMCP and shows the code \(verificationCode)."
+    }
 }
 
 /// iMCP's own OAuth 2.1 authorization server for public access,
@@ -109,6 +121,8 @@ final class OAuthAuthority: @unchecked Sendable {
         var resource: String
         var expires: Date
         var decision: OAuthDecision?
+        /// The hash of the secret that the starting browser's cookie holds.
+        var pollSecretHash: Data
     }
 
     /// What `/authorize` does next with a pending request.
@@ -131,6 +145,7 @@ final class OAuthAuthority: @unchecked Sendable {
     private var registered: [String: (client: OAuthClient, at: Date)] = [:]
     private var metadataClients: [String: (client: OAuthClient, expires: Date)] = [:]
     private var pending: [String: Pending] = [:]
+    private var pollSecrets: [String: String] = [:]
     private var codes: [Data: Code] = [:]
     private var usedCodes: [Data: (grantID: UUID, expires: Date)] = [:]
     private var accessTokens: [Data: AccessEntry] = [:]
@@ -353,14 +368,20 @@ final class OAuthAuthority: @unchecked Sendable {
         return lock.withLock {
             let time = now()
             pending = pending.filter { $0.value.expires > time }
+            pollSecrets = pollSecrets.filter { pending[$0.key] != nil }
             guard pending.count < Self.maximumPending else { return nil }
             let request = OAuthApprovalRequest(
                 id: Self.makeSecret(prefix: "imcpa_"),
                 clientName: client.name,
                 redirectHost: host,
                 usesMetadataDocument: client.id.hasPrefix("https://"),
-                redirectsToThisMac: Self.isLoopbackHost(host)
+                redirectsToThisMac: Self.isLoopbackHost(host),
+                clientID: client.id,
+                redirectURI: redirectURI,
+                verificationCode: Self.makeVerificationCode()
             )
+            let secret = Self.makeSecret(prefix: "")
+            pollSecrets[request.id] = secret
             pending[request.id] = Pending(
                 request: request,
                 client: client,
@@ -368,7 +389,8 @@ final class OAuthAuthority: @unchecked Sendable {
                 state: state,
                 challenge: challenge,
                 resource: resource,
-                expires: time.addingTimeInterval(Self.pendingLifetime)
+                expires: time.addingTimeInterval(Self.pendingLifetime),
+                pollSecretHash: Self.hash(secret)
             )
             return request
         }
@@ -380,9 +402,13 @@ final class OAuthAuthority: @unchecked Sendable {
 
     /// Where a pending request stands.
     /// An approval issues the authorization code and ends the request.
-    func outcome(ofPending id: String) -> PendingOutcome {
+    /// Only a poll that presents the pending request's secret, from the cookie that
+    /// `/authorize` set in the starting browser, can learn the outcome, or get the code.
+    func outcome(ofPending id: String, pollSecret: String?) -> PendingOutcome {
         lock.withLock {
-            guard let entry = pending[id] else { return .unknown }
+            guard let entry = pending[id], let pollSecret, Self.hash(pollSecret) == entry.pollSecretHash else {
+                return .unknown
+            }
             let time = now()
             guard entry.expires > time else {
                 pending.removeValue(forKey: id)
@@ -412,9 +438,35 @@ final class OAuthAuthority: @unchecked Sendable {
         }
     }
 
-    /// The request to show the owner for a pending ID.
-    func approvalRequest(forPending id: String) -> OAuthApprovalRequest? {
-        lock.withLock { pending[id]?.request }
+    /// The request to show the owner for a pending ID, for a poll that presents its secret.
+    func approvalRequest(forPending id: String, pollSecret: String?) -> OAuthApprovalRequest? {
+        lock.withLock {
+            guard let entry = pending[id], let pollSecret, Self.hash(pollSecret) == entry.pollSecretHash else {
+                return nil
+            }
+            return entry.request
+        }
+    }
+
+    /// The secret that `/authorize` puts in the starting browser's cookie. It's handed out once,
+    /// when the request begins, and only its hash stays.
+    func takePollSecret(forPending id: String) -> String? {
+        lock.withLock { pollSecrets.removeValue(forKey: id) }
+    }
+
+    static let verificationAlphabet = Array("ABCDEFGHJKMNPQRSTUVWXYZ23456789")  // 31 symbols, no 0 O 1 I L
+
+    /// Six characters from an alphabet without look-alikes, drawn without bias.
+    static func makeVerificationCode() -> String {
+        var code = ""
+        var bytes = [UInt8](repeating: 0, count: 1)
+        while code.count < 6 {
+            let status = SecRandomCopyBytes(kSecRandomDefault, 1, &bytes)
+            precondition(status == errSecSuccess, "SecRandomCopyBytes failed: \(status)")
+            // 248 is the largest multiple of 31 that fits in a byte, so larger values are redrawn.
+            if bytes[0] < 248 { code.append(verificationAlphabet[Int(bytes[0]) % verificationAlphabet.count]) }
+        }
+        return code
     }
 
     // MARK: Tokens
