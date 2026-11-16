@@ -190,6 +190,108 @@ final class MusicService: Service {
             let (offset, limit) = try Self.playlistTrackPage(from: arguments)
             return try await self.fetchPlaylistTracks(id: id, offset: offset, limit: limit)
         }
+
+        Tool(
+            name: "music_playlist_create",
+            description:
+                "Create an empty playlist in the user's Music library, at the top level. Music allows several playlists with the same name, so check music_playlists_list first to avoid a second one. Allowed only while \"Allow writes\" and \"Allow playlist changes\" are both on in iMCP's Music settings.",
+            inputSchema: .object(
+                properties: [
+                    "name": .string(
+                        description:
+                            "The playlist's name, up to \(MusicPlaylistWrites.maximumNameLength) characters"
+                    )
+                ],
+                required: ["name"],
+                additionalProperties: false
+            ),
+            annotations: .init(
+                title: "Create Playlist",
+                readOnlyHint: false,
+                destructiveHint: false,
+                openWorldHint: false
+            )
+        ) { arguments in
+            try MusicPlaylistWrites.requireEnabled()
+            guard let name = arguments["name"]?.stringValue else {
+                throw MusicPlaylistWriteError.invalid("name is required")
+            }
+            let result = try await self.executeAppleScript(
+                MusicPlaylistScripts.source,
+                calling: MusicPlaylistScripts.createPlaylist(name: try MusicPlaylistWrites.validatedName(name))
+            )
+            return try MusicPlaylistResults.created(from: result)
+        }
+
+        Tool(
+            name: "music_playlist_add_tracks",
+            description:
+                "Add tracks from the user's library to a playlist that they filled themselves, by track ID. Get track IDs from music_playlist_tracks of the library playlist or of another playlist. IDs that aren't in the library are reported in notFound and skipped. A track that is already in the playlist is added again. Smart playlists, folders, and playlists that Music manages can't be changed. With iCloud Music Library on, Music may undo a change a few seconds later, so read the playlist again to confirm. Allowed only while \"Allow writes\" and \"Allow playlist changes\" are both on in iMCP's Music settings.",
+            inputSchema: .object(
+                properties: [
+                    "id": .string(description: "The playlist's ID, from music_playlists_list"),
+                    "trackIDs": .array(
+                        description:
+                            "The tracks' persistent IDs, from music_playlist_tracks",
+                        items: .string(),
+                        minItems: 1,
+                        maxItems: MusicPlaylistWrites.maximumTracks
+                    ),
+                ],
+                required: ["id", "trackIDs"],
+                additionalProperties: false
+            ),
+            annotations: .init(
+                title: "Add Tracks to Playlist",
+                readOnlyHint: false,
+                destructiveHint: false,
+                openWorldHint: false
+            )
+        ) { arguments in
+            try MusicPlaylistWrites.requireEnabled()
+            let id = try Self.playlistID(from: arguments["id"])
+            let trackIDs = try MusicPlaylistWrites.validatedTrackIDs(from: arguments["trackIDs"])
+            let result = try await self.executeAppleScript(
+                MusicPlaylistScripts.source,
+                calling: MusicPlaylistScripts.addTracks(playlistID: id, trackIDs: trackIDs)
+            )
+            return try MusicPlaylistResults.changed(from: result, playlistID: id, changedKey: "added")
+        }
+
+        Tool(
+            name: "music_playlist_remove_tracks",
+            description:
+                "Remove tracks from a playlist that the user filled themselves, by track ID, as music_playlist_tracks lists them for that playlist. It removes every copy of each track from the playlist, and never deletes a track from the library. A track that exists only in the playlist is gone from Music once it is removed. IDs that aren't in the playlist are reported in notFound. Smart playlists, folders, and playlists that Music manages can't be changed. With iCloud Music Library on, Music may bring a removed track back a few seconds later, so read the playlist again to confirm. There is no tool to delete a playlist. Allowed only while \"Allow writes\" and \"Allow playlist changes\" are both on in iMCP's Music settings.",
+            inputSchema: .object(
+                properties: [
+                    "id": .string(description: "The playlist's ID, from music_playlists_list"),
+                    "trackIDs": .array(
+                        description:
+                            "The persistent IDs of the tracks to remove, from music_playlist_tracks of this playlist",
+                        items: .string(),
+                        minItems: 1,
+                        maxItems: MusicPlaylistWrites.maximumTracks
+                    ),
+                ],
+                required: ["id", "trackIDs"],
+                additionalProperties: false
+            ),
+            annotations: .init(
+                title: "Remove Tracks from Playlist",
+                readOnlyHint: false,
+                destructiveHint: true,
+                openWorldHint: false
+            )
+        ) { arguments in
+            try MusicPlaylistWrites.requireEnabled()
+            let id = try Self.playlistID(from: arguments["id"])
+            let trackIDs = try MusicPlaylistWrites.validatedTrackIDs(from: arguments["trackIDs"])
+            let result = try await self.executeAppleScript(
+                MusicPlaylistScripts.source,
+                calling: MusicPlaylistScripts.removeTracks(playlistID: id, trackIDs: trackIDs)
+            )
+            return try MusicPlaylistResults.changed(from: result, playlistID: id, changedKey: "removed")
+        }
     }
 }
 
@@ -396,6 +498,34 @@ extension MusicService {
                         "Apple Music access not authorized. Allow iMCP in System Settings > Privacy & Security > Media & Apple Music."
                 ]
             )
+        }
+    }
+
+    /// Runs a handler of a script that sends Apple events to Music, off the main thread.
+    ///
+    /// The playlist tools use this: what a caller sends reaches the handler as arguments.
+    private func executeAppleScript(
+        _ source: String,
+        calling subroutine: NSAppleScript.Subroutine
+    ) async throws -> NSAppleEventDescriptor {
+        do {
+            return try await NSAppleScript.execute(source, calling: subroutine)
+        } catch let error as NSAppleScript.ExecutionError {
+            switch error.number {
+            case Int(errAEEventNotPermitted):
+                throw MusicPlaylistWriteError.automationDenied
+            case MusicPlaylistWrites.noSuchPlaylistNumber:
+                throw MusicPlaylistWriteError.noSuchPlaylist(
+                    subroutine.parameters.first.flatMap { parameter in
+                        if case .string(let id) = parameter { return id }
+                        return nil
+                    } ?? ""
+                )
+            case MusicPlaylistWrites.notEditableNumber:
+                throw MusicPlaylistWriteError.notEditable(error.message)
+            default:
+                throw MusicPlaylistWriteError.scriptFailed(error.message)
+            }
         }
     }
 

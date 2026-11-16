@@ -72,7 +72,10 @@ final class ServiceWritesTests: XCTestCase {
     }
 
     func testShippedServicesClassifyTheirWriteTools() {
-        XCTAssertEqual(MusicService.shared.writeToolNames, ["music_control"])
+        XCTAssertEqual(
+            MusicService.shared.writeToolNames,
+            MusicPlaylistWrites.toolNames.union(["music_control"])
+        )
         XCTAssertEqual(MailService.shared.writeToolNames, ["mail_compose"])
     }
 
