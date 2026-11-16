@@ -12,7 +12,6 @@
 	<array>
 		<string>com.apple.Music</string>
 		<string>com.apple.Notes</string>
-		<string>com.apple.Terminal</string>
 	</array>
 	<key>com.apple.security.temporary-exception.files.absolute-path.read-write</key>
 	<array>
