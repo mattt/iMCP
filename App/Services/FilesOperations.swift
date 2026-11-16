@@ -45,13 +45,13 @@ enum FilesOperations {
         offset: Int,
         limit: Int
     ) throws -> Value {
-        var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: directory.url.path, isDirectory: &isDirectory) else {
-            throw FilesError.notFound(directory.displayPath)
-        }
-        guard isDirectory.boolValue else { throw FilesError.notADirectory(directory.displayPath) }
-
-        let names = try FileManager.default.contentsOfDirectory(atPath: directory.url.path)
+        let folder = try FilesDirectory.open(
+            directory.root,
+            components: directory.canonicalComponents,
+            displayPath: directory.displayPath
+        )
+        // The names are read through the descriptor, so a folder swapped for a link since the check isn't listed.
+        let names = try folder.entryNames(displayPath: directory.displayPath)
             .filter { includeHidden || !$0.hasPrefix(".") }
             .filter { !FilesAccess.isPhotosLibraryName($0) }
             .filter { name in glob.map { FilesGlob.matches($0, name: name) } ?? true }
@@ -63,7 +63,7 @@ enum FilesOperations {
         let entries = page.items.map { name in
             entry(
                 path: directory.displayPath + "/" + name,
-                url: directory.url.appendingPathComponent(name)
+                url: URL(fileURLWithPath: folder.path).appendingPathComponent(name)
             )
         }
         return [
@@ -116,16 +116,17 @@ enum FilesOperations {
         maxBytes: Int,
         format: ReadFormat
     ) throws -> Value {
-        var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: file.url.path, isDirectory: &isDirectory) else {
-            throw FilesError.notFound(file.displayPath)
+        guard !file.isRoot, let name = file.canonicalComponents.last else {
+            throw FilesError.notAFile(file.displayPath)
         }
-        guard !isDirectory.boolValue else { throw FilesError.notAFile(file.displayPath) }
-
-        let attributes = try attributes(of: file.url)
-        let size = (attributes[.size] as? NSNumber)?.intValue ?? 0
-        let handle = try FileHandle(forReadingFrom: file.url)
+        let parent = try FilesDirectory.openParent(of: file)
+        let descriptor = try parent.openFile(name, flags: O_RDONLY, displayPath: file.displayPath)
+        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
         defer { try? handle.close() }
+        var info = Darwin.stat()
+        guard fstat(descriptor, &info) == 0 else { throw FilesError.posix(errno, file.displayPath) }
+        guard info.isRegularFile else { throw FilesError.notAFile(file.displayPath) }
+        let size = Int(info.st_size)
 
         let sample = try handle.read(upToCount: 8192) ?? Data()
         let detected = FilesText.detect(sample: sample, isWholeFile: size <= sample.count)
@@ -134,9 +135,7 @@ enum FilesOperations {
             "path": .string(file.displayPath),
             "size": .int(size),
         ]
-        if let modified = attributes[.modificationDate] as? Date {
-            common["modified"] = .string(FilesDate.string(modified))
-        }
+        common["modified"] = .string(FilesDate.string(info.modified))
 
         let asText: Bool
         switch format {
@@ -246,9 +245,15 @@ enum FilesOperations {
         var skippedLarge = 0
 
         search: for root in roots {
+            // Walk from where the opened folder points, so a folder swapped for a link since the check isn't searched.
+            let folder = try FilesDirectory.open(
+                root.root,
+                components: root.canonicalComponents,
+                displayPath: root.displayPath
+            )
             guard
                 let enumerator = FileManager.default.enumerator(
-                    at: root.url,
+                    at: URL(fileURLWithPath: folder.path),
                     includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey, .fileSizeKey],
                     options: includeHidden ? [] : [.skipsHiddenFiles]
                 )
@@ -348,47 +353,90 @@ enum FilesOperations {
     /// An existing file is replaced only if the client says what it read (`precondition`)
     /// or that it doesn't mind losing the content (`overwrite`).
     /// A file that is replaced doesn't reach the Trash, so the default is to refuse.
+    ///
+    /// The folder that holds the file is opened without following links,
+    /// a new file is created exclusively, and an existing one is replaced by renaming a new file over it,
+    /// so a link put in the path after it was checked is never written through.
     static func write(
         _ file: FilesAccess.Resolved,
         content: String,
         overwrite: Bool,
         precondition: Precondition
     ) throws -> Value {
-        guard !file.isRoot else { throw FilesError.notAFile(file.displayPath) }
+        guard !file.isRoot, let name = file.canonicalComponents.last else {
+            throw FilesError.notAFile(file.displayPath)
+        }
         let data = Data(content.utf8)
         guard data.count <= FilesLimits.maximumWriteBytes else {
             throw FilesError.tooLarge(
                 "The content is \(data.count) bytes, over the \(FilesLimits.maximumWriteBytes) bytes that one write takes. Write the first part, then append the rest."
             )
         }
-        try requireParentDirectory(of: file)
+        let parent = try FilesDirectory.openParent(of: file)
 
-        var isDirectory: ObjCBool = false
-        let exists = FileManager.default.fileExists(atPath: file.url.path, isDirectory: &isDirectory)
-        if exists, isDirectory.boolValue { throw FilesError.notAFile(file.displayPath) }
+        let existing = try parent.status(of: name, displayPath: file.displayPath)
+        if let existing {
+            if existing.isSymbolicLink { throw FilesError.changedWhileWorking(file.displayPath) }
+            guard existing.isRegularFile else { throw FilesError.notAFile(file.displayPath) }
 
-        var permissions: Any?
-        if exists {
-            let attributes = try attributes(of: file.url)
-            permissions = attributes[.posixPermissions]
-            try check(precondition, against: file, attributes: attributes)
+            let reading = try parent.openFile(name, flags: O_RDONLY, displayPath: file.displayPath)
+            defer { close(reading) }
+            var info = Darwin.stat()
+            guard fstat(reading, &info) == 0 else { throw FilesError.posix(errno, file.displayPath) }
+            try check(
+                precondition,
+                displayPath: file.displayPath,
+                modified: info.modified,
+                hash: { try FilesHash.sha256(descriptor: reading, size: Int(info.st_size)) }
+            )
             if precondition.isEmpty && !overwrite {
                 throw FilesError.alreadyExists(file.displayPath)
             }
-        } else if !precondition.isEmpty {
-            throw FilesError.changedSinceRead(
-                "\"\(file.displayPath)\" no longer exists, so it can't be replaced as you read it. Write it without expectedModified or expectedSha256 to create it."
-            )
-        }
 
-        try data.write(to: file.url, options: .atomic)
-        if let permissions {
-            try? FileManager.default.setAttributes([.posixPermissions: permissions], ofItemAtPath: file.url.path)
+            let temporary = ".imcp-\(UUID().uuidString).tmp"
+            let output = try parent.openFile(
+                temporary,
+                flags: O_WRONLY | O_CREAT | O_EXCL,
+                mode: info.st_mode & 0o7777,
+                displayPath: file.displayPath
+            )
+            do {
+                try writeAll(data, to: output, displayPath: file.displayPath)
+                fchmod(output, info.st_mode & 0o7777)
+                fsync(output)
+                close(output)
+                guard renameat(parent.fd, temporary, parent.fd, name) == 0 else {
+                    throw FilesError.posix(errno, file.displayPath)
+                }
+            } catch {
+                unlinkat(parent.fd, temporary, 0)
+                throw error
+            }
+        } else {
+            guard precondition.isEmpty else {
+                throw FilesError.changedSinceRead(
+                    "\"\(file.displayPath)\" no longer exists, so it can't be replaced as you read it. Write it without expectedModified or expectedSha256 to create it."
+                )
+            }
+            let output = try parent.openFile(
+                name,
+                flags: O_WRONLY | O_CREAT | O_EXCL,
+                displayPath: file.displayPath
+            )
+            do {
+                try writeAll(data, to: output, displayPath: file.displayPath)
+                fsync(output)
+                close(output)
+            } catch {
+                unlinkat(parent.fd, name, 0)
+                throw error
+            }
         }
         return try changeResult(
             file,
+            in: parent,
             extra: [
-                "created": .bool(!exists),
+                "created": .bool(existing == nil),
                 "bytesWritten": .int(data.count),
                 "sha256": .string(FilesHash.sha256(of: data)),
             ]
@@ -398,22 +446,21 @@ enum FilesOperations {
     /// Throws unless the file is as the precondition says it was.
     static func check(
         _ precondition: Precondition,
-        against file: FilesAccess.Resolved,
-        attributes: [FileAttributeKey: Any]
+        displayPath: String,
+        modified actual: Date,
+        hash: () throws -> String
     ) throws {
         if let expected = precondition.modified {
-            let actual = attributes[.modificationDate] as? Date ?? .distantPast
             guard FilesDate.sameMillisecond(expected, actual) else {
                 throw FilesError.changedSinceRead(
-                    "\"\(file.displayPath)\" changed since you read it: it was modified \(FilesDate.string(actual)), not \(FilesDate.string(expected)). Read it again before writing."
+                    "\"\(displayPath)\" changed since you read it: it was modified \(FilesDate.string(actual)), not \(FilesDate.string(expected)). Read it again before writing."
                 )
             }
         }
         if let expected = precondition.sha256 {
-            let actual = try FilesHash.sha256(of: file.url)
-            guard actual == expected.lowercased() else {
+            guard try hash() == expected.lowercased() else {
                 throw FilesError.changedSinceRead(
-                    "\"\(file.displayPath)\" changed since you read it: its content no longer has the SHA-256 that you passed. Read it again before writing."
+                    "\"\(displayPath)\" changed since you read it: its content no longer has the SHA-256 that you passed. Read it again before writing."
                 )
             }
         }
@@ -424,68 +471,86 @@ enum FilesOperations {
         content: String,
         createIfMissing: Bool
     ) throws -> Value {
-        guard !file.isRoot else { throw FilesError.notAFile(file.displayPath) }
+        guard !file.isRoot, let name = file.canonicalComponents.last else {
+            throw FilesError.notAFile(file.displayPath)
+        }
         let data = Data(content.utf8)
         guard data.count <= FilesLimits.maximumWriteBytes else {
             throw FilesError.tooLarge(
                 "The content is \(data.count) bytes, over the \(FilesLimits.maximumWriteBytes) bytes that one append takes."
             )
         }
-        try requireParentDirectory(of: file)
-
-        var isDirectory: ObjCBool = false
-        let exists = FileManager.default.fileExists(atPath: file.url.path, isDirectory: &isDirectory)
-        if exists, isDirectory.boolValue { throw FilesError.notAFile(file.displayPath) }
-        if !exists {
-            guard createIfMissing else {
-                throw FilesError.notFound(file.displayPath + " (pass createIfMissing to create it)")
-            }
-            guard FileManager.default.createFile(atPath: file.url.path, contents: nil) else {
-                throw FilesError.invalidArgument("\"\(file.displayPath)\" couldn't be created.")
-            }
+        let parent = try FilesDirectory.openParent(of: file)
+        let existing = try parent.status(of: name, displayPath: file.displayPath)
+        if existing == nil, !createIfMissing {
+            throw FilesError.notFound(file.displayPath + " (pass createIfMissing to create it)")
         }
-
-        let handle = try FileHandle(forWritingTo: file.url)
-        defer { try? handle.close() }
-        try handle.seekToEnd()
-        try handle.write(contentsOf: data)
-        try handle.synchronize()
+        let output = try parent.openFile(
+            name,
+            flags: O_WRONLY | O_APPEND | (createIfMissing ? O_CREAT : 0),
+            displayPath: file.displayPath
+        )
+        defer { close(output) }
+        var info = Darwin.stat()
+        guard fstat(output, &info) == 0, info.isRegularFile else { throw FilesError.notAFile(file.displayPath) }
+        try writeAll(data, to: output, displayPath: file.displayPath)
+        fsync(output)
         return try changeResult(
             file,
+            in: parent,
             extra: [
-                "created": .bool(!exists),
+                "created": .bool(existing == nil),
                 "bytesAppended": .int(data.count),
             ]
         )
     }
 
     static func makeDirectory(_ directory: FilesAccess.Resolved) throws -> Value {
-        var isDirectory: ObjCBool = false
-        if FileManager.default.fileExists(atPath: directory.url.path, isDirectory: &isDirectory) {
-            guard isDirectory.boolValue else { throw FilesError.alreadyExists(directory.displayPath + " (a file)") }
-            return ["path": .string(directory.displayPath), "created": false]
+        func open(create: Bool) throws -> FilesDirectory {
+            try FilesDirectory.open(
+                directory.root,
+                components: directory.canonicalComponents,
+                displayPath: directory.displayPath,
+                create: create
+            )
         }
-        try FileManager.default.createDirectory(at: directory.url, withIntermediateDirectories: true)
-        return ["path": .string(directory.displayPath), "created": true]
+        do {
+            _ = try open(create: false)
+            return ["path": .string(directory.displayPath), "created": false]
+        } catch FilesError.notFound {
+            _ = try open(create: true)
+            return ["path": .string(directory.displayPath), "created": true]
+        } catch FilesError.notADirectory {
+            throw FilesError.alreadyExists(directory.displayPath + " (a file)")
+        }
     }
 
     /// Moves or renames an item, never replacing one that is already there.
     static func move(_ source: FilesAccess.Resolved, to destination: FilesAccess.Resolved) throws -> Value {
-        guard !source.isRoot else {
+        guard !source.isRoot, let sourceName = source.canonicalComponents.last else {
             throw FilesError.invalidPath("a shared folder can't be moved: remove it in iMCP's Files settings")
         }
-        guard !destination.isRoot else { throw FilesError.alreadyExists(destination.displayPath) }
-        guard FilesAccess.lexists(source.url.path) else { throw FilesError.notFound(source.displayPath) }
-        guard !FilesAccess.lexists(destination.url.path) else {
+        guard !destination.isRoot, let destinationName = destination.canonicalComponents.last else {
             throw FilesError.alreadyExists(destination.displayPath)
         }
-        try requireParentDirectory(of: destination)
-
-        let sourceIsFolder = (try? attributes(of: source.url)).map { kind(of: $0) == "directory" } ?? false
-        if sourceIsFolder, destination.url.pathComponents.starts(with: source.url.pathComponents) {
+        let sourceParent = try FilesDirectory.openParent(of: source)
+        let destinationParent = try FilesDirectory.openParent(of: destination)
+        guard let info = try sourceParent.status(of: sourceName, displayPath: source.displayPath) else {
+            throw FilesError.notFound(source.displayPath)
+        }
+        if info.isDirectory, destination.url.pathComponents.starts(with: source.url.pathComponents) {
             throw FilesError.invalidPath("\"\(source.displayPath)\" can't be moved into itself")
         }
-        try FileManager.default.moveItem(at: source.url, to: destination.url)
+        // RENAME_EXCL fails, atomically, if the destination exists.
+        guard
+            renameatx_np(
+                sourceParent.fd,
+                sourceName,
+                destinationParent.fd,
+                destinationName,
+                UInt32(RENAME_EXCL)
+            ) == 0
+        else { throw FilesError.posix(errno, destination.displayPath) }
         return [
             "from": .string(source.displayPath),
             "to": .string(destination.displayPath),
@@ -493,34 +558,50 @@ enum FilesOperations {
     }
 
     /// Moves an item to the Trash, from which the person can put it back.
+    ///
+    /// The Trash API takes a path, so the item's folder is opened and checked first,
+    /// and the path is built from where that descriptor points.
     static func trash(_ item: FilesAccess.Resolved) throws -> Value {
-        guard !item.isRoot else {
+        guard !item.isRoot, let name = item.canonicalComponents.last else {
             throw FilesError.invalidPath("a shared folder can't be trashed: remove it in iMCP's Files settings")
         }
-        guard FilesAccess.lexists(item.url.path) else { throw FilesError.notFound(item.displayPath) }
-        try FileManager.default.trashItem(at: item.url, resultingItemURL: nil)
+        let parent = try FilesDirectory.openParent(of: item)
+        guard try parent.status(of: name, displayPath: item.displayPath) != nil else {
+            throw FilesError.notFound(item.displayPath)
+        }
+        let url = URL(fileURLWithPath: parent.path).appendingPathComponent(name)
+        try FileManager.default.trashItem(at: url, resultingItemURL: nil)
         return ["path": .string(item.displayPath), "trashed": true]
     }
 
     // MARK: -
 
-    private static func requireParentDirectory(of item: FilesAccess.Resolved) throws {
-        var isDirectory: ObjCBool = false
-        let parent = item.url.deletingLastPathComponent()
-        guard FileManager.default.fileExists(atPath: parent.path, isDirectory: &isDirectory),
-            isDirectory.boolValue
-        else {
-            throw FilesError.notFound("the folder that would hold \"\(item.displayPath)\" (use files_mkdir)")
+    private static func writeAll(_ data: Data, to descriptor: Int32, displayPath: String) throws {
+        try data.withUnsafeBytes { buffer in
+            var offset = 0
+            while offset < buffer.count {
+                let written = Darwin.write(descriptor, buffer.baseAddress! + offset, buffer.count - offset)
+                if written < 0 {
+                    if errno == EINTR { continue }
+                    throw FilesError.posix(errno, displayPath)
+                }
+                offset += written
+            }
         }
     }
 
-    private static func changeResult(_ file: FilesAccess.Resolved, extra: [String: Value]) throws -> Value {
-        let attributes = try attributes(of: file.url)
+    private static func changeResult(
+        _ file: FilesAccess.Resolved,
+        in parent: FilesDirectory,
+        extra: [String: Value]
+    ) throws -> Value {
         var value = extra
         value["path"] = .string(file.displayPath)
-        value["size"] = .int((attributes[.size] as? NSNumber)?.intValue ?? 0)
-        if let modified = attributes[.modificationDate] as? Date {
-            value["modified"] = .string(FilesDate.string(modified))
+        if let name = file.canonicalComponents.last,
+            let info = try parent.status(of: name, displayPath: file.displayPath)
+        {
+            value["size"] = .int(Int(info.st_size))
+            value["modified"] = .string(FilesDate.string(info.modified))
         }
         return .object(value)
     }

@@ -793,10 +793,14 @@ Reading, listing, and searching are always allowed:
   and says when it did.
   It reads only text files up to 2 MB, and never follows a link out of a folder.
 
-Changing files needs the setting **Allow iMCP to change files**
+Changing files needs the service's **Allow writes** setting
 in the Files settings, where it is off by default.
 While it is off, clients aren't offered these tools,
 and one that calls them anyway is refused.
+Each of them opens the folder that holds the file one step at a time without following links,
+and does its work relative to that folder,
+so a folder or file that is swapped for a link after iMCP checked the path
+is refused and not written through.
 
 - `files_write` writes a text file of up to 1 MB.
   It creates a new file, and replaces an existing one
