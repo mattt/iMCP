@@ -196,8 +196,11 @@ final class CalendarService: Service {
                 calendars: calendars
             )
 
-            // Fetch events
+            // Fetch events. EventKit treats an empty calendar list like nil and searches
+            // every calendar, so keep only events from the calendars resolved above.
+            let allowed = Set(calendars.map(\.calendarIdentifier))
             var events = self.eventStore.events(matching: predicate)
+                .filter { allowed.contains($0.calendar.calendarIdentifier) }
 
             // Apply additional filters
             if case .bool(let includeAllDay) = arguments["includeAllDay"],
@@ -1535,9 +1538,7 @@ final class CalendarService: Service {
         }
     }
 
-    /// Resolves the exact occurrence of a recurring event at a start date. Detached
-    /// exceptions from earlier `thisEvent` edits carry `<series-id>/RID=<n>` instead of
-    /// the series identifier, so match that prefix as well.
+    /// The event calendars clients may see.
     private func sharedCalendars() -> [EKCalendar] {
         calendarSelectionStore.selection.filter(eventStore.calendars(for: .event))
     }
@@ -1549,6 +1550,9 @@ final class CalendarService: Service {
             .sorted { $0.source < $1.source }
     }
 
+    /// Resolves the exact occurrence of a recurring event at a start date. Detached
+    /// exceptions from earlier `thisEvent` edits carry `<series-id>/RID=<n>` instead of
+    /// the series identifier, so match that prefix as well.
     private func occurrence(ofEventWithIdentifier identifier: String, startingAt date: Date) -> EKEvent? {
         let predicate = eventStore.predicateForEvents(
             withStart: date,
