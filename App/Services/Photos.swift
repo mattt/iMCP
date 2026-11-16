@@ -1307,8 +1307,13 @@ final class PhotosService: Service {
 
     /// Runs a PhotoKit request that calls back once, and cancels it after a timeout
     /// or when the task is cancelled.
-    private static func withPhotoKitRequest<T>(
+    ///
+    /// - Parameters:
+    ///   - start: Starts the request with a callback for its result, and returns the request's ID.
+    ///   - cancel: Cancels the request with an ID.
+    static func withPhotoKitRequest<T>(
         id: String,
+        timeout: Duration = requestTimeout,
         start: (@escaping @Sendable (Result<T, Error>) -> Void) -> Int32,
         cancel: @escaping (Int32) -> Void
     ) async throws -> T {
@@ -1318,10 +1323,16 @@ final class PhotosService: Service {
                 pending.setContinuation(continuation)
                 let requestID = start { result in pending.finish(result) }
                 pending.setRequestID(requestID, cancel: cancel)
-                Task {
-                    try? await Task.sleep(for: requestTimeout)
-                    pending.finish(.failure(PhotosError.timedOut(id)), cancelsRequest: true)
-                }
+                pending.setTimeoutTask(
+                    Task {
+                        do {
+                            try await Task.sleep(for: timeout)
+                        } catch {
+                            return
+                        }
+                        pending.finish(.failure(PhotosError.timedOut(id)), cancelsRequest: true)
+                    }
+                )
             }
         } onCancel: {
             pending.finish(.failure(CancellationError()), cancelsRequest: true)
@@ -1329,17 +1340,35 @@ final class PhotosService: Service {
     }
 
     /// A PhotoKit request's continuation, which the first result resumes.
-    private final class PendingRequest<T>: @unchecked Sendable {
+    ///
+    /// A result can arrive before the continuation is set, when PhotoKit calls back
+    /// before it returns the request ID; the request keeps that result until the continuation takes it.
+    /// A cancellation can arrive before the request ID is set; the request is cancelled when the ID arrives.
+    /// Later results are ignored.
+    final class PendingRequest<T>: @unchecked Sendable {
         private let lock = NSLock()
         private var continuation: CheckedContinuation<T, Error>?
-        private var result: Result<T, Error>?
+        private var earlyResult: Result<T, Error>?
+        private var isFinished = false
         private var requestID: Int32?
         private var cancel: ((Int32) -> Void)?
         private var cancelsRequest = false
+        private var timeoutTask: Task<Void, Never>?
+
+        /// Whether the request still holds a result that no continuation has taken.
+        var holdsResult: Bool {
+            lock.withLock { earlyResult != nil }
+        }
+
+        /// Whether the request still holds a timeout task.
+        var holdsTimeoutTask: Bool {
+            lock.withLock { timeoutTask != nil }
+        }
 
         func setContinuation(_ continuation: CheckedContinuation<T, Error>) {
             lock.lock()
-            if let result {
+            if let result = earlyResult {
+                earlyResult = nil
                 lock.unlock()
                 continuation.resume(with: result)
             } else {
@@ -1350,30 +1379,52 @@ final class PhotosService: Service {
 
         func setRequestID(_ requestID: Int32, cancel: @escaping (Int32) -> Void) {
             lock.lock()
-            self.requestID = requestID
-            self.cancel = cancel
-            let shouldCancel = cancelsRequest
+            let shouldCancel = isFinished && cancelsRequest
+            if !isFinished {
+                self.requestID = requestID
+                self.cancel = cancel
+            }
             lock.unlock()
             if shouldCancel {
                 cancel(requestID)
             }
         }
 
-        /// Resumes the continuation with the first result, and cancels the request if asked.
+        /// Keeps a timeout task until the request finishes, or cancels it if the request already has.
+        func setTimeoutTask(_ task: Task<Void, Never>) {
+            lock.lock()
+            if isFinished {
+                lock.unlock()
+                task.cancel()
+            } else {
+                timeoutTask = task
+                lock.unlock()
+            }
+        }
+
+        /// Resumes the continuation with the first result, cancels the timeout,
+        /// and cancels the request if asked.
         func finish(_ result: Result<T, Error>, cancelsRequest: Bool = false) {
             lock.lock()
-            guard self.result == nil else {
+            guard !isFinished else {
                 lock.unlock()
                 return
             }
-            self.result = result
+            isFinished = true
             self.cancelsRequest = cancelsRequest
             let continuation = self.continuation
             self.continuation = nil
+            if continuation == nil {
+                earlyResult = result
+            }
             let requestID = self.requestID
             let cancel = self.cancel
+            self.cancel = nil
+            let timeoutTask = self.timeoutTask
+            self.timeoutTask = nil
             lock.unlock()
 
+            timeoutTask?.cancel()
             if cancelsRequest, let requestID, let cancel {
                 cancel(requestID)
             }

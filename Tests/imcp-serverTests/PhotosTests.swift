@@ -492,6 +492,118 @@ final class PhotosTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: files.root.path))
     }
 
+    // MARK: - PhotoKit requests
+
+    private final class Recorder: @unchecked Sendable {
+        private let lock = NSLock()
+        private var values: [Int32] = []
+
+        func record(_ value: Int32) {
+            lock.withLock { values.append(value) }
+        }
+
+        var recorded: [Int32] {
+            lock.withLock { values }
+        }
+    }
+
+    func testResultBeforeTheContinuationIsDeliveredThenReleased() async throws {
+        let pending = PhotosService.PendingRequest<Int>()
+        pending.finish(.success(7))
+        XCTAssertTrue(pending.holdsResult)
+        let value = try await withCheckedThrowingContinuation { pending.setContinuation($0) }
+        XCTAssertEqual(value, 7)
+        XCTAssertFalse(pending.holdsResult)
+    }
+
+    func testSynchronousAndDuplicateCallbacksDeliverTheFirstResult() async throws {
+        let cancelled = Recorder()
+        let value: Int = try await PhotosService.withPhotoKitRequest(
+            id: "A",
+            start: { finish in
+                finish(.success(1))
+                finish(.success(2))
+                finish(.failure(CancellationError()))
+                return 9
+            },
+            cancel: { cancelled.record($0) }
+        )
+        XCTAssertEqual(value, 1)
+        XCTAssertEqual(cancelled.recorded, [])
+    }
+
+    func testCancellationBeforeTheRequestIDCancelsTheRequestWhenTheIDArrives() {
+        let pending = PhotosService.PendingRequest<Int>()
+        let cancelled = Recorder()
+        pending.finish(.failure(CancellationError()), cancelsRequest: true)
+        pending.setRequestID(5, cancel: { cancelled.record($0) })
+        XCTAssertEqual(cancelled.recorded, [5])
+
+        let finishedNormally = PhotosService.PendingRequest<Int>()
+        finishedNormally.finish(.success(1))
+        finishedNormally.setRequestID(6, cancel: { cancelled.record($0) })
+        XCTAssertEqual(cancelled.recorded, [5])
+    }
+
+    func testFinishCancelsAndReleasesTheTimeoutTask() async {
+        let pending = PhotosService.PendingRequest<Int>()
+        let timeout = Task<Void, Never> {
+            try? await Task.sleep(for: .seconds(60))
+        }
+        pending.setTimeoutTask(timeout)
+        XCTAssertTrue(pending.holdsTimeoutTask)
+        pending.finish(.success(1))
+        XCTAssertFalse(pending.holdsTimeoutTask)
+        XCTAssertTrue(timeout.isCancelled)
+
+        let late = Task<Void, Never> {
+            try? await Task.sleep(for: .seconds(60))
+        }
+        pending.setTimeoutTask(late)
+        XCTAssertTrue(late.isCancelled)
+        XCTAssertFalse(pending.holdsTimeoutTask)
+    }
+
+    func testTimeoutCancelsTheRequest() async {
+        let cancelled = Recorder()
+        do {
+            let _: Int = try await PhotosService.withPhotoKitRequest(
+                id: "A/L0/001",
+                timeout: .milliseconds(50),
+                start: { _ in 3 },
+                cancel: { cancelled.record($0) }
+            )
+            XCTFail("The request should time out")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("in time"), error.localizedDescription)
+        }
+        XCTAssertEqual(cancelled.recorded, [3])
+    }
+
+    func testTaskCancellationCancelsTheRequest() async {
+        let cancelled = Recorder()
+        let started = expectation(description: "started")
+        let task = Task {
+            let _: Int = try await PhotosService.withPhotoKitRequest(
+                id: "A",
+                start: { _ in
+                    started.fulfill()
+                    return 4
+                },
+                cancel: { cancelled.record($0) }
+            )
+        }
+        await fulfillment(of: [started], timeout: 5)
+        task.cancel()
+        do {
+            try await task.value
+            XCTFail("The request should be cancelled")
+        } catch {
+            XCTAssertTrue(error is CancellationError, "\(error)")
+        }
+        XCTAssertEqual(cancelled.recorded, [4])
+    }
+
     // MARK: - Helpers
 
     private func asset(
