@@ -1291,8 +1291,8 @@ final class PhotosService: Service {
     /// The picker window's title, which says who asks and for what,
     /// such as "Claude asks for a photo: dog on a beach".
     static func pickerTitle(for request: PickRequest, clientName: String?) -> String {
-        let client = clientName.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-        let asker = client.flatMap { $0.isEmpty ? nil : $0 } ?? "A client"
+        let client: String = clientName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let asker: String = client.isEmpty ? "A client" : client
         let things: String
         switch (request.limit, request.mediaType) {
         case (1, .photo): things = "a photo"
@@ -1303,7 +1303,8 @@ final class PhotosService: Service {
         case (let limit, nil): things = "up to \(limit) photos or videos"
         }
         let title = "\(asker) asks for \(things)"
-        return request.query.map { "\(title): \($0)" } ?? title
+        guard let query = request.query else { return title }
+        return "\(title): \(query)"
     }
 
     /// What the user did in the picker.
@@ -1331,8 +1332,14 @@ final class PhotosService: Service {
             list["itemListElement"] = .array([])
             list["cancelled"] = .bool(true)
         case .picked(let ids):
-            let values = item(ids.compactMap { $0 })
-            let items = ids.compactMap { id in id.flatMap { values[$0] } }
+            let identified: [String] = ids.compactMap { (id: String?) -> String? in id }
+            let values: [String: Value] = item(identified)
+            var items: [Value] = []
+            for case let id? in ids {
+                if let value = values[id] {
+                    items.append(value)
+                }
+            }
             list["numberOfItems"] = .int(items.count)
             list["itemListElement"] = .array(items)
             list["cancelled"] = .bool(false)
@@ -1353,11 +1360,10 @@ final class PhotosService: Service {
         configuration.selectionLimit = request.limit
         configuration.selection = request.limit > 1 ? .ordered : .default
         configuration.preferredAssetRepresentationMode = .current
-        configuration.filter = request.mediaType.map {
-            switch $0 {
-            case .photo: .images
-            case .video: .videos
-            }
+        switch request.mediaType {
+        case .photo: configuration.filter = PHPickerFilter.images
+        case .video: configuration.filter = PHPickerFilter.videos
+        case nil: configuration.filter = nil
         }
         #if compiler(>=6.4)
             if #available(macOS 27, *), let query = request.query {
@@ -1459,7 +1465,11 @@ final class PhotosService: Service {
 
         private static func notify(title: String, clientName: String?) {
             let content = UNMutableNotificationContent()
-            content.title = clientName.map { "\($0) asks for photos" } ?? "A client asks for photos"
+            if let clientName {
+                content.title = "\(clientName) asks for photos"
+            } else {
+                content.title = "A client asks for photos"
+            }
             content.body = "Choose in the iMCP window \"\(title)\"."
             let request = UNNotificationRequest(
                 identifier: "photos-pick-\(UUID().uuidString)",

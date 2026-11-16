@@ -548,7 +548,8 @@ final class PhotosTests: XCTestCase {
         }
         XCTAssertEqual(list.objectValue?["@type"], "ItemList")
         XCTAssertEqual(list.objectValue?["numberOfItems"], 0)
-        XCTAssertEqual(list.objectValue?["itemListElement"], [])
+        let empty: Value = .array([])
+        XCTAssertEqual(list.objectValue?["itemListElement"], empty)
         XCTAssertEqual(list.objectValue?["cancelled"], true)
         XCTAssertNil(list.objectValue?["description"])
     }
@@ -557,11 +558,21 @@ final class PhotosTests: XCTestCase {
         var requested: [String] = []
         let list = PhotosService.pickedList(.picked(["C", "A", "B"])) { ids in
             requested = ids
-            return Dictionary(uniqueKeysWithValues: ids.map { ($0, ["@id": .string($0)]) })
+            var values: [String: Value] = [:]
+            for id in ids {
+                let value: Value = .object(["@id": .string(id)])
+                values[id] = value
+            }
+            return values
         }
         XCTAssertEqual(requested, ["C", "A", "B"])
         XCTAssertEqual(list.objectValue?["numberOfItems"], 3)
-        XCTAssertEqual(list.objectValue?["itemListElement"], [["@id": "C"], ["@id": "A"], ["@id": "B"]])
+        let expected: Value = .array([
+            .object(["@id": .string("C")]),
+            .object(["@id": .string("A")]),
+            .object(["@id": .string("B")]),
+        ])
+        XCTAssertEqual(list.objectValue?["itemListElement"], expected)
         XCTAssertEqual(list.objectValue?["cancelled"], false)
         XCTAssertNil(list.objectValue?["description"])
     }
@@ -569,10 +580,18 @@ final class PhotosTests: XCTestCase {
     func testHiddenMissingAndUnidentifiedPicksAreLeftOut() {
         let list = PhotosService.pickedList(.picked(["A", nil, "Hidden", "B"])) { ids in
             XCTAssertEqual(ids, ["A", "Hidden", "B"])
-            return ["A": ["@id": "A"], "B": ["@id": "B"]]
+            let values: [String: Value] = [
+                "A": .object(["@id": .string("A")]),
+                "B": .object(["@id": .string("B")]),
+            ]
+            return values
         }
         XCTAssertEqual(list.objectValue?["numberOfItems"], 2)
-        XCTAssertEqual(list.objectValue?["itemListElement"], [["@id": "A"], ["@id": "B"]])
+        let expected: Value = .array([
+            .object(["@id": .string("A")]),
+            .object(["@id": .string("B")]),
+        ])
+        XCTAssertEqual(list.objectValue?["itemListElement"], expected)
         XCTAssertEqual(list.objectValue?["cancelled"], false)
         XCTAssertEqual(
             list.objectValue?["description"]?.stringValue,
