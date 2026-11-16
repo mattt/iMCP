@@ -25,8 +25,20 @@ enum FilesError: Error, LocalizedError, Equatable {
     case tooLarge(String)
     case binaryFile(path: String, size: Int, limit: Int)
     case changedSinceRead(String)
-    case writesDisabled
+    case changedWhileWorking(String)
     case invalidArgument(String)
+
+    /// The error for a failed system call on `path`.
+    static func posix(_ code: Int32, _ path: String) -> FilesError {
+        switch code {
+        case ELOOP, EMLINK: return .changedWhileWorking(path)
+        case ENOENT: return .notFound(path)
+        case ENOTDIR: return .notADirectory(path)
+        case EEXIST, ENOTEMPTY: return .alreadyExists(path)
+        case EISDIR: return .notAFile(path)
+        default: return .invalidArgument("\"\(path)\": \(String(cString: strerror(code)))")
+        }
+    }
 
     var errorDescription: String? {
         switch self {
@@ -62,9 +74,9 @@ enum FilesError: Error, LocalizedError, Equatable {
                 "\"\(path)\" is a binary file of \(size) bytes. Binary files are returned only as base64, up to \(limit) bytes per call: pass format \"base64\" with an offset to read it in pieces."
         case .changedSinceRead(let message):
             return message
-        case .writesDisabled:
+        case .changedWhileWorking(let path):
             return
-                "Changing files is off. Turn on \"Allow iMCP to change files\" in iMCP's Files settings to allow it."
+                "\"\(path)\" changed while iMCP worked on it: a folder or file in its path is now a link or is somewhere else. Nothing was changed. Try again."
         case .invalidArgument(let message):
             return message
         }
@@ -90,6 +102,12 @@ struct FilesAccess: Sendable {
         var relativeComponents: [String]
 
         var isRoot: Bool { relativeComponents.isEmpty }
+
+        /// The components of the canonical location below the root.
+        /// A tool that changes something opens these one at a time, never following a link.
+        var canonicalComponents: [String] {
+            Array(url.pathComponents.dropFirst(root.url.pathComponents.count))
+        }
 
         /// The path as clients write it, starting with the root's name.
         var displayPath: String {
@@ -193,6 +211,137 @@ struct FilesAccess: Sendable {
     static func lexists(_ path: String) -> Bool {
         var info = stat()
         return lstat(path, &info) == 0
+    }
+}
+
+// MARK: - Descriptors
+
+/// A directory inside a shared folder, opened one component at a time without following links.
+///
+/// Checking a path and then using it leaves a gap in which a folder can be swapped for a link
+/// that points out of the shared folder.
+/// The tools that change or read files close the gap by opening the folder that holds the file
+/// from the root down with `O_NOFOLLOW`, and doing the final step relative to that descriptor.
+/// A component that has become a link makes the open fail, so nothing outside is touched.
+final class FilesDirectory {
+    let fd: Int32
+    /// Where the descriptor points, checked to be inside the shared folder.
+    let path: String
+
+    private init(fd: Int32, path: String) {
+        self.fd = fd
+        self.path = path
+    }
+
+    deinit { close(fd) }
+
+    private static let flags = O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC
+
+    /// Opens `components` below a shared folder, making the folders that are missing if `create` is true.
+    static func open(
+        _ root: FilesRoot,
+        components: [String],
+        displayPath: String,
+        create: Bool = false
+    ) throws -> FilesDirectory {
+        var current = Darwin.open(root.url.path, flags)
+        guard current >= 0 else { throw FilesError.folderUnavailable(root.name) }
+        for component in components {
+            var next = openat(current, component, flags)
+            if next < 0, errno == ENOENT, create {
+                if mkdirat(current, component, 0o755) != 0, errno != EEXIST {
+                    let code = errno
+                    close(current)
+                    throw FilesError.posix(code, displayPath)
+                }
+                next = openat(current, component, flags)
+            }
+            var code = errno
+            if next < 0, code == ENOTDIR {
+                // O_DIRECTORY with O_NOFOLLOW reports a link as "not a directory": tell the two apart.
+                var info = stat()
+                if fstatat(current, component, &info, AT_SYMLINK_NOFOLLOW) == 0, info.isSymbolicLink { code = ELOOP }
+            }
+            close(current)
+            guard next >= 0 else { throw FilesError.posix(code, displayPath) }
+            current = next
+        }
+
+        // The descriptor must still be inside the shared folder, whatever happened on the way.
+        var buffer = [CChar](repeating: 0, count: Int(MAXPATHLEN))
+        guard fcntl(current, F_GETPATH, &buffer) == 0 else {
+            close(current)
+            throw FilesError.changedWhileWorking(displayPath)
+        }
+        let actual = String(cString: buffer)
+        let actualComponents = URL(fileURLWithPath: actual).pathComponents
+        let rootComponents = root.url.pathComponents
+        let isInside =
+            actualComponents.count >= rootComponents.count
+            && zip(actualComponents, rootComponents).allSatisfy { $0.caseInsensitiveCompare($1) == .orderedSame }
+        guard isInside else {
+            close(current)
+            throw FilesError.escapesFolder(displayPath)
+        }
+        guard !FilesAccess.isInsidePhotosLibrary(URL(fileURLWithPath: actual)) else {
+            close(current)
+            throw FilesError.photosLibrary(displayPath)
+        }
+        return FilesDirectory(fd: current, path: actual)
+    }
+
+    /// Opens the folder that holds an item, or the folder itself if `item` is a folder to open.
+    static func openParent(of item: FilesAccess.Resolved, create: Bool = false) throws -> FilesDirectory {
+        try open(
+            item.root,
+            components: Array(item.canonicalComponents.dropLast()),
+            displayPath: item.displayPath,
+            create: create
+        )
+    }
+
+    /// The names of the entries of the folder, read through the descriptor.
+    func entryNames(displayPath: String) throws -> [String] {
+        let copy = dup(fd)
+        guard copy >= 0, let directory = fdopendir(copy) else {
+            let code = errno
+            if copy >= 0 { close(copy) }
+            throw FilesError.posix(code, displayPath)
+        }
+        defer { closedir(directory) }
+        var names: [String] = []
+        while var entry = readdir(directory)?.pointee {
+            let name = withUnsafePointer(to: &entry.d_name) {
+                $0.withMemoryRebound(to: CChar.self, capacity: Int(MAXNAMLEN) + 1) { String(cString: $0) }
+            }
+            if name != ".", name != ".." { names.append(name) }
+        }
+        return names
+    }
+
+    /// What is at `name` in the folder, without following a link, or nil if nothing is.
+    func status(of name: String, displayPath: String) throws -> stat? {
+        var info = stat()
+        if fstatat(fd, name, &info, AT_SYMLINK_NOFOLLOW) == 0 { return info }
+        guard errno == ENOENT else { throw FilesError.posix(errno, displayPath) }
+        return nil
+    }
+
+    /// Opens `name` in the folder, which fails if it is a link.
+    func openFile(_ name: String, flags: Int32, mode: mode_t = 0o644, displayPath: String) throws -> Int32 {
+        let file = openat(fd, name, flags | O_NOFOLLOW | O_CLOEXEC, mode)
+        guard file >= 0 else { throw FilesError.posix(errno, displayPath) }
+        return file
+    }
+}
+
+extension stat {
+    var isRegularFile: Bool { st_mode & S_IFMT == S_IFREG }
+    var isDirectory: Bool { st_mode & S_IFMT == S_IFDIR }
+    var isSymbolicLink: Bool { st_mode & S_IFMT == S_IFLNK }
+
+    var modified: Date {
+        Date(timeIntervalSince1970: TimeInterval(st_mtimespec.tv_sec) + TimeInterval(st_mtimespec.tv_nsec) / 1e9)
     }
 }
 
@@ -321,6 +470,20 @@ enum FilesHash {
         }
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
+        var hasher = SHA256()
+        while let chunk = try handle.read(upToCount: 1_048_576), !chunk.isEmpty {
+            hasher.update(data: chunk)
+        }
+        return hasher.finalize().hex
+    }
+
+    /// The SHA-256 of what is left to read from a file descriptor, which is not closed.
+    static func sha256(descriptor: Int32, size: Int, maximumBytes: Int = FilesLimits.maximumHashBytes) throws -> String
+    {
+        guard size <= maximumBytes else {
+            throw FilesError.tooLarge("The file is \(size) bytes, over the \(maximumBytes) bytes that iMCP hashes.")
+        }
+        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: false)
         var hasher = SHA256()
         while let chunk = try handle.read(upToCount: 1_048_576), !chunk.isEmpty {
             hasher.update(data: chunk)

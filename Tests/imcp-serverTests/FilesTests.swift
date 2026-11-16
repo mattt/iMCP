@@ -595,21 +595,26 @@ final class FilesTests: XCTestCase {
         func withAccess<T>(_ body: (FilesAccess) throws -> T) throws -> T { try body(access) }
     }
 
-    func testToolsThatChangeFilesAreListedOnlyWhileTheSettingIsOn() {
-        for name in FilesTools.readToolNames {
-            XCTAssertTrue(FilesTools.isListed(name, writesEnabled: false), name)
-        }
-        for name in FilesTools.writeToolNames {
-            XCTAssertFalse(FilesTools.isListed(name, writesEnabled: false), name)
-            XCTAssertTrue(FilesTools.isListed(name, writesEnabled: true), name)
-        }
+    func testWriteToolsAreTheOnesTheGateHides() throws {
         let tools = FilesTools.tools(provider: FixedFolders(access: access), isEnabled: { false })
         XCTAssertEqual(Set(tools.map(\.name)), FilesTools.readToolNames.union(FilesTools.writeToolNames))
-        for tool in tools {
-            let isRead = FilesTools.readToolNames.contains(tool.name)
-            XCTAssertEqual(tool.annotations.readOnlyHint ?? false, isRead, tool.name)
-        }
+        XCTAssertEqual(Set(tools.filter(\.isWrite).map(\.name)), FilesTools.writeToolNames)
+        XCTAssertEqual(Set(tools.filter { !$0.isWrite }.map(\.name)), FilesTools.readToolNames)
         XCTAssertEqual(tools.first { $0.name == "files_trash" }?.annotations.destructiveHint, true)
+
+        // The service starts with writes off, so its write tools aren't listed until the person allows them.
+        let suite = "imcp-files-tests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        XCTAssertFalse(FilesService.shared.writesEnabledByDefault)
+        XCTAssertFalse(FilesService.shared.areWritesEnabled(defaults: defaults))
+        let listed = Set(FilesService.shared.listedTools(defaults: defaults).map(\.name))
+        XCTAssertEqual(listed, FilesTools.readToolNames)
+        ServiceWrites.setEnabled(true, serviceID: FilesService.shared.serviceID, defaults: defaults)
+        XCTAssertEqual(
+            Set(FilesService.shared.listedTools(defaults: defaults).map(\.name)),
+            FilesTools.readToolNames.union(FilesTools.writeToolNames)
+        )
     }
 
     func testAToolThatChangesFilesDoesNothingWhileTheSettingIsOff() async throws {
@@ -619,7 +624,7 @@ final class FilesTests: XCTestCase {
             _ = try await write(["path": "Shared/new.txt", "content": "x"])
             XCTFail("The write should be refused")
         } catch {
-            XCTAssertEqual(error as? FilesError, .writesDisabled)
+            XCTAssertEqual(error as? WritesDisabledError, WritesDisabledError(tool: "files_write"))
         }
         XCTAssertFalse(FileManager.default.fileExists(atPath: shared.appendingPathComponent("new.txt").path))
 
@@ -633,5 +638,89 @@ final class FilesTests: XCTestCase {
         let list = try XCTUnwrap(off.first { $0.name == "files_list" })
         let listing = try await list(["path": "Shared"])
         XCTAssertEqual(listing.objectValue?["total"], .int(1))
+    }
+
+    // MARK: - Links swapped in after the check
+
+    /// Replaces a folder with a link to `target`, as another process could between the check and the use.
+    private func swapFolderForLink(_ name: String, to target: URL) throws {
+        let url = shared.appendingPathComponent(name)
+        try FileManager.default.removeItem(at: url)
+        try FileManager.default.createSymbolicLink(at: url, withDestinationURL: target)
+    }
+
+    func testAFolderSwappedForALinkAfterTheCheckIsNotWrittenThrough() throws {
+        try FileManager.default.createDirectory(
+            at: shared.appendingPathComponent("sub"),
+            withIntermediateDirectories: true
+        )
+        let resolved = try access.resolve("Shared/sub/new.txt")
+        try swapFolderForLink("sub", to: sibling)
+
+        XCTAssertThrowsError(try FilesOperations.write(resolved, content: "x", overwrite: false, precondition: .init()))
+        {
+            XCTAssertEqual($0 as? FilesError, .changedWhileWorking("Shared/sub/new.txt"))
+        }
+        XCTAssertThrowsError(try FilesOperations.append(resolved, content: "x", createIfMissing: true))
+        XCTAssertThrowsError(try FilesOperations.makeDirectory(try access.resolve("Shared/sub/made")))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: sibling.path), [])
+    }
+
+    func testAFolderSwappedForALinkAfterTheCheckIsNotReadListedOrCreatedThrough() throws {
+        try FileManager.default.createDirectory(
+            at: shared.appendingPathComponent("sub"),
+            withIntermediateDirectories: true
+        )
+        _ = try write("secret", to: "secret.txt", in: sibling)
+        _ = try write("inside", to: "secret.txt", in: shared.appendingPathComponent("sub"))
+        let file = try access.resolve("Shared/sub/secret.txt")
+        let folder = try access.resolve("Shared/sub")
+        let deep = try access.resolve("Shared/sub/a/b")
+        try swapFolderForLink("sub", to: sibling)
+
+        XCTAssertThrowsError(try FilesOperations.read(file, offset: 0, maxBytes: 100, format: .auto))
+        XCTAssertThrowsError(try FilesOperations.list(folder, glob: nil, includeHidden: false, offset: 0, limit: 10))
+        XCTAssertThrowsError(
+            try FilesOperations.search(
+                in: [folder],
+                name: nil,
+                content: "secret",
+                includeHidden: false,
+                limit: 5,
+                seconds: 5
+            )
+        )
+        XCTAssertThrowsError(try FilesOperations.makeDirectory(deep))
+        XCTAssertThrowsError(try FilesOperations.trash(file))
+        XCTAssertThrowsError(
+            try FilesOperations.move(file, to: try access.resolve("Shared/moved.txt", followingFinalSymlink: false))
+        )
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: sibling.path), ["secret.txt"])
+        XCTAssertEqual(try text(at: sibling.appendingPathComponent("secret.txt")), "secret")
+    }
+
+    func testAFileSwappedForALinkAfterTheCheckIsReplacedNotWrittenThrough() throws {
+        let outside = try write("outside", to: "outside.txt", in: sibling)
+        _ = try write("v1", to: "doc.txt")
+        let resolved = try access.resolve("Shared/doc.txt")
+        try FileManager.default.removeItem(at: shared.appendingPathComponent("doc.txt"))
+        try link("doc.txt", to: outside)
+
+        // The new link is refused when its content would be checked; the target is never written.
+        XCTAssertThrowsError(
+            try FilesOperations.write(resolved, content: "mine", overwrite: true, precondition: .init())
+        )
+        XCTAssertThrowsError(try FilesOperations.append(resolved, content: "mine", createIfMissing: false))
+        XCTAssertThrowsError(try FilesOperations.read(resolved, offset: 0, maxBytes: 10, format: .auto))
+        XCTAssertEqual(try text(at: outside), "outside")
+    }
+
+    func testANewFileIsNotCreatedThroughALinkPlacedAtItsName() throws {
+        let outside = sibling.appendingPathComponent("target.txt")
+        let resolved = try access.resolve("Shared/new.txt")
+        try link("new.txt", to: outside)
+
+        XCTAssertThrowsError(try FilesOperations.write(resolved, content: "x", overwrite: false, precondition: .init()))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: outside.path))
     }
 }

@@ -190,6 +190,8 @@ private struct WritesSection: View {
                 " In Notes they can only create notes and folders. The first time, macOS asks whether iMCP may control Notes."
         }
         return text
+    }
+}
 
 /// The folders that the Files service shares.
 private struct FilesFoldersSection: View {

@@ -26,28 +26,18 @@ protocol FilesRootProviding: Sendable {
 
 /// The tools that read, search, and change the folders that the person shared.
 ///
-/// The tools that change files are listed only while the person allows changes in Files settings,
-/// and each checks the setting again when it runs.
+/// The tools that change files are the service's write tools:
+/// `ServiceWrites` lists them only while \"Allow writes\" is on, and each checks the setting again when it runs.
 enum FilesTools {
-    /// The setting that allows changes, in `UserDefaults`.
-    static let settingKey = "filesWritesEnabled"
-
     static let readToolNames: Set<String> = ["files_roots", "files_list", "files_stat", "files_read", "files_search"]
     static let writeToolNames: Set<String> = [
         "files_write", "files_append", "files_mkdir", "files_move", "files_trash",
     ]
 
-    static var isEnabledInSettings: Bool {
-        UserDefaults.standard.bool(forKey: settingKey)
-    }
-
-    /// Whether clients are offered a tool.
-    static func isListed(_ name: String, writesEnabled: Bool) -> Bool {
-        !writeToolNames.contains(name) || writesEnabled
-    }
-
-    static func requireEnabled(_ isEnabled: Bool) throws {
-        guard isEnabled else { throw FilesError.writesDisabled }
+    /// Throws unless `isEnabled`, so that a tool changes nothing while "Allow writes" is off.
+    /// `ServiceWrites` refuses the call first; this keeps the tools safe where they are called directly.
+    static func requireEnabled(_ isEnabled: Bool, tool: String) throws {
+        guard isEnabled else { throw WritesDisabledError(tool: tool) }
     }
 
     // MARK: - Arguments
@@ -122,18 +112,18 @@ enum FilesTools {
         provider: any FilesRootProviding,
         isEnabled: @escaping @Sendable () -> Bool
     ) -> [Tool] {
-        readTools(provider: provider) + writeTools(provider: provider, isEnabled: isEnabled)
+        readTools(provider: provider, isEnabled: isEnabled) + writeTools(provider: provider, isEnabled: isEnabled)
     }
 
     private static let pathDescription =
         "The shared folder's name, then the path inside it, such as \"Documents/Taxes/2025.pdf\". Shared folders are listed by files_roots"
 
-    static func readTools(provider: any FilesRootProviding) -> [Tool] {
+    static func readTools(provider: any FilesRootProviding, isEnabled: @escaping @Sendable () -> Bool) -> [Tool] {
         [
             Tool(
                 name: "files_roots",
                 description:
-                    "List the folders that the person shared with iMCP, and whether each can be used. Every other Files tool takes a path that starts with one of these names. Also says whether changing files is allowed.",
+                    "List the folders that the person shared with iMCP, and whether each can be used. Every other Files tool takes a path that starts with one of these names. Also says whether changing files is allowed (\"Allow writes\" in Files settings).",
                 inputSchema: .object(properties: [:], additionalProperties: false),
                 annotations: .init(title: "List Shared Folders", readOnlyHint: true, openWorldHint: false)
             ) { _ in
@@ -149,7 +139,7 @@ enum FilesTools {
                 }
                 return [
                     "folders": .array(folders),
-                    "changesAllowed": .bool(isEnabledInSettings),
+                    "changesAllowed": .bool(isEnabled()),
                 ] as Value
             },
 
@@ -345,7 +335,7 @@ enum FilesTools {
         ]
     }
 
-    private static let settingName = "\"Allow iMCP to change files\" in iMCP's Files settings"
+    private static let settingName = "\"Allow writes\" in iMCP's Files settings"
 
     static func writeTools(
         provider: any FilesRootProviding,
@@ -384,7 +374,7 @@ enum FilesTools {
                     openWorldHint: false
                 )
             ) { arguments in
-                try requireEnabled(isEnabled())
+                try requireEnabled(isEnabled(), tool: "files_write")
                 let path = try requiredString("path", in: arguments)
                 guard let content = try string("content", in: arguments) else {
                     throw FilesError.invalidArgument("content is required")
@@ -422,7 +412,7 @@ enum FilesTools {
                     openWorldHint: false
                 )
             ) { arguments in
-                try requireEnabled(isEnabled())
+                try requireEnabled(isEnabled(), tool: "files_append")
                 let path = try requiredString("path", in: arguments)
                 guard let content = try string("content", in: arguments) else {
                     throw FilesError.invalidArgument("content is required")
@@ -450,7 +440,7 @@ enum FilesTools {
                     openWorldHint: false
                 )
             ) { arguments in
-                try requireEnabled(isEnabled())
+                try requireEnabled(isEnabled(), tool: "files_mkdir")
                 let path = try requiredString("path", in: arguments)
                 return try await run(provider) { access in
                     try FilesOperations.makeDirectory(try access.resolve(path))
@@ -477,7 +467,7 @@ enum FilesTools {
                     openWorldHint: false
                 )
             ) { arguments in
-                try requireEnabled(isEnabled())
+                try requireEnabled(isEnabled(), tool: "files_move")
                 let from = try requiredString("from", in: arguments)
                 let to = try requiredString("to", in: arguments)
                 return try await run(provider) { access in
@@ -505,7 +495,7 @@ enum FilesTools {
                     openWorldHint: false
                 )
             ) { arguments in
-                try requireEnabled(isEnabled())
+                try requireEnabled(isEnabled(), tool: "files_trash")
                 let path = try requiredString("path", in: arguments)
                 return try await run(provider) { access in
                     try FilesOperations.trash(try access.resolve(path, followingFinalSymlink: false))
