@@ -408,6 +408,12 @@ final class ServerController: ObservableObject {
         disabledTools = tools
     }
 
+    /// Tells clients to list the tools again after a service's "Allow writes" setting
+    /// changed which of its tools it offers.
+    func toolListChanged() {
+        Task { await networkManager.updateServiceBindings(self.currentServiceBindings) }
+    }
+
     func setService(_ config: ServiceConfig, enabled: Bool) {
         objectWillChange.send()
         config.binding.wrappedValue = enabled
@@ -547,6 +553,7 @@ final class ServerController: ObservableObject {
     }
 
     init() {
+        ServiceWrites.migrateLegacySettings()
         Task { [self] in
             // Initialize bindings from AppStorage before the server starts.
             // The menu sends the enabled state only when its content first appears,
@@ -1304,7 +1311,7 @@ actor ServerNetworkManager {
                     if let isServiceEnabled = await self.serviceBindings[serviceId]?.wrappedValue,
                         isServiceEnabled
                     {
-                        for tool in service.tools {
+                        for tool in service.listedTools() {
                             if await self.disabledTools.contains(tool.name) {
                                 log.debug("Skipping disabled tool: \(tool.name)")
                                 continue
