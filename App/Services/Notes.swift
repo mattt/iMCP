@@ -34,7 +34,8 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
         }
     }
 
-    var tools: [Tool] {
+    /// The tools that read notes. `tools` adds the ones that create notes (see `NotesWrite.swift`).
+    @ToolBuilder var readTools: [Tool] {
         Tool(
             name: "notes_folders",
             description: "List the folders in the Notes app, with their accounts and how many notes each holds",
