@@ -202,6 +202,25 @@ click <img style="display: inline" width="20" height="16" src="/Assets/icon.svg"
 
 <br clear="all">
 
+### Allow writes
+
+Each service that has tools that change things
+has an **Allow writes** switch on its Settings page.
+While it is off, clients don't see that service's write tools
+and a call to one is refused, so nothing changes.
+Tools that only read are never affected.
+Deleting counts as a write,
+so the same switch covers it.
+A tool's own switch in the same list still turns that one tool off
+when **Allow writes** is on.
+
+Services that already had write tools
+(Calendar, Contacts, Home, Mail, Music, Phone, Reminders and Shortcuts)
+start with **Allow writes** on,
+so an update changes nothing for them.
+A service whose write tools are new
+can start with it off until you turn it on.
+
 ### Approve connections
 
 <img align="right" width="372" src="/Assets/imcp-screenshot-approve-connection.png" alt="Screenshot of the iMCP Connection Request dialog with Deny and Allow buttons" />
