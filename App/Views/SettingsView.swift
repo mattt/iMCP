@@ -29,6 +29,8 @@ struct SettingsView: View {
                     .tag(SettingsPane.clients)
                 Label("iPhone & iPad", systemImage: "ipad.and.iphone")
                     .tag(SettingsPane.mobile)
+                Label("Remote Access", systemImage: "network")
+                    .tag(SettingsPane.remoteAccess)
 
                 Section("Services") {
                     ForEach(configs) { config in
@@ -53,6 +55,8 @@ struct SettingsView: View {
                     ClientsSettingsView(serverController: serverController)
                 case .mobile:
                     MobileSettingsView()
+                case .remoteAccess:
+                    RemoteAccessSettingsView(serverController: serverController)
                 case .service(let id):
                     if let config = configs.first(where: { $0.id == id }) {
                         ServiceSettingsView(serverController: serverController, config: config)
@@ -128,6 +132,7 @@ enum SettingsPane: Hashable, RawRepresentable {
     case general
     case clients
     case mobile
+    case remoteAccess
     /// The pane for the service with this ``ServiceConfig/id``.
     case service(String)
 
@@ -136,6 +141,7 @@ enum SettingsPane: Hashable, RawRepresentable {
         case "general": self = .general
         case "clients": self = .clients
         case "mobile": self = .mobile
+        case "remoteAccess": self = .remoteAccess
         default: self = .service(rawValue)
         }
     }
@@ -145,6 +151,7 @@ enum SettingsPane: Hashable, RawRepresentable {
         case .general: "general"
         case .clients: "clients"
         case .mobile: "mobile"
+        case .remoteAccess: "remoteAccess"
         case .service(let id): id
         }
     }

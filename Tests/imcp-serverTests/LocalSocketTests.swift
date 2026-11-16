@@ -384,14 +384,24 @@ final class LocalSocketTests: XCTestCase {
         }
 
         // A peer that sends a byte more often than the timeout still runs out of time.
+        let stop = DispatchSemaphore(value: 0)
+        let stopped = DispatchSemaphore(value: 0)
         let sender = Thread {
+            defer { stopped.signal() }
             for _ in 0 ..< 20 {
                 var byte = UInt8(ascii: "a")
                 guard write(writer, &byte, 1) == 1 else { return }
-                Thread.sleep(forTimeInterval: 0.03)
+                if stop.wait(timeout: .now() + .milliseconds(30)) == .success { return }
             }
         }
         sender.start()
+        // Stop the sender before the descriptors close.
+        // Otherwise it writes to whatever reuses the descriptor number in a later test,
+        // and a write to a socket whose peer closed raises `SIGPIPE` and ends the test process.
+        defer {
+            stop.signal()
+            stopped.wait()
+        }
 
         let start = ContinuousClock.now
         XCTAssertThrowsError(

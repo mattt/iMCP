@@ -10,6 +10,11 @@
 		0C442369FEFC71CA64EFDDCD /* MobileCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E70399C0AD0A7EF1C0755801 /* MobileCacheTests.swift */; };
 		0EBDDCD81AB193D1DCDA3616 /* ../../Shared/Mobile/MobileDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 528763F26319BDDB15541474 /* ../../Shared/Mobile/MobileDatabase.swift */; };
 		1201B5B17FF1368F8E9CD48F /* ../../Shared/Mobile/MobileTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEA9566F574C683C4FB198FB /* ../../Shared/Mobile/MobileTransport.swift */; };
+		485454500000000000000024 /* ../../App/Controllers/FunnelAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 485454500000000000000014 /* ../../App/Controllers/FunnelAccess.swift */; };
+		485454500000000000000023 /* ../../App/Controllers/RemoteAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 485454500000000000000013 /* ../../App/Controllers/RemoteAccess.swift */; };
+		485454500000000000000020 /* RemoteAccessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 485454500000000000000010 /* RemoteAccessTests.swift */; };
+		485454500000000000000021 /* ../../App/Shared/HTTPMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 485454500000000000000011 /* ../../App/Shared/HTTPMessage.swift */; };
+		485454500000000000000022 /* ../../App/Models/AccessToken.swift in Sources */ = {isa = PBXBuildFile; fileRef = 485454500000000000000012 /* ../../App/Models/AccessToken.swift */; };
 		158948D22D0E610E83A4433C /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = B75D49165A453E912E36DBFE /* Sparkle */; };
 		76F80A6E3EDBFB02048A6ED8 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E0E66768348853754D32208C /* Cocoa.framework */; };
 		826C0834A5B647F8A918E54D /* ServiceLifecycle in Frameworks */ = {isa = PBXBuildFile; productRef = DCE061F8A68D0CD546D919E2 /* ServiceLifecycle */; };
@@ -25,7 +30,6 @@
 		A30000000000000000000022 /* ../../Shared/Home/HomeError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000012 /* ../../Shared/Home/HomeError.swift */; };
 		A60000000000000000000021 /* ../../Shared/Home/HomeHelperPairing.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000011 /* ../../Shared/Home/HomeHelperPairing.swift */; };
 		A60000000000000000000022 /* ../../Helper/Server/HelperServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000012 /* ../../Helper/Server/HelperServer.swift */; };
-		A30000000000000000000023 /* ../../Shared/Home/HomeInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000013 /* ../../Shared/Home/HomeInput.swift */; };
 		A30000000000000000000024 /* ../../Shared/Home/HomeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000014 /* ../../Shared/Home/HomeTools.swift */; };
 		A30000000000000000000025 /* ../../Shared/Models/Tool.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000015 /* ../../Shared/Models/Tool.swift */; };
 		A30000000000000000000026 /* ../../Shared/Models/Value.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000016 /* ../../Shared/Models/Value.swift */; };
@@ -71,52 +75,18 @@
 		5EC5A1E70000000000000011 /* ConnectionApprovalsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EC5A1E70000000000000010 /* ConnectionApprovalsTests.swift */; };
 		6BF018C12FF02CEE36315400 /* ../../Shared/Mobile/MobileTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98166DE39243B5BB0D2EA812 /* ../../Shared/Mobile/MobileTools.swift */; };
 		6C9F37571E84FF608EA69DFF /* ../../Shared/Mobile/MobileSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09284CEAE710F67F75A9D584 /* ../../Shared/Mobile/MobileSync.swift */; };
-		76F80A6E3EDBFB02048A6ED8 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E0E66768348853754D32208C /* Cocoa.framework */; };
 		7976D430435CEB5885069EDC /* MobileOutboxTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF94985E325A869657ADEA03 /* MobileOutboxTests.swift */; };
 		8172E39E4AC809B22EE49411 /* ../../Shared/Mobile/MobileOutbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30DCD03A1950234EBB61EFEE /* ../../Shared/Mobile/MobileOutbox.swift */; };
-		826C0834A5B647F8A918E54D /* ServiceLifecycle in Frameworks */ = {isa = PBXBuildFile; productRef = DCE061F8A68D0CD546D919E2 /* ServiceLifecycle */; };
-		8DFCE9E4CBCBEB93A32E8560 /* ServiceLifecycleTestKit in Frameworks */ = {isa = PBXBuildFile; productRef = 1CD6B9E157EEC273F178543D /* ServiceLifecycleTestKit */; };
-		930214FCD680D7D74158F215 /* ServiceGroupConfigurationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75E148EAC5AC8B3263C5AA13 /* ServiceGroupConfigurationTests.swift */; };
 		A1BA6CCAD87FD4F9DABADE3F /* ../../App/Services/Mobile.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE3608360482D8D430F9A6FD /* ../../App/Services/Mobile.swift */; };
-		A20000000000000000000020 /* MCP in Frameworks */ = {isa = PBXBuildFile; productRef = A20000000000000000000010 /* MCP */; };
-		A20000000000000000000021 /* JSONSchema in Frameworks */ = {isa = PBXBuildFile; productRef = A20000000000000000000011 /* JSONSchema */; };
-		A20000000000000000000022 /* Ontology in Frameworks */ = {isa = PBXBuildFile; productRef = A20000000000000000000012 /* Ontology */; };
-		A20000000000000000000023 /* Logging in Frameworks */ = {isa = PBXBuildFile; productRef = A20000000000000000000013 /* Logging */; };
-		A20000000000000000000030 /* BonjourDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF000000000001 /* BonjourDiscovery.swift */; };
-		A30000000000000000000020 /* HomeToolsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000010 /* HomeToolsTests.swift */; };
-		A30000000000000000000021 /* ../../Shared/Home/HomeBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000011 /* ../../Shared/Home/HomeBackend.swift */; };
-		A30000000000000000000022 /* ../../Shared/Home/HomeError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000012 /* ../../Shared/Home/HomeError.swift */; };
 		A30000000000000000000023 /* ../../Shared/Models/ToolInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000013 /* ../../Shared/Models/ToolInput.swift */; };
-		A30000000000000000000024 /* ../../Shared/Home/HomeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000014 /* ../../Shared/Home/HomeTools.swift */; };
-		A30000000000000000000025 /* ../../Shared/Models/Tool.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000015 /* ../../Shared/Models/Tool.swift */; };
-		A30000000000000000000026 /* ../../Shared/Models/Value.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000016 /* ../../Shared/Models/Value.swift */; };
-		A30000000000000000000030 /* MCP in Frameworks */ = {isa = PBXBuildFile; productRef = A20000000000000000000010 /* MCP */; };
-		A30000000000000000000031 /* JSONSchema in Frameworks */ = {isa = PBXBuildFile; productRef = A20000000000000000000011 /* JSONSchema */; };
-		A30000000000000000000032 /* Ontology in Frameworks */ = {isa = PBXBuildFile; productRef = A20000000000000000000012 /* Ontology */; };
-		A40000000000000000000020 /* HomeProxyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000010 /* HomeProxyTests.swift */; };
-		A40000000000000000000021 /* ../../App/Services/Home.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000011 /* ../../App/Services/Home.swift */; };
-		A40000000000000000000022 /* ../../Shared/Extensions/Logger+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000012 /* ../../Shared/Extensions/Logger+Extensions.swift */; };
-		A40000000000000000000023 /* ../../Shared/Extensions/Bundle+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000013 /* ../../Shared/Extensions/Bundle+Extensions.swift */; };
-		A40000000000000000000024 /* ../../Shared/Models/Service.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000014 /* ../../Shared/Models/Service.swift */; };
-		A40000000000000000000029 /* ../../App/Services/HomeHelperLocator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000019 /* ../../App/Services/HomeHelperLocator.swift */; };
-		A50000000000000000000020 /* MailTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000010 /* MailTests.swift */; };
-		A50000000000000000000021 /* ../../App/Services/Mail.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000011 /* ../../App/Services/Mail.swift */; };
-		A50000000000000000000022 /* ../../App/Extensions/Foundation+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000012 /* ../../App/Extensions/Foundation+Extensions.swift */; };
-		A50000000000000000000030 /* Envelope in Frameworks */ = {isa = PBXBuildFile; productRef = A50000000000000000000040 /* Envelope */; };
-		A60000000000000000000021 /* ../../Shared/Home/HomeHelperPairing.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000011 /* ../../Shared/Home/HomeHelperPairing.swift */; };
-		A60000000000000000000022 /* ../../Helper/Server/HelperServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000012 /* ../../Helper/Server/HelperServer.swift */; };
 		A7000000000000000000000C /* iMCP iOS Widgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = A70000000000000000000001 /* iMCP iOS Widgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		A70000000000000000000040 /* AlarmMetadata.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000020 /* AlarmMetadata.swift */; };
 		AA0011000000000000000001 /* Envelope in Frameworks */ = {isa = PBXBuildFile; productRef = AA0011000000000000000002 /* Envelope */; };
 		AB0055000000000000000001 /* TSRP in Frameworks */ = {isa = PBXBuildFile; productRef = AB0055000000000000000002 /* TSRP */; };
-		B0D1DEADBEEF000000000002 /* BonjourDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF000000000001 /* BonjourDiscovery.swift */; };
 		B0D1DEADBEEF000000000006 /* MCPServiceLoop.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF000000000005 /* MCPServiceLoop.swift */; };
 		B0D1DEADBEEF000000000008 /* MCPServiceLoopTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF000000000007 /* MCPServiceLoopTests.swift */; };
 		B0D1DEADBEEF00000000000A /* MCPInitializeCompatibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF000000000009 /* MCPInitializeCompatibility.swift */; };
 		B0D1DEADBEEF00000000000C /* MCPInitializeCompatibilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF00000000000B /* MCPInitializeCompatibilityTests.swift */; };
-		B13300000000000000000020 /* MusicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13300000000000000000010 /* MusicTests.swift */; };
-		B13300000000000000000021 /* ../../App/Services/Music.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13300000000000000000011 /* ../../App/Services/Music.swift */; };
-		B13400000000000000000020 /* AppleScriptTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13400000000000000000010 /* AppleScriptTests.swift */; };
 		C0A7E00000000000000000A2 /* ../../App/Controllers/ConnectionApprovalGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0A7E00000000000000000A1 /* ../../App/Controllers/ConnectionApprovalGate.swift */; };
 		C0A7E00000000000000000B2 /* ConnectionApprovalGateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0A7E00000000000000000B1 /* ConnectionApprovalGateTests.swift */; };
 		C0FFEE0000000000000000A1 /* TopoText in Frameworks */ = {isa = PBXBuildFile; productRef = C0FFEE0000000000000000A2 /* TopoText */; };
@@ -140,8 +110,6 @@
 		F8D8C48E2DCE0E6800369E5C /* JSONSchema in Frameworks */ = {isa = PBXBuildFile; productRef = F8D8C48D2DCE0E6800369E5C /* JSONSchema */; };
 		F8F1D2F82D6F9E0C00F6323D /* MCP in Frameworks */ = {isa = PBXBuildFile; productRef = F8F44E9C2D5903F70075D79C /* MCP */; };
 		F9E9902DC72D90F6C423EFE2 /* Logging in Frameworks */ = {isa = PBXBuildFile; productRef = 48ABEE9E6903427DD79096A1 /* Logging */; };
-		AA0011000000000000000001 /* Envelope in Frameworks */ = {isa = PBXBuildFile; productRef = AA0011000000000000000002 /* Envelope */; };
-		AB0055000000000000000001 /* TSRP in Frameworks */ = {isa = PBXBuildFile; productRef = AB0055000000000000000002 /* TSRP */; };
 		D1E000000000000000000020 /* NotesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1E000000000000000000010 /* NotesTests.swift */; };
 		D1E000000000000000000021 /* ../../App/Services/NotesQuery.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1E000000000000000000011 /* ../../App/Services/NotesQuery.swift */; };
 		D1E000000000000000000030 /* TopoText in Frameworks */ = {isa = PBXBuildFile; productRef = D1E000000000000000000040 /* TopoText */; };
@@ -153,6 +121,12 @@
 		5EC5A1E70000000000000021 /* ResponsibleApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EC5A1E70000000000000020 /* ResponsibleApp.swift */; };
 		5EC5A1E70000000000000023 /* MCPClientConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EC5A1E70000000000000022 /* MCPClientConfig.swift */; };
 		5EC5A1E70000000000000025 /* TrustedAppTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EC5A1E70000000000000024 /* TrustedAppTests.swift */; };
+		7A115CA1E000000000000003 /* TailscaleKit in Frameworks */ = {isa = PBXBuildFile; productRef = 7A115CA1E000000000000002 /* TailscaleKit */; };
+		485454500000000000000050 /* ../../App/Models/OAuthGrant.swift in Sources */ = {isa = PBXBuildFile; fileRef = 485454500000000000000030 /* ../../App/Models/OAuthGrant.swift */; };
+		485454500000000000000051 /* ../../App/Controllers/OAuthAuthority.swift in Sources */ = {isa = PBXBuildFile; fileRef = 485454500000000000000031 /* ../../App/Controllers/OAuthAuthority.swift */; };
+		485454500000000000000052 /* ../../App/Controllers/OAuthEndpoints.swift in Sources */ = {isa = PBXBuildFile; fileRef = 485454500000000000000032 /* ../../App/Controllers/OAuthEndpoints.swift */; };
+		485454500000000000000053 /* ../../App/Controllers/ClientMetadataFetcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 485454500000000000000033 /* ../../App/Controllers/ClientMetadataFetcher.swift */; };
+		485454500000000000000054 /* OAuthTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 485454500000000000000034 /* OAuthTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -200,6 +174,11 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		485454500000000000000014 /* ../../App/Controllers/FunnelAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Controllers/FunnelAccess.swift; sourceTree = "<group>"; };
+		485454500000000000000013 /* ../../App/Controllers/RemoteAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Controllers/RemoteAccess.swift; sourceTree = "<group>"; };
+		485454500000000000000010 /* RemoteAccessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteAccessTests.swift; sourceTree = "<group>"; };
+		485454500000000000000011 /* ../../App/Shared/HTTPMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Shared/HTTPMessage.swift; sourceTree = "<group>"; };
+		485454500000000000000012 /* ../../App/Models/AccessToken.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Models/AccessToken.swift; sourceTree = "<group>"; };
 		6A5CFBBEC66BC8CDA9D65496 /* imcp-serverTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "imcp-serverTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		75E148EAC5AC8B3263C5AA13 /* ServiceGroupConfigurationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ServiceGroupConfigurationTests.swift; sourceTree = "<group>"; };
 		A10000000000000000000001 /* iMCP Helper.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; path = "iMCP Helper.app"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -208,7 +187,6 @@
 		A30000000000000000000012 /* ../../Shared/Home/HomeError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../Shared/Home/HomeError.swift; sourceTree = "<group>"; };
 		A60000000000000000000011 /* ../../Shared/Home/HomeHelperPairing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../Shared/Home/HomeHelperPairing.swift; sourceTree = "<group>"; };
 		A60000000000000000000012 /* ../../Helper/Server/HelperServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../Helper/Server/HelperServer.swift; sourceTree = "<group>"; };
-		A30000000000000000000013 /* ../../Shared/Home/HomeInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../Shared/Home/HomeInput.swift; sourceTree = "<group>"; };
 		A30000000000000000000014 /* ../../Shared/Home/HomeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../Shared/Home/HomeTools.swift; sourceTree = "<group>"; };
 		A30000000000000000000015 /* ../../Shared/Models/Tool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../Shared/Models/Tool.swift; sourceTree = "<group>"; };
 		A30000000000000000000016 /* ../../Shared/Models/Value.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../Shared/Models/Value.swift; sourceTree = "<group>"; };
@@ -249,40 +227,16 @@
 		5EC5A1E7000000000000000C /* ClientCredentialsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ClientCredentialsTests.swift; sourceTree = "<group>"; };
 		5EC5A1E7000000000000000E /* ConnectionApprovals.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ConnectionApprovals.swift; path = ../../App/Controllers/ConnectionApprovals.swift; sourceTree = "<group>"; };
 		5EC5A1E70000000000000010 /* ConnectionApprovalsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ConnectionApprovalsTests.swift; sourceTree = "<group>"; };
-		6A5CFBBEC66BC8CDA9D65496 /* imcp-serverTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "imcp-serverTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
-		75E148EAC5AC8B3263C5AA13 /* ServiceGroupConfigurationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ServiceGroupConfigurationTests.swift; sourceTree = "<group>"; };
 		7BC3F2481A2BC3DA6FCD135F /* ../../App/Services/MobileCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/MobileCache.swift; sourceTree = "<group>"; };
 		98166DE39243B5BB0D2EA812 /* ../../Shared/Mobile/MobileTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../Shared/Mobile/MobileTools.swift; sourceTree = "<group>"; };
-		A10000000000000000000001 /* iMCP Helper.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; path = "iMCP Helper.app"; sourceTree = BUILT_PRODUCTS_DIR; };
-		A30000000000000000000010 /* HomeToolsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeToolsTests.swift; sourceTree = "<group>"; };
-		A30000000000000000000011 /* ../../Shared/Home/HomeBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../Shared/Home/HomeBackend.swift; sourceTree = "<group>"; };
-		A30000000000000000000012 /* ../../Shared/Home/HomeError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../Shared/Home/HomeError.swift; sourceTree = "<group>"; };
 		A30000000000000000000013 /* ../../Shared/Models/ToolInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../Shared/Models/ToolInput.swift; sourceTree = "<group>"; };
-		A30000000000000000000014 /* ../../Shared/Home/HomeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../Shared/Home/HomeTools.swift; sourceTree = "<group>"; };
-		A30000000000000000000015 /* ../../Shared/Models/Tool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../Shared/Models/Tool.swift; sourceTree = "<group>"; };
-		A30000000000000000000016 /* ../../Shared/Models/Value.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../Shared/Models/Value.swift; sourceTree = "<group>"; };
-		A40000000000000000000010 /* HomeProxyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeProxyTests.swift; sourceTree = "<group>"; };
-		A40000000000000000000011 /* ../../App/Services/Home.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/Home.swift; sourceTree = "<group>"; };
-		A40000000000000000000012 /* ../../Shared/Extensions/Logger+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../../Shared/Extensions/Logger+Extensions.swift"; sourceTree = "<group>"; };
-		A40000000000000000000013 /* ../../Shared/Extensions/Bundle+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../../Shared/Extensions/Bundle+Extensions.swift"; sourceTree = "<group>"; };
-		A40000000000000000000014 /* ../../Shared/Models/Service.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../Shared/Models/Service.swift; sourceTree = "<group>"; };
-		A40000000000000000000019 /* ../../App/Services/HomeHelperLocator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/HomeHelperLocator.swift; sourceTree = "<group>"; };
-		A50000000000000000000010 /* MailTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MailTests.swift; sourceTree = "<group>"; };
-		A50000000000000000000011 /* ../../App/Services/Mail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/Mail.swift; sourceTree = "<group>"; };
-		A50000000000000000000012 /* ../../App/Extensions/Foundation+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../../App/Extensions/Foundation+Extensions.swift"; sourceTree = "<group>"; };
-		A60000000000000000000011 /* ../../Shared/Home/HomeHelperPairing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../Shared/Home/HomeHelperPairing.swift; sourceTree = "<group>"; };
-		A60000000000000000000012 /* ../../Helper/Server/HelperServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../Helper/Server/HelperServer.swift; sourceTree = "<group>"; };
 		A70000000000000000000001 /* iMCP iOS Widgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "iMCP iOS Widgets.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
 		A70000000000000000000020 /* AlarmMetadata.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AlarmMetadata.swift; path = iOS/AlarmMetadata.swift; sourceTree = SOURCE_ROOT; };
 		AEA9566F574C683C4FB198FB /* ../../Shared/Mobile/MobileTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../Shared/Mobile/MobileTransport.swift; sourceTree = "<group>"; };
-		B0D1DEADBEEF000000000001 /* BonjourDiscovery.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = BonjourDiscovery.swift; path = ../../CLI/BonjourDiscovery.swift; sourceTree = "<group>"; };
 		B0D1DEADBEEF000000000005 /* MCPServiceLoop.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MCPServiceLoop.swift; path = ../../CLI/MCPServiceLoop.swift; sourceTree = "<group>"; };
 		B0D1DEADBEEF000000000007 /* MCPServiceLoopTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MCPServiceLoopTests.swift; sourceTree = "<group>"; };
 		B0D1DEADBEEF000000000009 /* MCPInitializeCompatibility.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MCPInitializeCompatibility.swift; path = ../../CLI/MCPInitializeCompatibility.swift; sourceTree = "<group>"; };
 		B0D1DEADBEEF00000000000B /* MCPInitializeCompatibilityTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MCPInitializeCompatibilityTests.swift; sourceTree = "<group>"; };
-		B13300000000000000000010 /* MusicTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicTests.swift; sourceTree = "<group>"; };
-		B13300000000000000000011 /* ../../App/Services/Music.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/Music.swift; sourceTree = "<group>"; };
-		B13400000000000000000010 /* AppleScriptTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleScriptTests.swift; sourceTree = "<group>"; };
 		C0A7E00000000000000000A1 /* ../../App/Controllers/ConnectionApprovalGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Controllers/ConnectionApprovalGate.swift; sourceTree = "<group>"; };
 		C0A7E00000000000000000B1 /* ConnectionApprovalGateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionApprovalGateTests.swift; sourceTree = "<group>"; };
 		C60000000000000000000001 /* iMCP iOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "iMCP iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -303,6 +257,11 @@
 		5EC5A1E70000000000000020 /* ResponsibleApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ResponsibleApp.swift; path = ../../App/Controllers/ResponsibleApp.swift; sourceTree = "<group>"; };
 		5EC5A1E70000000000000022 /* MCPClientConfig.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MCPClientConfig.swift; path = ../../App/Integrations/MCPClientConfig.swift; sourceTree = "<group>"; };
 		5EC5A1E70000000000000024 /* TrustedAppTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TrustedAppTests.swift; sourceTree = "<group>"; };
+		485454500000000000000030 /* ../../App/Models/OAuthGrant.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Models/OAuthGrant.swift; sourceTree = "<group>"; };
+		485454500000000000000031 /* ../../App/Controllers/OAuthAuthority.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Controllers/OAuthAuthority.swift; sourceTree = "<group>"; };
+		485454500000000000000032 /* ../../App/Controllers/OAuthEndpoints.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Controllers/OAuthEndpoints.swift; sourceTree = "<group>"; };
+		485454500000000000000033 /* ../../App/Controllers/ClientMetadataFetcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Controllers/ClientMetadataFetcher.swift; sourceTree = "<group>"; };
+		485454500000000000000034 /* OAuthTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OAuthTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -470,6 +429,7 @@
 				F80955702D7888920055B911 /* iMessage in Frameworks */,
 				C0FFEE0000000000000000A1 /* TopoText in Frameworks */,
 				F8D8C48E2DCE0E6800369E5C /* JSONSchema in Frameworks */,
+				7A115CA1E000000000000003 /* TailscaleKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -572,6 +532,16 @@
 				B0D1DEADBEEF000000000007 /* MCPServiceLoopTests.swift */,
 				B0D1DEADBEEF000000000009 /* MCPInitializeCompatibility.swift */,
 				B0D1DEADBEEF00000000000B /* MCPInitializeCompatibilityTests.swift */,
+				485454500000000000000010 /* RemoteAccessTests.swift */,
+				485454500000000000000011 /* ../../App/Shared/HTTPMessage.swift */,
+				485454500000000000000012 /* ../../App/Models/AccessToken.swift */,
+				485454500000000000000013 /* ../../App/Controllers/RemoteAccess.swift */,
+				485454500000000000000014 /* ../../App/Controllers/FunnelAccess.swift */,
+				485454500000000000000030 /* ../../App/Models/OAuthGrant.swift */,
+				485454500000000000000031 /* ../../App/Controllers/OAuthAuthority.swift */,
+				485454500000000000000032 /* ../../App/Controllers/OAuthEndpoints.swift */,
+				485454500000000000000033 /* ../../App/Controllers/ClientMetadataFetcher.swift */,
+				485454500000000000000034 /* OAuthTests.swift */,
 				B0D1DEADBEEF000000000005 /* MCPServiceLoop.swift */,
 				5EC5A1E70000000000000001 /* LocalSocket.swift */,
 				5EC5A1E70000000000000004 /* LocalSocketTests.swift */,
@@ -766,6 +736,7 @@
 				F8D7C3192DCBD32100A4775F /* MCP */,
 				F8D8C48D2DCE0E6800369E5C /* JSONSchema */,
 				B75D49165A453E912E36DBFE /* Sparkle */,
+				7A115CA1E000000000000002 /* TailscaleKit */,
 			);
 			productName = iMCP;
 			productReference = F8F44E6D2D59038D0075D79C /* iMCP.app */;
@@ -855,6 +826,7 @@
 				F8D7C3182DCBD32100A4775F /* XCRemoteSwiftPackageReference "swift-sdk" */,
 				F8D8C48C2DCE0E6800369E5C /* XCRemoteSwiftPackageReference "JSONSchema" */,
 				26120478122FBFCB2B073DE5 /* XCRemoteSwiftPackageReference "Sparkle" */,
+				7A115CA1E000000000000001 /* XCRemoteSwiftPackageReference "libtailscale" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = F8F44E6E2D59038D0075D79C /* Products */;
@@ -1006,6 +978,16 @@
 				B0D1DEADBEEF000000000006 /* MCPServiceLoop.swift in Sources */,
 				B0D1DEADBEEF00000000000A /* MCPInitializeCompatibility.swift in Sources */,
 				B0D1DEADBEEF00000000000C /* MCPInitializeCompatibilityTests.swift in Sources */,
+				485454500000000000000020 /* RemoteAccessTests.swift in Sources */,
+				485454500000000000000021 /* ../../App/Shared/HTTPMessage.swift in Sources */,
+				485454500000000000000022 /* ../../App/Models/AccessToken.swift in Sources */,
+				485454500000000000000023 /* ../../App/Controllers/RemoteAccess.swift in Sources */,
+				485454500000000000000024 /* ../../App/Controllers/FunnelAccess.swift in Sources */,
+				485454500000000000000050 /* ../../App/Models/OAuthGrant.swift in Sources */,
+				485454500000000000000051 /* ../../App/Controllers/OAuthAuthority.swift in Sources */,
+				485454500000000000000052 /* ../../App/Controllers/OAuthEndpoints.swift in Sources */,
+				485454500000000000000053 /* ../../App/Controllers/ClientMetadataFetcher.swift in Sources */,
+				485454500000000000000054 /* OAuthTests.swift in Sources */,
 				5EC5A1E70000000000000002 /* LocalSocket.swift in Sources */,
 				5EC5A1E70000000000000005 /* LocalSocketTests.swift in Sources */,
 				5EC5A1E70000000000000007 /* SocketTransport.swift in Sources */,
@@ -1757,6 +1739,14 @@
 				minimumVersion = 1.3.0;
 			};
 		};
+		7A115CA1E000000000000001 /* XCRemoteSwiftPackageReference "libtailscale" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/oliverames/libtailscale";
+			requirement = {
+				kind = exactVersion;
+				version = "0.2.0-imcp.2-funnel.1";
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -1855,11 +1845,6 @@
 			package = F809556C2D7888920055B911 /* XCRemoteSwiftPackageReference "Madrid" */;
 			productName = iMessage;
 		};
-		C0FFEE0000000000000000A2 /* TopoText */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = C0FFEE0000000000000000A3 /* XCRemoteSwiftPackageReference "TopoText" */;
-			productName = TopoText;
-		};
 		F825BDBE2D9AD00E0063ADD7 /* ServiceLifecycle */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = F825BDBD2D9AD00E0063ADD7 /* XCRemoteSwiftPackageReference "swift-service-lifecycle" */;
@@ -1906,18 +1891,16 @@
 			isa = XCSwiftPackageProductDependency;
 			productName = MCP;
 		};
-		AA0011000000000000000002 /* Envelope */ = {isa = XCSwiftPackageProductDependency; package = AA0011000000000000000003 /* XCRemoteSwiftPackageReference "Envelope" */; productName = Envelope; };
 		D1E000000000000000000040 /* TopoText */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = C0FFEE0000000000000000A3 /* XCRemoteSwiftPackageReference "TopoText" */;
 			productName = TopoText;
 		};
-		A50000000000000000000040 /* Envelope */ = {
+		7A115CA1E000000000000002 /* TailscaleKit */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = AA0011000000000000000003 /* XCRemoteSwiftPackageReference "Envelope" */;
-			productName = Envelope;
+			package = 7A115CA1E000000000000001 /* XCRemoteSwiftPackageReference "libtailscale" */;
+			productName = TailscaleKit;
 		};
-		AB0055000000000000000002 /* TSRP */ = {isa = XCSwiftPackageProductDependency; package = AB0055000000000000000003 /* XCRemoteSwiftPackageReference "TSRP" */; productName = TSRP; };
 /* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = F8F44E652D59038D0075D79C /* Project object */;
