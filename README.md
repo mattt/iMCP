@@ -89,7 +89,7 @@ and a [growing list of clients][mcp-clients] that support the
       <img src="Assets/photos.svg" width="48" height="48" alt="" role="presentation"/>
     </th>
     <td><strong>Photos</strong></td>
-    <td>Give photos and their details to the connected client: list albums, find photos and videos by album, date, type, favorite status, or place, and view a photo or a contact sheet of several photos as images. Hidden photos are left out.</td>
+    <td>Give photos and their details to the connected client: list albums, find photos and videos by album, date, type, favorite status, or place, view a photo or a contact sheet of several photos as images, and open the system photo picker with a search so that you choose which photos to share. Hidden photos are left out.</td>
   </tr>
   <tr>
     <th width="48">
