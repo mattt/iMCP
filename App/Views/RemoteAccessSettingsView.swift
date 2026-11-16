@@ -136,6 +136,10 @@ struct RemoteAccessSettingsView: View {
                     "A token can use only the services and tools that are on in iMCP. When you turn off a service or tool, no token can use it, whatever the token's access allows."
                 )
             }
+
+            if serverController.isRemoteAccessEnabled {
+                ConnectedAppsSection(model: serverController.oauthConnections)
+            }
         }
         .formStyle(.grouped)
         .navigationTitle("Remote Access")
@@ -405,6 +409,71 @@ private struct AuthKeyView: View {
         }
         .padding(20)
         .frame(width: 460)
+    }
+}
+
+/// The apps that the owner approved through public access, with a button to end each one.
+private struct ConnectedAppsSection: View {
+    @ObservedObject var model: OAuthConnectionsModel
+    @State private var appToRevoke: OAuthGrant?
+    @State private var revokeError: String?
+
+    var body: some View {
+        Section {
+            if let error = model.storageError {
+                Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.secondary)
+            } else if model.grants.isEmpty {
+                Text(
+                    "No apps are connected. When an app asks to connect through public access, you approve it here on your Mac."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            } else {
+                ForEach(model.grants) { grant in
+                    LabeledContent {
+                        Button("Revoke…", role: .destructive) { appToRevoke = grant }
+                    } label: {
+                        Text(grant.clientName)
+                        Text("Returns to \(grant.redirectHost)")
+                        Text(
+                            "Connected \(grant.createdAt.formatted(date: .abbreviated, time: .omitted)). "
+                                + (grant.lastUsedAt.map {
+                                    "Last used \($0.formatted(.relative(presentation: .named)))."
+                                }
+                                    ?? "Not used yet.")
+                        )
+                    }
+                }
+            }
+        } header: {
+            Text("Connected Apps")
+        } footer: {
+            Text("Revoking an app ends its access right away. It has to ask you to connect again.")
+        }
+        .confirmationDialog(
+            "Revoke \"\(appToRevoke?.clientName ?? "")\"?",
+            isPresented: Binding(get: { appToRevoke != nil }, set: { if !$0 { appToRevoke = nil } }),
+            presenting: appToRevoke
+        ) { grant in
+            Button("Revoke", role: .destructive) {
+                do {
+                    try model.revoke(grant.id)
+                } catch {
+                    revokeError = "\(error.localizedDescription) The app can't connect until iMCP saves the change."
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("The app loses access right away.")
+        }
+        .alert(
+            "Couldn't Revoke the App",
+            isPresented: Binding(get: { revokeError != nil }, set: { if !$0 { revokeError = nil } })
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(revokeError ?? "")
+        }
     }
 }
 

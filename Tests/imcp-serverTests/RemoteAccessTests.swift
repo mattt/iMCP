@@ -909,14 +909,16 @@ final class RemoteAccessAuthorizationTests: XCTestCase {
     private func makeFunnelServer(
         store: AccessTokenStore,
         node: FakeTailnetNode,
-        local: FakeLocalListener
+        local: FakeLocalListener,
+        oauth: OAuthAuthority = OAuthAuthority(storage: InMemoryOAuthGrantStorage())
     ) -> RemoteAccessServer {
         RemoteAccessServer(
             tokenStore: store,
             stateDirectory: URL(filePath: "/nonexistent/Tailscale"),
             makeNode: { _ in node },
             makeSessionServer: { _ in MCP.Server(name: "test", version: "1") },
-            makeLocalListener: { local }
+            makeLocalListener: { local },
+            oauth: oauth
         )
     }
 
@@ -997,8 +999,9 @@ final class RemoteAccessAuthorizationTests: XCTestCase {
         XCTAssertTrue(goodOrigin.hasPrefix("HTTP/1.1 200 OK\r\n"), goodOrigin)
 
         await server.stop()
-        // Stopping clears Funnel, so that it doesn't come back on the next start.
-        XCTAssertEqual(node.disableFunnelCount, 1)
+        // The node clears Funnel when it starts, and again when it stops,
+        // so that it doesn't come back on the next start.
+        XCTAssertEqual(node.disableFunnelCount, 2)
         XCTAssertEqual(local.shutdownCount, 1)
     }
 
@@ -1066,6 +1069,173 @@ final class RemoteAccessAuthorizationTests: XCTestCase {
         await server.stop()
     }
 
+    func testPublicUnauthorizedResponsePointsToTheResourceMetadata() async throws {
+        let node = FakeTailnetNode(state: .running(me), peers: [:])
+        let (store, _) = try makeStore()
+        let local = FakeLocalListener()
+        let server = makeFunnelServer(store: store, node: node, local: local)
+        await server.configure(.init(isEnabled: true, port: 4627, hostname: "mac-imcp", funnelEnabled: true))
+        try await waitUntil { await server.hasFunnelHost }
+
+        let metadata = #"resource_metadata="https://mac-imcp.example.ts.net/.well-known/oauth-protected-resource""#
+        let none = await local.connect(sending: rawRequest("POST", "/mcp", host: "mac-imcp.example.ts.net"))
+        XCTAssertTrue(none.hasPrefix("HTTP/1.1 401 Unauthorized\r\n"), none)
+        XCTAssertTrue(none.contains("WWW-Authenticate: Bearer realm=\"iMCP\", \(metadata)"), none)
+        XCTAssertFalse(none.contains("invalid_token"), none)
+        // A token that iMCP doesn't accept says so.
+        let bad = await local.connect(
+            sending: initializeRequest(secret: "imcpat_unknown", host: "mac-imcp.example.ts.net")
+        )
+        XCTAssertTrue(bad.contains(#"error="invalid_token""#), bad)
+        XCTAssertTrue(bad.contains(metadata), bad)
+        await server.stop()
+    }
+
+    func testOAuthPathsNeedNoTokenButFollowHostAndOriginRules() async throws {
+        let node = FakeTailnetNode(state: .running(me), peers: [:])
+        let (store, _) = try makeStore()
+        let local = FakeLocalListener()
+        let server = makeFunnelServer(store: store, node: node, local: local)
+        await server.configure(.init(isEnabled: true, port: 4627, hostname: "mac-imcp", funnelEnabled: true))
+        try await waitUntil { await server.hasFunnelHost }
+
+        let host = "mac-imcp.example.ts.net"
+        let metadata = await local.connect(
+            sending: rawRequest("GET", "/.well-known/oauth-protected-resource", host: host)
+        )
+        XCTAssertTrue(metadata.hasPrefix("HTTP/1.1 200 OK\r\n"), metadata)
+        XCTAssertTrue(metadata.contains("\"authorization_servers\":[\"https://\(host)\"]"), metadata)
+        let issuer = await local.connect(
+            sending: rawRequest("GET", "/.well-known/oauth-authorization-server", host: host)
+        )
+        XCTAssertTrue(issuer.contains("\"code_challenge_methods_supported\":[\"S256\"]"), issuer)
+
+        for wrongHost in ["evil.example", "127.0.0.1", "mac-imcp.example.ts.net:4627"] {
+            let response = await local.connect(
+                sending: rawRequest("GET", "/.well-known/oauth-authorization-server", host: wrongHost)
+            )
+            XCTAssertTrue(response.hasPrefix("HTTP/1.1 421 "), "\(wrongHost): \(response)")
+        }
+        let crossSite = await local.connect(
+            sending: rawRequest(
+                "POST",
+                "/token",
+                host: host,
+                origin: "https://evil.example",
+                body: "grant_type=refresh_token&client_id=x&refresh_token=y"
+            )
+        )
+        XCTAssertTrue(crossSite.hasPrefix("HTTP/1.1 403 Forbidden\r\n"), crossSite)
+        await server.stop()
+    }
+
+    func testOAuthAccessTokenReachesMCPUntilRevoked() async throws {
+        let node = FakeTailnetNode(state: .running(me), peers: [:])
+        let (store, _) = try makeStore()
+        let local = FakeLocalListener()
+        let authority = OAuthAuthority(storage: InMemoryOAuthGrantStorage())
+        let server = makeFunnelServer(store: store, node: node, local: local, oauth: authority)
+        await server.configure(.init(isEnabled: true, port: 4627, hostname: "mac-imcp", funnelEnabled: true))
+        try await waitUntil { await server.hasFunnelHost }
+
+        let host = "mac-imcp.example.ts.net"
+        let client = try authority.register(name: "Claude", redirectURIs: ["https://claude.ai/cb"])
+        let challenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+        let verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
+        let pending = try XCTUnwrap(
+            authority.beginPending(
+                client: client,
+                redirectURI: "https://claude.ai/cb",
+                state: nil,
+                challenge: challenge,
+                resource: "https://\(host)/mcp"
+            )
+        )
+        authority.setDecision(.approved(readOnly: true), for: pending.id)
+        guard case .approved(_, _, let code) = authority.outcome(ofPending: pending.id) else {
+            return XCTFail("Expected approval")
+        }
+        let tokens = try authority.exchange(
+            code: code,
+            clientID: client.id,
+            redirectURI: "https://claude.ai/cb",
+            verifier: verifier,
+            resource: "https://\(host)/mcp",
+            host: host
+        )
+
+        let accepted = await local.connect(sending: initializeRequest(secret: tokens.accessToken, host: host))
+        XCTAssertTrue(accepted.hasPrefix("HTTP/1.1 200 OK\r\n"), accepted)
+        // A token for this endpoint doesn't open the tailnet listener, which only knows iMCP tokens.
+        XCTAssertNil(store.token(secret: tokens.accessToken))
+
+        try authority.revoke(id: try XCTUnwrap(authority.allGrants.first).id)
+        let revoked = await local.connect(sending: initializeRequest(secret: tokens.accessToken, host: host))
+        XCTAssertTrue(revoked.hasPrefix("HTTP/1.1 401 Unauthorized\r\n"), revoked)
+        await server.stop()
+    }
+
+    func testFunnelConnectionClosesWhenTheRequestTakesTooLong() async throws {
+        // A client that sends a byte at a time never goes idle, so only the deadline ends it.
+        let connection = TrickleConnection()
+        let handled = LockedList<String>()
+        let http = HTTPServerConnection(
+            connection,
+            limits: .publicInternet,
+            idleTimeout: .seconds(60),
+            requestDeadline: .milliseconds(300)
+        )
+        let started = ContinuousClock.now
+        await http.serve(
+            { request in
+                handled.append(request.path)
+                return (.mcp(.error(statusCode: 400, .invalidRequest("x"))), keepAlive: false)
+            },
+            streamEnded: { _ in }
+        )
+        XCTAssertLessThan(ContinuousClock.now - started, .seconds(3))
+        XCTAssertTrue(handled.all.isEmpty)
+        XCTAssertTrue(connection.isClosed)
+        XCTAssertEqual(FunnelPolicy.requestDeadline, .seconds(15))
+    }
+
+    func testStoppingDuringFunnelEnableClearsWhatItSaved() async throws {
+        let node = FakeTailnetNode(state: .running(me), peers: [:])
+        node.holdFunnelEnable()
+        let (store, _) = try makeStore()
+        let local = FakeLocalListener()
+        let server = makeFunnelServer(store: store, node: node, local: local)
+        await server.configure(.init(isEnabled: true, port: 4627, hostname: "mac-imcp", funnelEnabled: true))
+        try await waitUntil { node.funnelEvents.contains("enable-started") }
+
+        let stopping = Task { await server.stop() }
+        try await Task.sleep(for: .milliseconds(150))
+        node.releaseFunnelEnable()
+        await stopping.value
+
+        // The saved configuration is cleared after the pending enable finishes, not before.
+        XCTAssertEqual(node.funnelEvents, ["disable", "enable-started", "enable-finished", "disable"])
+    }
+
+    func testFunnelIsClearedEvenWhenTheNodeReturnsEarly() async throws {
+        let tagged = TailnetSelf(
+            stableID: "n1",
+            userID: 1,
+            ipv4Address: "100.64.0.1",
+            ipv6Address: nil,
+            dnsName: "mac-imcp.example.ts.net",
+            isTagged: true
+        )
+        let node = FakeTailnetNode(state: .running(tagged), peers: [:])
+        let (store, _) = try makeStore()
+        let server = makeFunnelServer(store: store, node: node, local: FakeLocalListener())
+        await server.configure(.init(isEnabled: true, port: 4627, hostname: "mac-imcp", funnelEnabled: true))
+        // The node returns early because it's tagged, but the old configuration is already cleared.
+        try await waitUntil { node.disableFunnelCount == 1 }
+        XCTAssertEqual(node.funnelPorts, [])
+        await server.stop()
+    }
+
     private func makeStore() throws -> (AccessTokenStore, String) {
         let suite = "RemoteAccessTests.\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -1113,6 +1283,19 @@ final class RemoteAccessAuthorizationTests: XCTestCase {
             "Mcp-Session-Id: \(sessionID)",
             "Content-Length: \(body.utf8.count)",
         ]
+        return Data((head.joined(separator: "\r\n") + "\r\n\r\n" + body).utf8)
+    }
+
+    private func rawRequest(
+        _ method: String,
+        _ path: String,
+        host: String,
+        origin: String? = nil,
+        body: String = ""
+    ) -> Data {
+        var head = ["\(method) \(path) HTTP/1.1", "Host: \(host)", "Content-Length: \(body.utf8.count)"]
+        if method == "POST" { head.append("Content-Type: application/x-www-form-urlencoded") }
+        if let origin { head.append("Origin: \(origin)") }
         return Data((head.joined(separator: "\r\n") + "\r\n\r\n" + body).utf8)
     }
 
@@ -1366,14 +1549,45 @@ private final class FakeTailnetNode: TailnetNode, @unchecked Sendable {
     var funnelPorts: [UInt16] { lock.withLock { _funnelPorts } }
     var disableFunnelCount: Int { lock.withLock { _disableFunnelCount } }
 
+    private var holdEnable = false
+    private var enableWaiters: [CheckedContinuation<Void, Never>] = []
+    private var _funnelEvents: [String] = []
+    var funnelEvents: [String] { lock.withLock { _funnelEvents } }
+
+    /// Makes `enableFunnel` wait until `releaseFunnelEnable()`.
+    func holdFunnelEnable() { lock.withLock { holdEnable = true } }
+
+    func releaseFunnelEnable() {
+        let waiters = lock.withLock {
+            holdEnable = false
+            defer { enableWaiters.removeAll() }
+            return enableWaiters
+        }
+        for waiter in waiters { waiter.resume() }
+    }
+
     func enableFunnel(localPort: UInt16) async throws -> String {
+        lock.withLock { _funnelEvents.append("enable-started") }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            let hold = lock.withLock {
+                if holdEnable { enableWaiters.append(continuation) }
+                return holdEnable
+            }
+            if !hold { continuation.resume() }
+        }
         if let funnelError { throw funnelError }
-        lock.withLock { _funnelPorts.append(localPort) }
+        lock.withLock {
+            _funnelPorts.append(localPort)
+            _funnelEvents.append("enable-finished")
+        }
         return "Mac-iMCP.example.ts.net."
     }
 
     func disableFunnel() async throws {
-        lock.withLock { _disableFunnelCount += 1 }
+        lock.withLock {
+            _disableFunnelCount += 1
+            _funnelEvents.append("disable")
+        }
     }
 
     func status() async throws -> TailnetStatus {
@@ -1430,6 +1644,28 @@ private final class FakeTailnetNode: TailnetNode, @unchecked Sendable {
         listener.yield(connection)
         return connection
     }
+}
+
+/// A connection whose peer sends one byte every 50 ms and never finishes a request.
+private final class TrickleConnection: TailnetConnection, @unchecked Sendable {
+    let remoteAddress: String? = nil
+    private let lock = NSLock()
+    private var _isClosed = false
+    var isClosed: Bool { lock.withLock { _isClosed } }
+
+    func receive(timeout: Duration) async throws -> Data {
+        let delay = Duration.milliseconds(50)
+        if timeout < delay {
+            try await Task.sleep(for: timeout)
+            throw POSIXError(.ETIMEDOUT)
+        }
+        try await Task.sleep(for: delay)
+        return Data("x".utf8)
+    }
+
+    func send(_ data: Data, timeout: Duration) async throws {}
+
+    func close() async { lock.withLock { _isClosed = true } }
 }
 
 /// A connection whose peer sends requests when the test asks it to.

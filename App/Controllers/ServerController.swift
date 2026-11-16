@@ -252,6 +252,8 @@ final class ServerController: ObservableObject {
     /// and each connection without one gets its own.
     private var approvals = ApprovalQueue<ClientCredentialStore.Request, ApprovalWaiter>()
     private let approvalWindowController = ConnectionApprovalWindowController()
+    /// Apps that wait for the owner to approve public access through OAuth, keyed by request ID.
+    private var oauthApprovals = ApprovalQueue<OAuthApprovalRequest, OAuthApprovalWaiter>()
 
     private let networkManager = ServerNetworkManager()
 
@@ -293,6 +295,8 @@ final class ServerController: ObservableObject {
     @AppStorage("remoteAccessFunnelEnabled") private var remoteAccessFunnelEnabled = false
     @Published private(set) var remoteAccessState: RemoteAccessServer.State = .off
     private let tokenStore = AccessTokenStore.shared
+    /// The apps that the owner approved through OAuth, for Settings.
+    let oauthConnections = OAuthConnectionsModel()
     /// Applies remote access settings in the order that they change.
     private var remoteAccessConfigurationTask: Task<Void, Never>?
 
@@ -618,6 +622,67 @@ final class ServerController: ObservableObject {
         }
     }
 
+    // MARK: - OAuth Approval
+
+    /// Asks the owner to approve an app that wants public access, and waits for the answer.
+    /// A denial, an expiry, and a refusal for too many requests all answer `.denied`.
+    func requestOAuthApproval(_ request: OAuthApprovalRequest) async -> OAuthDecision {
+        await withCheckedContinuation { continuation in
+            let admission = oauthApprovals.enqueue(
+                key: request.id,
+                cooldownKey: nil,
+                request: request,
+                id: request.id,
+                waiter: OAuthApprovalWaiter(resume: { continuation.resume(returning: $0) }),
+                now: .now
+            )
+            switch admission {
+            case .show(let deadline):
+                scheduleOAuthExpiry(at: deadline)
+                if let entry = oauthApprovals.entries.last { presentOAuthApproval(entry) }
+            case .queued(let deadline):
+                scheduleOAuthExpiry(at: deadline)
+            case .coalesced, .rejected:
+                continuation.resume(returning: .denied)
+            }
+        }
+    }
+
+    private func presentOAuthApproval(_ entry: ApprovalQueue<OAuthApprovalRequest, OAuthApprovalWaiter>.Entry) {
+        let key = entry.key
+        approvalWindowController.showOAuthApprovalWindow(
+            id: key,
+            request: entry.request,
+            enabledServiceNames: computedServiceConfigs.filter { $0.binding.wrappedValue }.map { $0.name },
+            onApprove: { readOnly in self.finishOAuthApproval(key: key, decision: .approved(readOnly: readOnly)) },
+            onDeny: { self.finishOAuthApproval(key: key, decision: .denied) }
+        )
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func finishOAuthApproval(key: String, decision: OAuthDecision) {
+        let resolution = oauthApprovals.resolve(key: key, approved: decision != .denied, now: .now)
+        guard let entry = resolution.removed.first else { return }
+        log.notice(
+            "\(decision == .denied ? "Denying" : "Approving") public access for app: \(entry.request.clientName, privacy: .public)"
+        )
+        for (_, waiter) in entry.waiters { waiter.resume(decision) }
+        resolution.promoted.forEach(presentOAuthApproval)
+    }
+
+    private func scheduleOAuthExpiry(at deadline: ContinuousClock.Instant) {
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(until: deadline, clock: .continuous)
+            guard let self else { return }
+            let resolution = self.oauthApprovals.expire(now: .now)
+            for entry in resolution.removed {
+                self.approvalWindowController.closeWindow(for: entry.key)
+                for (_, waiter) in entry.waiters { waiter.resume(.denied) }
+            }
+            resolution.promoted.forEach(self.presentOAuthApproval)
+        }
+    }
+
     // MARK: - Connection Approval Methods
 
     /// Shows the dialog for a request in the approval queue.
@@ -784,9 +849,20 @@ final class ServerController: ObservableObject {
                     Task { @MainActor in self?.remoteAccessState = state }
                 },
                 tokenUsage: { [weak self] in
-                    Task { @MainActor in self?.objectWillChange.send() }
+                    Task { @MainActor in
+                        self?.objectWillChange.send()
+                        self?.oauthConnections.reload()
+                    }
                 }
             )
+            await self.networkManager.remoteAccess.setOAuthApprovalHandler { [weak self] request in
+                guard let self else { return .denied }
+                return await self.requestOAuthApproval(request)
+            }
+            self.oauthConnections.didRevoke = { [weak self] id in
+                guard let self else { return }
+                Task { await self.networkManager.remoteAccess.closeSessions(forToken: id) }
+            }
             self.applyRemoteAccessConfiguration()
         }
     }
@@ -950,6 +1026,11 @@ final class ServerController: ObservableObject {
     }
 }
 
+/// Resumes an app that waits for the owner to decide on public access.
+private struct OAuthApprovalWaiter {
+    let resume: (OAuthDecision) -> Void
+}
+
 /// The callbacks that resume a connection waiting for approval.
 private struct ApprovalWaiter {
     let approve: () -> Void
@@ -980,7 +1061,10 @@ extension RemoteAccessServer {
             try? await gate.approve { true }
             // Read current permissions so changes apply to open sessions.
             await networkManager.registerHandlers(for: server, connectionID: UUID(), gate: gate) { tool in
-                tokenStore.token(id: tokenID)?.permissions.allows(tool) ?? false
+                // A session belongs to an access token or to an OAuth grant.
+                // Read current permissions so that revoking or editing applies at once.
+                (tokenStore.token(id: tokenID)?.permissions ?? OAuthAuthority.shared.grant(id: tokenID)?.permissions)?
+                    .allows(tool) ?? false
             }
             return server
         }

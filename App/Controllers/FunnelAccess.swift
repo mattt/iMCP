@@ -14,15 +14,16 @@ import Network
 /// it needs an access token, only the node's public `ts.net` name is accepted,
 /// and the request and connection sizes are small.
 ///
-/// OAuth will plug in at `authorize(authorizationField:lookup:limiter:now:)`:
-/// it would accept a short-lived access token from an authorization server
-/// in place of an iMCP token, and nothing else in this policy would change.
+/// A request may also carry a short-lived OAuth access token that iMCP's own authorization server issued
+/// for this endpoint. See `OAuthAuthority`.
 enum FunnelPolicy {
     /// Open connections that the funnel listener serves at one time.
     /// Tailnet connections have their own limit, so that internet traffic can't starve them.
     static let maximumConnections = 16
     /// How long a connection can wait for the next request.
     static let idleTimeout: Duration = .seconds(60)
+    /// How long a request can take to arrive, from its first byte.
+    static let requestDeadline: Duration = .seconds(15)
 
     /// The `Host` and `Origin` values that a request may use:
     /// the public name on port 443, which clients write without a port.
@@ -48,6 +49,8 @@ enum FunnelPolicy {
 
     enum Decision: Equatable {
         case allowed(AccessToken)
+        /// An OAuth access token that iMCP issued for the MCP endpoint.
+        case allowedOAuth(OAuthGrant)
         /// No token, or a token that iMCP doesn't know.
         case unauthorized
         /// Too many requests with bad tokens lately.
@@ -65,11 +68,15 @@ enum FunnelPolicy {
     static func authorize(
         authorizationField: String?,
         lookup: (String) -> AccessToken?,
+        oauthLookup: (String) -> OAuthGrant? = { _ in nil },
         limiter: inout FailedAuthLimiter,
         now: Date = Date()
     ) -> Decision {
         if let token = bearerToken(in: authorizationField).flatMap(lookup) {
             return token.boundDevice == nil ? .allowed(token) : .boundToDevice
+        }
+        if let grant = bearerToken(in: authorizationField).flatMap(oauthLookup) {
+            return .allowedOAuth(grant)
         }
         if let retryAfter = limiter.retryAfter(now: now) {
             return .rateLimited(retryAfter: retryAfter)

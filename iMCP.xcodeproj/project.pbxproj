@@ -80,6 +80,11 @@
 		AA0011000000000000000001 /* Envelope in Frameworks */ = {isa = PBXBuildFile; productRef = AA0011000000000000000002 /* Envelope */; };
 		AB0055000000000000000001 /* TSRP in Frameworks */ = {isa = PBXBuildFile; productRef = AB0055000000000000000002 /* TSRP */; };
 		7A115CA1E000000000000003 /* TailscaleKit in Frameworks */ = {isa = PBXBuildFile; productRef = 7A115CA1E000000000000002 /* TailscaleKit */; };
+		485454500000000000000050 /* ../../App/Models/OAuthGrant.swift in Sources */ = {isa = PBXBuildFile; fileRef = 485454500000000000000030 /* ../../App/Models/OAuthGrant.swift */; };
+		485454500000000000000051 /* ../../App/Controllers/OAuthAuthority.swift in Sources */ = {isa = PBXBuildFile; fileRef = 485454500000000000000031 /* ../../App/Controllers/OAuthAuthority.swift */; };
+		485454500000000000000052 /* ../../App/Controllers/OAuthEndpoints.swift in Sources */ = {isa = PBXBuildFile; fileRef = 485454500000000000000032 /* ../../App/Controllers/OAuthEndpoints.swift */; };
+		485454500000000000000053 /* ../../App/Controllers/ClientMetadataFetcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 485454500000000000000033 /* ../../App/Controllers/ClientMetadataFetcher.swift */; };
+		485454500000000000000054 /* OAuthTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 485454500000000000000034 /* OAuthTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -152,6 +157,11 @@
 		E0E66768348853754D32208C /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/System/Library/Frameworks/Cocoa.framework; sourceTree = DEVELOPER_DIR; };
 		F8F44E6D2D59038D0075D79C /* iMCP.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = iMCP.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F8F44EB62D5908D00075D79C /* imcp-server */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "imcp-server"; sourceTree = BUILT_PRODUCTS_DIR; };
+		485454500000000000000030 /* ../../App/Models/OAuthGrant.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Models/OAuthGrant.swift; sourceTree = "<group>"; };
+		485454500000000000000031 /* ../../App/Controllers/OAuthAuthority.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Controllers/OAuthAuthority.swift; sourceTree = "<group>"; };
+		485454500000000000000032 /* ../../App/Controllers/OAuthEndpoints.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Controllers/OAuthEndpoints.swift; sourceTree = "<group>"; };
+		485454500000000000000033 /* ../../App/Controllers/ClientMetadataFetcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Controllers/ClientMetadataFetcher.swift; sourceTree = "<group>"; };
+		485454500000000000000034 /* OAuthTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OAuthTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -304,6 +314,11 @@
 				485454500000000000000012 /* ../../App/Models/AccessToken.swift */,
 				485454500000000000000013 /* ../../App/Controllers/RemoteAccess.swift */,
 				485454500000000000000014 /* ../../App/Controllers/FunnelAccess.swift */,
+				485454500000000000000030 /* ../../App/Models/OAuthGrant.swift */,
+				485454500000000000000031 /* ../../App/Controllers/OAuthAuthority.swift */,
+				485454500000000000000032 /* ../../App/Controllers/OAuthEndpoints.swift */,
+				485454500000000000000033 /* ../../App/Controllers/ClientMetadataFetcher.swift */,
+				485454500000000000000034 /* OAuthTests.swift */,
 				B0D1DEADBEEF000000000005 /* MCPServiceLoop.swift */,
 				5EC5A1E70000000000000001 /* LocalSocket.swift */,
 				5EC5A1E70000000000000004 /* LocalSocketTests.swift */,
@@ -631,6 +646,11 @@
 				485454500000000000000022 /* ../../App/Models/AccessToken.swift in Sources */,
 				485454500000000000000023 /* ../../App/Controllers/RemoteAccess.swift in Sources */,
 				485454500000000000000024 /* ../../App/Controllers/FunnelAccess.swift in Sources */,
+				485454500000000000000050 /* ../../App/Models/OAuthGrant.swift in Sources */,
+				485454500000000000000051 /* ../../App/Controllers/OAuthAuthority.swift in Sources */,
+				485454500000000000000052 /* ../../App/Controllers/OAuthEndpoints.swift in Sources */,
+				485454500000000000000053 /* ../../App/Controllers/ClientMetadataFetcher.swift in Sources */,
+				485454500000000000000054 /* OAuthTests.swift in Sources */,
 				5EC5A1E70000000000000002 /* LocalSocket.swift in Sources */,
 				5EC5A1E70000000000000005 /* LocalSocketTests.swift in Sources */,
 				5EC5A1E70000000000000007 /* SocketTransport.swift in Sources */,

@@ -5,6 +5,8 @@ struct HTTPRequestMessage: Equatable, Sendable {
     var method: String
     /// The path without its query.
     var path: String
+    /// The raw query after the `?`, without the `?`, or empty.
+    var query: String = ""
     /// Header fields, with repeated fields joined by commas.
     var headers: [String: String]
     var body: Data
@@ -104,6 +106,9 @@ enum HTTPRequestParser {
         let message = HTTPRequestMessage(
             method: String(requestLine[0]),
             path: String(requestLine[1].split(separator: "?", maxSplits: 1)[0]),
+            query: requestLine[1].split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false).dropFirst()
+                .first
+                .map(String.init) ?? "",
             headers: headers,
             body: Data(),
             keepAlive: false
@@ -189,7 +194,9 @@ enum HTTPResponseEncoder {
     static func reasonPhrase(for status: Int) -> String {
         switch status {
         case 200: "OK"
+        case 201: "Created"
         case 202: "Accepted"
+        case 302: "Found"
         case 400: "Bad Request"
         case 401: "Unauthorized"
         case 403: "Forbidden"
