@@ -47,6 +47,10 @@ public enum ToolCallContext {
     /// The client connection that made the call,
     /// so that a tool can tie what it keeps to the connection and remove it when the connection closes.
     @TaskLocal public static var connectionID: UUID?
+
+    /// The name of the client that made the call, for display to the user, when it is known.
+    /// The client reports this name itself, so do not use it to decide what the call can do.
+    @TaskLocal public static var clientName: String?
 }
 
 /// A JSON-LD document that lists values in `@graph` under one `@context`.
