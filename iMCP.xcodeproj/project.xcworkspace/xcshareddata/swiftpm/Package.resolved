@@ -130,10 +130,10 @@
     {
       "identity" : "topotext",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/mattt/TopoText",
+      "location" : "https://github.com/oliverames/TopoText",
       "state" : {
-        "revision" : "69aa77928f0eb85d98dff819f5459e893294bd71",
-        "version" : "0.2.0"
+        "branch" : "feat/smart-folders-tags-links",
+        "revision" : "fc4ff6baaf6100082d7c169e82362f94e51cfb7c"
       }
     },
     {

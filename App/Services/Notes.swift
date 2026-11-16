@@ -63,7 +63,7 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
         Tool(
             name: "notes_fetch",
             description:
-                "Fetch notes from the Notes app, most recently edited first, with each note's title, preview, folder, and dates. Use notes_read for a note's full contents. Notes in Recently Deleted are left out unless that folder is requested. When more notes may match, the result has a nextCursor; pass it as cursor, with the same filters, to continue.",
+                "Fetch notes from the Notes app, most recently edited first, with each note's title, preview, folder, dates, tags (keywords), and the notes it links to (linkedNotes). Use notes_read for a note's full contents. Notes in Recently Deleted are left out unless that folder is requested. When more notes may match, the result has a nextCursor; pass it as cursor, with the same filters, to continue.",
             inputSchema: .object(
                 properties: [
                     "query": .string(
@@ -145,7 +145,7 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
 
             try self.checkDatabaseAccess()
             let baseRequest = request
-            let (result, folders) = try await self.withStore { store in
+            let (result, folders, tags, links) = try await self.withStore { store in
                 // The folders and the notes come from one snapshot, so they agree.
                 try await store.withSnapshot { snapshot in
                     let folders = try snapshot.folders()
@@ -159,7 +159,12 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
                         }
                         request.folderIDs = Set(matches.map(\.id))
                     }
-                    return (try snapshot.search(request), folders)
+                    let result = try snapshot.search(request)
+                    // Tags and links come from the database's rows, so they cost no decoding.
+                    let ids = result.notes.map(\.id)
+                    let tags = try snapshot.tags(for: ids)
+                    let links = try snapshot.links(from: ids)
+                    return (result, folders, tags, links)
                 }
             }
             if !result.unreadableNoteIDs.isEmpty {
@@ -174,7 +179,7 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
                 "@type": "ItemList",
                 "name": "Notes",
                 "numberOfItems": .int(result.notes.count),
-                "itemListElement": .array(result.notes.map { .object($0.properties(in: folders)) }),
+                "itemListElement": .array(result.notes.map { .object($0.properties(in: folders, tags: tags, links: links)) }),
             ]
             if let nextCursor = result.nextCursor {
                 list["nextCursor"] = .string(nextCursor.description)
@@ -190,9 +195,48 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
         }
 
         Tool(
+            name: "notes_smart_folders",
+            description:
+                "List the smart folders in the Notes app, with the rules that select their notes. Smart folders collect notes by a query and hold none of their own, so notes_folders leaves them out. rules is the stored query without the clause that keeps Recently Deleted out; query is the stored text as is.",
+            inputSchema: .object(
+                properties: [:],
+                additionalProperties: false
+            ),
+            annotations: .init(
+                title: "List Smart Folders",
+                readOnlyHint: true,
+                openWorldHint: false
+            )
+        ) { _ in
+            try await self.smartFoldersResult()
+        }
+
+        Tool(
+            name: "notes_tags",
+            description:
+                "List the tags (#hashtags) used in the Notes app, with how many notes carry each one, most used first. Reads the database's tag records without opening the notes. Locked notes are skipped, and notes in Recently Deleted unless includeRecentlyDeleted is true.",
+            inputSchema: .object(
+                properties: [
+                    "includeRecentlyDeleted": .boolean(
+                        description: "Whether notes in Recently Deleted count",
+                        default: false
+                    )
+                ],
+                additionalProperties: false
+            ),
+            annotations: .init(
+                title: "List Note Tags",
+                readOnlyHint: true,
+                openWorldHint: false
+            )
+        ) { arguments in
+            try await self.tagsResult(arguments)
+        }
+
+        Tool(
             name: "notes_read",
             description:
-                "Read the full contents of a note from the Notes app, as Markdown with headings, lists, checklists, links, and tables, or as plain text. Attachments such as images and drawings appear as bracketed descriptions. Notes locked with a password can't be read.",
+                "Read the full contents of a note from the Notes app, as Markdown with headings, lists, checklists, links, and tables, or as plain text, with its tags (keywords), the notes it links to (linkedNotes), and the notes that link to it (linkedFrom). Attachments such as images and drawings appear as bracketed descriptions. Notes locked with a password can't be read.",
             inputSchema: .object(
                 properties: [
                     "id": .string(
@@ -227,19 +271,105 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
             }
 
             try self.checkDatabaseAccess()
-            let (note, content, folders) = try await self.withStore { store in
-                try await store.withSnapshot { snapshot in
-                    (try snapshot.note(for: id), try snapshot.content(for: id), try snapshot.folders())
-                }
-            }
+            let context = try await self.readContext(for: id)
+            let (note, content) = (context.note, context.content)
 
-            var object = note.properties(in: folders)
+            var object = note.properties(in: context.folders)
             object["@context"] = "https://schema.org"
             object["@type"] = "NoteDigitalDocument"
             object["encodingFormat"] = .string(isMarkdown ? "text/markdown" : "text/plain")
             object["text"] = .string(isMarkdown ? content.markdown() : content.plainText())
+            object.merge(context.inlineProperties) { $1 }
             return object
         }
+    }
+
+    // MARK: - Tags, Links, and Smart Folders
+
+    /// A note with its contents, tags, and links, read from one snapshot.
+    private struct NoteContext: Sendable {
+        var note: TopoText.Note
+        var content: TopoText.Note.Content
+        var folders: [TopoText.Folder]
+        var tags: [TopoText.Note.Tag]
+        var links: [TopoText.Note.Link]
+        var backlinks: [TopoText.Note.Link]
+        /// The notes at the other ends of the links, by identifier.
+        var others: [TopoText.Note.ID: TopoText.Note]
+
+        /// The properties that a note's tags and links add to its object in tool output.
+        var inlineProperties: [String: Value] {
+            var object = note.inlineProperties(tags: tags, links: links, titles: others)
+            if !backlinks.isEmpty {
+                object["linkedFrom"] = .array(
+                    backlinks.map { linkValue($0, direction: .incoming, otherTitle: others[$0.sourceID]?.title) }
+                )
+            }
+            return object
+        }
+    }
+
+    private func readContext(for id: TopoText.Note.ID) async throws -> NoteContext {
+        try checkDatabaseAccess()
+        return try await withStore { store in
+            try await store.withSnapshot { snapshot in
+                let note = try snapshot.note(for: id)
+                let content = try snapshot.content(for: id)
+                let folders = try snapshot.folders()
+                let tags = try snapshot.tags(for: [id])[id] ?? []
+                let links = try snapshot.links(from: [id])[id] ?? []
+                let backlinks = try snapshot.backlinks(to: id)
+                // The notes at the other ends of the links, for their titles.
+                var others: [TopoText.Note.ID: TopoText.Note] = [:]
+                for other in links.map(\.targetID) + backlinks.map(\.sourceID) where others[other] == nil {
+                    others[other] = try? snapshot.note(for: other)
+                }
+                return NoteContext(
+                    note: note,
+                    content: content,
+                    folders: folders,
+                    tags: tags,
+                    links: links,
+                    backlinks: backlinks,
+                    others: others
+                )
+            }
+        }
+    }
+
+    private func smartFoldersResult() async throws -> Value {
+        try checkDatabaseAccess()
+        let (smartFolders, folders): ([TopoText.SmartFolder], [TopoText.Folder]) = try await withStore { store in
+            try await store.withSnapshot { snapshot in
+                let smartFolders = try snapshot.smartFolders()
+                let folders = try snapshot.folders()
+                return (smartFolders, folders)
+            }
+        }
+        let names = Dictionary(folders.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
+        return .object([
+            "@context": "https://schema.org",
+            "@type": "ItemList",
+            "name": "Smart Folders",
+            "numberOfItems": .int(smartFolders.count),
+            "itemListElement": .array(smartFolders.map { smartFolderValue($0, folderNames: names) }),
+        ])
+    }
+
+    private func tagsResult(_ arguments: [String: Value]) async throws -> Value {
+        let includesDeleted = try argument("includeRecentlyDeleted", in: arguments, as: \.boolValue) ?? false
+        try checkDatabaseAccess()
+        let summaries = try await withStore { try await $0.tags(includingRecentlyDeleted: includesDeleted) }
+        let items: [Value] = summaries.map {
+            .object(["name": .string($0.tag.text), "numberOfItems": .int($0.noteCount)])
+        }
+        return .object([
+            "@context": "https://schema.org",
+            "@type": "ItemList",
+            "name": "Note Tags",
+            "numberOfItems": .int(summaries.count),
+            "itemListElement": .array(items),
+        ])
     }
 
     // MARK: - Database Access
@@ -581,6 +711,17 @@ extension TopoText.Folder {
 
 extension TopoText.Note {
     /// The note's metadata as the properties of a JSON object for tool output.
+    fileprivate func properties(
+        in folders: [TopoText.Folder],
+        tags: [TopoText.Note.ID: [TopoText.Note.Tag]],
+        links: [TopoText.Note.ID: [TopoText.Note.Link]]
+    ) -> [String: Value] {
+        var object = properties(in: folders)
+        object.merge(inlineProperties(tags: tags[id] ?? [], links: links[id] ?? [], titles: nil)) { $1 }
+        return object
+    }
+
+    /// The note's metadata as the properties of a JSON object for tool output.
     fileprivate func properties(in folders: [TopoText.Folder]) -> [String: Value] {
         var object: [String: Value] = [
             "@id": .string(id.description),
@@ -610,6 +751,30 @@ extension TopoText.Note {
         }
         if isLocked {
             object["isLocked"] = true
+        }
+        return object
+    }
+}
+
+extension TopoText.Note {
+    /// A note's tags and links to other notes as properties of a JSON object for tool output.
+    /// - Parameter titles: The notes at the other ends of the links, by identifier, for their titles;
+    ///   `nil` if the caller didn't look them up.
+    fileprivate func inlineProperties(
+        tags: [TopoText.Note.Tag],
+        links: [TopoText.Note.Link],
+        titles: [TopoText.Note.ID: TopoText.Note]?
+    ) -> [String: Value] {
+        var object: [String: Value] = [:]
+        if !tags.isEmpty {
+            object["keywords"] = keywordValues(tags)
+        }
+        if !links.isEmpty {
+            object["linkedNotes"] = .array(
+                links.map {
+                    linkValue($0, direction: .outgoing, otherTitle: titles?[$0.targetID]?.title, wasLookedUp: titles != nil)
+                }
+            )
         }
         return object
     }

@@ -1,0 +1,109 @@
+import Foundation
+import TopoText
+
+// This file holds the parts of the Notes service that shape tags, links between notes,
+// and smart folders for tool output. They take TopoText's plain values, not a database,
+// so that tests can build the values.
+
+/// The tags of a note as the note's `keywords`: `#name`, in the order the database lists them.
+func keywordValues(_ tags: [TopoText.Note.Tag]) -> Value {
+    .array(tags.map { .string($0.text) })
+}
+
+/// A link between notes as an object for the note's `linkedNotes` or `linkedFrom`.
+///
+/// - Parameters:
+///   - link: The link.
+///   - direction: Whether the link leaves the note (`outgoing`) or arrives at it (`incoming`).
+///   - otherTitle: The title of the note at the other end, or `nil` if Notes doesn't list it.
+///   - wasLookedUp: Whether the caller looked for that note, so that a missing one is reported as missing.
+func linkValue(
+    _ link: TopoText.Note.Link,
+    direction: LinkDirection,
+    otherTitle: String?,
+    wasLookedUp: Bool = true
+) -> Value {
+    let otherID = direction == .outgoing ? link.targetID : link.sourceID
+    var object: [String: Value] = ["@id": .string(otherID.description)]
+    if let title = otherTitle, !title.isEmpty {
+        object["name"] = .string(title)
+    } else if let label = link.label {
+        object["name"] = .string(label)
+    }
+    // The label can differ from the title, because it is the text of the link, which doesn't follow renames.
+    if let label = link.label, label != object["name"]?.stringValue {
+        object["linkText"] = .string(label)
+    }
+    if wasLookedUp, otherTitle == nil {
+        object["isMissing"] = true
+    }
+    return .object(object)
+}
+
+enum LinkDirection: Sendable {
+    case outgoing
+    case incoming
+}
+
+/// A smart folder as an object for tool output, with its rules read from the stored query.
+/// - Parameter folderNames: The names of the folders, by identifier, for the name of the parent folder.
+func smartFolderValue(_ folder: TopoText.SmartFolder, folderNames: [TopoText.Folder.ID: String]) -> Value {
+    var object: [String: Value] = [
+        "@id": .string(folder.id.description),
+        "@type": "SmartFolder",
+        "name": .string(folder.name),
+    ]
+    if let accountName = folder.account?.name {
+        object["account"] = .string(accountName)
+    }
+    if let parentID = folder.parentID {
+        var parent: [String: Value] = ["@id": .string(parentID.description)]
+        if let name = folderNames[parentID] {
+            parent["name"] = .string(name)
+        }
+        object["parentFolder"] = .object(parent)
+    }
+    let query = SmartFolderQuery(folder.query)
+    if let rules = query.rules {
+        object["rules"] = rules
+    }
+    if query.includesRecentlyDeleted == true {
+        object["includesRecentlyDeleted"] = true
+    }
+    // The stored text stays available, because rules that this server doesn't know are not explained.
+    object["query"] = .string(folder.query)
+    return .object(object)
+}
+
+/// The query that Notes stores for a smart folder.
+///
+/// Notes stores `{"entity":"note","type":{"and":[{"deleted":false}, <rules>…]}}`.
+/// The `deleted` clause only keeps Recently Deleted out of the results,
+/// so the rules are what remains of the `and` clause.
+/// Notes doesn't document the format, so anything else is kept whole as the rules.
+struct SmartFolderQuery: Sendable, Equatable {
+    /// The rules of the folder as JSON, or `nil` if the text is not JSON.
+    private(set) var rules: Value?
+    /// Whether the folder includes Recently Deleted, if the query says.
+    private(set) var includesRecentlyDeleted: Bool?
+
+    init(_ text: String) {
+        guard let value = try? JSONDecoder().decode(Value.self, from: Data(text.utf8)) else { return }
+        rules = value
+        guard let type = value.objectValue?["type"], let clauses = type.objectValue?["and"]?.arrayValue else {
+            if let type = value.objectValue?["type"] {
+                rules = type
+            }
+            return
+        }
+        var rest: [Value] = []
+        for clause in clauses {
+            if let object = clause.objectValue, object.count == 1, let deleted = object["deleted"]?.boolValue {
+                includesRecentlyDeleted = deleted
+            } else {
+                rest.append(clause)
+            }
+        }
+        rules = rest.count == 1 ? rest[0] : .object(["and": .array(rest)])
+    }
+}
