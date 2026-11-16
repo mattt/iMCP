@@ -61,6 +61,7 @@ enum ServiceRegistry {
             MusicService.shared,
             NotesService.shared,
             PhoneService.shared,
+            PhotosService.shared,
             RemindersService.shared,
             ShortcutsService.shared,
             UtilitiesService.shared,
@@ -87,6 +88,7 @@ enum ServiceRegistry {
         musicEnabled: Binding<Bool>,
         notesEnabled: Binding<Bool>,
         phoneEnabled: Binding<Bool>,
+        photosEnabled: Binding<Bool>,
         remindersEnabled: Binding<Bool>,
         shortcutsEnabled: Binding<Bool>,
         utilitiesEnabled: Binding<Bool>,
@@ -184,6 +186,14 @@ enum ServiceRegistry {
                 binding: phoneEnabled
             ),
             ServiceConfig(
+                name: "Photos",
+                summary: "Find photos and videos by album, date, type, or place, and view them as images.",
+                iconName: "photo.on.rectangle",
+                color: .pink,
+                service: PhotosService.shared,
+                binding: photosEnabled
+            ),
+            ServiceConfig(
                 name: "Reminders",
                 summary: "View, create, update, and delete reminders and reminder lists.",
                 iconName: "list.bullet",
@@ -261,6 +271,7 @@ final class ServerController: ObservableObject {
     @AppStorage("musicEnabled") private var musicEnabled = false
     @AppStorage("notesEnabled") private var notesEnabled = false
     @AppStorage("phoneEnabled") private var phoneEnabled = false
+    @AppStorage("photosEnabled") private var photosEnabled = false
     @AppStorage("remindersEnabled") private var remindersEnabled = false
     @AppStorage("shortcutsEnabled") private var shortcutsEnabled = false
     @AppStorage("utilitiesEnabled") private var utilitiesEnabled = true  // Default enabled
@@ -292,6 +303,7 @@ final class ServerController: ObservableObject {
             musicEnabled: $musicEnabled,
             notesEnabled: $notesEnabled,
             phoneEnabled: $phoneEnabled,
+            photosEnabled: $photosEnabled,
             remindersEnabled: $remindersEnabled,
             shortcutsEnabled: $shortcutsEnabled,
             utilitiesEnabled: $utilitiesEnabled,
@@ -527,6 +539,7 @@ final class ServerController: ObservableObject {
     private func connectionClosed(_ connectionID: UUID) {
         credentialSessions.remove(connectionID)
         cancelApproval(for: connectionID)
+        PhotosService.removeReferenceFiles(for: connectionID)
     }
 
     /// Stops waiting for a decision on a connection that closed.
@@ -547,6 +560,9 @@ final class ServerController: ObservableObject {
     }
 
     init() {
+        // No client can still read the image files that an earlier launch wrote.
+        PhotosService.removeAllReferenceFiles()
+
         Task { [self] in
             // Initialize bindings from AppStorage before the server starts.
             // The menu sends the enabled state only when its content first appears,
@@ -1374,9 +1390,14 @@ actor ServerNetworkManager {
                 {
                     do {
                         guard
-                            let value = try await service.call(
-                                tool: params.name,
-                                with: params.arguments ?? [:]
+                            let value = try await ToolCallContext.$connectionID.withValue(
+                                connectionID,
+                                operation: {
+                                    try await service.call(
+                                        tool: params.name,
+                                        with: params.arguments ?? [:]
+                                    )
+                                }
                             )
                         else {
                             continue
