@@ -135,8 +135,11 @@ final class PhotosService: Service {
                     "limit": .integer(
                         description: """
                             Maximum items to return. With query or near, \
-                            a call examines at most \(maxScannedAssets) items, \
-                            so it can return fewer items and a nextCursor
+                            a call examines about \(maxScannedAssets) items at most, \
+                            so it can return fewer items and a nextCursor. \
+                            Items with the same creation date are read together, \
+                            so a call can examine more items than these numbers \
+                            when many items share one creation date.
                             """,
                         default: .int(defaultLimit),
                         minimum: 1
@@ -666,13 +669,18 @@ final class PhotosService: Service {
     /// Returns one page of a newest-first sequence of items.
     ///
     /// The items must be in descending order of creation date.
-    /// Within a run of items with the same creation date, the page orders them
-    /// by descending local identifier, so that every call sees them in the same order.
+    /// PhotoKit cannot sort by a second key, so the page reads each run of items
+    /// with the same creation date together and orders the run by descending local identifier,
+    /// so that every call sees those items in the same order.
+    /// For this reason a page can read more items than `limit` or `scanLimit`:
+    /// at most the rest of one such run, and the one item after it that ends the run.
+    /// The page stops before it reads another run when it is full or has examined `scanLimit` items.
     /// Items without a creation date are skipped, because a cursor cannot hold their position.
     ///
     /// - Parameters:
     ///   - count: The number of items.
-    ///   - item: Returns the item at an index; it is called only for the items that the page needs.
+    ///   - item: Returns the item at an index; it is called at most once for each index,
+    ///     and only for the items that the page needs.
     ///   - key: Returns an item's position, or nil when it has no creation date.
     ///   - cursor: The position after which the page starts.
     ///   - limit: The most items to return.
@@ -693,19 +701,38 @@ final class PhotosService: Service {
         var scanned = 0
         var last: Cursor?
         var index = 0
-        while index < count {
-            var group: [(item: Item, key: Cursor)] = []
+        // The item that ended the previous run, which starts the next one.
+        var lookahead: (item: Item, key: Cursor)?
+
+        func nextItem() -> (item: Item, key: Cursor)? {
             while index < count {
                 let candidate = item(index)
-                guard let candidateKey = key(candidate) else {
-                    index += 1
-                    continue
+                index += 1
+                if let candidateKey = key(candidate) {
+                    return (candidate, candidateKey)
                 }
-                if let first = group.first, first.key.creationDate != candidateKey.creationDate {
+            }
+            return nil
+        }
+
+        func isFull() -> Bool {
+            results.count == limit || scanLimit.map { scanned >= $0 } == true
+        }
+
+        while true {
+            if isFull() {
+                let hasMore = lookahead != nil || index < count
+                return (results, hasMore ? last : nil)
+            }
+            guard let first = lookahead ?? nextItem() else { break }
+            lookahead = nil
+            var group = [first]
+            while let next = nextItem() {
+                guard next.key.creationDate == first.key.creationDate else {
+                    lookahead = next
                     break
                 }
-                group.append((candidate, candidateKey))
-                index += 1
+                group.append(next)
             }
             group.sort { $0.key.localIdentifier > $1.key.localIdentifier }
 
@@ -713,10 +740,7 @@ final class PhotosService: Service {
                 if let cursor, !cursor.precedes(candidateKey) {
                     continue
                 }
-                if results.count == limit {
-                    return (results, last)
-                }
-                if let scanLimit, scanned == scanLimit {
+                if isFull() {
                     return (results, last)
                 }
                 scanned += 1

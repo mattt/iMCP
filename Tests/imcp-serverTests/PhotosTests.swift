@@ -270,6 +270,65 @@ final class PhotosTests: XCTestCase {
         XCTAssertEqual(pages.count, 4)
     }
 
+    func testFullPageDoesNotReadTheNextRun() {
+        let items = (0 ..< 100).map { Item(id: String(format: "%03d", $0), date: Double(1000 - $0)) }
+        var reads: [Int] = []
+        let page = PhotosService.page(
+            count: items.count,
+            item: { index in
+                reads.append(index)
+                return items[index]
+            },
+            key: key(of:),
+            after: nil,
+            limit: 2
+        )
+        XCTAssertEqual(page.items.map(\.id), ["000", "001"])
+        // The third item ends the second item's run of equal dates.
+        XCTAssertEqual(reads, [0, 1, 2])
+        XCTAssertEqual(page.nextCursor?.localIdentifier, "001")
+    }
+
+    func testScanLimitIsExceededByAtMostOneRunOfEqualDates() {
+        // Three items with their own dates, a run of 20 with one date, then 10 more.
+        var items = (0 ..< 3).map { Item(id: "a\($0)", date: Double(1000 - $0)) }
+        items += (0 ..< 20).map { Item(id: String(format: "b%02d", $0), date: 500) }
+        items += (0 ..< 10).map { Item(id: "c\($0)", date: Double(100 - $0)) }
+        var reads = 0
+        let page = PhotosService.page(
+            count: items.count,
+            item: { index in
+                reads += 1
+                return items[index]
+            },
+            key: key(of:),
+            after: nil,
+            limit: 30,
+            scanLimit: 5,
+            matches: { _ in false }
+        )
+        XCTAssertEqual(page.items, [])
+        // The run is read whole, with the item after it, though only 2 of its items are examined.
+        XCTAssertEqual(reads, 3 + 20 + 1)
+        XCTAssertEqual(page.nextCursor?.localIdentifier, "b18")
+
+        reads = 0
+        let distinct = (0 ..< 100).map { Item(id: String(format: "%03d", $0), date: Double(1000 - $0)) }
+        _ = PhotosService.page(
+            count: distinct.count,
+            item: { index in
+                reads += 1
+                return distinct[index]
+            },
+            key: key(of:),
+            after: nil,
+            limit: 30,
+            scanLimit: 5,
+            matches: { _ in false }
+        )
+        XCTAssertEqual(reads, 6)
+    }
+
     // MARK: - Filters
 
     func testRegionContainsNearbyLocationsOnly() {
