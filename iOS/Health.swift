@@ -260,6 +260,17 @@ struct HealthPhoneService: PhoneService {
         await startBackgroundDelivery()
     }
 
+    /// Shows one HealthKit permission sheet that covers every group.
+    func requestAccessToAll() async throws {
+        var types = Set<HKObjectType>()
+        for group in HealthGroup.allCases {
+            types.formUnion(group.objectTypes)
+        }
+        try await store.requestAuthorization(toShare: [], read: types)
+        HealthGroup.requested.formUnion(HealthGroup.allCases)
+        await startBackgroundDelivery()
+    }
+
     // MARK: - Background delivery
 
     private var syncedTypes: [HKSampleType] {
@@ -753,6 +764,14 @@ struct HealthAccessView: View {
     var body: some View {
         List {
             Section {
+                Button(requested.count == HealthGroup.allCases.count ? "Review All" : "Allow All") {
+                    Task { await requestAll() }
+                }
+                .fontWeight(.semibold)
+            } footer: {
+                Text("Shows one request that covers every kind of Health data below.")
+            }
+            Section {
                 ForEach(HealthGroup.allCases) { group in
                     HStack {
                         Text(group.title)
@@ -772,6 +791,17 @@ struct HealthAccessView: View {
             }
         }
         .navigationTitle("Health Data Access")
+    }
+
+    private func requestAll() async {
+        do {
+            try await HealthPhoneService().requestAccessToAll()
+            requested = HealthGroup.requested
+            error = nil
+            await PhoneBackend.shared.sync(.health)
+        } catch {
+            self.error = error.localizedDescription
+        }
     }
 
     private func request(_ group: HealthGroup) async {

@@ -136,12 +136,34 @@ struct StatusView: View {
 }
 
 extension MobileDomain {
-    /// The name of the service's logo in the asset catalog.
-    var logoName: String {
+    /// The SF Symbol that stands for the service.
+    var symbolName: String {
         switch self {
-        case .health: return "ServiceHealth"
-        case .alarms: return "ServiceAlarms"
+        case .health: return "heart.fill"
+        case .alarms: return "alarm.fill"
         }
+    }
+
+    /// The color of the tile behind the symbol.
+    var tint: Color {
+        switch self {
+        case .health: return .pink
+        case .alarms: return .orange
+        }
+    }
+}
+
+/// A service's symbol on a rounded tile, like the icons in Settings.
+struct ServiceIcon: View {
+    let domain: MobileDomain
+
+    var body: some View {
+        Image(systemName: domain.symbolName)
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: 28, height: 28)
+            .background(domain.tint.gradient, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .accessibilityHidden(true)
     }
 }
 
@@ -164,11 +186,7 @@ struct ServiceSection: View {
                 Label {
                     Text(domain.title)
                 } icon: {
-                    Image(domain.logoName)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 28, height: 28)
-                        .accessibilityHidden(true)
+                    ServiceIcon(domain: domain)
                 }
             }
             if let error {
