@@ -1203,10 +1203,10 @@
 		};
 		7A115CA1E000000000000001 /* XCRemoteSwiftPackageReference "libtailscale" */ = {
 			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/mattt/libtailscale";
+			repositoryURL = "https://github.com/oliverames/libtailscale";
 			requirement = {
 				kind = exactVersion;
-				version = "0.2.0-imcp.2";
+				version = "0.2.0-imcp.2-funnel.1";
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
