@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// The Settings pane for one service:
@@ -31,6 +32,11 @@ struct ServiceSettingsView: View {
 
             if config.service is HomeService {
                 HomeHelperSection(isHomeOn: isOn)
+            }
+
+            if config.service is FilesService {
+                FilesFoldersSection()
+                    .disabled(!isOn)
             }
 
             if config.service.hasWriteTools {
@@ -184,6 +190,78 @@ private struct WritesSection: View {
                 " In Notes they can only create notes and folders. The first time, macOS asks whether iMCP may control Notes."
         }
         return text
+    }
+}
+
+/// The folders that the Files service shares.
+private struct FilesFoldersSection: View {
+    @State private var folders: [(id: UUID, status: FilesRootStatus)] = []
+    @State private var errorMessage: String?
+
+    var body: some View {
+        Section {
+            if folders.isEmpty {
+                Text("No folders are shared. Clients can't see any files until you add one.")
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(folders, id: \.id) { folder in
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(folder.status.name)
+                        Text(folder.status.path ?? "Can't be opened")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        if folder.status.state == .needsReAdd {
+                            Text("Remove this folder and add it again.")
+                                .font(.caption)
+                                .foregroundStyle(.orange)
+                        }
+                    }
+                    Spacer()
+                    Button("Remove", role: .destructive) {
+                        FilesRootStore.shared.remove(folder.id)
+                        reload()
+                    }
+                }
+            }
+            Button("Add Folder…", action: addFolder)
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+        } header: {
+            Text("Shared Folders")
+        } footer: {
+            Text(
+                "Clients can read and search these folders and everything inside them, and nothing else. Remove a folder to stop sharing it. iMCP never opens a Photos library."
+            )
+        }
+        .task { reload() }
+    }
+
+    private func reload() {
+        folders = FilesRootStore.shared.summaries()
+    }
+
+    private func addFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Share Folder"
+        panel.message = "Choose a folder to share with the apps that use iMCP."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try FilesRootStore.shared.add(url)
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        reload()
     }
 }
 

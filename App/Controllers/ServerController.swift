@@ -53,6 +53,7 @@ enum ServiceRegistry {
             CalendarService.shared,
             CaptureService.shared,
             ContactsService.shared,
+            FilesService.shared,
             HomeService.shared,
             LocationService.shared,
             MapsService.shared,
@@ -79,6 +80,7 @@ enum ServiceRegistry {
         calendarEnabled: Binding<Bool>,
         captureEnabled: Binding<Bool>,
         contactsEnabled: Binding<Bool>,
+        filesEnabled: Binding<Bool>,
         homeEnabled: Binding<Bool>,
         locationEnabled: Binding<Bool>,
         mapsEnabled: Binding<Bool>,
@@ -118,6 +120,14 @@ enum ServiceRegistry {
                 color: .brown,
                 service: ContactsService.shared,
                 binding: contactsEnabled
+            ),
+            ServiceConfig(
+                name: "Files",
+                summary: "Read and search the folders that you share, and, if you allow it, change files in them.",
+                iconName: "folder.fill",
+                color: .teal,
+                service: FilesService.shared,
+                binding: filesEnabled
             ),
             ServiceConfig(
                 name: "Home",
@@ -253,6 +263,7 @@ final class ServerController: ObservableObject {
     @AppStorage("calendarEnabled") private var calendarEnabled = false
     @AppStorage("captureEnabled") private var captureEnabled = false
     @AppStorage("contactsEnabled") private var contactsEnabled = false
+    @AppStorage("filesEnabled") private var filesEnabled = false
     @AppStorage("homeEnabled") private var homeEnabled = false
     @AppStorage("locationEnabled") private var locationEnabled = false
     @AppStorage("mapsEnabled") private var mapsEnabled = true  // Default enabled
@@ -284,6 +295,7 @@ final class ServerController: ObservableObject {
             calendarEnabled: $calendarEnabled,
             captureEnabled: $captureEnabled,
             contactsEnabled: $contactsEnabled,
+            filesEnabled: $filesEnabled,
             homeEnabled: $homeEnabled,
             locationEnabled: $locationEnabled,
             mapsEnabled: $mapsEnabled,
