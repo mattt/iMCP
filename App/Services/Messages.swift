@@ -19,6 +19,24 @@ private let maxAttachmentMaxBytes = 100 * 1024 * 1024
 final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
     static let shared = MessageService()
 
+    /// Asks the person to approve each send. Tests replace it so that no window opens.
+    private let confirmer: any OutboundConfirming
+    /// Rejects a known Automation denial before the person is asked.
+    private let automationCheck: @Sendable () throws -> Void
+
+    init(
+        confirmer: any OutboundConfirming = MacOutboundConfirmer(),
+        automationCheck: @escaping @Sendable () throws -> Void = { try MessageService.checkAutomationPermission() }
+    ) {
+        self.confirmer = confirmer
+        self.automationCheck = automationCheck
+        super.init()
+    }
+
+    /// Sending reaches another person, so it stays off until the person turns on "Allow writes",
+    /// and each send is confirmed in a window whether or not it is on.
+    var writesEnabledByDefault: Bool { false }
+
     /// Whether the once-per-launch warning about a grant on `chat.db` alone has been logged.
     /// Tool calls run concurrently, so the check-and-set is guarded.
     private let fileGrantWarningLogged = OSAllocatedUnfairLock(initialState: false)
@@ -140,7 +158,12 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
         Tool(
             name: "messages_fetch",
             description:
-                "Fetch messages from the Messages app. Each message names the conversation it belongs to (isPartOf). The first message from each conversation includes its name and participants; later messages give only its @id.",
+                """
+                Fetch messages from the Messages app. Each message names the conversation it belongs to (isPartOf). \
+                The first message from each conversation includes its name and participants; later messages give only its @id. \
+                When available, messages whose sender is me include isDelivered, \
+                deliveredAt if recorded, and error if nonzero.
+                """,
             inputSchema: .object(
                 properties: [
                     "participants": .array(
@@ -269,6 +292,17 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                 includeAttachments
                 ? try self.attachments(ofMessages: fetched.map { $0.id.rawValue }, in: access)
                 : [:]
+            // Include delivery status for the user's messages when available.
+            // A failed status query does not prevent fetching messages.
+            var deliveryByMessage: [String: [String: Value]] = [:]
+            do {
+                deliveryByMessage = try self.deliveryStatus(
+                    ofMessages: fetched.filter(\.isFromMe).map { $0.id.rawValue },
+                    in: access
+                )
+            } catch {
+                log.error("Could not read delivery status: \(error.localizedDescription, privacy: .public)")
+            }
 
             // Each chat is looked up once. The first message in a chat includes
             // the chat's details, and later messages refer to the chat by its @id.
@@ -333,6 +367,9 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                 }
                 if !attachments.isEmpty {
                     object["attachment"] = .array(attachments.map { .object($0) })
+                }
+                if let delivery = deliveryByMessage[message.id.rawValue] {
+                    object.merge(delivery) { _, new in new }
                 }
 
                 if let chatID = message.chatID {
@@ -403,6 +440,82 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
             }
             return try self.readAttachment(id: id, maxBytes: maxBytes)
         }
+
+        Tool(
+            name: "messages_send",
+            description:
+                """
+                Send a text message with the Messages app. \
+                Give exactly one destination: recipient (phone number or email) with an optional service, \
+                or chatId (the conversation @id in messages_fetch's isPartOf) without service. \
+                The user must confirm the recipient, service, and full text in iMCP. \
+                Canceling or leaving the confirmation unanswered for \(Int(OutboundConfirmation.timeout.components.seconds)) seconds sends nothing. \
+                Success means Messages accepted the message, not that it was delivered. \
+                When iMCP finds the sent message in the Messages database, \
+                the result's object has its @id, createdAt, and conversation (isPartOf). \
+                The @id is the best match found in the Messages database, not a guarantee: \
+                an identical message sent elsewhere at the same moment can make it wrong or missing. \
+                To check delivery, call messages_fetch with that chatId and start set to createdAt, \
+                then read isDelivered and error on the message with that @id. \
+                Missing status doesn't confirm delivery.
+                """,
+            inputSchema: .object(
+                properties: [
+                    "recipient": .string(
+                        description:
+                            "Phone number (prefer E.164) or email address. Give either recipient or chatId"
+                    ),
+                    "chatId": .string(
+                        description:
+                            "Conversation @id from messages_fetch's isPartOf. Give either recipient or chatId"
+                    ),
+                    "text": .string(description: "The message text, sent exactly as given"),
+                    "service": .string(
+                        description:
+                            "Service for recipient; defaults to iMessage. SMS and RCS need an iPhone with Text Message Forwarding. Omit with chatId to use the conversation's service",
+                        enum: SendService.allCases.map { .string($0.rawValue) }
+                    ),
+                ],
+                required: ["text"],
+                additionalProperties: false
+            ),
+            annotations: .init(
+                title: "Send Message",
+                readOnlyHint: false,
+                destructiveHint: true,
+                idempotentHint: false,
+                openWorldHint: true
+            )
+        ) { arguments in
+            let request = try SendRequest(arguments: arguments)
+            let approvedChat = try self.chatDetails(for: request)
+            let target = try Self.resolvedTarget(for: request, chat: approvedChat)
+            try self.automationCheck()
+            return try await Self.send(
+                request,
+                identity: Self.sendIdentity(for: request, target: target, chat: approvedChat),
+                confirmation: Self.confirmation(
+                    for: request,
+                    target: target,
+                    clientName: ToolCallContext.clientName
+                ),
+                confirmer: self.confirmer,
+                deliver: { request in
+                    try await self.deliver(request, approvedChat: approvedChat)
+                },
+                locate: { request, baseline in
+                    await Self.awaitSentMessage(
+                        for: request,
+                        service: target.service,
+                        after: baseline,
+                        timeout: Self.sentMessageLookupTimeout,
+                        interval: .milliseconds(250)
+                    ) {
+                        try self.outgoingMessages(after: baseline)
+                    }
+                }
+            )
+        }
     }
 
     /// The attachments of the given messages (by guid), keyed by message guid, in chat.db
@@ -450,6 +563,44 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                     part["sticker"] = .bool(true)
                 }
                 result[messageGuid, default: []].append(part)
+            }
+        }
+        return result
+    }
+
+    /// Delivery status keyed by message guid: isDelivered,
+    /// deliveredAt if recorded, and error if nonzero.
+    private func deliveryStatus(
+        ofMessages guids: [String],
+        in access: DatabaseAccess
+    ) throws -> [String: [String: Value]] {
+        var result: [String: [String: Value]] = [:]
+        guard !guids.isEmpty else { return result }
+        let raw = try RawDatabase(access)
+        defer { raw.close() }
+        let chunks = stride(from: 0, to: guids.count, by: 500)
+            .map { Array(guids[$0 ..< min($0 + 500, guids.count)]) }
+        for chunk in chunks {
+            let placeholders = Array(repeating: "?", count: chunk.count).joined(separator: ",")
+            let sql = """
+                SELECT guid, is_delivered, date_delivered, error
+                FROM message
+                WHERE guid IN (\(placeholders))
+                """
+            try raw.query(sql, bindings: chunk) { stmt in
+                guard let guid = RawDatabase.text(stmt, 0) else { return }
+                var status: [String: Value] = ["isDelivered": .bool(sqlite3_column_int(stmt, 1) != 0)]
+                // chat.db stores dates as nanoseconds since 2001.
+                let deliveredAt = sqlite3_column_int64(stmt, 2)
+                if deliveredAt > 0 {
+                    let date = Date(timeIntervalSinceReferenceDate: Double(deliveredAt) / 1_000_000_000)
+                    status["deliveredAt"] = .string(date.formatted(.iso8601))
+                }
+                let error = sqlite3_column_int(stmt, 3)
+                if error != 0 {
+                    status["error"] = .int(Int(error))
+                }
+                result[guid] = status
             }
         }
         return result
@@ -678,8 +829,9 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
         }
     }
 
-    /// A second, read-only SQLite connection on the same grant, for the tables the iMessage
-    /// package does not model (attachments). It uses `immutable=1` whenever the package does:
+    /// A second, read-only SQLite connection on the same grant, for the data the iMessage
+    /// package does not model (attachments and delivery status).
+    /// It uses `immutable=1` whenever the package does:
     /// a `.file` grant, or a default path whose write-ahead log is unreadable.
     private final class RawDatabase {
         private var handle: OpaquePointer?
@@ -693,7 +845,7 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
             guard rc == SQLITE_OK, let h else {
                 let message = h.map { String(cString: sqlite3_errmsg($0)) } ?? "sqlite error \(rc)"
                 if let h { sqlite3_close(h) }
-                throw DatabaseAccessError.attachmentsQueryFailed(message)
+                throw DatabaseAccessError.queryFailed(message)
             }
             sqlite3_busy_timeout(h, 1000)
             handle = h
@@ -707,7 +859,7 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
         func query(_ sql: String, bindings: [String], _ row: (OpaquePointer) throws -> Void) throws {
             var stmt: OpaquePointer?
             guard sqlite3_prepare_v2(handle, sql, -1, &stmt, nil) == SQLITE_OK, let stmt else {
-                throw DatabaseAccessError.attachmentsQueryFailed(String(cString: sqlite3_errmsg(handle)))
+                throw DatabaseAccessError.queryFailed(String(cString: sqlite3_errmsg(handle)))
             }
             defer { sqlite3_finalize(stmt) }
             for (i, value) in bindings.enumerated() {
@@ -720,7 +872,7 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                 } else if rc == SQLITE_DONE {
                     return
                 } else {
-                    throw DatabaseAccessError.attachmentsQueryFailed(String(cString: sqlite3_errmsg(handle)))
+                    throw DatabaseAccessError.queryFailed(String(cString: sqlite3_errmsg(handle)))
                 }
             }
         }
@@ -775,7 +927,7 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
         case userDeclinedAccess
         case invalidFileSelected
         case fileNotReadable
-        case attachmentsQueryFailed(String)
+        case queryFailed(String)
 
         var errorDescription: String? {
             switch self {
@@ -791,8 +943,8 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                 return "Messages database access denied or the selection is not the Messages folder"
             case .fileNotReadable:
                 return "The selected folder has no readable chat.db"
-            case .attachmentsQueryFailed(let message):
-                return "Reading attachments from the Messages database failed: \(message)"
+            case .queryFailed(let message):
+                return "Reading the Messages database failed: \(message)"
             }
         }
     }
@@ -1063,5 +1215,747 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
             "File selection panel: \(shouldEnable ? "enabling" : "disabling") URL: \(url.path)"
         )
         return shouldEnable
+    }
+}
+
+// MARK: - Sending
+
+private let messagesBundleIdentifier = "com.apple.MobileSMS"
+
+extension MessageService {
+    /// The service for a phone number or email address.
+    enum SendService: String, CaseIterable, Sendable {
+        case iMessage
+        case SMS
+        case RCS
+
+        /// The code of the matching `service type` enumerator
+        /// in the Messages scripting dictionary.
+        var serviceTypeCode: FourCharCode {
+            switch self {
+            case .iMessage: return fourCharCode("sims")
+            case .SMS: return fourCharCode("ssms")
+            case .RCS: return fourCharCode("srcs")
+            }
+        }
+    }
+
+    /// A validated `messages_send` call: where the message goes and what it says.
+    struct SendRequest: Equatable, Sendable {
+        enum Destination: Equatable, Sendable {
+            /// A phone number or email address, on the given service.
+            case recipient(String, SendService)
+            /// An existing conversation, by its chat.db guid.
+            /// The conversation keeps the service it already uses.
+            case chat(String)
+        }
+
+        let destination: Destination
+        let text: String
+
+        init(destination: Destination, text: String) {
+            self.destination = destination
+            self.text = text
+        }
+
+        /// Validates supported arguments because the server does not enforce the schema.
+        init(arguments: [String: Value]) throws {
+            func string(_ name: String) throws -> String? {
+                guard let value = arguments[name], !value.isNull else { return nil }
+                guard let string = value.stringValue else {
+                    throw SendError.invalidArgument("\(name) must be a string")
+                }
+                return string
+            }
+
+            guard let text = try string("text"),
+                !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            else {
+                throw SendError.invalidArgument("text is required and must not be blank")
+            }
+
+            let recipient = try string("recipient")
+            let chatID = try string("chatId")
+            let service = try string("service")
+
+            switch (recipient, chatID) {
+            case (nil, nil):
+                throw SendError.invalidArgument("give either recipient or chatId")
+            case (.some, .some):
+                throw SendError.invalidArgument("give either recipient or chatId, not both")
+            case (let recipient?, nil):
+                guard let handle = SendRequest.normalizedRecipient(recipient) else {
+                    throw SendError.invalidArgument(
+                        "recipient must be a phone number or an email address"
+                    )
+                }
+                var sendService = SendService.iMessage
+                if let service {
+                    guard
+                        let match = SendService.allCases.first(where: {
+                            $0.rawValue.caseInsensitiveCompare(service) == .orderedSame
+                        })
+                    else {
+                        let expected = SendService.allCases.map(\.rawValue).joined(separator: ", ")
+                        throw SendError.invalidArgument("service must be one of: \(expected)")
+                    }
+                    sendService = match
+                }
+                self.init(destination: .recipient(handle, sendService), text: text)
+            case (nil, let chatID?):
+                guard service == nil else {
+                    throw SendError.invalidArgument(
+                        "service applies only to recipient; a conversation keeps its own service"
+                    )
+                }
+                let chatID = chatID.trimmingCharacters(in: .whitespacesAndNewlines)
+                // chat.db guids look like `iMessage;-;+15551234567` or `any;+;chat123456`.
+                guard chatID.range(of: #"^[^;\s]+;[-+];\S+$"#, options: .regularExpression) != nil
+                else {
+                    throw SendError.invalidArgument(
+                        "chatId must be a conversation @id from messages_fetch, such as iMessage;-;+15551234567"
+                    )
+                }
+                self.init(destination: .chat(chatID), text: text)
+            }
+        }
+
+        /// Returns a Messages handle, or `nil` for an invalid phone number or email.
+        /// Trims surrounding whitespace and removes phone number formatting,
+        /// keeping a leading plus sign.
+        static func normalizedRecipient(_ recipient: String) -> String? {
+            let trimmed = recipient.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.contains("@") {
+                let isEmail =
+                    trimmed.range(of: #"^[^@\s]+@[^@\s]+\.[^@\s]+$"#, options: .regularExpression) != nil
+                return isEmail ? trimmed : nil
+            }
+            guard trimmed.range(of: #"^\+?[0-9 ().-]+$"#, options: .regularExpression) != nil else {
+                return nil
+            }
+            let digits = trimmed.filter(\.isASCII).filter(\.isNumber)
+            // Short codes have as few as three digits; E.164 allows fifteen.
+            guard (3 ... 15).contains(digits.count) else { return nil }
+            return (trimmed.hasPrefix("+") ? "+" : "") + digits
+        }
+
+        /// The call to a handler in ``MessageService/sendScriptSource``.
+        /// Passes text and recipient as typed descriptors, never as script source.
+        var subroutine: NSAppleScript.Subroutine {
+            switch destination {
+            case .recipient(let handle, let service):
+                return NSAppleScript.Subroutine(
+                    "sendToParticipant",
+                    [.string(text), .string(handle), .enumCode(service.serviceTypeCode)]
+                )
+            case .chat(let id):
+                return NSAppleScript.Subroutine("sendToChat", [.string(text), .string(id)])
+            }
+        }
+
+        /// Whether a chat in chat.db is where this request sends:
+        /// the requested conversation,
+        /// or the one-to-one conversation whose guid ends with the recipient's handle.
+        /// Handles must match exactly, apart from the case of an email address:
+        /// a phone number given without its country code matches no conversation,
+        /// so its message gets no @id rather than a guess.
+        func isDestination(ofChat chatID: String?) -> Bool {
+            guard let chatID else { return false }
+            switch destination {
+            case .chat(let id):
+                return chatID == id
+            case .recipient(let handle, _):
+                let parts = chatID.split(separator: ";", maxSplits: 2, omittingEmptySubsequences: false)
+                guard parts.count == 3, parts[1] == "-" else { return false }
+                return String(parts[2]).caseInsensitiveCompare(handle) == .orderedSame
+            }
+        }
+
+        /// What `messages_send` returns once Messages accepts the message.
+        /// The sent message's @id, date, and conversation are included
+        /// when it was found in chat.db.
+        func result(sentMessage: OutgoingMessage?) -> [String: Value] {
+            var object: [String: Value] = [
+                "@type": "Message",
+                "text": .string(text),
+            ]
+            if let sentMessage {
+                object["@id"] = .string(sentMessage.id)
+                object["createdAt"] = .string(sentMessage.date.formatted(.iso8601))
+                if let chatID = sentMessage.chatID {
+                    object["isPartOf"] = ["@type": "Conversation", "@id": .string(chatID)]
+                }
+            }
+            var result: [String: Value] = [
+                "@context": "https://schema.org",
+                "@type": "SendAction",
+                "actionStatus": "CompletedActionStatus",
+                "object": .object(object),
+            ]
+            if sentMessage == nil {
+                let seconds = MessageService.sentMessageLookupTimeout.components.seconds
+                result["description"] = .string(
+                    "Messages accepted the message, but iMCP couldn't find it in the Messages database within \(seconds) seconds, so it has no @id."
+                )
+            }
+            switch destination {
+            case .recipient(let handle, let service):
+                result["recipient"] = ["@id": .string(handle)]
+                result["instrument"] = ["name": .string(service.rawValue)]
+            case .chat(let id):
+                result["recipient"] = ["@type": "Conversation", "@id": .string(id)]
+            }
+            return result
+        }
+    }
+
+    /// The handlers that send a message.
+    /// The source is fixed; ``SendRequest/subroutine`` supplies the values.
+    /// The service type arrives as an enumerator code rather than a term,
+    /// so the script compiles on systems whose dictionary lacks `RCS`.
+    static let sendScriptSource = """
+        on sendToParticipant(messageText, recipientHandle, serviceType)
+            tell application id "\(messagesBundleIdentifier)"
+                set targetAccount to first account whose service type is serviceType
+                send messageText to participant recipientHandle of targetAccount
+            end tell
+        end sendToParticipant
+
+        on sendToChat(messageText, chatID)
+            tell application id "\(messagesBundleIdentifier)"
+                send messageText to chat id chatID
+            end tell
+        end sendToChat
+        """
+
+    /// Sends a message only after the person approves `confirmation`.
+    /// A decline, a timeout, or another open confirmation throws, and `deliver` is never called.
+    /// `deliver` returns the newest message row in chat.db,
+    /// read immediately before the Apple event, or `nil` when it can't be read;
+    /// after delivery, `locate` looks for the sent message among newer rows.
+    /// Not finding it leaves the result without an @id but doesn't fail the send.
+    static func send(
+        _ request: SendRequest,
+        identity: SendIdentity,
+        confirmation: OutboundConfirmationRequest,
+        confirmer: any OutboundConfirming,
+        deliver: (SendRequest) async throws -> Int64?,
+        locate: (SendRequest, Int64) async -> OutgoingMessage?,
+        inFlight: InFlightSends = .shared
+    ) async throws -> [String: Value] {
+        try await confirmer.approve(confirmation) {
+            try await deliverAndLocate(
+                request,
+                identity: identity,
+                deliver: deliver,
+                locate: locate,
+                inFlight: inFlight
+            )
+        }
+    }
+
+    private static func deliverAndLocate(
+        _ request: SendRequest,
+        identity: SendIdentity,
+        deliver: (SendRequest) async throws -> Int64?,
+        locate: (SendRequest, Int64) async -> OutgoingMessage?,
+        inFlight: InFlightSends
+    ) async throws -> [String: Value] {
+        let token = inFlight.begin(identity)
+        // Ends the send when delivery throws; ending it again below returns false.
+        defer { _ = inFlight.end(token) }
+        let rowID = try await deliver(request)
+        log.notice("Messages accepted a message for sending")
+        var sentMessage: OutgoingMessage?
+        if let rowID {
+            sentMessage = await locate(request, rowID)
+        }
+        // A send that may be equivalent overlapped this one and could have posted the message found,
+        // so neither gets an @id; so does a send whose conversation couldn't be resolved.
+        if inFlight.end(token) {
+            log.notice("An equivalent send overlapped this one, or its conversation is unresolved, so it has no @id")
+            sentMessage = nil
+        } else if sentMessage == nil {
+            log.notice("The sent message wasn't found in the Messages database")
+        }
+        return request.result(sentMessage: sentMessage)
+    }
+
+    /// What makes two sends equivalent for finding their messages in chat.db:
+    /// the conversation, the service, and the text.
+    struct SendIdentity: Equatable, Sendable {
+        /// `handle:` and a normalized handle for a one-to-one conversation,
+        /// `chat:` and the ID for a group conversation,
+        /// or `nil` when the conversation can't be resolved.
+        let conversation: String?
+        /// The service, lowercased.
+        let service: String
+        /// The text without surrounding whitespace.
+        let text: String
+
+        init(conversation: String?, service: String, text: String) {
+            self.conversation = conversation
+            self.service = service.lowercased()
+            self.text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        /// Whether the two sends could post messages that chat.db can't tell apart.
+        /// An unresolved conversation could be any conversation.
+        func mayOverlap(_ other: SendIdentity) -> Bool {
+            guard text == other.text, service == other.service else { return false }
+            guard let conversation, let otherConversation = other.conversation else { return true }
+            return conversation == otherConversation
+        }
+    }
+
+    /// Returns a handle as chat.db stores it: an email address in lowercase,
+    /// a phone number in E.164 form, or a short code of up to six digits.
+    /// Returns `nil` for a longer phone number without a country code,
+    /// which can't be compared with other forms of the same number.
+    static func normalizedHandle(_ handle: String) -> String? {
+        if handle.contains("@") {
+            return handle.lowercased()
+        }
+        let digits = handle.filter(\.isNumber)
+        if handle.hasPrefix("+"), !digits.isEmpty {
+            return "+" + digits
+        }
+        return (1 ... 6).contains(digits.count) ? digits : nil
+    }
+
+    /// The identity of a send, after the conversation and service are resolved.
+    /// A conversation with one participant is identified by that participant's handle,
+    /// so a send by chatId and a send to the recipient are equivalent.
+    static func sendIdentity(for request: SendRequest, target: SendTarget, chat: ChatDetails?) -> SendIdentity {
+        let conversation: String?
+        switch request.destination {
+        case .recipient(let handle, _):
+            conversation = normalizedHandle(handle).map { "handle:\($0)" }
+        case .chat(let id):
+            // A one-to-one chat whose handle can't be normalized is still identified, by its ID.
+            if let participants = chat?.participants, participants.count == 1,
+                let handle = normalizedHandle(participants[0])
+            {
+                conversation = "handle:\(handle)"
+            } else {
+                conversation = "chat:\(id)"
+            }
+        }
+        return SendIdentity(conversation: conversation, service: target.service, text: request.text)
+    }
+
+    /// The sends in progress, so that equivalent sends at once get no @id:
+    /// chat.db can't tell their messages apart.
+    final class InFlightSends: Sendable {
+        static let shared = InFlightSends()
+
+        private struct Send {
+            let identity: SendIdentity
+            var overlapped: Bool
+        }
+
+        private let sends = OSAllocatedUnfairLock<[UUID: Send]>(initialState: [:])
+
+        init() {}
+
+        /// Registers a send and marks it and any equivalent send in progress as overlapped.
+        /// A send whose conversation is unresolved is marked from the start.
+        func begin(_ identity: SendIdentity) -> UUID {
+            let token = UUID()
+            sends.withLock { sends in
+                var overlapped = identity.conversation == nil
+                for (id, send) in sends where send.identity.mayOverlap(identity) {
+                    sends[id]?.overlapped = true
+                    overlapped = true
+                }
+                sends[token] = Send(identity: identity, overlapped: overlapped)
+            }
+            return token
+        }
+
+        /// Removes a send and returns whether it overlapped an equivalent send
+        /// or had an unresolved conversation.
+        /// Ending a send twice returns `false` the second time.
+        func end(_ token: UUID) -> Bool {
+            sends.withLock { $0.removeValue(forKey: token)?.overlapped ?? false }
+        }
+    }
+
+    // MARK: Finding the sent message
+
+    /// How long `messages_send` waits for the sent message to appear in chat.db.
+    /// Messages records it asynchronously, usually within a second.
+    static let sentMessageLookupTimeout: Duration = .seconds(5)
+
+    /// A message from chat.db, with what's needed to match it to a send.
+    struct OutgoingMessage: Equatable, Sendable {
+        /// The message's row in chat.db, which grows with each new message.
+        let rowID: Int64
+        /// The message's guid, which messages_fetch reports as its @id.
+        let id: String
+        let chatID: String?
+        /// The service that the message went out on, such as `iMessage` or `SMS`.
+        let service: String?
+        let text: String
+        let date: Date
+        let isFromMe: Bool
+    }
+
+    /// How a send's message was found among chat.db rows.
+    enum SentMessageMatch: Equatable, Sendable {
+        case none
+        case one(OutgoingMessage)
+        /// More than one row could be the message, so none is reported.
+        case ambiguous
+    }
+
+    /// Finds the message that a send posted:
+    /// a message from me, in a row newer than `baseline`,
+    /// in the request's conversation, on `service`, with the request's text.
+    /// Text is compared without surrounding whitespace, which Messages may trim.
+    static func sentMessage(
+        for request: SendRequest,
+        service: String,
+        after baseline: Int64,
+        among messages: [OutgoingMessage]
+    ) -> SentMessageMatch {
+        let text = request.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let matches = messages.filter { message in
+            message.isFromMe
+                && message.rowID > baseline
+                && message.service?.caseInsensitiveCompare(service) == .orderedSame
+                && message.text.trimmingCharacters(in: .whitespacesAndNewlines) == text
+                && request.isDestination(ofChat: message.chatID)
+        }
+        switch matches.count {
+        case 0: return .none
+        case 1: return .one(matches[0])
+        default: return .ambiguous
+        }
+    }
+
+    /// Reads messages with `read` until one matches the send,
+    /// `timeout` passes, or the task is cancelled.
+    /// `read` returns `nil` when chat.db can't be read, which ends the search,
+    /// as does an ambiguous match;
+    /// an error from one read is retried with the next.
+    static func awaitSentMessage(
+        for request: SendRequest,
+        service: String,
+        after baseline: Int64,
+        timeout: Duration,
+        interval: Duration,
+        read: () throws -> [OutgoingMessage]?
+    ) async -> OutgoingMessage? {
+        let clock = ContinuousClock()
+        let deadline = clock.now + timeout
+        while !Task.isCancelled {
+            do {
+                guard let messages = try read() else { return nil }
+                switch sentMessage(for: request, service: service, after: baseline, among: messages) {
+                case .one(let message):
+                    return message
+                case .ambiguous:
+                    log.notice("More than one message matches the send, so it has no @id")
+                    return nil
+                case .none:
+                    break
+                }
+            } catch {
+                log.debug("Reading sent messages failed: \(error.localizedDescription, privacy: .public)")
+            }
+            guard clock.now < deadline else { return nil }
+            do {
+                try await Task.sleep(for: min(interval, deadline - clock.now))
+            } catch {
+                return nil
+            }
+        }
+        return nil
+    }
+
+    /// The newest message row in chat.db,
+    /// or `nil` when chat.db can't be read without asking the user.
+    fileprivate func latestMessageRowID() -> Int64? {
+        guard let access = try? openDatabase() else { return nil }
+        defer { access.stop() }
+        var rowID: Int64?
+        do {
+            let raw = try RawDatabase(access)
+            defer { raw.close() }
+            try raw.query("SELECT IFNULL(MAX(ROWID), 0) FROM message", bindings: []) { stmt in
+                rowID = sqlite3_column_int64(stmt, 0)
+            }
+        } catch {
+            log.error("Could not read the newest message row: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+        return rowID
+    }
+
+    /// My messages in rows newer than `baseline`,
+    /// or `nil` when chat.db can't be read without asking the user.
+    fileprivate func outgoingMessages(after baseline: Int64) throws -> [OutgoingMessage]? {
+        guard let access = try? openDatabase() else { return nil }
+        defer { access.stop() }
+
+        struct Row {
+            let rowID: Int64
+            let guid: String
+            let service: String?
+            let chatID: String
+        }
+        var rows: [Row] = []
+        let raw = try RawDatabase(access)
+        defer { raw.close() }
+        try raw.query(
+            """
+            SELECT m.ROWID, m.guid, m.service, c.guid
+            FROM message m
+            JOIN chat_message_join j ON j.message_id = m.ROWID
+            JOIN chat c ON c.ROWID = j.chat_id
+            WHERE m.ROWID > CAST(? AS INTEGER) AND m.is_from_me = 1
+            ORDER BY m.ROWID
+            LIMIT 200
+            """,
+            bindings: [String(baseline)]
+        ) { stmt in
+            guard let guid = RawDatabase.text(stmt, 1), let chatID = RawDatabase.text(stmt, 3) else { return }
+            rows.append(
+                Row(
+                    rowID: sqlite3_column_int64(stmt, 0),
+                    guid: guid,
+                    service: RawDatabase.text(stmt, 2),
+                    chatID: chatID
+                )
+            )
+        }
+
+        // The text comes from the iMessage package,
+        // which decodes the attributed body that newer messages store instead of plain text.
+        var messages: [String: Message] = [:]
+        for chatID in Set(rows.map(\.chatID)) {
+            let request = FetchRequest<Message>(predicate: .chatID(Chat.ID(rawValue: chatID)), limit: 50)
+            for message in try access.database.fetch(request) {
+                messages[message.id.rawValue] = message
+            }
+        }
+        return rows.compactMap { row in
+            guard let message = messages[row.guid] else { return nil }
+            return OutgoingMessage(
+                rowID: row.rowID,
+                id: row.guid,
+                chatID: row.chatID,
+                service: row.service,
+                text: message.text,
+                date: message.date,
+                isFromMe: true
+            )
+        }
+    }
+
+    /// Who and what the confirmation shows, and the service the message goes out on.
+    struct SendTarget: Equatable, Sendable {
+        /// The phone number or email address,
+        /// or the name and participants of a conversation.
+        let recipient: String
+        let conversationID: String?
+        let service: String
+    }
+
+    /// A conversation's details from chat.db.
+    struct ChatDetails: Equatable, Sendable {
+        let displayName: String?
+        let participants: [String]
+        /// The conversation's service, such as `iMessage` or `SMS`.
+        let service: String?
+    }
+
+    /// Resolves what the confirmation shows.
+    /// A conversation must have readable participants and a service,
+    /// so that the user can see who would receive the message;
+    /// `chat` is `nil` when chat.db can't be read.
+    static func resolvedTarget(for request: SendRequest, chat: ChatDetails?) throws -> SendTarget {
+        switch request.destination {
+        case .recipient(let handle, let service):
+            return SendTarget(recipient: handle, conversationID: nil, service: service.rawValue)
+        case .chat(let id):
+            guard let chat, !chat.participants.isEmpty,
+                let service = chat.service, !service.isEmpty
+            else {
+                throw SendError.chatUnresolved(id)
+            }
+            let participants = chat.participants.joined(separator: ", ")
+            var recipient = participants
+            // Another app or person can name a group chat,
+            // so the name is shown on one line and shortened.
+            let name = OutboundConfirmationRequest.sanitized(chat.displayName ?? "", maxLength: 80)
+            if !name.isEmpty {
+                recipient = "\(name) (\(participants))"
+            }
+            return SendTarget(recipient: recipient, conversationID: id, service: service)
+        }
+    }
+
+    /// What the person is asked to approve: the exact recipient handles, the service,
+    /// and the full text as it will be sent.
+    /// The client name and the group name come from outside iMCP,
+    /// so the request shows each on one line.
+    static func confirmation(
+        for request: SendRequest,
+        target: SendTarget,
+        clientName: String?
+    ) -> OutboundConfirmationRequest {
+        var details: [OutboundConfirmationRequest.Detail] = [
+            .init(label: "To", value: target.recipient, maxLength: 4000)
+        ]
+        if let conversationID = target.conversationID {
+            details.append(.init(label: "Conversation", value: conversationID, isIdentifier: true, maxLength: 200))
+        }
+        details.append(.init(label: "Service", value: target.service))
+        return OutboundConfirmationRequest(
+            action: "Send Message",
+            clientName: clientName,
+            details: details,
+            body: request.text
+        )
+    }
+
+    /// Reads a conversation's details from chat.db without asking the user,
+    /// or returns `nil` when it can't be read or the request names no conversation.
+    /// A conversation that chat.db doesn't have is an error.
+    fileprivate func chatDetails(for request: SendRequest) throws -> ChatDetails? {
+        guard case .chat(let id) = request.destination else { return nil }
+        guard let access = try? openDatabase() else { return nil }
+        defer { access.stop() }
+        let fetch = FetchRequest<Chat>(predicate: .id(Chat.ID(rawValue: id)), limit: 1)
+        guard let chat = try access.database.fetch(fetch).first else {
+            throw SendError.unknownChat(id)
+        }
+        var service: String?
+        let raw = try RawDatabase(access)
+        defer { raw.close() }
+        try raw.query("SELECT service_name FROM chat WHERE guid = ? LIMIT 1", bindings: [id]) { stmt in
+            service = RawDatabase.text(stmt, 0)
+        }
+        return ChatDetails(
+            displayName: chat.displayName,
+            participants: chat.participants.map(\.rawValue),
+            service: service
+        )
+    }
+
+    /// Rejects a known Automation denial before confirmation.
+    /// Other results allow confirmation to proceed;
+    /// macOS can ask for permission when the Apple event is sent.
+    fileprivate static func checkAutomationPermission() throws {
+        let target = NSAppleEventDescriptor(bundleIdentifier: messagesBundleIdentifier)
+        let status = AEDeterminePermissionToAutomateTarget(
+            target.aeDesc,
+            AEEventClass(typeWildCard),
+            AEEventID(typeWildCard),
+            false
+        )
+        if status == errAEEventNotPermitted {
+            throw SendError.notAuthorized
+        }
+    }
+
+    /// Hands the message to Messages, off the main thread,
+    /// and returns the newest message row read immediately before the Apple event.
+    fileprivate func deliver(_ request: SendRequest, approvedChat: ChatDetails?) async throws -> Int64? {
+        let baseline = OSAllocatedUnfairLock<Int64?>(initialState: nil)
+        do {
+            _ = try await NSAppleScript.execute(Self.sendScriptSource, calling: request.subroutine) {
+                let rowID = try Self.prepareDelivery(
+                    for: request,
+                    approvedChat: approvedChat,
+                    currentChat: { try self.chatDetails(for: request) },
+                    baseline: { self.latestMessageRowID() }
+                )
+                baseline.withLock { $0 = rowID }
+            }
+        } catch let error as NSAppleScript.ExecutionError {
+            throw SendError(error, request: request)
+        }
+        return baseline.withLock { $0 }
+    }
+
+    /// Runs immediately before the Apple event that sends a message.
+    /// A conversation must still have the participants and service the user approved;
+    /// otherwise, or when it can't be read again, the send stops with nothing sent.
+    /// Then the newest message row is read from chat.db as it is now.
+    static func prepareDelivery(
+        for request: SendRequest,
+        approvedChat: ChatDetails?,
+        currentChat: () throws -> ChatDetails?,
+        baseline: () -> Int64?
+    ) throws -> Int64? {
+        if case .chat(let id) = request.destination {
+            guard let approvedChat,
+                let current = try? currentChat(),
+                Set(current.participants) == Set(approvedChat.participants),
+                current.service == approvedChat.service
+            else {
+                throw SendError.chatChanged(id)
+            }
+        }
+        return baseline()
+    }
+
+    enum SendError: LocalizedError, Equatable {
+        case invalidArgument(String)
+        case notAuthorized
+        case unknownChat(String)
+        case chatUnresolved(String)
+        case chatChanged(String)
+        case noAccountOrRecipient(String, SendService)
+        case appleScript(number: Int?, message: String)
+
+        /// Describes an error that AppleScript reports for a send.
+        init(_ error: NSAppleScript.ExecutionError, request: SendRequest) {
+            switch (error.number, request.destination) {
+            case (Int(errAEEventNotPermitted), _):
+                self = .notAuthorized
+            case (Int(errAENoSuchObject), .chat(let id)):
+                self = .unknownChat(id)
+            case (Int(errAENoSuchObject), .recipient(let handle, let service)),
+                (Int(errAEIllegalIndex), .recipient(let handle, let service)):
+                self = .noAccountOrRecipient(handle, service)
+            default:
+                self = .appleScript(number: error.number, message: error.message)
+            }
+        }
+
+        var errorDescription: String? {
+            switch self {
+            case .invalidArgument(let message):
+                return "Invalid argument: \(message)"
+            case .notAuthorized:
+                return
+                    "Allow iMCP to control Messages in System Settings > Privacy & Security > Automation. Nothing was sent."
+            case .unknownChat(let id):
+                return "Conversation \(id) wasn't found. Nothing was sent."
+            case .chatUnresolved(let id):
+                return
+                    "iMCP couldn't read the participants and service of conversation \(id) from the Messages database, so it can't show who would receive the message. Turn on Messages in iMCP and grant the Messages folder, or send to a recipient instead. Nothing was sent."
+            case .chatChanged(let id):
+                return
+                    "Conversation \(id) changed after you confirmed the message, or iMCP couldn't read it again: its participants or service no longer match what you approved. Nothing was sent."
+            case .noAccountOrRecipient(let handle, let service):
+                return
+                    "Messages couldn't find a signed-in \(service.rawValue) account or recipient \(handle). Nothing was sent."
+            case .appleScript(let number, let message):
+                let code = number.map { " (error \($0))" } ?? ""
+                return "Messages reported a send error: \(message)\(code)"
+            }
+        }
+    }
+}
+
+/// Packs four ASCII characters into an Apple event code.
+private func fourCharCode(_ string: StaticString) -> FourCharCode {
+    string.withUTF8Buffer { bytes in
+        bytes.reduce(0) { $0 << 8 | FourCharCode($1) }
     }
 }

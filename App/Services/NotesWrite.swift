@@ -18,9 +18,6 @@ extension NotesService {
             )
     }
 
-    /// The tools that change notes are listed only while the person allows changes.
-    /// Until then a client that calls one still gets the reason it can't.
-    func isToolListed(_ name: String) -> Bool {
-        !NotesWriteTools.toolNames.contains(name) || NotesWriteTools.isEnabledInSettings
-    }
+    /// The tools that create notes are new, so they start off until the person turns writes on.
+    var writesEnabledByDefault: Bool { false }
 }

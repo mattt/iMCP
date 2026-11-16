@@ -408,7 +408,7 @@ final class ServerController: ObservableObject {
         disabledTools = tools
     }
 
-    /// Tells clients to list the tools again after a service's own setting
+    /// Tells clients to list the tools again after a service's "Allow writes" setting
     /// changed which of its tools it offers.
     func toolListChanged() {
         Task { await networkManager.updateServiceBindings(self.currentServiceBindings) }
@@ -553,6 +553,7 @@ final class ServerController: ObservableObject {
     }
 
     init() {
+        ServiceWrites.migrateLegacySettings()
         Task { [self] in
             // Initialize bindings from AppStorage before the server starts.
             // The menu sends the enabled state only when its content first appears,
@@ -777,6 +778,8 @@ actor MCPConnectionManager {
     private let parentManager: ServerNetworkManager
     private let approvalGate = ConnectionApprovalGate()
     private var isStopping = false
+    /// The name that the client gave in its initialize request.
+    private var clientName: String?
 
     /// Creates a manager for a socket whose client passed the code-signing check.
     /// The manager owns `descriptor` and closes it when it stops.
@@ -815,6 +818,7 @@ actor MCPConnectionManager {
                     guard let self = self else { return false }
 
                     log.info("Received initialize request from client: \(clientInfo.name)")
+                    await self.setClientName(clientInfo.name)
 
                     // Request user approval for the connection.
                     let approved = await approvalHandler(clientInfo)
@@ -847,11 +851,16 @@ actor MCPConnectionManager {
         }
     }
 
+    private func setClientName(_ name: String) {
+        clientName = name
+    }
+
     private func registerHandlers() async {
         await parentManager.registerHandlers(
             for: server,
             connectionID: connectionID,
-            gate: approvalGate
+            gate: approvalGate,
+            clientName: clientName
         )
     }
 
@@ -1282,7 +1291,8 @@ actor ServerNetworkManager {
     func registerHandlers(
         for server: MCP.Server,
         connectionID: UUID,
-        gate: ConnectionApprovalGate
+        gate: ConnectionApprovalGate,
+        clientName: String?
     ) async {
         await server.withApprovedMethodHandler(ListPrompts.self, gate: gate) { _ in
             log.debug("Handling ListPrompts request for \(connectionID)")
@@ -1310,7 +1320,7 @@ actor ServerNetworkManager {
                     if let isServiceEnabled = await self.serviceBindings[serviceId]?.wrappedValue,
                         isServiceEnabled
                     {
-                        for tool in service.tools where service.isToolListed(tool.name) {
+                        for tool in service.listedTools() {
                             if await self.disabledTools.contains(tool.name) {
                                 log.debug("Skipping disabled tool: \(tool.name)")
                                 continue
@@ -1379,10 +1389,16 @@ actor ServerNetworkManager {
                     isServiceEnabled
                 {
                     do {
+                        // Make the captured client name available to tools.
                         guard
-                            let value = try await service.call(
-                                tool: params.name,
-                                with: params.arguments ?? [:]
+                            let value = try await ToolCallContext.$clientName.withValue(
+                                clientName,
+                                operation: {
+                                    try await service.call(
+                                        tool: params.name,
+                                        with: params.arguments ?? [:]
+                                    )
+                                }
                             )
                         else {
                             continue

@@ -61,7 +61,8 @@ and a [growing list of clients][mcp-clients] that support the
       <img src="Assets/messages.svg" width="48" height="48" alt="" role="presentation"/>
     </th>
     <td><strong>Messages</strong></td>
-    <td>Access message history with specific participants within customizable date ranges.</td>
+    <td>Read message history by participant and date, and confirm each send in iMCP.
+    Sending requires Automation permission for Messages.</td>
   </tr>
   <tr>
     <th width="48">
@@ -201,6 +202,45 @@ click <img style="display: inline" width="20" height="16" src="/Assets/icon.svg"
 \> "Settings", and then click the service in the sidebar.
 
 <br clear="all">
+
+### Allow writes
+
+Each service that has tools that change things
+has an **Allow writes** switch on its Settings page.
+While it is off, clients don't see that service's write tools
+and a call to one is refused, so nothing changes.
+Tools that only read are never affected.
+Deleting counts as a write,
+so the same switch covers it.
+A tool's own switch in the same list still turns that one tool off
+when **Allow writes** is on.
+
+| Service                                                   | **Allow writes** starts |
+| --------------------------------------------------------- | ----------------------- |
+| Calendar, Contacts, Home, Mail, Music, Phone, Reminders, Shortcuts | On                      |
+| Notes (creating notes and folders), Messages (sending)    | Off                     |
+
+The services in the first row already had write tools
+before this switch existed,
+so they start on and an update changes nothing for them.
+Write tools that are new, such as creating notes,
+start off until you turn them on.
+The services that gain write tools later
+(Files, and sending from Mail)
+start off too.
+
+Sending something to another person needs one more step.
+Even with **Allow writes** on,
+a tool that sends a message or an email
+(`messages_send` today; Mail's send tool arrives with its service)
+shows a window with the client's name, the recipient's exact handles, the service, and the full text,
+and sends only after you click its button.
+The window waits 50 seconds and then cancels,
+shows one request at a time,
+and has no "always allow",
+so each send needs its own click.
+Starting a call is the same:
+the Phone app asks you to confirm before dialing.
 
 ### Approve connections
 
@@ -743,7 +783,7 @@ Smart folders aren't listed yet,
 because TopoText doesn't expose them.
 
 The Notes service can also create notes and folders,
-but only after you turn on **Allow iMCP to create notes and folders**
+but only after you turn on **Allow writes**
 in iMCP's Notes settings, where it is off by default.
 These tools (`notes_create` and `notes_create_folder`)
 ask the Notes app to make the note or folder with its own scripting interface,

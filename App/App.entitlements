@@ -12,6 +12,7 @@
 	<true/>
 	<key>com.apple.security.temporary-exception.apple-events</key>
 	<array>
+		<string>com.apple.MobileSMS</string>
 		<string>com.apple.Music</string>
 		<string>com.apple.Notes</string>
 	</array>
