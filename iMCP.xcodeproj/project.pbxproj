@@ -95,6 +95,9 @@
 		B13600000000000000000031 /* OutboundConfirmationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13600000000000000000030 /* OutboundConfirmationTests.swift */; };
 		B13600000000000000000051 /* ../../App/Views/OutboundConfirmationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13600000000000000000050 /* ../../App/Views/OutboundConfirmationView.swift */; };
 		B13600000000000000000041 /* ../../Shared/Models/OutboundConfirmation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13600000000000000000040 /* ../../Shared/Models/OutboundConfirmation.swift */; };
+		5EC5A1E70000000000000021 /* ResponsibleApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EC5A1E70000000000000020 /* ResponsibleApp.swift */; };
+		5EC5A1E70000000000000023 /* MCPClientConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EC5A1E70000000000000022 /* MCPClientConfig.swift */; };
+		5EC5A1E70000000000000025 /* TrustedAppTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EC5A1E70000000000000024 /* TrustedAppTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -181,6 +184,9 @@
 		B13600000000000000000030 /* OutboundConfirmationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutboundConfirmationTests.swift; sourceTree = "<group>"; };
 		B13600000000000000000050 /* ../../App/Views/OutboundConfirmationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Views/OutboundConfirmationView.swift; sourceTree = "<group>"; };
 		B13600000000000000000040 /* ../../Shared/Models/OutboundConfirmation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../Shared/Models/OutboundConfirmation.swift; sourceTree = "<group>"; };
+		5EC5A1E70000000000000020 /* ResponsibleApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ResponsibleApp.swift; path = ../../App/Controllers/ResponsibleApp.swift; sourceTree = "<group>"; };
+		5EC5A1E70000000000000022 /* MCPClientConfig.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MCPClientConfig.swift; path = ../../App/Integrations/MCPClientConfig.swift; sourceTree = "<group>"; };
+		5EC5A1E70000000000000024 /* TrustedAppTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TrustedAppTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -357,6 +363,9 @@
 				5EC5A1E7000000000000000C /* ClientCredentialsTests.swift */,
 				5EC5A1E7000000000000000E /* ConnectionApprovals.swift */,
 				5EC5A1E70000000000000010 /* ConnectionApprovalsTests.swift */,
+				5EC5A1E70000000000000024 /* TrustedAppTests.swift */,
+				5EC5A1E70000000000000022 /* MCPClientConfig.swift */,
+				5EC5A1E70000000000000020 /* ResponsibleApp.swift */,
 			);
 			path = "imcp-serverTests";
 			sourceTree = "<group>";
@@ -697,6 +706,9 @@
 				5EC5A1E7000000000000000D /* ClientCredentialsTests.swift in Sources */,
 				5EC5A1E7000000000000000F /* ConnectionApprovals.swift in Sources */,
 				5EC5A1E70000000000000011 /* ConnectionApprovalsTests.swift in Sources */,
+				5EC5A1E70000000000000025 /* TrustedAppTests.swift in Sources */,
+				5EC5A1E70000000000000023 /* MCPClientConfig.swift in Sources */,
+				5EC5A1E70000000000000021 /* ResponsibleApp.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

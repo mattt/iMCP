@@ -382,8 +382,9 @@ final class ServerController: ObservableObject {
     ///   - name: The client's name, which the approval dialog shows.
     ///   - existing: The credential that the settings already have, if any.
     ///     It's kept if iMCP issued it.
-    func credentialForClientSettings(name: String, existing: String?) throws -> String {
-        try credentials.credentialForSettings(name: name, existing: existing)
+    func credentialForClientSettings(name: String, existing: String?, trusted: Bool = false) throws -> String {
+        objectWillChange.send()
+        return try credentials.credentialForSettings(name: name, existing: existing, trusted: trusted)
     }
 
     /// Revokes a credential that iMCP issued for settings it then failed to write.
@@ -484,10 +485,24 @@ final class ServerController: ObservableObject {
         let request = entry.request
 
         var newCredential: String?
+        var setUpClaudeCode = false
         if approved && alwaysTrust {
             objectWillChange.send()
             do {
-                newCredential = try credentials.alwaysTrust(request)
+                switch request.offer {
+                case .signature:
+                    if let app = request.app {
+                        let record = try credentials.trustApp(app)
+                        for case let (connectionID as UUID, _) in entry.waiters {
+                            credentialSessions.add(connectionID, credentialID: record.id)
+                        }
+                    }
+                case .credential, .copiedCredential:
+                    newCredential = try credentials.alwaysTrust(request)
+                case .claudeCodeSetup:
+                    credentials.removeLegacyTrustedName(request.claimedName)
+                    setUpClaudeCode = true
+                }
                 // Revoking the new credential closes the connections that it was issued for.
                 if let newCredential, let id = ClientCredential.identifier(for: newCredential) {
                     for case let (connectionID as UUID, _) in entry.waiters {
@@ -521,7 +536,11 @@ final class ServerController: ObservableObject {
         }
         resolution.promoted.forEach(presentApproval)
 
-        if let newCredential {
+        if setUpClaudeCode {
+            Task { @MainActor in
+                self.setUpClaudeCodeAfterApproval(request: request, connectionIDs: entry.waiters.compactMap { $0.id as? UUID })
+            }
+        } else if let newCredential {
             Task { @MainActor in
                 self.showNewCredential(newCredential, clientName: request.claimedName)
             }
@@ -581,7 +600,7 @@ final class ServerController: ObservableObject {
                 await self?.connectionClosed(connectionID)
             }
             await networkManager.setConnectionApprovalHandler {
-                [weak self] connectionID, clientInfo, credential in
+                [weak self] connectionID, clientInfo, credential, app in
                 guard let self = self else {
                     return false
                 }
@@ -601,6 +620,7 @@ final class ServerController: ObservableObject {
                             connectionID: connectionID,
                             clientName: clientInfo.name,
                             credential: credential,
+                            app: app,
                             approve: {
                                 Task { await resumeOnce(true) }
                             },
@@ -668,6 +688,7 @@ final class ServerController: ObservableObject {
         connectionID: UUID,
         clientName: String,
         credential: String?,
+        app: ResponsibleApp?,
         approve: @escaping () -> Void,
         deny: @escaping () -> Void
     ) {
@@ -675,10 +696,14 @@ final class ServerController: ObservableObject {
 
         // Only a trusted credential skips the dialog; the reported name never does.
         let request: ClientCredentialStore.Request
-        switch credentials.evaluate(credential: credential, claimedName: clientName) {
+        switch credentials.evaluate(credential: credential, claimedName: clientName, app: app) {
         case .approve(let record):
-            log.notice("Client \(clientName) presented a trusted credential, auto-approving")
+            log.notice("Client \(clientName) is trusted by \(record.isApp ? "signature" : "credential"), auto-approving")
             credentialSessions.add(connectionID, credentialID: record.id)
+            if record.isApp {
+                objectWillChange.send()
+                credentials.noteConnection(id: record.id)
+            }
             approve()
 
             // Notify the user on auto-approved connections.
@@ -724,6 +749,27 @@ final class ServerController: ObservableObject {
         case .rejected(.tooManyWaiting):
             log.notice("Denied client \(clientName): too many connections are waiting for approval")
             deny()
+        }
+    }
+
+    /// Writes iMCP into Claude Code's settings with a trusted credential.
+    /// If that isn't possible, shows the credential for the person to copy.
+    private func setUpClaudeCodeAfterApproval(request: ClientCredentialStore.Request, connectionIDs: [UUID]) {
+        do {
+            try ClaudeCode.install(serverController: self, trusted: true)
+            for record in credentials.records.values where record.name == ClaudeCode.clientName && record.isTrusted {
+                for id in connectionIDs { credentialSessions.add(id, credentialID: record.id) }
+            }
+            objectWillChange.send()
+        } catch {
+            log.error("Couldn't set up Claude Code: \(String(describing: error), privacy: .public)")
+            do {
+                let credential = try credentials.issue(name: request.claimedName, trusted: true).credential
+                objectWillChange.send()
+                showNewCredential(credential, clientName: request.claimedName)
+            } catch {
+                showTrustError(error, clientName: request.claimedName)
+            }
         }
     }
 
@@ -1000,7 +1046,7 @@ actor ServerNetworkManager {
 
     /// Decides whether to approve a connection,
     /// given the client's reported info and the credential it presented, if any.
-    typealias ConnectionApprovalHandler = @Sendable (UUID, MCP.Client.Info, String?) async -> Bool
+    typealias ConnectionApprovalHandler = @Sendable (UUID, MCP.Client.Info, String?, ResponsibleApp?) async -> Bool
     private var connectionApprovalHandler: ConnectionApprovalHandler?
 
     /// Called when a connection closes,
@@ -1167,8 +1213,9 @@ actor ServerNetworkManager {
 
         // Check the client's code signature before reading anything from it.
         let hello: LocalSocketHello
+        let app: ResponsibleApp?
         do {
-            hello = try await Self.admit(descriptor)
+            (hello, app) = try await Self.admit(descriptor)
         } catch {
             log.error(
                 "Rejected connection \(connectionID): \(String(describing: error), privacy: .public)"
@@ -1213,7 +1260,7 @@ actor ServerNetworkManager {
 
                 try await connectionManager.start { clientInfo in
                     await self.awaitApproval(for: connectionID) {
-                        await approvalHandler(connectionID, clientInfo, hello.credential)
+                        await approvalHandler(connectionID, clientInfo, hello.credential, app)
                     }
                 }
 
@@ -1254,7 +1301,7 @@ actor ServerNetworkManager {
     /// Checks that `imcp-server` is on the other end of `descriptor`, then reads its hello.
     ///
     /// Both steps block, so they run off the actor.
-    private nonisolated static func admit(_ descriptor: Int32) async throws -> LocalSocketHello {
+    private nonisolated static func admit(_ descriptor: Int32) async throws -> (LocalSocketHello, ResponsibleApp?) {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 continuation.resume(
@@ -1270,7 +1317,9 @@ actor ServerNetworkManager {
                             maximumLength: LocalSocketHello.maximumLength,
                             timeout: .seconds(5)
                         )
-                        return try LocalSocketHello.decode(line)
+                        let hello = try LocalSocketHello.decode(line)
+                        let app = ResponsibleApp.resolve(responsibleFor: LocalSocket.processID(of: token))
+                        return (hello, app)
                     }
                 )
             }
