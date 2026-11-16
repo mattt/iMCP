@@ -135,6 +135,16 @@ struct StatusView: View {
     }
 }
 
+extension MobileDomain {
+    /// The name of the service's logo in the asset catalog.
+    var logoName: String {
+        switch self {
+        case .health: return "ServiceHealth"
+        case .alarms: return "ServiceAlarms"
+        }
+    }
+}
+
 /// A service's switch, what it shares, and its permissions.
 struct ServiceSection: View {
     let domain: MobileDomain
@@ -150,7 +160,17 @@ struct ServiceSection: View {
 
     var body: some View {
         Section {
-            Toggle(domain.title, isOn: toggle)
+            Toggle(isOn: toggle) {
+                Label {
+                    Text(domain.title)
+                } icon: {
+                    Image(domain.logoName)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 28, height: 28)
+                        .accessibilityHidden(true)
+                }
+            }
             if let error {
                 Text(error).font(.footnote).foregroundStyle(.red)
             }
