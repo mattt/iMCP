@@ -5,7 +5,9 @@ import Foundation
 import ImageIO
 import OSLog
 import Photos
+import PhotosUI
 import UniformTypeIdentifiers
+import UserNotifications
 
 private let log = Logger.service("photos")
 private let defaultLimit = 30
@@ -16,6 +18,10 @@ private let maxContactSheetCount = 30
 /// so that a filter that matches few photos in a large library still returns promptly.
 private let maxScannedAssets = 5000
 private let requestTimeout: Duration = .seconds(60)
+/// How long `photos_pick` waits for the user.
+/// Many clients end a tool call after 60 seconds,
+/// so the call ends first, with an error that says the user did not choose in time.
+private let pickTimeout: Duration = .seconds(55)
 private let jpegQuality = 0.8
 /// The largest contact sheet to return, in bytes.
 /// Base64 makes the result about a third larger,
@@ -253,6 +259,52 @@ final class PhotosService: Service {
             let request = try Self.contactSheetRequest(from: arguments)
             try await self.requireAccess()
             return try await self.contactSheet(for: request)
+        }
+
+        Tool(
+            name: "photos_pick",
+            description: """
+                Show the system photo picker, which can search the library for what photos show, \
+                people, places, and text, so that the user can choose photos or videos. \
+                Returns the metadata of the items that the user chooses, in the order chosen, \
+                like photos_fetch, with no image data; \
+                call photo_image_fetch or photos_contact_sheet with their @id values to see them. \
+                If the user cancels, the list is empty and cancelled is true. \
+                The picker closes after \(Int(pickTimeout.components.seconds)) seconds without a choice. \
+                Only one picker can be open at a time. \
+                Before macOS 27, the picker opens with no search text, and the user must type the search.
+                """,
+            inputSchema: .object(
+                properties: [
+                    "query": .string(
+                        description: """
+                            Search text that the picker opens with, such as "dog on a beach"; \
+                            the user can change it. Needs macOS 27 or later; \
+                            on earlier versions the picker opens with no search text, \
+                            and the window title shows the query.
+                            """
+                    ),
+                    "limit": .integer(
+                        description: "How many items the user can choose",
+                        default: .int(1),
+                        minimum: 1
+                    ),
+                    "mediaType": .string(
+                        description: "Show only photos or only videos; both when absent",
+                        enum: MediaType.allCases.map { .string($0.rawValue) }
+                    ),
+                ],
+                additionalProperties: false
+            ),
+            annotations: .init(
+                title: "Pick Photos",
+                readOnlyHint: true,
+                openWorldHint: false
+            )
+        ) { arguments in
+            let request = try Self.pickRequest(from: arguments)
+            try await self.requireAccess()
+            return try await self.pick(request, clientName: ToolCallContext.clientName)
         }
     }
 
@@ -1204,6 +1256,247 @@ final class PhotosService: Service {
         }
     }
 
+    // MARK: - Picker
+
+    struct PickRequest: Equatable {
+        var query: String?
+        var limit = 1
+        var mediaType: MediaType?
+    }
+
+    static func pickRequest(from arguments: [String: Value]) throws -> PickRequest {
+        var request = PickRequest()
+        if let query = try argument("query", in: arguments, as: \.stringValue) {
+            let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else {
+                throw PhotosError.invalidArgument("query must not be empty")
+            }
+            request.query = trimmed
+        }
+        if let limit = try argument("limit", in: arguments, as: exactInt) {
+            guard limit >= 1 else {
+                throw PhotosError.invalidArgument("limit must be a positive integer")
+            }
+            request.limit = limit
+        }
+        if let mediaType = try argument("mediaType", in: arguments, as: \.stringValue) {
+            guard let parsed = MediaType(rawValue: mediaType) else {
+                throw PhotosError.invalidArgument("mediaType must be photo or video")
+            }
+            request.mediaType = parsed
+        }
+        return request
+    }
+
+    /// The picker window's title, which says who asks and for what,
+    /// such as "Claude asks for a photo: dog on a beach".
+    static func pickerTitle(for request: PickRequest, clientName: String?) -> String {
+        let client = clientName.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        let asker = client.flatMap { $0.isEmpty ? nil : $0 } ?? "A client"
+        let things: String
+        switch (request.limit, request.mediaType) {
+        case (1, .photo): things = "a photo"
+        case (1, .video): things = "a video"
+        case (1, nil): things = "a photo or video"
+        case (let limit, .photo): things = "up to \(limit) photos"
+        case (let limit, .video): things = "up to \(limit) videos"
+        case (let limit, nil): things = "up to \(limit) photos or videos"
+        }
+        let title = "\(asker) asks for \(things)"
+        return request.query.map { "\(title): \($0)" } ?? title
+    }
+
+    /// What the user did in the picker.
+    enum PickOutcome: Equatable {
+        /// The user closed the picker without choosing.
+        case cancelled
+        /// The local identifiers of the chosen items, in the order chosen,
+        /// with nil for an item that the picker gave no identifier for.
+        case picked([String?])
+    }
+
+    /// The result list of `photos_pick`.
+    ///
+    /// - Parameter item: Returns the values of the items with identifiers.
+    ///   It leaves out an item that is hidden or no longer in the library.
+    static func pickedList(_ outcome: PickOutcome, item: ([String]) -> [String: Value]) -> Value {
+        var list: [String: Value] = [
+            "@context": "https://schema.org",
+            "@type": "ItemList",
+            "name": "Photos Picker",
+        ]
+        switch outcome {
+        case .cancelled:
+            list["numberOfItems"] = .int(0)
+            list["itemListElement"] = .array([])
+            list["cancelled"] = .bool(true)
+        case .picked(let ids):
+            let values = item(ids.compactMap { $0 })
+            let items = ids.compactMap { id in id.flatMap { values[$0] } }
+            list["numberOfItems"] = .int(items.count)
+            list["itemListElement"] = .array(items)
+            list["cancelled"] = .bool(false)
+            let leftOut = ids.count - items.count
+            if leftOut > 0 {
+                list["description"] = .string(
+                    leftOut == 1
+                        ? "1 chosen item is hidden or no longer in the library, so it is left out."
+                        : "\(leftOut) chosen items are hidden or no longer in the library, so they are left out."
+                )
+            }
+        }
+        return .object(list)
+    }
+
+    private func pick(_ request: PickRequest, clientName: String?) async throws -> Value {
+        var configuration = PHPickerConfiguration(photoLibrary: .shared())
+        configuration.selectionLimit = request.limit
+        configuration.selection = request.limit > 1 ? .ordered : .default
+        configuration.preferredAssetRepresentationMode = .current
+        configuration.filter = request.mediaType.map {
+            switch $0 {
+            case .photo: .images
+            case .video: .videos
+            }
+        }
+        #if compiler(>=6.4)
+            if #available(macOS 27, *), let query = request.query {
+                configuration.searchText = PHPickerSearchText(query)
+            }
+        #endif
+
+        let outcome = try await Picker.pick(
+            configuration: configuration,
+            title: Self.pickerTitle(for: request, clientName: clientName),
+            clientName: clientName,
+            timeout: pickTimeout
+        )
+        return Self.pickedList(outcome) { ids in
+            var values: [String: Value] = [:]
+            for case let (id, .success(asset)) in visibleAssets(withIDs: ids) {
+                values[id] = Self.value(
+                    of: asset,
+                    metadata: Self.metadata(of: asset, resource: Self.primaryResource(of: asset))
+                )
+            }
+            return values
+        }
+    }
+
+    /// Shows the system photo picker in a window, one at a time, and waits for the user.
+    ///
+    /// The picker does not tell its delegate when its window closes,
+    /// so closing the window counts as a cancel.
+    @MainActor
+    final class Picker: NSObject, PHPickerViewControllerDelegate, NSWindowDelegate {
+        private static var current: Picker?
+
+        private let window: NSWindow
+        private var continuation: CheckedContinuation<PickOutcome, Error>?
+        private var timeoutTask: Task<Void, Never>?
+        private var isFinished = false
+
+        /// Shows a picker and returns what the user does,
+        /// or throws if another picker is open, the time runs out, or the task is cancelled.
+        static func pick(
+            configuration: PHPickerConfiguration,
+            title: String,
+            clientName: String?,
+            timeout: Duration
+        ) async throws -> PickOutcome {
+            guard current == nil else {
+                throw PhotosError.pickerOpen
+            }
+            try Task.checkCancellation()
+            let picker = Picker(configuration: configuration, title: title)
+            current = picker
+            defer { current = nil }
+            return try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { continuation in
+                    picker.continuation = continuation
+                    picker.show(title: title, clientName: clientName)
+                    picker.timeoutTask = Task { [weak picker] in
+                        do {
+                            try await Task.sleep(for: timeout)
+                        } catch {
+                            return
+                        }
+                        picker?.finish(.failure(PhotosError.pickerTimedOut(timeout)))
+                    }
+                }
+            } onCancel: {
+                Task { @MainActor in picker.finish(.failure(CancellationError())) }
+            }
+        }
+
+        private init(configuration: PHPickerConfiguration, title: String) {
+            let controller = PHPickerViewController(configuration: configuration)
+            window = NSWindow(contentViewController: controller)
+            super.init()
+            controller.delegate = self
+            window.title = title
+            window.styleMask = [.titled, .closable, .resizable]
+            window.setContentSize(NSSize(width: 800, height: 600))
+            window.isReleasedWhenClosed = false
+            window.level = .floating
+            window.delegate = self
+        }
+
+        private func show(title: String, clientName: String?) {
+            window.center()
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+
+            // If the window still opens behind the frontmost app,
+            // bring it forward without activation and tell the user where it is.
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(1))
+                guard let self, !self.isFinished, !(NSApp.isActive && self.window.isKeyWindow) else { return }
+                self.window.orderFrontRegardless()
+                Self.notify(title: title, clientName: clientName)
+            }
+        }
+
+        private static func notify(title: String, clientName: String?) {
+            let content = UNMutableNotificationContent()
+            content.title = clientName.map { "\($0) asks for photos" } ?? "A client asks for photos"
+            content.body = "Choose in the iMCP window \"\(title)\"."
+            let request = UNNotificationRequest(
+                identifier: "photos-pick-\(UUID().uuidString)",
+                content: content,
+                trigger: nil
+            )
+            UNUserNotificationCenter.current().add(request) { error in
+                if let error {
+                    log.error("Failed to send the photo picker notification: \(error.localizedDescription)")
+                }
+            }
+        }
+
+        /// Closes the window and resumes the call with the first result; later results are ignored.
+        private func finish(_ result: Result<PickOutcome, Error>) {
+            guard !isFinished else { return }
+            isFinished = true
+            timeoutTask?.cancel()
+            timeoutTask = nil
+            window.delegate = nil
+            (window.contentViewController as? PHPickerViewController)?.delegate = nil
+            window.close()
+            window.contentViewController = nil
+            let continuation = self.continuation
+            self.continuation = nil
+            continuation?.resume(with: result)
+        }
+
+        func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+            finish(.success(results.isEmpty ? .cancelled : .picked(results.map(\.assetIdentifier))))
+        }
+
+        func windowWillClose(_ notification: Notification) {
+            finish(.success(.cancelled))
+        }
+    }
+
     // MARK: - PhotoKit Requests
 
     /// Renders an asset's image, downloading it from iCloud when needed.
@@ -1833,6 +2126,8 @@ final class PhotosService: Service {
         case encodingFailed
         case fileNotWritten(String)
         case connectionClosed
+        case pickerOpen
+        case pickerTimedOut(Duration)
 
         static func failure(_ id: String, info: [AnyHashable: Any]?) -> PhotosError {
             let error = info?[PHImageErrorKey] as? Error
@@ -1892,6 +2187,12 @@ final class PhotosService: Service {
                 return "The client connection closed before the file was written"
             case .fileNotWritten(let path):
                 return "The file at \(path) could not be written"
+            case .pickerOpen:
+                return
+                    "The photo picker is already open for another photos_pick call; wait for that call to finish, then try again"
+            case .pickerTimedOut(let timeout):
+                return
+                    "The user did not choose in the photo picker within \(timeout.components.seconds) seconds, so it closed; ask the user before you call photos_pick again"
             }
         }
     }
