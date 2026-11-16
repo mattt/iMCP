@@ -692,6 +692,22 @@ final class OAuthTests: XCTestCase {
         XCTAssertTrue(seen.value[0].2.hasPrefix("GET /meta.json?x=1 HTTP/1.0\r\nHost: app.example.com\r\n"))
     }
 
+    func testMetadataFetchKeepsEncodedLineBreaksOutOfTheRequest() async throws {
+        let seen = LockedBox<[String]>([])
+        let url = try XCTUnwrap(URL(string: "https://app.example.com/m%0D%0AX-Evil:%201.json?q=%0D%0A"))
+        _ = try await ClientMetadataFetcher.fetch(
+            url,
+            resolve: { _ in [[93, 184, 216, 34]] },
+            transport: { _, _, request in
+                seen.value.append(String(decoding: request, as: UTF8.self))
+                return Data("HTTP/1.0 200 OK\r\n\r\n{}".utf8)
+            }
+        )
+        let request = try XCTUnwrap(seen.value.first)
+        XCTAssertTrue(request.hasPrefix("GET /m%0D%0AX-Evil:%201.json?q=%0D%0A HTTP/1.0\r\nHost: app.example.com\r\n"))
+        XCTAssertFalse(request.contains("\r\nX-Evil"))
+    }
+
     func testMetadataFetchRefusesWhenAnyAddressIsPrivateOrTheAnswerIsNotOK() async throws {
         let url = try XCTUnwrap(URL(string: "https://app.example.com/meta.json"))
         let called = LockedBox(false)

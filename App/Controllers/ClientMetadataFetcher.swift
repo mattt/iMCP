@@ -34,8 +34,12 @@ enum ClientMetadataFetcher {
         let addresses = try await resolve(host)
         guard let pinned = addresses.first, addresses.allSatisfy(isPublic(bytes:)) else { throw Refused() }
 
-        var target = url.path.isEmpty ? "/" : url.path
-        if let query = url.query { target += "?" + query }
+        // Use the percent-encoded forms: `path` and `query` decode %0D%0A into a line break,
+        // which would let a client ID inject headers into the request.
+        let path = url.path(percentEncoded: true)
+        var target = path.isEmpty ? "/" : path
+        if let query = url.query(percentEncoded: true) { target += "?" + query }
+        guard target.unicodeScalars.allSatisfy({ $0.value > 0x20 && $0.value < 0x7F }) else { throw Refused() }
         // HTTP/1.0 keeps the server from chunking the body, and the connection closes after the response.
         let request = Data(
             "GET \(target) HTTP/1.0\r\nHost: \(host)\r\nAccept: application/json\r\nAccept-Encoding: identity\r\n\r\n"
