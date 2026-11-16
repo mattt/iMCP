@@ -7,9 +7,20 @@ struct ContentView: View {
     @Binding var isEnabled: Bool
     @Environment(\.openSettings) private var openSettings
 
-    private let aboutWindowController: AboutWindowController
     private let updater: SPUUpdater
     @State private var menuPanel = MenuPanelController()
+
+    private static let aboutCredits: NSAttributedString = {
+        let credits = NSMutableAttributedString(
+            string: "Report an Issue",
+            attributes: [
+                .link: URL(string: "https://github.com/mattt/iMCP/issues/new")!,
+                .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
+            ]
+        )
+        credits.setAlignment(.center, range: NSRange(location: 0, length: credits.length))
+        return credits
+    }()
 
     private var serviceConfigs: [ServiceConfig] {
         serverController.computedServiceConfigs
@@ -22,7 +33,6 @@ struct ContentView: View {
     ) {
         self.serverController = serverManager
         self._isEnabled = isEnabled
-        self.aboutWindowController = AboutWindowController()
         self.updater = updater
     }
 
@@ -31,7 +41,7 @@ struct ContentView: View {
             HStack {
                 Text("Enable MCP Server")
                     .frame(maxWidth: .infinity, alignment: .leading)
-                Toggle("", isOn: $isEnabled)
+                Toggle("Enable MCP Server", isOn: $isEnabled)
                     .toggleStyle(.switch)
                     .labelsHidden()
             }
@@ -48,9 +58,9 @@ struct ContentView: View {
                     Divider()
 
                     Text("Services")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(.secondary)
-                        .opacity(isEnabled ? 1.0 : 0.4)
+                        .font(.headline)
+                        .foregroundStyle(.secondary)
+                        .accessibilityAddTraits(.isHeader)
                         .padding(.horizontal, 14)
 
                     ForEach(serviceConfigs) { config in
@@ -106,8 +116,10 @@ struct ContentView: View {
                 .disabled(!updater.canCheckForUpdates)
 
                 MenuButton("About iMCP") {
-                    aboutWindowController.showWindow(nil)
                     NSApp.activate(ignoringOtherApps: true)
+                    NSApp.orderFrontStandardAboutPanel(options: [
+                        .credits: Self.aboutCredits
+                    ])
                 }
 
                 MenuButton("Quit") {
@@ -125,7 +137,6 @@ struct ContentView: View {
             menuPanel.resizeToFitContent()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(Material.thick)
         .background(MenuPanelWindowReader(controller: menuPanel))
     }
 }
@@ -211,14 +222,13 @@ private struct MenuPanelWindowReader: NSViewRepresentable {
     }
 }
 
+/// A row in the menu panel.
+/// It's a real `Button`, so it works with the keyboard and VoiceOver,
+/// and it highlights under the pointer like a menu item.
 private struct MenuButton: View {
-    @Environment(\.isEnabled) private var isEnabled
-
     private let title: String
     private let action: () -> Void
     @Environment(\.dismiss) private var dismiss
-    @State private var isHighlighted: Bool = false
-    @State private var isPressed: Bool = false
 
     init<S>(
         _ title: S,
@@ -229,57 +239,37 @@ private struct MenuButton: View {
     }
 
     var body: some View {
-        HStack {
-            Text(title)
-                .foregroundColor(.primary.opacity(isEnabled ? 1.0 : 0.4))
-                .multilineTextAlignment(.leading)
-                .padding(.vertical, 8)
-                .padding(.horizontal, 14)
+        Button {
+            action()
 
-            Spacer()
-        }
-        .contentShape(Rectangle())
-        .allowsHitTesting(isEnabled)
-        .onTapGesture {
-            guard isEnabled else { return }
-
-            Task { @MainActor in
-                withAnimation(.easeInOut(duration: 0.1)) {
-                    isPressed = true
-                }
-
-                try? await Task.sleep(for: .milliseconds(100))
-
-                withAnimation(.easeInOut(duration: 0.1)) {
-                    isPressed = false
-                }
-
-                action()
-
-                // Hiding the panel window directly leaves the status item presented,
-                // so the next click on it does nothing.
-                dismiss()
+            // Hiding the panel window directly leaves the status item presented,
+            // so the next click on it does nothing.
+            dismiss()
+        } label: {
+            HStack {
+                Text(title)
+                    .multilineTextAlignment(.leading)
+                Spacer()
             }
+            .padding(.vertical, 8)
+            .padding(.horizontal, 14)
+            .contentShape(Rectangle())
         }
-        .frame(height: 18)
-        .padding(.vertical, 4)
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(
-                    isPressed
-                        ? Color.accentColor
-                        : isHighlighted ? Color.accentColor.opacity(0.7) : Color.clear
-                )
-        )
-        .onHover { state in
-            guard isEnabled else { return }
-            isHighlighted = state
-        }
-        .onChange(of: isEnabled) { _, newValue in
-            if !newValue {
-                isHighlighted = false
-                isPressed = false
-            }
-        }
+        .buttonStyle(MenuRowButtonStyle())
+    }
+}
+
+private struct MenuRowButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var isHovering = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(isEnabled ? .primary : .tertiary)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(.tint.opacity(configuration.isPressed ? 1 : isHovering ? 0.7 : 0))
+            )
+            .onHover { isHovering = isEnabled && $0 }
     }
 }
