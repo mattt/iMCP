@@ -485,6 +485,40 @@ final class PhotosTests: XCTestCase {
         XCTAssertLessThan(data.base64EncodedString().utf8.count, 1_000_000)
     }
 
+    func testRenderedJPEGDropsTheSourcePhotosLocation() throws {
+        // A source JPEG with GPS, Exif, and TIFF metadata, as a camera writes.
+        let sourceData = NSMutableData()
+        let destination = try XCTUnwrap(
+            CGImageDestinationCreateWithData(sourceData as CFMutableData, "public.jpeg" as CFString, 1, nil)
+        )
+        let metadata: [CFString: Any] = [
+            kCGImagePropertyGPSDictionary: [
+                kCGImagePropertyGPSLatitude: 45.5152,
+                kCGImagePropertyGPSLatitudeRef: "N",
+                kCGImagePropertyGPSLongitude: 122.6784,
+                kCGImagePropertyGPSLongitudeRef: "W",
+            ],
+            kCGImagePropertyExifDictionary: [kCGImagePropertyExifDateTimeOriginal: "2026:01:02 03:04:05"],
+            kCGImagePropertyTIFFDictionary: [kCGImagePropertyTIFFModel: "Test Camera"],
+        ]
+        CGImageDestinationAddImage(destination, noiseImage(width: 64, height: 48, seed: 2), metadata as CFDictionary)
+        XCTAssertTrue(CGImageDestinationFinalize(destination))
+
+        let source = try XCTUnwrap(CGImageSourceCreateWithData(sourceData as CFData, nil))
+        let sourceProperties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+        XCTAssertNotNil(sourceProperties?[kCGImagePropertyGPSDictionary], "The source must have a location")
+        let sourceImage = try XCTUnwrap(CGImageSourceCreateImageAtIndex(source, 0, nil))
+
+        let data = try PhotosService.jpegData(PhotosService.sRGBImage(sourceImage), quality: 0.8)
+        let rendered = try XCTUnwrap(CGImageSourceCreateWithData(data as CFData, nil))
+        let properties = try XCTUnwrap(CGImageSourceCopyPropertiesAtIndex(rendered, 0, nil) as? [CFString: Any])
+        XCTAssertNil(properties[kCGImagePropertyGPSDictionary])
+        let exif = properties[kCGImagePropertyExifDictionary] as? [CFString: Any]
+        XCTAssertNil(exif?[kCGImagePropertyExifDateTimeOriginal])
+        let tiff = properties[kCGImagePropertyTIFFDictionary] as? [CFString: Any]
+        XCTAssertNil(tiff?[kCGImagePropertyTIFFModel])
+    }
+
     // MARK: - Reference files
 
     private func makeReferenceFiles() throws -> PhotosService.ReferenceFiles {
