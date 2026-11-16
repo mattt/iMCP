@@ -490,6 +490,123 @@ final class PhotosTests: XCTestCase {
         )
     }
 
+    // MARK: - Picker
+
+    func testPickDefaults() throws {
+        let request = try PhotosService.pickRequest(from: [:])
+        XCTAssertEqual(request, PhotosService.PickRequest(query: nil, limit: 1, mediaType: nil))
+    }
+
+    func testPickArguments() throws {
+        let request = try PhotosService.pickRequest(from: [
+            "query": "  dog on a beach ",
+            "limit": .double(3),
+            "mediaType": "video",
+        ])
+        XCTAssertEqual(request, PhotosService.PickRequest(query: "dog on a beach", limit: 3, mediaType: .video))
+    }
+
+    func testInvalidPickArgumentsAreErrors() {
+        let invalid: [[String: Value]] = [
+            ["query": "  "],
+            ["query": 1],
+            ["limit": 0],
+            ["limit": -2],
+            ["limit": .double(1.5)],
+            ["limit": "2"],
+            ["mediaType": "audio"],
+        ]
+        for arguments in invalid {
+            XCTAssertThrowsError(try PhotosService.pickRequest(from: arguments), "\(arguments)")
+        }
+    }
+
+    func testPickerTitleNamesTheClientAndTheRequest() {
+        typealias Request = PhotosService.PickRequest
+        XCTAssertEqual(
+            PhotosService.pickerTitle(for: Request(query: "dog on a beach"), clientName: "Claude"),
+            "Claude asks for a photo or video: dog on a beach"
+        )
+        XCTAssertEqual(
+            PhotosService.pickerTitle(for: Request(mediaType: .photo), clientName: "Claude"),
+            "Claude asks for a photo"
+        )
+        XCTAssertEqual(
+            PhotosService.pickerTitle(for: Request(limit: 4, mediaType: .video), clientName: " "),
+            "A client asks for up to 4 videos"
+        )
+        XCTAssertEqual(
+            PhotosService.pickerTitle(for: Request(query: "receipts", limit: 2), clientName: nil),
+            "A client asks for up to 2 photos or videos: receipts"
+        )
+    }
+
+    func testCancelledPickIsAnEmptyList() {
+        let list = PhotosService.pickedList(.cancelled) { _ in
+            XCTFail("A cancelled pick looks up no items")
+            return [:]
+        }
+        XCTAssertEqual(list.objectValue?["@type"], "ItemList")
+        XCTAssertEqual(list.objectValue?["numberOfItems"], 0)
+        let empty: Value = .array([])
+        XCTAssertEqual(list.objectValue?["itemListElement"], empty)
+        XCTAssertEqual(list.objectValue?["cancelled"], true)
+        XCTAssertNil(list.objectValue?["description"])
+    }
+
+    func testPickedItemsKeepTheOrderChosen() {
+        var requested: [String] = []
+        let list = PhotosService.pickedList(.picked(["C", "A", "B"])) { ids in
+            requested = ids
+            var values: [String: Value] = [:]
+            for id in ids {
+                let value: Value = .object(["@id": .string(id)])
+                values[id] = value
+            }
+            return values
+        }
+        XCTAssertEqual(requested, ["C", "A", "B"])
+        XCTAssertEqual(list.objectValue?["numberOfItems"], 3)
+        let expected: Value = .array([
+            .object(["@id": .string("C")]),
+            .object(["@id": .string("A")]),
+            .object(["@id": .string("B")]),
+        ])
+        XCTAssertEqual(list.objectValue?["itemListElement"], expected)
+        XCTAssertEqual(list.objectValue?["cancelled"], false)
+        XCTAssertNil(list.objectValue?["description"])
+    }
+
+    func testHiddenMissingAndUnidentifiedPicksAreLeftOut() {
+        let list = PhotosService.pickedList(.picked(["A", nil, "Hidden", "B"])) { ids in
+            XCTAssertEqual(ids, ["A", "Hidden", "B"])
+            let values: [String: Value] = [
+                "A": .object(["@id": .string("A")]),
+                "B": .object(["@id": .string("B")]),
+            ]
+            return values
+        }
+        XCTAssertEqual(list.objectValue?["numberOfItems"], 2)
+        let expected: Value = .array([
+            .object(["@id": .string("A")]),
+            .object(["@id": .string("B")]),
+        ])
+        XCTAssertEqual(list.objectValue?["itemListElement"], expected)
+        XCTAssertEqual(list.objectValue?["cancelled"], false)
+        XCTAssertEqual(
+            list.objectValue?["description"]?.stringValue,
+            "2 chosen items are hidden or no longer in the library, so they are left out."
+        )
+    }
+
+    func testPickerErrorsSayWhatHappened() {
+        let open = PhotosService.PhotosError.pickerOpen.localizedDescription
+        XCTAssertTrue(open.contains("already open"), open)
+        let timedOut = PhotosService.PhotosError.pickerTimedOut(.seconds(55)).localizedDescription
+        XCTAssertTrue(timedOut.contains("did not choose"), timedOut)
+        XCTAssertTrue(timedOut.contains("55 seconds"), timedOut)
+    }
+
     // MARK: - Encoding
 
     func testJPEGHasNoLocation() throws {

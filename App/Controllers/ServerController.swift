@@ -787,6 +787,8 @@ actor MCPConnectionManager {
     private let parentManager: ServerNetworkManager
     private let approvalGate = ConnectionApprovalGate()
     private var isStopping = false
+    /// The client's name for display, from its initialize request.
+    private var clientName: String?
 
     /// Creates a manager for a socket whose client passed the code-signing check.
     /// The manager owns `descriptor` and closes it when it stops.
@@ -825,6 +827,7 @@ actor MCPConnectionManager {
                     guard let self = self else { return false }
 
                     log.info("Received initialize request from client: \(clientInfo.name)")
+                    await self.setClientName(clientInfo.title ?? clientInfo.name)
 
                     // Request user approval for the connection.
                     let approved = await approvalHandler(clientInfo)
@@ -857,10 +860,15 @@ actor MCPConnectionManager {
         }
     }
 
+    private func setClientName(_ name: String) {
+        clientName = name
+    }
+
     private func registerHandlers() async {
         await parentManager.registerHandlers(
             for: server,
             connectionID: connectionID,
+            clientName: clientName,
             gate: approvalGate
         )
     }
@@ -1292,6 +1300,7 @@ actor ServerNetworkManager {
     func registerHandlers(
         for server: MCP.Server,
         connectionID: UUID,
+        clientName: String?,
         gate: ConnectionApprovalGate
     ) async {
         await server.withApprovedMethodHandler(ListPrompts.self, gate: gate) { _ in
@@ -1393,9 +1402,14 @@ actor ServerNetworkManager {
                             let value = try await ToolCallContext.$connectionID.withValue(
                                 connectionID,
                                 operation: {
-                                    try await service.call(
-                                        tool: params.name,
-                                        with: params.arguments ?? [:]
+                                    try await ToolCallContext.$clientName.withValue(
+                                        clientName,
+                                        operation: {
+                                            try await service.call(
+                                                tool: params.name,
+                                                with: params.arguments ?? [:]
+                                            )
+                                        }
                                     )
                                 }
                             )
