@@ -32,7 +32,7 @@ enum NotesWriteError: LocalizedError, CustomStringConvertible, Equatable {
             return "Invalid argument: \(message)"
         case .writesDisabled:
             return
-                "Changing notes is turned off. Turn on \"Allow iMCP to create notes and folders\" in iMCP's Notes settings to use this tool."
+                "Changing notes is turned off. Turn on \"Allow writes\" in iMCP's Notes settings to use this tool."
         case .automationDenied:
             return
                 "Not authorized to send Apple events to Notes. Enable iMCP in System Settings > Privacy & Security > Automation."

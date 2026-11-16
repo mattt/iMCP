@@ -29,15 +29,13 @@ struct AppleNotesScriptRunner: NotesScriptRunning {
 /// The tools that create notes and folders.
 ///
 /// They only add to the Notes app: nothing they do changes or removes what is already there.
-/// iMCP offers them only while the person allows changes in Notes' settings.
+/// iMCP offers them only while the person turns on "Allow writes" in Notes' settings
+/// (see `ServiceWrites`), which is off until then.
 enum NotesWriteTools {
-    /// The setting that allows changes, in `UserDefaults`.
-    static let settingKey = "notesWritesEnabled"
-
     static let toolNames: Set<String> = ["notes_create", "notes_create_folder"]
 
     static var isEnabledInSettings: Bool {
-        UserDefaults.standard.bool(forKey: settingKey)
+        ServiceWrites.isEnabled(serviceID: ServiceWrites.notesServiceID, defaultValue: false)
     }
 
     /// Throws unless `isEnabled`, so that a tool changes nothing while the setting is off.
@@ -54,7 +52,7 @@ enum NotesWriteTools {
             Tool(
                 name: "notes_create",
                 description:
-                    "Create a note in the Notes app. The title becomes the note's first line, and the body follows it. The note goes in the account's default folder unless a folder is given. Creating a note never changes existing notes. Notes keeps less than Markdown can say: a link becomes its text followed by its address, a checklist becomes bullets that start with ☐ or ☑, and a numbered list becomes lines that start with their numbers. Allowed only while \"Allow iMCP to create notes and folders\" is on in iMCP's Notes settings.",
+                    "Create a note in the Notes app. The title becomes the note's first line, and the body follows it. The note goes in the account's default folder unless a folder is given. Creating a note never changes existing notes. Notes keeps less than Markdown can say: a link becomes its text followed by its address, a checklist becomes bullets that start with ☐ or ☑, and a numbered list becomes lines that start with their numbers. Allowed only while \"Allow writes\" is on in iMCP's Notes settings.",
                 inputSchema: .object(
                     properties: [
                         "title": .string(
@@ -121,7 +119,7 @@ enum NotesWriteTools {
             Tool(
                 name: "notes_create_folder",
                 description:
-                    "Create a folder in the Notes app, at the top level of an account or inside a folder that exists. It is an error if the parent already has a folder with that name. Allowed only while \"Allow iMCP to create notes and folders\" is on in iMCP's Notes settings.",
+                    "Create a folder in the Notes app, at the top level of an account or inside a folder that exists. It is an error if the parent already has a folder with that name. Allowed only while \"Allow writes\" is on in iMCP's Notes settings.",
                 inputSchema: .object(
                     properties: [
                         "name": .string(
