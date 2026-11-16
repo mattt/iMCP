@@ -82,6 +82,8 @@
 		B13600000000000000000051 /* ../../App/Views/OutboundConfirmationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13600000000000000000050 /* ../../App/Views/OutboundConfirmationView.swift */; };
 		B13700000000000000000011 /* ApprovalModeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13700000000000000000010 /* ApprovalModeTests.swift */; };
 		B13700000000000000000021 /* ../../Shared/Models/ApprovalMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13700000000000000000020 /* ../../Shared/Models/ApprovalMode.swift */; };
+		B13900000000000000000011 /* MusicPlaylistWritesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13900000000000000000010 /* MusicPlaylistWritesTests.swift */; };
+		B13900000000000000000021 /* ../../App/Services/MusicPlaylistWrites.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13900000000000000000020 /* ../../App/Services/MusicPlaylistWrites.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -157,6 +159,8 @@
 		B13600000000000000000050 /* ../../App/Views/OutboundConfirmationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Views/OutboundConfirmationView.swift; sourceTree = "<group>"; };
 		B13700000000000000000010 /* ApprovalModeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalModeTests.swift; sourceTree = "<group>"; };
 		B13700000000000000000020 /* ../../Shared/Models/ApprovalMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../Shared/Models/ApprovalMode.swift; sourceTree = "<group>"; };
+		B13900000000000000000010 /* MusicPlaylistWritesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicPlaylistWritesTests.swift; sourceTree = "<group>"; };
+		B13900000000000000000020 /* ../../App/Services/MusicPlaylistWrites.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/MusicPlaylistWrites.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -286,6 +290,8 @@
 				B13600000000000000000050 /* ../../App/Views/OutboundConfirmationView.swift */,
 				B13700000000000000000010 /* ApprovalModeTests.swift */,
 				B13700000000000000000020 /* ../../Shared/Models/ApprovalMode.swift */,
+				B13900000000000000000010 /* MusicPlaylistWritesTests.swift */,
+				B13900000000000000000020 /* ../../App/Services/MusicPlaylistWrites.swift */,
 				B13300000000000000000010 /* MusicTests.swift */,
 				B13300000000000000000011 /* ../../App/Services/Music.swift */,
 				A40000000000000000000012 /* ../../Shared/Extensions/Logger+Extensions.swift */,
@@ -613,6 +619,8 @@
 				B13600000000000000000051 /* ../../App/Views/OutboundConfirmationView.swift in Sources */,
 				B13700000000000000000011 /* ApprovalModeTests.swift in Sources */,
 				B13700000000000000000021 /* ../../Shared/Models/ApprovalMode.swift in Sources */,
+				B13900000000000000000011 /* MusicPlaylistWritesTests.swift in Sources */,
+				B13900000000000000000021 /* ../../App/Services/MusicPlaylistWrites.swift in Sources */,
 				B13300000000000000000020 /* MusicTests.swift in Sources */,
 				B13300000000000000000021 /* ../../App/Services/Music.swift in Sources */,
 				A40000000000000000000022 /* ../../Shared/Extensions/Logger+Extensions.swift in Sources */,

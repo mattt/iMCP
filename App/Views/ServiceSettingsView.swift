@@ -153,6 +153,7 @@ private struct WritesSection: View {
     let name: String
     @AppStorage private var isWriteEnabled: Bool
     @AppStorage(ApprovalMode.defaultsKey) private var approvalModeRawValue = ApprovalMode.defaultMode.rawValue
+    @AppStorage(MusicPlaylistWrites.settingKey) private var isPlaylistWriteEnabled = false
 
     init(serverController: ServerController, service: any Service, name: String) {
         self.serverController = serverController
@@ -177,6 +178,10 @@ private struct WritesSection: View {
                     serverController.objectWillChange.send()
                     serverController.toolListChanged()
                 }
+            if service is MusicService {
+                Toggle("Allow playlist changes", isOn: $isPlaylistWriteEnabled)
+                    .disabled(!isWriteEnabled && !approvalMode.bypassesServiceWriteToggles)
+            }
         } footer: {
             Text(footer)
         }
@@ -187,7 +192,13 @@ private struct WritesSection: View {
             return
                 "Writes are allowed across all services while Approval Mode is set to \"\(approvalMode.title)\" in General settings."
         }
-        return "Lets clients create, change, and delete things in \(name). Tools that only read are always available."
+        var text =
+            "Lets clients create, change, and delete things in \(name). Tools that only read are always available."
+        if service is MusicService {
+            text +=
+                " Playlist tools also need \"Allow playlist changes\", which is off until you turn it on. They can create playlists and add or remove tracks, and never delete a playlist."
+        }
+        return text
     }
 }
 

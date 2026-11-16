@@ -68,7 +68,7 @@ and a [growing list of clients][mcp-clients] that support the
       <img src="Assets/music.svg" width="48" height="48" alt="" role="presentation"/>
     </th>
     <td><strong>Music</strong></td>
-    <td>See what's playing in the Music app, control playback, list your playlists and their tracks, and search the Apple Music catalog. Playback and playlist tools need Automation permission for Music; catalog search needs Apple Music access.</td>
+    <td>See what's playing in the Music app, control playback, list your playlists and their tracks, and search the Apple Music catalog. With "Allow writes" and "Allow playlist changes" on in the service's settings, create playlists and add or remove their tracks. There is no tool to delete a playlist, and Music may undo a change a few seconds later when iCloud Music Library is on. Playback and playlist tools need Automation permission for Music; catalog search needs Apple Music access.</td>
   </tr>
   <tr>
     <th width="48">
