@@ -871,10 +871,10 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
         let alert = NSAlert()
         alert.messageText = "Notes Database Access Required"
         alert.informativeText = """
-            To read your notes, we need access to the folder where the Notes app keeps them: \
+            To read your notes, iMCP needs access to the folder where the Notes app keeps them: \
             the database and the log that recent edits are written to first.
 
-            In the next screen, please select the `group.com.apple.notes` folder and click "Grant Access".
+            Next, select the `group.com.apple.notes` folder and click "Grant Access".
             """
         alert.alertStyle = .informational
         alert.addButton(withTitle: "Continue")
