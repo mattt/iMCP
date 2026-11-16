@@ -105,6 +105,32 @@ final class HomeToolsTests: XCTestCase {
         XCTAssertTrue(message.contains("iMCP Helper's window"))
     }
 
+    func testPresencePlansOnlyWhatIsMissing() {
+        typealias Presence = HelperPresence
+        XCTAssertEqual(Presence(isHidden: false, visibleWindows: 1, minimizedWindows: 0).actions, [])
+        // A window behind other windows is enough.
+        XCTAssertEqual(Presence(isHidden: false, visibleWindows: 1, minimizedWindows: 1).actions, [])
+        XCTAssertEqual(Presence(isHidden: true, visibleWindows: 1, minimizedWindows: 0).actions, [.unhide])
+        XCTAssertEqual(
+            Presence(isHidden: false, visibleWindows: 0, minimizedWindows: 1).actions,
+            [.restoreMinimizedWindow]
+        )
+        XCTAssertEqual(Presence(isHidden: false, visibleWindows: 0, minimizedWindows: 0).actions, [.openWindow])
+        XCTAssertEqual(
+            Presence(isHidden: true, visibleWindows: 0, minimizedWindows: 0).actions,
+            [.unhide, .openWindow]
+        )
+    }
+
+    func testWindowIsEnsuredBeforeEachHomeKitCall() async throws {
+        let events = EventLog()
+        let backend = WindowEnsuringBackend(base: LoggingBackend(events: events)) { await events.add("window") }
+        _ = try await backend.call("homes_list", [:])
+        _ = try await backend.call("rooms_list", [:])
+        let logged = await events.values
+        XCTAssertEqual(logged, ["window", "homes_list", "window", "rooms_list"])
+    }
+
     private func validate(_ name: String, _ input: [String: Value]) throws {
         let tool = try XCTUnwrap(HomeTools.tools(backend: backend).first { $0.name == name })
         try HomeInput.validate(input, schema: tool.inputSchema)
@@ -116,5 +142,18 @@ private actor HomeToolRecorder: HomeBackend {
     func call(_ tool: String, _ input: [String: Value]) async throws -> Value {
         names.append(tool)
         return .object(input)
+    }
+}
+
+private actor EventLog {
+    var values: [String] = []
+    func add(_ value: String) { values.append(value) }
+}
+
+private struct LoggingBackend: HomeBackend {
+    let events: EventLog
+    func call(_ tool: String, _ input: [String: Value]) async throws -> Value {
+        await events.add(tool)
+        return .null
     }
 }

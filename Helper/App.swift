@@ -180,11 +180,13 @@ final class HelperRuntime: ObservableObject {
     }
 
     private let changes: AsyncStream<Change>.Continuation
-    private let backend = HomeKitBackend()
+    private let homeKit = HomeKitBackend()
+    /// The backend that the server calls: HomeKit, after the helper's window is on screen.
+    private lazy var backend = WindowEnsuringBackend(base: homeKit) { await HelperWindow.ensureOnScreen() }
     private let keychain = HomeHelperPairing.Keychain.helper
     private var server: HelperServer?
     private var advertisement: HelperAdvertisement?
-    private var homeKit: Task<Void, Never>?
+    private var homeKitLoad: Task<Void, Never>?
     /// The change that failed, which Try Again repeats.
     private var failedChange: Change?
 
@@ -315,16 +317,16 @@ final class HelperRuntime: ObservableObject {
     }
 
     private func loadHomeKit() {
-        guard homeKit == nil else { return }
-        homeKit = Task {
+        guard homeKitLoad == nil else { return }
+        homeKitLoad = Task {
             homeKitStatus = .waitingForHomeKit
             do {
-                try await backend.store.ensureLoaded()
+                try await homeKit.store.ensureLoaded()
                 homeKitStatus = .ready
             } catch {
                 homeKitStatus = .failed(error)
                 canRetry = true
-                homeKit = nil
+                homeKitLoad = nil
             }
             print(homeKitStatus.text)
             fflush(stdout)
