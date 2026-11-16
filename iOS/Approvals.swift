@@ -83,10 +83,9 @@ final class PhoneApprovals: NSObject, ObservableObject, UNUserNotificationCenter
 
     private func notify(_ request: RemoteApprovalRequest) {
         let content = UNMutableNotificationContent()
-        content.title = request.title
-        var lines = request.details
-        if let body = request.body { lines.append(body) }
-        content.body = lines.joined(separator: "\n")
+        // The lock screen shows no recipients or message text. Details appear only in the unlocked app.
+        content.title = "iMCP needs your approval"
+        content.body = "Open iMCP to review the request."
         content.categoryIdentifier = Self.category
         content.userInfo = ["id": request.id]
         content.sound = .default
@@ -120,6 +119,7 @@ final class PhoneApprovals: NSObject, ObservableObject, UNUserNotificationCenter
         }
         // Keep the app awake until the Mac has the answer, then let go.
         await BackgroundWork.run("Deliver approval") {
+            let inbox = await MainActor.run { PhoneApprovals.shared.inbox }
             await MainActor.run {
                 PhoneApprovals.shared.inbox.answerFromNotification(id, decision)
                 PhoneApprovals.shared.refresh()
@@ -127,7 +127,7 @@ final class PhoneApprovals: NSObject, ObservableObject, UNUserNotificationCenter
             }
             let deadline = ContinuousClock.now.advanced(by: .seconds(20))
             while ContinuousClock.now < deadline, !Task.isCancelled {
-                if !PhoneApprovals.shared.inbox.hasUndeliveredAnswers { break }
+                if !inbox.hasUndeliveredAnswers { break }
                 try? await Task.sleep(for: .milliseconds(300))
             }
         }
@@ -160,25 +160,60 @@ extension PhoneBackend {
 /// The approvals waiting for an answer, at the top of the status screen.
 struct ApprovalsSection: View {
     @ObservedObject var approvals: PhoneApprovals
+    @State private var confirming: RemoteApprovalRequest?
 
     var body: some View {
         if !approvals.requests.isEmpty {
             Section {
                 ForEach(approvals.requests) { request in
-                    ApprovalRow(request: request) { approvals.answer(request.id, $0) }
+                    ApprovalRow(request: request, onApprove: { confirming = request }) {
+                        approvals.answer(request.id, .deny)
+                    }
                 }
             } header: {
                 Text("Waiting for You")
             } footer: {
                 Text("The first answer from this device or the Mac counts. A request nobody answers is denied.")
             }
+            .sheet(item: $confirming) { request in
+                ApprovalConfirmation(request: request) { approvals.answer(request.id, .approve) }
+            }
         }
     }
 }
 
+/// Approve stays off for a moment after a row appears,
+/// so a tap aimed at something else can't approve.
+private let approveDelay: Duration = .milliseconds(500)
+
 private struct ApprovalRow: View {
     let request: RemoteApprovalRequest
-    let onAnswer: (RemoteApprovalDecision) -> Void
+    let onApprove: () -> Void
+    let onDeny: () -> Void
+    @State private var canApprove = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ApprovalDetails(request: request)
+            HStack {
+                Button("Deny", role: .destructive, action: onDeny)
+                    .buttonStyle(.bordered)
+                Spacer()
+                Button("Approve…", action: onApprove)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!canApprove)
+            }
+        }
+        .padding(.vertical, 4)
+        .task {
+            guard (try? await Task.sleep(for: approveDelay)) != nil else { return }
+            canApprove = true
+        }
+    }
+}
+
+private struct ApprovalDetails: View {
+    let request: RemoteApprovalRequest
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -194,14 +229,37 @@ private struct ApprovalRow: View {
             Text("Expires \(request.expiresAt, style: .relative)")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            HStack {
-                Button("Deny", role: .destructive) { onAnswer(.deny) }
-                    .buttonStyle(.bordered)
-                Spacer()
-                Button("Approve") { onAnswer(.approve) }
-                    .buttonStyle(.borderedProminent)
-            }
         }
-        .padding(.vertical, 4)
+    }
+}
+
+/// Approving asks once more, showing the whole request, one request at a time.
+private struct ApprovalConfirmation: View {
+    let request: RemoteApprovalRequest
+    let onApprove: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var canApprove = false
+
+    var body: some View {
+        NavigationStack {
+            ScrollView { ApprovalDetails(request: request).padding() }
+                .navigationTitle("Approve?")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Approve") {
+                            onApprove()
+                            dismiss()
+                        }
+                        .disabled(!canApprove)
+                    }
+                }
+                .task {
+                    guard (try? await Task.sleep(for: approveDelay)) != nil else { return }
+                    canApprove = true
+                }
+        }
+        .interactiveDismissDisabled(false)
     }
 }

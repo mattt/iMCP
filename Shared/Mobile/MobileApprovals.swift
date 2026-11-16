@@ -166,6 +166,8 @@ final class ApprovalInbox: @unchecked Sendable {
     private let lock = NSLock()
     private var requests: [String: RemoteApprovalRequest] = [:]
     private var answers: [String: RemoteApprovalDecision] = [:]
+    /// IDs in the order they first arrived, so rows never move under a finger.
+    private var arrival: [String] = []
     private let now: @Sendable () -> Date
 
     init(now: @escaping @Sendable () -> Date = { Date() }) {
@@ -188,6 +190,8 @@ final class ApprovalInbox: @unchecked Sendable {
             let added = pending.filter { requests[$0.id] == nil && answers[$0.id] == nil }
             let removed = requests.keys.filter { incoming[$0] == nil }
             requests = incoming
+            for request in added where !arrival.contains(request.id) { arrival.append(request.id) }
+            arrival.removeAll { incoming[$0] == nil }
             for id in ack { answers.removeValue(forKey: id) }
             return SyncResult(added: added, removed: Array(removed), answers: undelivered())
         }
@@ -197,9 +201,8 @@ final class ApprovalInbox: @unchecked Sendable {
     func visible() -> [RemoteApprovalRequest] {
         let date = now()
         return lock.withLock {
-            requests.values
+            arrival.compactMap { requests[$0] }
                 .filter { answers[$0.id] == nil && $0.expiresAt > date }
-                .sorted { $0.expiresAt < $1.expiresAt }
         }
     }
 

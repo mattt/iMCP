@@ -96,4 +96,66 @@ final class RemoteApprovalTests: XCTestCase {
         XCTAssertEqual(inbox.sync(pending: [], ack: ["r1"]).answers, [])
         XCTAssertFalse(inbox.hasUndeliveredAnswers)
     }
+
+    @MainActor
+    func testPhoneAnswerClosesTheMacWindowAndWorksOnce() {
+        var bindings = PhoneApprovalBindings()
+        let id = bindings.register("key")
+        var resolved: [RemoteApprovalOutcome] = []
+        var closed = 0
+        XCTAssertTrue(
+            bindings.answer(
+                key: "key",
+                id: id,
+                outcome: .approved,
+                resolve: { resolved.append($0) },
+                closeWindow: { closed += 1 }
+            )
+        )
+        XCTAssertEqual(resolved, [.approved])
+        XCTAssertEqual(closed, 1)
+        XCTAssertFalse(
+            bindings.answer(
+                key: "key",
+                id: id,
+                outcome: .approved,
+                resolve: { resolved.append($0) },
+                closeWindow: { closed += 1 }
+            )
+        )
+        XCTAssertEqual(resolved.count, 1)
+        XCTAssertEqual(closed, 1)
+    }
+
+    @MainActor
+    func testLateAnswerForAnEarlierRequestCannotResolveALaterOneWithTheSameKey() {
+        var bindings = PhoneApprovalBindings()
+        let first = bindings.register("key")
+        let second = bindings.register("key")
+        var resolved: [RemoteApprovalOutcome] = []
+        var closed = 0
+        XCTAssertFalse(
+            bindings.answer(
+                key: "key",
+                id: first,
+                outcome: .approved,
+                resolve: { resolved.append($0) },
+                closeWindow: { closed += 1 }
+            )
+        )
+        XCTAssertEqual(resolved, [])
+        XCTAssertEqual(closed, 0, "A stale answer must not close the newer window")
+        // A request the Mac already withdrew can't be answered either.
+        XCTAssertEqual(bindings.remove("key"), second)
+        XCTAssertFalse(
+            bindings.answer(
+                key: "key",
+                id: second,
+                outcome: .approved,
+                resolve: { resolved.append($0) },
+                closeWindow: { closed += 1 }
+            )
+        )
+        XCTAssertEqual(resolved, [])
+    }
 }

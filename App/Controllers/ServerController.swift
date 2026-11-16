@@ -705,7 +705,13 @@ final class ServerController: ObservableObject {
             onDeny: { self.finishOAuthApproval(key: key, decision: .denied) }
         )
         let request = entry.request
-        var details = ["App: \(request.clientName)", "Its response goes to: \(request.redirectHost)"]
+        var details = [
+            "App: \(request.clientName)",
+            "Client ID: \(request.clientID)",
+            "Redirect URI: \(request.redirectURI)",
+            "Verification code: \(request.verificationCode)",
+            request.confirmationPrompt,
+        ]
         if request.redirectsToThisMac {
             details.append("The response goes to this Mac, so any app on it could receive it.")
         }
@@ -784,7 +790,7 @@ final class ServerController: ObservableObject {
 
     /// Approvals that are also on the paired phone, by approval key.
     /// The phone sees a random ID, never the key, which can derive from a credential.
-    private var phoneApprovalIDs: [String: String] = [:]
+    private var phoneApprovals = PhoneApprovalBindings()
 
     private func offerOnPhone(
         key: String,
@@ -794,9 +800,8 @@ final class ServerController: ObservableObject {
         lifetime: Duration,
         onResolved: @escaping @MainActor (RemoteApprovalOutcome) -> Void
     ) {
-        let id = UUID().uuidString
+        let id = phoneApprovals.register(key)
         let seconds = Double(lifetime.components.seconds)
-        phoneApprovalIDs[key] = id
         RemoteApprovals.shared.offer(
             RemoteApprovalRequest(
                 id: id,
@@ -804,14 +809,24 @@ final class ServerController: ObservableObject {
                 title: title,
                 details: details,
                 expiresAt: Date().addingTimeInterval(seconds)
-            ),
-            onResolved: onResolved
-        )
+            )
+        ) { [weak self] outcome in
+            // Runs on the main actor, after the hop from the broker:
+            // the answer counts only for this request, not a later one with the same key.
+            guard let self else { return }
+            self.phoneApprovals.answer(
+                key: key,
+                id: id,
+                outcome: outcome,
+                resolve: onResolved,
+                closeWindow: { self.approvalWindowController.closeWindow(for: key) }
+            )
+        }
     }
 
     /// Removes an approval from the phone once the Mac has decided it.
     private func withdrawFromPhone(key: String) {
-        guard let id = phoneApprovalIDs.removeValue(forKey: key) else { return }
+        guard let id = phoneApprovals.remove(key) else { return }
         RemoteApprovals.shared.withdraw(id)
     }
 
@@ -1237,7 +1252,12 @@ extension RemoteAccessServer {
             let gate = ConnectionApprovalGate()
             try? await gate.approve { true }
             // Read current permissions so changes apply to open sessions.
-            await networkManager.registerHandlers(for: server, connectionID: UUID(), gate: gate) { tool in
+            await networkManager.registerHandlers(
+                for: server,
+                connectionID: UUID(),
+                gate: gate,
+                clientName: "Remote access"
+            ) { tool in
                 // A session belongs to an access token or to an OAuth grant.
                 // Read current permissions so that revoking or editing applies at once.
                 (tokenStore.token(id: tokenID)?.permissions ?? OAuthAuthority.shared.grant(id: tokenID)?.permissions)?

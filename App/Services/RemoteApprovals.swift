@@ -72,3 +72,42 @@ final class RemoteApprovals {
         }
     }
 }
+
+/// Ties each phone callback to the one request it was offered for.
+///
+/// An approval key can be reused by a later request, so a late answer for an earlier one
+/// must not resolve it: a callback counts only while its ID is the one registered for the key.
+@MainActor
+struct PhoneApprovalBindings {
+    private var ids: [String: String] = [:]
+
+    /// Registers a new ID for `key`, replacing any earlier one.
+    mutating func register(_ key: String) -> String {
+        let id = UUID().uuidString
+        ids[key] = id
+        return id
+    }
+
+    /// Removes the binding for `key` and returns its ID.
+    mutating func remove(_ key: String) -> String? {
+        ids.removeValue(forKey: key)
+    }
+
+    /// Applies a phone's answer for `id` to `key`, once.
+    /// Resolves the request, then closes its window on the Mac.
+    /// Does nothing if `id` is no longer the request's ID.
+    @discardableResult
+    mutating func answer(
+        key: String,
+        id: String,
+        outcome: RemoteApprovalOutcome,
+        resolve: (RemoteApprovalOutcome) -> Void,
+        closeWindow: () -> Void
+    ) -> Bool {
+        guard ids[key] == id else { return false }
+        ids.removeValue(forKey: key)
+        resolve(outcome)
+        closeWindow()
+        return true
+    }
+}
