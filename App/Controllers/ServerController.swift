@@ -54,6 +54,7 @@ enum ServiceRegistry {
             CaptureService.shared,
             ContactsService.shared,
             HomeService.shared,
+            IWorkService.shared,
             LocationService.shared,
             MapsService.shared,
             MailService.shared,
@@ -80,6 +81,7 @@ enum ServiceRegistry {
         captureEnabled: Binding<Bool>,
         contactsEnabled: Binding<Bool>,
         homeEnabled: Binding<Bool>,
+        iWorkEnabled: Binding<Bool>,
         locationEnabled: Binding<Bool>,
         mapsEnabled: Binding<Bool>,
         mailEnabled: Binding<Bool>,
@@ -126,6 +128,14 @@ enum ServiceRegistry {
                 color: .orange,
                 service: HomeService.shared,
                 binding: homeEnabled
+            ),
+            ServiceConfig(
+                name: "iWork",
+                summary: "Read documents open in Pages, Numbers, and Keynote, and add to them.",
+                iconName: "doc.richtext.fill",
+                color: .orange.mix(with: .red, by: 0.3),
+                service: IWorkService.shared,
+                binding: iWorkEnabled
             ),
             ServiceConfig(
                 name: "Location",
@@ -254,6 +264,7 @@ final class ServerController: ObservableObject {
     @AppStorage("captureEnabled") private var captureEnabled = false
     @AppStorage("contactsEnabled") private var contactsEnabled = false
     @AppStorage("homeEnabled") private var homeEnabled = false
+    @AppStorage("iWorkEnabled") private var iWorkEnabled = false
     @AppStorage("locationEnabled") private var locationEnabled = false
     @AppStorage("mapsEnabled") private var mapsEnabled = true  // Default enabled
     @AppStorage("mailEnabled") private var mailEnabled = false
@@ -285,6 +296,7 @@ final class ServerController: ObservableObject {
             captureEnabled: $captureEnabled,
             contactsEnabled: $contactsEnabled,
             homeEnabled: $homeEnabled,
+            iWorkEnabled: $iWorkEnabled,
             locationEnabled: $locationEnabled,
             mapsEnabled: $mapsEnabled,
             mailEnabled: $mailEnabled,

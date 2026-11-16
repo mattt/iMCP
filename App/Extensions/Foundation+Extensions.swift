@@ -174,6 +174,8 @@ extension NSAppleScript {
         enum Parameter: Equatable, Sendable {
             case string(String)
             case boolean(Bool)
+            /// A real number, sent as one, so the script never reads it from text.
+            case number(Double)
             /// A list of strings, as an AppleScript list.
             case strings([String])
         }
@@ -277,6 +279,8 @@ extension NSAppleScript.Subroutine.Parameter {
             return NSAppleEventDescriptor(string: value)
         case .boolean(let value):
             return NSAppleEventDescriptor(boolean: value)
+        case .number(let value):
+            return NSAppleEventDescriptor(double: value)
         case .strings(let values):
             let list = NSAppleEventDescriptor.list()
             for (index, value) in values.enumerated() {

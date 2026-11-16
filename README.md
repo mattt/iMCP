@@ -36,6 +36,11 @@ and a [growing list of clients][mcp-clients] that support the
     <td>Find homes, rooms, accessories, scenes, and automations, read and control accessories, and organize rooms and zones. Needs a helper app that you <a href="#imcp-helper">build with your own Apple Developer account</a>.</td>
   </tr>
   <tr>
+    <th width="48"></th>
+    <td><strong>iWork</strong></td>
+    <td>List the documents open in Pages, Numbers, and Keynote, and read their text, cells, and slides. With "Allow writes" on in the service's settings, add a paragraph to a Pages document, set a Numbers cell, or add a Keynote slide. Nothing is saved for you, and iMCP never starts these apps. Needs Automation permission for each app.</td>
+  </tr>
+  <tr>
     <th width="48">
       <img src="Assets/location.svg" width="48" height="48" alt="" role="presentation"/>
     </th>

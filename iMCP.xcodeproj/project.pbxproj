@@ -77,6 +77,9 @@
 		AB0055000000000000000001 /* TSRP in Frameworks */ = {isa = PBXBuildFile; productRef = AB0055000000000000000002 /* TSRP */; };
 		B13600000000000000000011 /* ServiceWritesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13600000000000000000010 /* ServiceWritesTests.swift */; };
 		B13600000000000000000021 /* ../../Shared/Models/ServiceWrites.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13600000000000000000020 /* ../../Shared/Models/ServiceWrites.swift */; };
+		B13700000000000000000011 /* IWorkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13700000000000000000010 /* IWorkTests.swift */; };
+		B13700000000000000000021 /* ../../App/Services/IWork.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13700000000000000000020 /* ../../App/Services/IWork.swift */; };
+		B13700000000000000000031 /* ../../App/Services/IWorkScripting.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13700000000000000000030 /* ../../App/Services/IWorkScripting.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -147,6 +150,9 @@
 		F8F44EB62D5908D00075D79C /* imcp-server */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "imcp-server"; sourceTree = BUILT_PRODUCTS_DIR; };
 		B13600000000000000000010 /* ServiceWritesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceWritesTests.swift; sourceTree = "<group>"; };
 		B13600000000000000000020 /* ../../Shared/Models/ServiceWrites.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../Shared/Models/ServiceWrites.swift; sourceTree = "<group>"; };
+		B13700000000000000000010 /* IWorkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IWorkTests.swift; sourceTree = "<group>"; };
+		B13700000000000000000020 /* ../../App/Services/IWork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/IWork.swift; sourceTree = "<group>"; };
+		B13700000000000000000030 /* ../../App/Services/IWorkScripting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/IWorkScripting.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -271,6 +277,9 @@
 				A40000000000000000000019 /* ../../App/Services/HomeHelperLocator.swift */,
 				B13600000000000000000010 /* ServiceWritesTests.swift */,
 				B13600000000000000000020 /* ../../Shared/Models/ServiceWrites.swift */,
+				B13700000000000000000010 /* IWorkTests.swift */,
+				B13700000000000000000020 /* ../../App/Services/IWork.swift */,
+				B13700000000000000000030 /* ../../App/Services/IWorkScripting.swift */,
 				B13300000000000000000010 /* MusicTests.swift */,
 				B13300000000000000000011 /* ../../App/Services/Music.swift */,
 				A40000000000000000000012 /* ../../Shared/Extensions/Logger+Extensions.swift */,
@@ -593,6 +602,9 @@
 				A40000000000000000000029 /* ../../App/Services/HomeHelperLocator.swift in Sources */,
 				B13600000000000000000011 /* ServiceWritesTests.swift in Sources */,
 				B13600000000000000000021 /* ../../Shared/Models/ServiceWrites.swift in Sources */,
+				B13700000000000000000011 /* IWorkTests.swift in Sources */,
+				B13700000000000000000021 /* ../../App/Services/IWork.swift in Sources */,
+				B13700000000000000000031 /* ../../App/Services/IWorkScripting.swift in Sources */,
 				B13300000000000000000020 /* MusicTests.swift in Sources */,
 				B13300000000000000000021 /* ../../App/Services/Music.swift in Sources */,
 				A40000000000000000000022 /* ../../Shared/Extensions/Logger+Extensions.swift in Sources */,
