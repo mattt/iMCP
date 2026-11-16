@@ -1089,8 +1089,11 @@ final class PhotosService: Service {
                 throw PhotosError.noImageFile(asset.localIdentifier)
             }
             type = UTType(resource.uniformTypeIdentifier)
-            url = try Self.referenceFileURL(pathExtension: type?.preferredFilenameExtension ?? "dat")
-            try await Self.writeResource(resource, of: asset, to: url)
+            url = try await Self.writeResource(
+                resource,
+                of: asset,
+                pathExtension: type?.preferredFilenameExtension ?? "dat"
+            )
         } else {
             let (data, uti) = try await Self.requestImageData(for: asset)
             type = uti.flatMap(UTType.init)
@@ -1231,51 +1234,69 @@ final class PhotosService: Service {
         )
     }
 
-    /// Writes a resource's data to a file.
+    /// Writes a resource's data to a new reference file, and returns the file's URL.
     ///
     /// This uses `requestData` with a file handle rather than `writeData(for:toFile:options:)`,
     /// because only `requestData` returns a request that a timeout can cancel.
-    private static func writeResource(_ resource: PHAssetResource, of asset: PHAsset, to url: URL) async throws {
-        guard FileManager.default.createFile(atPath: url.path, contents: nil) else {
-            throw PhotosError.fileNotWritten(url.path)
+    /// The file is removed if any step fails after its creation.
+    private static func writeResource(
+        _ resource: PHAssetResource,
+        of asset: PHAsset,
+        pathExtension: String
+    ) async throws -> URL {
+        let connectionID = ToolCallContext.connectionID
+        let url = try referenceFiles.create(pathExtension: pathExtension, for: connectionID)
+        do {
+            let handle = try FileHandle(forWritingTo: url)
+            do {
+                try await writeResource(resource, of: asset, to: handle)
+                try handle.close()
+            } catch {
+                try? handle.close()
+                throw error
+            }
+            try referenceFiles.finish(url, for: connectionID)
+            return url
+        } catch {
+            referenceFiles.discard(url)
+            throw error
         }
-        let handle = try FileHandle(forWritingTo: url)
-        defer { try? handle.close() }
-        let writeError = LockedValue<Error?>(nil)
+    }
 
+    private static func writeResource(
+        _ resource: PHAssetResource,
+        of asset: PHAsset,
+        to handle: FileHandle
+    ) async throws {
+        let writeError = LockedValue<Error?>(nil)
         let options = PHAssetResourceRequestOptions()
         options.isNetworkAccessAllowed = true
         let manager = PHAssetResourceManager.default()
         let id = asset.localIdentifier
-        do {
-            let _: Void = try await withPhotoKitRequest(
-                id: id,
-                start: { finish in
-                    manager.requestData(
-                        for: resource,
-                        options: options,
-                        dataReceivedHandler: { data in
-                            do {
-                                try handle.write(contentsOf: data)
-                            } catch {
-                                writeError.withLock { $0 = $0 ?? error }
-                            }
-                        },
-                        completionHandler: { error in
-                            if let error = error ?? writeError.withLock({ $0 }) {
-                                finish(.failure(PhotosError.failure(id, error: error)))
-                            } else {
-                                finish(.success(()))
-                            }
+        let _: Void = try await withPhotoKitRequest(
+            id: id,
+            start: { finish in
+                manager.requestData(
+                    for: resource,
+                    options: options,
+                    dataReceivedHandler: { data in
+                        do {
+                            try handle.write(contentsOf: data)
+                        } catch {
+                            writeError.withLock { $0 = $0 ?? error }
                         }
-                    )
-                },
-                cancel: manager.cancelDataRequest
-            )
-        } catch {
-            try? FileManager.default.removeItem(at: url)
-            throw error
-        }
+                    },
+                    completionHandler: { error in
+                        if let error = error ?? writeError.withLock({ $0 }) {
+                            finish(.failure(PhotosError.failure(id, error: error)))
+                        } else {
+                            finish(.success(()))
+                        }
+                    }
+                )
+            },
+            cancel: manager.cancelDataRequest
+        )
     }
 
     /// Runs a PhotoKit request that calls back once, and cancels it after a timeout
@@ -1523,31 +1544,116 @@ final class PhotosService: Service {
 
     // MARK: - Reference Files
 
-    /// The folder for image files that tools return by reference.
-    static var referenceDirectory: URL {
-        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+    /// The image files that tools return by reference, in the app's `Library/Caches/Photos` folder.
+    static let referenceFiles = ReferenceFiles(
+        root: FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Photos", isDirectory: true)
-    }
+    )
 
-    /// The folder for the files of a connection.
-    /// Calls outside a client connection use a folder that is removed at launch.
-    private static func referenceDirectory(for connectionID: UUID?) -> URL {
-        referenceDirectory.appendingPathComponent(
-            connectionID?.uuidString ?? "Unattributed",
-            isDirectory: true
-        )
-    }
+    /// The files that tools write for clients to read, in one folder for each connection.
+    ///
+    /// The server does not cancel a tool call when its connection closes,
+    /// so a call can finish writing after the connection's folder is removed.
+    /// One lock covers the record of closed connections, the decision to write or keep a file,
+    /// and the removal of a folder, so that a close and a write cannot interleave:
+    /// a write for a closed connection is refused,
+    /// and a streamed file that is complete after the close is removed.
+    final class ReferenceFiles: @unchecked Sendable {
+        let root: URL
+        private let lock = NSLock()
+        private var closedConnections: Set<UUID> = []
 
-    private static func referenceFileURL(pathExtension: String) throws -> URL {
-        let directory = referenceDirectory(for: ToolCallContext.connectionID)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        return directory.appendingPathComponent(UUID().uuidString).appendingPathExtension(pathExtension)
+        init(root: URL) {
+            self.root = root
+        }
+
+        /// The folder for the files of a connection.
+        /// Calls outside a client connection use a folder that is removed at launch.
+        func directory(for connectionID: UUID?) -> URL {
+            root.appendingPathComponent(connectionID?.uuidString ?? "Unattributed", isDirectory: true)
+        }
+
+        /// Writes data to a new file for a connection.
+        func write(_ data: Data, pathExtension: String, for connectionID: UUID?) throws -> URL {
+            try withLock {
+                let url = try createFileLocked(pathExtension: pathExtension, for: connectionID)
+                do {
+                    try data.write(to: url)
+                } catch {
+                    removeItem(at: url)
+                    throw error
+                }
+                return url
+            }
+        }
+
+        /// Creates an empty file for a connection, for data that arrives in parts.
+        /// Call ``finish(_:for:)`` when the data is complete, or ``discard(_:)`` when it fails.
+        func create(pathExtension: String, for connectionID: UUID?) throws -> URL {
+            try withLock { try createFileLocked(pathExtension: pathExtension, for: connectionID) }
+        }
+
+        /// Keeps a file that ``create(pathExtension:for:)`` made,
+        /// or removes it and throws if its connection closed while it was written.
+        func finish(_ url: URL, for connectionID: UUID?) throws {
+            try withLock {
+                if let connectionID, closedConnections.contains(connectionID) {
+                    removeItem(at: url)
+                    throw PhotosError.connectionClosed
+                }
+            }
+        }
+
+        /// Removes a file whose write failed.
+        func discard(_ url: URL) {
+            withLock { removeItem(at: url) }
+        }
+
+        /// Records that a connection closed, and removes its files.
+        func close(_ connectionID: UUID) {
+            withLock {
+                closedConnections.insert(connectionID)
+                removeItem(at: directory(for: connectionID))
+            }
+        }
+
+        /// Removes every file, which no client can still be reading at launch.
+        func removeAll() {
+            withLock { removeItem(at: root) }
+        }
+
+        private func createFileLocked(pathExtension: String, for connectionID: UUID?) throws -> URL {
+            if let connectionID, closedConnections.contains(connectionID) {
+                throw PhotosError.connectionClosed
+            }
+            let directory = directory(for: connectionID)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let url = directory.appendingPathComponent(UUID().uuidString).appendingPathExtension(pathExtension)
+            guard FileManager.default.createFile(atPath: url.path, contents: nil) else {
+                throw PhotosError.fileNotWritten(url.path)
+            }
+            return url
+        }
+
+        private func withLock<T>(_ body: () throws -> T) rethrows -> T {
+            lock.lock()
+            defer { lock.unlock() }
+            return try body()
+        }
+
+        private func removeItem(at url: URL) {
+            do {
+                try FileManager.default.removeItem(at: url)
+            } catch CocoaError.fileNoSuchFile {
+                return
+            } catch {
+                log.error("Failed to remove Photos files at \(url.path): \(error.localizedDescription)")
+            }
+        }
     }
 
     private static func writeReferenceFile(_ data: Data, pathExtension: String) throws -> URL {
-        let url = try referenceFileURL(pathExtension: pathExtension)
-        try data.write(to: url, options: .withoutOverwriting)
-        return url
+        try referenceFiles.write(data, pathExtension: pathExtension, for: ToolCallContext.connectionID)
     }
 
     private static func referenceValue(
@@ -1581,24 +1687,15 @@ final class PhotosService: Service {
         return .object(object)
     }
 
-    /// Removes the files that tools wrote for a connection that closed.
+    /// Removes the files that tools wrote for a connection that closed,
+    /// and refuses later writes for it.
     static func removeReferenceFiles(for connectionID: UUID) {
-        removeItem(at: referenceDirectory(for: connectionID))
+        referenceFiles.close(connectionID)
     }
 
     /// Removes every file that tools wrote, which no client can still be reading at launch.
     static func removeAllReferenceFiles() {
-        removeItem(at: referenceDirectory)
-    }
-
-    private static func removeItem(at url: URL) {
-        do {
-            try FileManager.default.removeItem(at: url)
-        } catch CocoaError.fileNoSuchFile {
-            return
-        } catch {
-            log.error("Failed to remove Photos files at \(url.path): \(error.localizedDescription)")
-        }
+        referenceFiles.removeAll()
     }
 
     // MARK: - Arguments
@@ -1652,6 +1749,7 @@ final class PhotosService: Service {
         case timedOut(String)
         case encodingFailed
         case fileNotWritten(String)
+        case connectionClosed
 
         static func failure(_ id: String, info: [AnyHashable: Any]?) -> PhotosError {
             let error = info?[PHImageErrorKey] as? Error
@@ -1707,6 +1805,8 @@ final class PhotosService: Service {
                     "Photos did not provide the photo with identifier \(id) in time; it may still be downloading from iCloud, so try again"
             case .encodingFailed:
                 return "The image could not be encoded"
+            case .connectionClosed:
+                return "The client connection closed before the file was written"
             case .fileNotWritten(let path):
                 return "The file at \(path) could not be written"
             }

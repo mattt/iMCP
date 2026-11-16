@@ -426,6 +426,72 @@ final class PhotosTests: XCTestCase {
         XCTAssertLessThan(data.base64EncodedString().utf8.count, 1_000_000)
     }
 
+    // MARK: - Reference files
+
+    private func makeReferenceFiles() throws -> PhotosService.ReferenceFiles {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("PhotosTests-\(UUID().uuidString)", isDirectory: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        return PhotosService.ReferenceFiles(root: root)
+    }
+
+    func testReferenceFileIsWrittenForAnOpenConnection() throws {
+        let files = try makeReferenceFiles()
+        let connection = UUID()
+        let url = try files.write(Data("jpeg".utf8), pathExtension: "jpg", for: connection)
+        XCTAssertEqual(try Data(contentsOf: url), Data("jpeg".utf8))
+        XCTAssertEqual(url.deletingLastPathComponent().lastPathComponent, connection.uuidString)
+        XCTAssertEqual(url.pathExtension, "jpg")
+
+        files.close(connection)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: files.directory(for: connection).path))
+    }
+
+    func testWriteForAClosedConnectionIsRefused() throws {
+        let files = try makeReferenceFiles()
+        let connection = UUID()
+        files.close(connection)
+        XCTAssertThrowsError(try files.write(Data("jpeg".utf8), pathExtension: "jpg", for: connection))
+        XCTAssertThrowsError(try files.create(pathExtension: "heic", for: connection))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: files.directory(for: connection).path))
+    }
+
+    func testStreamedFileFinishedAfterTheCloseIsRemoved() throws {
+        let files = try makeReferenceFiles()
+        let connection = UUID()
+        let other = UUID()
+        let url = try files.create(pathExtension: "heic", for: connection)
+        let otherURL = try files.create(pathExtension: "heic", for: other)
+        let handle = try FileHandle(forWritingTo: url)
+        try handle.write(contentsOf: Data("part one".utf8))
+
+        // The connection closes while the data is still arriving.
+        files.close(connection)
+        try handle.write(contentsOf: Data("part two".utf8))
+        try handle.close()
+
+        XCTAssertThrowsError(try files.finish(url, for: connection)) { error in
+            XCTAssertTrue(error.localizedDescription.contains("closed"), error.localizedDescription)
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: files.directory(for: connection).path))
+
+        XCTAssertNoThrow(try files.finish(otherURL, for: other))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: otherURL.path))
+    }
+
+    func testDiscardAndRemoveAllRemoveFiles() throws {
+        let files = try makeReferenceFiles()
+        let url = try files.create(pathExtension: "heic", for: nil)
+        files.discard(url)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+
+        _ = try files.write(Data([1]), pathExtension: "jpg", for: nil)
+        _ = try files.write(Data([2]), pathExtension: "jpg", for: UUID())
+        files.removeAll()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: files.root.path))
+    }
+
     // MARK: - Helpers
 
     private func asset(
