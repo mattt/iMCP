@@ -10,7 +10,7 @@ import Foundation
 /// sets `iMCPHelper` to true.
 enum HomeHelperLocator {
     static let markerKey = "iMCPHelper"
-    static let defaultBundleIdentifier = "co.dododo.iMCP.Helper"
+    static let defaultBundleIdentifier = "com.amesconsulting.imcp.mac.helper"
 
     /// Where iMCP looks for the helper without asking.
     /// `Scripts/install-helper.sh` installs it in `/Applications` by default.

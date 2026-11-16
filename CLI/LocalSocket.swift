@@ -13,7 +13,7 @@ import Security
 /// which let any local process advertise a service or accept a session.
 enum LocalSocket {
     /// The iMCP app's bundle identifier, which names its sandbox container.
-    static let appBundleIdentifier = "co.dododo.iMCP"
+    static let appBundleIdentifier = "com.amesconsulting.imcp.mac"
 
     /// The name of the socket file in the app's caches directory.
     static let fileName = "imcp.sock"
@@ -599,7 +599,7 @@ struct LocalSocketHello: Codable, Equatable {
 /// anyone can sign a binary with the identifier `imcp-server`.
 enum CodeRequirement {
     /// The team that signs iMCP and `imcp-server`.
-    static let teamIdentifier = "TTY35UM57S"
+    static let teamIdentifier = "84M4ZF255G"
 
     /// The signing identifier of `imcp-server`.
     ///

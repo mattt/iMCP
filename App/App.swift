@@ -15,8 +15,9 @@ struct App: SwiftUI.App {
     // the SUFeedURL / SUPublicEDKey keys in Info.plist are inert
     // and installs never learn about newer releases,
     // no matter how long they run.
+    // Fork only: updates are off because this identity must not follow the upstream feed.
     private let updaterController = SPUStandardUpdaterController(
-        startingUpdater: true,
+        startingUpdater: false,
         updaterDelegate: nil,
         userDriverDelegate: nil
     )

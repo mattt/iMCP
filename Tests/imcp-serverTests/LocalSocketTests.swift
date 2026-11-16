@@ -26,7 +26,7 @@ final class LocalSocketTests: XCTestCase {
     func testContainerPathIsInAppContainerCaches() {
         XCTAssertEqual(
             LocalSocket.containerPath(homeDirectory: "/Users/someone"),
-            "/Users/someone/Library/Containers/co.dododo.iMCP/Data/Library/Caches/imcp.sock"
+            "/Users/someone/Library/Containers/com.amesconsulting.imcp.mac/Data/Library/Caches/imcp.sock"
         )
     }
 
@@ -41,12 +41,12 @@ final class LocalSocketTests: XCTestCase {
     func testUnsandboxedDebugServerPathIsAClientPath() {
         let home = "/Users/someone"
         let path = LocalSocket.serverPath(isSandboxed: false, homeDirectory: home)
-        XCTAssertEqual(path, "/Users/someone/Library/Caches/co.dododo.iMCP/imcp.sock")
+        XCTAssertEqual(path, "/Users/someone/Library/Caches/com.amesconsulting.imcp.mac/imcp.sock")
         XCTAssertTrue(LocalSocket.clientPaths(homeDirectory: home).contains(path))
     }
 
     func testContainerPathFitsForLongUserNames() throws {
-        let home = "/Users/" + String(repeating: "a", count: 32)
+        let home = "/Users/" + String(repeating: "a", count: 19)
         XCTAssertNoThrow(try LocalSocket.address(for: LocalSocket.containerPath(homeDirectory: home)))
     }
 
@@ -63,11 +63,11 @@ final class LocalSocketTests: XCTestCase {
     func testReleaseRequirementsPinTeamAndIdentifier() {
         XCTAssertEqual(
             CodeRequirement.releaseClient,
-            #"anchor apple generic and identifier "imcp-server" and certificate leaf[subject.OU] = "TTY35UM57S""#
+            #"anchor apple generic and identifier "imcp-server" and certificate leaf[subject.OU] = "84M4ZF255G""#
         )
         XCTAssertEqual(
             CodeRequirement.releaseServer,
-            #"anchor apple generic and identifier "co.dododo.iMCP" and certificate leaf[subject.OU] = "TTY35UM57S""#
+            #"anchor apple generic and identifier "com.amesconsulting.imcp.mac" and certificate leaf[subject.OU] = "84M4ZF255G""#
         )
     }
 
@@ -78,7 +78,7 @@ final class LocalSocketTests: XCTestCase {
         )
         XCTAssertEqual(
             CodeRequirement.debugServer,
-            #"(\#(CodeRequirement.releaseServer)) or identifier "co.dododo.iMCP" or identifier "iMCP""#
+            #"(\#(CodeRequirement.releaseServer)) or identifier "com.amesconsulting.imcp.mac" or identifier "iMCP""#
         )
         XCTAssertEqual(CodeRequirement.client, CodeRequirement.debugClient)
         XCTAssertEqual(CodeRequirement.server, CodeRequirement.debugServer)
