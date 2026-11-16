@@ -33,8 +33,8 @@ struct ServiceSettingsView: View {
                 HomeHelperSection(isHomeOn: isOn)
             }
 
-            if config.service is NotesService {
-                NotesWritesSection(serverController: serverController)
+            if config.service.hasWriteTools {
+                WritesSection(serverController: serverController, service: config.service, name: config.name)
                     .disabled(!isOn)
             }
 
@@ -48,6 +48,11 @@ struct ServiceSettingsView: View {
                                 // Without a title, show the name that clients call the tool by.
                                 Text(tool.name)
                                     .monospaced()
+                            }
+                            if tool.isWrite, !config.service.areWritesEnabled() {
+                                Text("Writes off")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
                             }
                             if tool.annotations.readOnlyHint == true {
                                 Text("Read-only")
@@ -138,22 +143,47 @@ struct ServiceIcon: View {
     }
 }
 
-/// The switch that lets clients create notes and folders, which is off until the person turns it on.
-private struct NotesWritesSection: View {
+/// The "Allow writes" switch of a service that has tools that change things.
+///
+/// Services that had write tools before this setting existed start on, so an update changes nothing for them.
+/// The others start off, until the person turns the switch on.
+private struct WritesSection: View {
     @ObservedObject var serverController: ServerController
-    @AppStorage(NotesWriteTools.settingKey) private var isWriteEnabled = false
+    let service: any Service
+    let name: String
+    @AppStorage private var isWriteEnabled: Bool
+
+    init(serverController: ServerController, service: any Service, name: String) {
+        self.serverController = serverController
+        self.service = service
+        self.name = name
+        _isWriteEnabled = AppStorage(
+            wrappedValue: service.writesEnabledByDefault,
+            ServiceWrites.settingKey(forService: service.serviceID)
+        )
+    }
 
     var body: some View {
         Section {
-            Toggle("Allow iMCP to create notes and folders", isOn: $isWriteEnabled)
+            Toggle("Allow writes", isOn: $isWriteEnabled)
                 .onChange(of: isWriteEnabled) {
+                    // Redraw the tool list's "Writes off" labels, and tell clients to list the tools again.
+                    serverController.objectWillChange.send()
                     serverController.toolListChanged()
                 }
         } footer: {
-            Text(
-                "Clients can then create notes and folders in Notes. They can't change or delete the notes that you have. The first time, macOS asks whether iMCP may control Notes."
-            )
+            Text(footer)
         }
+    }
+
+    private var footer: String {
+        var text =
+            "Lets clients create, change, and delete things in \(name). Tools that only read are always available."
+        if service is NotesService {
+            text +=
+                " In Notes they can only create notes and folders. The first time, macOS asks whether iMCP may control Notes."
+        }
+        return text
     }
 }
 

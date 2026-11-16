@@ -1,3 +1,5 @@
+import Foundation
+
 @preconcurrency
 protocol Service {
     @ToolBuilder var tools: [Tool] { get }
@@ -5,11 +7,13 @@ protocol Service {
     var isActivated: Bool { get async }
     func activate() async throws
 
-    /// Whether clients are offered a tool of the service, which the service's own setting can withhold.
+    /// Whether the service's write tools are on until the person chooses in Settings.
     ///
-    /// A tool that isn't listed is still one of `tools`,
-    /// so that a client that remembers it gets the service's reason for refusing it.
-    func isToolListed(_ name: String) -> Bool
+    /// Services that had write tools before the "Allow writes" setting existed keep them on,
+    /// so an update changes nothing for the people using them.
+    /// A service whose write tools are new turns this off.
+    /// See `ServiceWrites`.
+    var writesEnabledByDefault: Bool { get }
 }
 
 extension Service {
@@ -21,10 +25,15 @@ extension Service {
 
     func activate() async throws {}
 
-    func isToolListed(_ name: String) -> Bool { true }
+    var writesEnabledByDefault: Bool { true }
 
-    func call(tool name: String, with arguments: [String: Value]) async throws -> Value? {
+    func call(
+        tool name: String,
+        with arguments: [String: Value],
+        defaults: UserDefaults = .standard
+    ) async throws -> Value? {
         for tool in tools where tool.name == name {
+            if tool.isWrite, !areWritesEnabled(defaults: defaults) { throw WritesDisabledError(tool: name) }
             return try await tool.callAsFunction(arguments)
         }
 
