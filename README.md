@@ -61,7 +61,8 @@ and a [growing list of clients][mcp-clients] that support the
       <img src="Assets/messages.svg" width="48" height="48" alt="" role="presentation"/>
     </th>
     <td><strong>Messages</strong></td>
-    <td>Access message history with specific participants within customizable date ranges.</td>
+    <td>Read message history by participant and date, and confirm each send in iMCP.
+    Sending requires Automation permission for Messages.</td>
   </tr>
   <tr>
     <th width="48">
@@ -217,7 +218,7 @@ when **Allow writes** is on.
 | Service                                                   | **Allow writes** starts |
 | --------------------------------------------------------- | ----------------------- |
 | Calendar, Contacts, Home, Mail, Music, Phone, Reminders, Shortcuts | On                      |
-| Notes (creating notes and folders)                        | Off                     |
+| Notes (creating notes and folders), Messages (sending)    | Off                     |
 
 The services in the first row already had write tools
 before this switch existed,
@@ -225,14 +226,14 @@ so they start on and an update changes nothing for them.
 Write tools that are new, such as creating notes,
 start off until you turn them on.
 The services that gain write tools later
-(Files, and sending from Messages or Mail)
+(Files, and sending from Mail)
 start off too.
 
 Sending something to another person needs one more step.
 Even with **Allow writes** on,
 a tool that sends a message or an email
-(none does yet; they arrive with their services)
-shows a window with the client's name, the recipient, and the full text,
+(`messages_send` today; Mail's send tool arrives with its service)
+shows a window with the client's name, the recipient's exact handles, the service, and the full text,
 and sends only after you click its button.
 The window waits 50 seconds and then cancels,
 shows one request at a time,
