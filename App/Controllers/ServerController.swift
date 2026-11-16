@@ -408,6 +408,12 @@ final class ServerController: ObservableObject {
         disabledTools = tools
     }
 
+    /// Tells clients to list the tools again after a service's own setting
+    /// changed which of its tools it offers.
+    func toolListChanged() {
+        Task { await networkManager.updateServiceBindings(self.currentServiceBindings) }
+    }
+
     func setService(_ config: ServiceConfig, enabled: Bool) {
         objectWillChange.send()
         config.binding.wrappedValue = enabled
@@ -1304,7 +1310,7 @@ actor ServerNetworkManager {
                     if let isServiceEnabled = await self.serviceBindings[serviceId]?.wrappedValue,
                         isServiceEnabled
                     {
-                        for tool in service.tools {
+                        for tool in service.tools where service.isToolListed(tool.name) {
                             if await self.disabledTools.contains(tool.name) {
                                 log.debug("Skipping disabled tool: \(tool.name)")
                                 continue
