@@ -1,3 +1,4 @@
+import EventKit
 import SwiftUI
 
 /// The Settings pane for one service:
@@ -31,6 +32,10 @@ struct ServiceSettingsView: View {
 
             if config.service is HomeService {
                 HomeHelperSection(isHomeOn: isOn)
+            }
+
+            if config.service is CalendarService {
+                CalendarSelectionSection(isCalendarOn: isOn)
             }
 
             Section {
@@ -202,5 +207,67 @@ private struct HomeHelperSection: View {
             helperPath = HomeService.shared.helperLocation()?.path
             isPaired = HomeService.shared.hasPairingKey()
         }
+    }
+}
+
+/// Which calendars clients can see, grouped by account.
+private struct CalendarSelectionSection: View {
+    var isCalendarOn: Bool
+
+    private let store = CalendarService.shared.calendarSelectionStore
+
+    @State private var selection = CalendarSelection()
+    @State private var accounts: [(source: String, calendars: [EKCalendar])] = []
+
+    var body: some View {
+        Group {
+            Section {
+                Toggle("Show new calendars automatically", isOn: showsNewCalendars)
+            } footer: {
+                Text("Clients can only see and change events in the calendars that you choose.")
+            }
+
+            ForEach(accounts, id: \.source) { account in
+                Section(account.source) {
+                    ForEach(account.calendars, id: \.calendarIdentifier) { calendar in
+                        Toggle(calendar.title, isOn: binding(for: calendar))
+                    }
+                }
+            }
+        }
+        .disabled(!isCalendarOn)
+        .opacity(isCalendarOn ? 1 : 0.5)
+        .task(id: isCalendarOn) { reload() }
+        .onReceive(NotificationCenter.default.publisher(for: .EKEventStoreChanged)) { _ in
+            reload()
+        }
+    }
+
+    private var showsNewCalendars: Binding<Bool> {
+        Binding(
+            get: { selection.showsNewCalendars },
+            set: { newValue in
+                selection.setShowsNewCalendars(
+                    newValue,
+                    existing: accounts.flatMap(\.calendars).map(\.calendarIdentifier)
+                )
+                store.selection = selection
+            }
+        )
+    }
+
+    private func binding(for calendar: EKCalendar) -> Binding<Bool> {
+        Binding(
+            get: { selection.isSelected(calendar.calendarIdentifier) },
+            set: { newValue in
+                selection.setSelected(newValue, for: calendar.calendarIdentifier)
+                store.selection = selection
+            }
+        )
+    }
+
+    private func reload() {
+        selection = store.selection
+        accounts = CalendarService.shared.calendarsBySource()
     }
 }
