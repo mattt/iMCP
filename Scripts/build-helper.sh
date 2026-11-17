@@ -15,22 +15,35 @@ if [[ "${EMBED_HOME_HELPER:-YES}" != YES ]]; then
     echo "Skipping iMCP Helper (EMBED_HOME_HELPER=${EMBED_HOME_HELPER})."
     # Remove a helper left by an earlier build in the same directory.
     rm -rf "$TARGET_BUILD_DIR/$WRAPPER_NAME/Contents/Helpers/iMCP Helper.app"
+    rm -rf "$TARGET_BUILD_DIR/$WRAPPER_NAME/Contents/Library/LoginItems/iMCP Helper.app"
     exit 0
 fi
 
 helper_derived_data="$PROJECT_TEMP_DIR/HelperDerivedData"
 helper_signing="${HELPER_CODE_SIGNING_ALLOWED:-YES}"
 
+xcodebuild_args=(
+    -quiet
+    -project "$SRCROOT/iMCP.xcodeproj"
+    -scheme "iMCP Helper"
+    -configuration "$CONFIGURATION"
+    -destination 'platform=macOS,variant=Mac Catalyst'
+    -derivedDataPath "$helper_derived_data"
+)
+if [[ "$helper_signing" == YES ]]; then
+    xcodebuild_args+=(-allowProvisioningUpdates)
+fi
+xcodebuild_args+=(
+    CODE_SIGNING_ALLOWED="$helper_signing"
+    CODE_SIGNING_REQUIRED="$helper_signing"
+    build
+)
+
 # Keep the nested build's environment, products, and build database separate.
 # Inherited Xcode settings otherwise rename package products after the native app.
 env -i PATH="$PATH" HOME="$HOME" USER="$USER" LOGNAME="$LOGNAME" \
     TMPDIR="${TMPDIR:-/tmp}" DEVELOPER_DIR="${DEVELOPER_DIR:-$(xcode-select -p)}" \
-    xcodebuild -quiet -project "$SRCROOT/iMCP.xcodeproj" \
-    -scheme "iMCP Helper" -configuration "$CONFIGURATION" \
-    -destination 'platform=macOS,variant=Mac Catalyst' \
-    -derivedDataPath "$helper_derived_data" \
-    CODE_SIGNING_ALLOWED="$helper_signing" CODE_SIGNING_REQUIRED="$helper_signing" \
-    build
+    xcodebuild "${xcodebuild_args[@]}"
 
 helper_product="$helper_derived_data/Build/Products/$CONFIGURATION-maccatalyst/iMCP Helper.app"
 helper_destination="$TARGET_BUILD_DIR/$WRAPPER_NAME/Contents/Helpers/iMCP Helper.app"

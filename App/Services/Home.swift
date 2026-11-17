@@ -582,11 +582,11 @@ actor HomeService: Service, HomeBackend {
         defer { if accessing { chosen?.stopAccessingSecurityScopedResource() } }
         return HomeHelperLocator.resolve(
             chosen: chosen,
+            embedded: HomeHelperLocator.embeddedLocations(in: Bundle.main.bundleURL),
             installed: HomeHelperLocator.installLocations,
             registered: NSWorkspace.shared.urlForApplication(
                 withBundleIdentifier: HomeHelperLocator.defaultBundleIdentifier
             ),
-            embedded: Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/iMCP Helper.app"),
             isHelper: HomeHelperLocator.isHelper(at:)
         )
     }
@@ -736,16 +736,7 @@ actor HomeService: Service, HomeBackend {
         guard try HomeHelperLocator.protocolVersion(at: url) == HomeHelperPairing.protocolVersion else {
             throw HomeError(Self.outdatedHelperMessage)
         }
-        let configuration = NSWorkspace.OpenConfiguration()
-        configuration.activates = activates
-        // Xcode's native macOS debugger libraries cannot load in a Catalyst app.
-        // Empty values override the launch environment; omitting the keys does not.
-        // A sandboxed iMCP can't set the environment, but unsigned Debug builds aren't sandboxed.
-        configuration.environment = [
-            "DYLD_INSERT_LIBRARIES": "",
-            "DYLD_LIBRARY_PATH": "",
-            "DYLD_FRAMEWORK_PATH": "",
-        ]
+        let configuration = Self.helperOpenConfiguration(activates: activates)
         if activates, let identifier = Bundle(url: url)?.bundleIdentifier {
             // Let the helper take activation when it launches and activates itself.
             NSApp.yieldActivation(toApplicationWithBundleIdentifier: identifier)
@@ -753,6 +744,29 @@ actor HomeService: Service, HomeBackend {
         let application = try await NSWorkspace.shared.openApplication(at: url, configuration: configuration)
         if activates { _ = application.activate(from: .current) }
         return application.processIdentifier
+    }
+
+    /// Builds the launch configuration for `iMCP Helper`.
+    /// When unsandboxed, clears `DYLD_*` variables so Xcode's native macOS
+    /// debugger libraries are not injected into the Catalyst helper.
+    /// Sandboxed apps omit `environment` because LaunchServices rejects
+    /// custom launch environments from sandboxed callers.
+    nonisolated static func helperOpenConfiguration(
+        activates: Bool,
+        isSandboxed: Bool = LocalSocket.isSandboxed
+    ) -> NSWorkspace.OpenConfiguration {
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = activates
+        if !isSandboxed {
+            // Xcode's native macOS debugger libraries cannot load in a Catalyst app.
+            // Empty values override the launch environment; omitting the keys does not.
+            configuration.environment = [
+                "DYLD_INSERT_LIBRARIES": "",
+                "DYLD_LIBRARY_PATH": "",
+                "DYLD_FRAMEWORK_PATH": "",
+            ]
+        }
+        return configuration
     }
 }
 

@@ -12,6 +12,17 @@ enum HomeHelperLocator {
     static let markerKey = "iMCPHelper"
     static let defaultBundleIdentifier = "co.dododo.iMCP.Helper"
 
+    /// Relative paths where a build of iMCP can embed the helper.
+    static let embeddedRelativePaths = [
+        "Contents/Library/LoginItems/iMCP Helper.app",
+        "Contents/Helpers/iMCP Helper.app",
+    ]
+
+    /// Embedded helper locations inside `bundleURL`, in preference order.
+    static func embeddedLocations(in bundleURL: URL) -> [URL] {
+        embeddedRelativePaths.map { bundleURL.appendingPathComponent($0) }
+    }
+
     /// Where iMCP looks for the helper without asking.
     /// `Scripts/install-helper.sh` installs it in `/Applications` by default.
     /// The sandbox can't read other folders, such as `~/Applications`,
@@ -62,17 +73,16 @@ enum HomeHelperLocator {
     }
 
     /// The first candidate that is a helper:
-    /// the user's choice, then the install locations,
-    /// then the app registered for the default bundle ID,
-    /// then the copy embedded in a development build.
+    /// the user's choice, then the copies embedded in the app bundle,
+    /// then the install locations, then the app registered for the default bundle ID.
     static func resolve(
         chosen: URL?,
+        embedded: [URL],
         installed: [URL],
         registered: URL?,
-        embedded: URL?,
         isHelper: (URL) -> Bool
     ) -> URL? {
-        let candidates = [chosen] + installed.map(Optional.some) + [registered, embedded]
+        let candidates = [chosen] + embedded.map(Optional.some) + installed.map(Optional.some) + [registered]
         return candidates.compactMap { $0 }.first(where: isHelper)
     }
 }

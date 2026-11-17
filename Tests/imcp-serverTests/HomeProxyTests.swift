@@ -858,50 +858,71 @@ final class HomeHelperLocatorTests: XCTestCase {
     private let system = URL(fileURLWithPath: "/Applications/iMCP Helper.app")
     private let user = URL(fileURLWithPath: "/Users/x/Applications/iMCP Helper.app")
     private let registered = URL(fileURLWithPath: "/Users/x/Dev/iMCP Helper.app")
-    private let embedded = URL(fileURLWithPath: "/Applications/iMCP.app/Contents/Helpers/iMCP Helper.app")
+    private let appBundle = URL(fileURLWithPath: "/Applications/iMCP.app")
+    private let embeddedLoginItem = URL(
+        fileURLWithPath: "/Applications/iMCP.app/Contents/Library/LoginItems/iMCP Helper.app"
+    )
+    private let embeddedHelper = URL(fileURLWithPath: "/Applications/iMCP.app/Contents/Helpers/iMCP Helper.app")
 
     func testChosenHelperWins() {
         let url = HomeHelperLocator.resolve(
             chosen: chosen,
+            embedded: [embeddedLoginItem, embeddedHelper],
             installed: [system, user],
             registered: registered,
-            embedded: embedded,
             isHelper: { _ in true }
         )
         XCTAssertEqual(url, chosen)
     }
 
-    func testFallsBackInOrderWhenChosenIsGone() {
-        let url = HomeHelperLocator.resolve(
-            chosen: chosen,
-            installed: [system, user],
-            registered: registered,
-            embedded: embedded,
-            isHelper: { $0 != self.chosen && $0 != self.system }
+    func testEmbeddedLocationsCheckLoginItemsThenHelpers() {
+        XCTAssertEqual(
+            HomeHelperLocator.embeddedLocations(in: appBundle),
+            [embeddedLoginItem, embeddedHelper]
         )
-        XCTAssertEqual(url, user)
     }
 
-    func testRegisteredThenEmbedded() {
+    func testEmbeddedHelpersWinBeforeInstalledAndRegistered() {
         XCTAssertEqual(
             HomeHelperLocator.resolve(
                 chosen: nil,
+                embedded: [embeddedLoginItem, embeddedHelper],
                 installed: [system, user],
                 registered: registered,
-                embedded: embedded,
-                isHelper: { $0 == self.registered || $0 == self.embedded }
+                isHelper: { $0 != self.chosen }
             ),
-            registered
+            embeddedLoginItem
         )
         XCTAssertEqual(
             HomeHelperLocator.resolve(
                 chosen: nil,
+                embedded: [embeddedLoginItem, embeddedHelper],
                 installed: [system, user],
-                registered: nil,
-                embedded: embedded,
-                isHelper: { $0 == self.embedded }
+                registered: registered,
+                isHelper: { $0 == self.embeddedHelper || $0 == self.system || $0 == self.registered }
             ),
-            embedded
+            embeddedHelper
+        )
+    }
+
+    func testFallsBackInOrderWhenChosenAndEmbeddedAreGone() {
+        let url = HomeHelperLocator.resolve(
+            chosen: chosen,
+            embedded: [embeddedLoginItem, embeddedHelper],
+            installed: [system, user],
+            registered: registered,
+            isHelper: { $0 == self.user || $0 == self.registered }
+        )
+        XCTAssertEqual(url, user)
+        XCTAssertEqual(
+            HomeHelperLocator.resolve(
+                chosen: chosen,
+                embedded: [embeddedLoginItem, embeddedHelper],
+                installed: [system, user],
+                registered: registered,
+                isHelper: { $0 == self.registered }
+            ),
+            registered
         )
     }
 
@@ -926,11 +947,28 @@ final class HomeHelperLocatorTests: XCTestCase {
         XCTAssertNil(
             HomeHelperLocator.resolve(
                 chosen: try app("Chosen", marker: nil),
+                embedded: [],
                 installed: [],
                 registered: nil,
-                embedded: nil,
                 isHelper: HomeHelperLocator.isHelper(at:)
             )
+        )
+    }
+
+    func testHelperOpenConfigurationOmitsEnvironmentWhenSandboxed() {
+        let sandboxed = HomeService.helperOpenConfiguration(activates: true, isSandboxed: true)
+        XCTAssertTrue(sandboxed.activates)
+        XCTAssertTrue(sandboxed.environment.isEmpty)
+
+        let unsandboxed = HomeService.helperOpenConfiguration(activates: false, isSandboxed: false)
+        XCTAssertFalse(unsandboxed.activates)
+        XCTAssertEqual(
+            unsandboxed.environment,
+            [
+                "DYLD_INSERT_LIBRARIES": "",
+                "DYLD_LIBRARY_PATH": "",
+                "DYLD_FRAMEWORK_PATH": "",
+            ]
         )
     }
 
