@@ -49,17 +49,16 @@ struct ConnectionApprovalView: View {
             : "This gives the client access to \(enabledServiceNames.joined(separator: ", "))."
     }
 
-    /// The title of the button that trusts the client, and what it does.
-    private var trustButton: (title: String, note: String?) {
+    /// The title of the button that trusts the client, and what it does,
+    /// or `nil` if the client can only be allowed once.
+    private var trustButton: (title: String, note: String)? {
         switch request.offer {
         case .signature:
             ("Always Allow", "iMCP won't ask again for \(displayName), and it shows a notification when it connects.")
         case .credential:
             ("Always Allow", "This client connects without asking while it keeps its credential.")
-        case .claudeCodeSetup:
-            ("Set Up Claude Code", "iMCP adds itself to Claude Code's settings, so it connects without asking.")
-        case .copiedCredential:
-            ("Create Credential…", "iMCP creates a credential for you to add to the client's MCP settings.")
+        case nil:
+            nil
         }
     }
 
@@ -78,7 +77,7 @@ struct ConnectionApprovalView: View {
 
                     Text(identityText)
                     Text(servicesText)
-                    if let note = trustButton.note {
+                    if let note = trustButton?.note {
                         Text(note)
                     }
                 }
@@ -96,8 +95,10 @@ struct ConnectionApprovalView: View {
                 Button("Allow Once") { onApprove(false) }
                     .disabled(!canAllow)
 
-                Button(trustButton.title) { onApprove(true) }
-                    .disabled(!canAllow)
+                if let trustButton {
+                    Button(trustButton.title) { onApprove(true) }
+                        .disabled(!canAllow)
+                }
             }
         }
         .task {

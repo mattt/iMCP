@@ -99,11 +99,25 @@ final class TrustedAppTests: XCTestCase {
         XCTAssertFalse(terminal.isTrustableBySignature)
 
         let store = makeStore()
-        guard case .ask(let request) = store.evaluate(credential: nil, claimedName: "some-cli", app: terminal) else {
+        let credential = ClientCredential.generate()
+        guard
+            case .ask(let request) = store.evaluate(
+                credential: credential,
+                claimedName: "some-cli",
+                app: terminal,
+                isAutomaticCredential: true
+            )
+        else {
             return XCTFail("A terminal should ask")
         }
-        XCTAssertEqual(request.offer, .copiedCredential)
+        XCTAssertEqual(request.offer, .credential)
         XCTAssertNil(request.signatureKey)
+
+        guard case .ask(let withoutCredential) = store.evaluate(credential: nil, claimedName: "some-cli", app: terminal)
+        else {
+            return XCTFail("A terminal without a credential should ask")
+        }
+        XCTAssertNil(withoutCredential.offer)
     }
 
     func testUnsignedAdHocAndNonBundleAppsAreNotTrustable() {
@@ -128,16 +142,73 @@ final class TrustedAppTests: XCTestCase {
         XCTAssertFalse(candidate(path: nil).isTrustableBySignature, "A bare executable such as node")
     }
 
-    func testClaudeCodeGetsSetUpEvenInATrustedApp() throws {
+    func testClaudeCodeUsesCredentialEvenInATrustedApp() throws {
         let store = makeStore()
         let calculator = try app(at: calculatorURL)
         try store.trustApp(calculator)
 
+        let credential = ClientCredential.generate()
         // Claude Code can run inside a trusted editor's terminal.
-        // The editor's trust must not approve it, and it's offered setup, not signature trust.
-        guard case .ask(let request) = store.evaluate(credential: nil, claimedName: "claude-code", app: calculator)
+        // The editor's trust must not approve it, and it's offered credential trust, not signature trust.
+        guard
+            case .ask(let request) = store.evaluate(
+                credential: credential,
+                claimedName: "claude-code",
+                app: calculator,
+                isAutomaticCredential: true
+            )
         else { return XCTFail("A client claiming to be Claude Code should ask") }
-        XCTAssertEqual(request.offer, .claudeCodeSetup)
+        XCTAssertEqual(request.offer, .credential)
+
+        XCTAssertNotNil(try store.alwaysTrust(request))
+        guard
+            case .approve = store.evaluate(
+                credential: credential,
+                claimedName: "claude-code",
+                app: calculator,
+                isAutomaticCredential: true
+            )
+        else { return XCTFail("Subsequent connections with the trusted credential should approve") }
+    }
+
+    func testTrustedAutomaticCredentialDoesNotApproveTrustableApp() throws {
+        let store = makeStore()
+        let terminal = try app(at: terminalURL)
+        let calculator = try app(at: calculatorURL)
+        let automaticCredential = ClientCredential.generate()
+
+        // Trust the CLI's automatic fallback credential from Terminal.
+        guard
+            case .ask(let cliRequest) = store.evaluate(
+                credential: automaticCredential,
+                claimedName: "claude-code",
+                app: terminal,
+                isAutomaticCredential: true
+            )
+        else { return XCTFail("First CLI connection should ask") }
+        _ = try store.alwaysTrust(cliRequest)
+
+        // A signature-trustable app without an explicit env credential must not silently
+        // inherit the CLI fallback credential; it must ask and offer signature trust.
+        guard
+            case .ask(let appRequest) = store.evaluate(
+                credential: automaticCredential,
+                claimedName: "Calculator",
+                app: calculator,
+                isAutomaticCredential: true
+            )
+        else { return XCTFail("A signature-trustable app must not inherit the automatic CLI credential") }
+        XCTAssertEqual(appRequest.offer, .signature)
+
+        // An explicit environment credential (e.g. from legacy settings) still approves.
+        guard
+            case .approve = store.evaluate(
+                credential: automaticCredential,
+                claimedName: "Calculator",
+                app: calculator,
+                isAutomaticCredential: false
+            )
+        else { return XCTFail("An explicit trusted environment credential should approve") }
     }
 
     // MARK: - Claude Code settings

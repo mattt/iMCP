@@ -248,7 +248,7 @@ struct ClientsSettingsView: View {
             } footer: {
                 VStack(alignment: .trailing) {
                     Text(
-                        "Trusted apps connect without an approval dialog, and iMCP shows a notification whenever one connects. iMCP identifies an app by its code signature. Claude Code and other clients that run in a terminal use a credential that iMCP wrote into their settings instead. Removing an app revokes its trust."
+                        "Trusted apps connect without an approval dialog, and iMCP shows a notification whenever one connects. iMCP identifies an app by its code signature. Claude Code and other clients that run in a terminal use a local credential instead. Removing an app revokes its trust."
                     )
                     .frame(maxWidth: .infinity, alignment: .leading)
 

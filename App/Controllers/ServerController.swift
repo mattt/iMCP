@@ -466,29 +466,22 @@ final class ServerController: ObservableObject {
         guard let entry = resolution.removed.first else { return }
         let request = entry.request
 
-        var newCredential: String?
-        var setUpClaudeCode = false
         if approved && alwaysTrust {
             objectWillChange.send()
             do {
+                let trustedRecord: ClientRecord?
                 switch request.offer {
                 case .signature:
-                    if let app = request.app {
-                        let record = try credentials.trustApp(app)
-                        for case let (connectionID as UUID, _) in entry.waiters {
-                            credentialSessions.add(connectionID, credentialID: record.id)
-                        }
-                    }
-                case .credential, .copiedCredential:
-                    newCredential = try credentials.alwaysTrust(request)
-                case .claudeCodeSetup:
-                    credentials.removeLegacyTrustedName(request.claimedName)
-                    setUpClaudeCode = true
+                    trustedRecord = try request.app.map { try credentials.trustApp($0) }
+                case .credential:
+                    trustedRecord = try credentials.alwaysTrust(request)
+                case nil:
+                    trustedRecord = nil
                 }
-                // Revoking the new credential closes the connections that it was issued for.
-                if let newCredential, let id = ClientCredential.identifier(for: newCredential) {
+                // Revoking the credential closes the connections that it approved.
+                if let trustedRecord {
                     for case let (connectionID as UUID, _) in entry.waiters {
-                        credentialSessions.add(connectionID, credentialID: id)
+                        credentialSessions.add(connectionID, credentialID: trustedRecord.id)
                     }
                 }
             } catch {
@@ -517,16 +510,6 @@ final class ServerController: ObservableObject {
             approved ? waiter.approve() : waiter.deny()
         }
         resolution.promoted.forEach(presentApproval)
-
-        if setUpClaudeCode {
-            Task { @MainActor in
-                self.setUpClaudeCodeAfterApproval(request: request, connectionIDs: entry.waiters.compactMap { $0.id as? UUID })
-            }
-        } else if let newCredential {
-            Task { @MainActor in
-                self.showNewCredential(newCredential, clientName: request.claimedName)
-            }
-        }
     }
 
     /// Denies requests that waited too long, and closes their dialogs.
@@ -581,7 +564,7 @@ final class ServerController: ObservableObject {
                 await self?.connectionClosed(connectionID)
             }
             await networkManager.setConnectionApprovalHandler {
-                [weak self] connectionID, clientInfo, credential, app in
+                [weak self] connectionID, clientInfo, hello, app in
                 guard let self = self else {
                     return false
                 }
@@ -600,7 +583,7 @@ final class ServerController: ObservableObject {
                         self.showConnectionApprovalAlert(
                             connectionID: connectionID,
                             clientName: clientInfo.name,
-                            credential: credential,
+                            hello: hello,
                             app: app,
                             approve: {
                                 Task { await resumeOnce(true) }
@@ -668,23 +651,28 @@ final class ServerController: ObservableObject {
     private func showConnectionApprovalAlert(
         connectionID: UUID,
         clientName: String,
-        credential: String?,
+        hello: LocalSocketHello,
         app: ResponsibleApp?,
         approve: @escaping () -> Void,
         deny: @escaping () -> Void
     ) {
         log.notice("Connection approval requested for client: \(clientName)")
 
-        // Only a trusted credential skips the dialog; the reported name never does.
+        // Only a trusted credential or code signature skips the dialog; the reported name never does.
         let request: ClientCredentialStore.Request
-        switch credentials.evaluate(credential: credential, claimedName: clientName, app: app) {
+        switch credentials.evaluate(
+            credential: hello.credential,
+            claimedName: clientName,
+            app: app,
+            isAutomaticCredential: hello.isAutomaticCredential ?? false
+        ) {
         case .approve(let record):
-            log.notice("Client \(clientName) is trusted by \(record.isApp ? "signature" : "credential"), auto-approving")
+            log.notice(
+                "Client \(clientName) is trusted by \(record.isApp ? "signature" : "credential"), auto-approving"
+            )
             credentialSessions.add(connectionID, credentialID: record.id)
-            if record.isApp {
-                objectWillChange.send()
-                credentials.noteConnection(id: record.id)
-            }
+            objectWillChange.send()
+            credentials.noteConnection(id: record.id)
             approve()
 
             // Notify the user on auto-approved connections.
@@ -730,60 +718,6 @@ final class ServerController: ObservableObject {
         case .rejected(.tooManyWaiting):
             log.notice("Denied client \(clientName): too many connections are waiting for approval")
             deny()
-        }
-    }
-
-    /// Writes iMCP into Claude Code's settings with a trusted credential.
-    /// If that isn't possible, shows the credential for the person to copy.
-    private func setUpClaudeCodeAfterApproval(request: ClientCredentialStore.Request, connectionIDs: [UUID]) {
-        do {
-            try ClaudeCode.install(serverController: self, trusted: true)
-            for record in credentials.records.values where record.name == ClaudeCode.clientName && record.isTrusted {
-                for id in connectionIDs { credentialSessions.add(id, credentialID: record.id) }
-            }
-            objectWillChange.send()
-        } catch {
-            log.error("Couldn't set up Claude Code: \(String(describing: error), privacy: .public)")
-            do {
-                let credential = try credentials.issue(name: request.claimedName, trusted: true).credential
-                objectWillChange.send()
-                showNewCredential(credential, clientName: request.claimedName)
-            } catch {
-                showTrustError(error, clientName: request.claimedName)
-            }
-        }
-    }
-
-    /// Shows a credential that iMCP just issued, so that the person can add it to the client.
-    /// iMCP stores only the credential's hash, so this is the only time it can be shown.
-    private func showNewCredential(_ credential: String, clientName: String) {
-        let alert = NSAlert()
-        alert.messageText = "Add a Credential to \(clientName)"
-        alert.informativeText = """
-            To connect without approval next time, \
-            add this environment variable to the iMCP server in the client's MCP settings. \
-            iMCP doesn't keep a copy of the value.
-            """
-
-        let field = NSTextField(
-            wrappingLabelWithString: "\(ClientCredential.environmentVariable)=\(credential)"
-        )
-        field.isSelectable = true
-        field.font = .monospacedSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular)
-        field.preferredMaxLayoutWidth = 300
-        field.frame.size = field.fittingSize
-        alert.accessoryView = field
-
-        alert.addButton(withTitle: "Copy Value")
-        alert.addButton(withTitle: "Done")
-
-        NSApp.activate(ignoringOtherApps: true)
-        if alert.runModal() == .alertFirstButtonReturn {
-            // Keep the credential off other devices and out of clipboard history.
-            let pasteboard = NSPasteboard.general
-            pasteboard.prepareForNewContents(with: .currentHostOnly)
-            pasteboard.setString(credential, forType: .string)
-            pasteboard.setString("", forType: NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType"))
         }
     }
 
@@ -1018,8 +952,9 @@ actor ServerNetworkManager {
     static let approvalTimeout: Duration = ApprovalPolicy.default.expiry + .seconds(5)
 
     /// Decides whether to approve a connection,
-    /// given the client's reported info and the credential it presented, if any.
-    typealias ConnectionApprovalHandler = @Sendable (UUID, MCP.Client.Info, String?, ResponsibleApp?) async -> Bool
+    /// given the client's reported info, its hello payload, and the responsible app.
+    typealias ConnectionApprovalHandler =
+        @Sendable (UUID, MCP.Client.Info, LocalSocketHello, ResponsibleApp?) async -> Bool
     private var connectionApprovalHandler: ConnectionApprovalHandler?
 
     /// Called when a connection closes,
@@ -1233,7 +1168,7 @@ actor ServerNetworkManager {
 
                 try await connectionManager.start { clientInfo in
                     await self.awaitApproval(for: connectionID) {
-                        await approvalHandler(connectionID, clientInfo, hello.credential, app)
+                        await approvalHandler(connectionID, clientInfo, hello, app)
                     }
                 }
 

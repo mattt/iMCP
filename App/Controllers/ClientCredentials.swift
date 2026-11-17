@@ -362,6 +362,7 @@ final class ClientCredentialStore {
     func trust(id: String) throws {
         guard var record = records[id] else { return }
         record.isTrusted = true
+        record.lastConnectedAt = now()
         try storage.save(record)
         records[id] = record
     }
@@ -411,6 +412,8 @@ final class ClientCredentialStore {
         /// The name that the client reported, which it can choose freely,
         /// after ``ClientName/sanitized(_:)``.
         var claimedName: String
+        /// The credential that the connection presented, if any.
+        var credential: String? = nil
         /// The record for the credential that the connection presented.
         var record: ClientRecord?
         /// Whether the connection presented a credential that iMCP doesn't recognize.
@@ -424,12 +427,8 @@ final class ClientCredentialStore {
         enum TrustOffer: Equatable {
             /// Trust the app's code signature.
             case signature
-            /// Trust the credential that the client already presents.
+            /// Trust the credential that the client presents.
             case credential
-            /// Create a credential and write it into Claude Code's settings.
-            case claudeCodeSetup
-            /// Create a credential for the person to copy into the client's settings.
-            case copiedCredential
         }
 
         /// Whether the client says it's Claude Code, which runs inside a terminal or an editor.
@@ -439,20 +438,26 @@ final class ClientCredentialStore {
             return name.hasPrefix("claude-code") || name.hasPrefix("claude code")
         }
 
-        var offer: TrustOffer {
+        /// The identifier of the well-formed credential that the connection presented, if any.
+        var credentialID: String? {
+            record?.id ?? credential.flatMap(ClientCredential.identifier(for:))
+        }
+
+        var offer: TrustOffer? {
             if let app, app.isTrustableBySignature, !claimsClaudeCode { return .signature }
-            if record != nil { return .credential }
-            return claimsClaudeCode ? .claudeCodeSetup : .copiedCredential
+            if credentialID != nil { return .credential }
+            return nil
         }
 
         /// The key for coalescing approval dialogs.
         ///
-        /// Connections with the same credential share a dialog.
-        /// Connections without a recognized credential each get their own,
+        /// Connections with the same valid credential or app signature share a dialog.
+        /// Connections without one each get their own,
         /// because nothing shows that they come from the same client.
         func approvalKey(connectionID: UUID) -> String {
             if let key = signatureKey { return key }
-            return record.map { "credential:\($0.id)" } ?? "connection:\(connectionID.uuidString)"
+            if let credentialID { return "credential:\(credentialID)" }
+            return "connection:\(connectionID.uuidString)"
         }
 
         /// The key for refusing requests for a while after a denial,
@@ -501,23 +506,37 @@ final class ClientCredentialStore {
 
     /// Decides whether a connection needs approval.
     ///
-    /// Only a trusted credential approves a connection.
+    /// Only a trusted app signature or trusted credential approves a connection.
     /// The claimed name never does, even if an earlier version trusted it.
-    func evaluate(credential: String?, claimedName reportedName: String, app: ResponsibleApp? = nil) -> Decision {
+    func evaluate(
+        credential: String?,
+        claimedName reportedName: String,
+        app: ResponsibleApp? = nil,
+        isAutomaticCredential: Bool = false
+    ) -> Decision {
         let claimedName = ClientName.sanitized(reportedName)
         let record = record(for: credential)
-        if let record, record.isTrusted {
-            return .approve(record)
-        }
         let request = Request(
             claimedName: claimedName,
+            credential: credential,
             record: record,
             hasUnrecognizedCredential: credential != nil && record == nil,
             wasTrustedByName: legacyTrustedNames.contains(claimedName),
             app: app
         )
-        if request.offer == .signature, let app, let trusted = trustedAppRecord(matching: app) {
-            return .approve(trusted)
+        if request.offer == .signature {
+            if let app, let trusted = trustedAppRecord(matching: app) {
+                return .approve(trusted)
+            }
+            // Don't let a signature-trustable app silently inherit imcp-server's
+            // fallback CLI credential; only an explicit environment credential applies here.
+            if !isAutomaticCredential, let record, record.isTrusted {
+                return .approve(record)
+            }
+            return .ask(request)
+        }
+        if let record, record.isTrusted {
+            return .approve(record)
         }
         return .ask(request)
     }
@@ -561,9 +580,31 @@ final class ClientCredentialStore {
         return record
     }
 
-    /// Records that a trusted app just connected.
+    /// Stores and trusts `credential` for `clientName`.
+    @discardableResult
+    func trustCredential(_ credential: String, clientName: String, app: ResponsibleApp? = nil) throws -> ClientRecord? {
+        guard let id = ClientCredential.identifier(for: credential) else { return nil }
+        let sanitizedName = ClientName.sanitized(clientName)
+        removeLegacyTrustedName(sanitizedName)
+
+        var record =
+            records[id]
+            ?? ClientRecord(
+                id: id,
+                name: sanitizedName,
+                issuedAt: now(),
+                isTrusted: true
+            )
+        record.isTrusted = true
+        record.lastConnectedAt = now()
+        try storage.save(record)
+        records[id] = record
+        return record
+    }
+
+    /// Records that a trusted client just connected.
     func noteConnection(id: String) {
-        guard var record = records[id], record.isApp else { return }
+        guard var record = records[id] else { return }
         record.lastConnectedAt = now()
         try? storage.save(record)
         records[id] = record
@@ -571,19 +612,18 @@ final class ClientCredentialStore {
 
     /// Records that the person approved `request` and chose to always trust the client.
     ///
-    /// If the connection presented a credential that iMCP issued,
-    /// that credential becomes trusted.
-    /// Otherwise iMCP issues a trusted credential
-    /// for the person to add to the client's settings.
-    ///
-    /// - Returns: A new credential, or `nil` if the connection's credential became trusted.
-    func alwaysTrust(_ request: Request) throws -> String? {
+    /// If the connection presented a valid credential, that credential is stored and trusted.
+    @discardableResult
+    func alwaysTrust(_ request: Request) throws -> ClientRecord? {
         removeLegacyTrustedName(request.claimedName)
         if let record = request.record {
             try trust(id: record.id)
-            return nil
+            return records[record.id]
         }
-        return try issue(name: request.claimedName, trusted: true).credential
+        if let credential = request.credential {
+            return try trustCredential(credential, clientName: request.claimedName, app: request.app)
+        }
+        return nil
     }
 
     /// Returns a credential to write into a client's settings.
