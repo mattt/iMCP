@@ -4,14 +4,15 @@ import Network
 
 // MARK: - Policy
 
-/// The rules for requests that arrive through Tailscale Funnel.
+/// The rules for requests that arrive through a public HTTPS tunnel
+/// (Tailscale Funnel or Cloudflare Tunnel).
 ///
-/// Funnel forwards public HTTPS traffic to a port on this Mac,
+/// Both forward public HTTPS traffic to a loopback port on this Mac,
 /// so the server sees every request as coming from 127.0.0.1.
 /// A loopback address says nothing about who sent the request,
-/// and Funnel doesn't identify the sender, so none of the tailnet checks apply.
+/// and the tunnel doesn't identify the sender, so none of the tailnet checks apply.
 /// Every request is internet traffic:
-/// it needs an access token, only the node's public `ts.net` name is accepted,
+/// it needs an access token, only active public host names are accepted,
 /// and the request and connection sizes are small.
 ///
 /// A request may also carry a short-lived OAuth access token that iMCP's own authorization server issued
@@ -28,10 +29,53 @@ enum FunnelPolicy {
     /// The `Host` and `Origin` values that a request may use:
     /// the public name on port 443, which clients write without a port.
     static func originValidator(host: String) -> OriginValidator {
-        OriginValidator(
-            allowedHosts: [host, "\(host):443"],
-            allowedOrigins: ["https://\(host)"]
+        originValidator(hosts: [host])
+    }
+
+    /// The `Host` and `Origin` values that a request may use across one or more active public hosts.
+    static func originValidator<S: Sequence>(hosts: S) -> OriginValidator where S.Element == String {
+        let normalized = Set(hosts.map(normalizedHost).filter { !$0.isEmpty }).sorted()
+        var allowedHosts: [String] = []
+        var allowedOrigins: [String] = []
+        for host in normalized {
+            allowedHosts.append(host)
+            allowedHosts.append("\(host):443")
+            allowedOrigins.append("https://\(host)")
+        }
+        return OriginValidator(
+            allowedHosts: allowedHosts,
+            allowedOrigins: allowedOrigins
         )
+    }
+
+    /// Returns the matching normalized host from `allowedHosts` for a request's `Host` header, if any.
+    static func matchedHost(in hostHeader: String?, allowedHosts: Set<String>) -> String? {
+        guard let hostHeader else { return nil }
+        var candidate = hostHeader.trimmingCharacters(in: .whitespaces).lowercased()
+        if candidate.hasSuffix(":443") {
+            candidate.removeLast(4)
+        }
+        candidate = normalizedHost(candidate)
+        return allowedHosts.contains(candidate) ? candidate : nil
+    }
+
+    /// Whether a Funnel failure message indicates a missing `funnel` ACL capability in the tailnet policy.
+    static func isMissingFunnelACLError(_ message: String) -> Bool {
+        let lower = message.lowercased()
+        let markers = ["funnel", "capability", "nodeattr", "acl", "permission", "not allowed", "unauthorized"]
+        return markers.contains { lower.contains($0) }
+    }
+
+    /// A Tailscale ACL `nodeAttrs` snippet granting the `funnel` capability to `ipv4Address`.
+    static func tailscaleNodeAttrsSnippet(ipv4Address: String) -> String {
+        """
+        "nodeAttrs": [
+          {
+            "target": ["\(ipv4Address)"],
+            "attr": ["funnel"]
+          }
+        ]
+        """
     }
 
     /// The public URL of the MCP endpoint.

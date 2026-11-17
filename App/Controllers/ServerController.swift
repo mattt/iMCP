@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import MCP
 import OSLog
 import Ontology
@@ -297,6 +298,9 @@ final class ServerController: ObservableObject {
     private let tokenStore = AccessTokenStore.shared
     /// The apps that the owner approved through OAuth, for Settings.
     let oauthConnections = OAuthConnectionsModel()
+    /// Manages Cloudflare Tunnel login, API provisioning, and `cloudflared` process lifecycle.
+    let cloudflareTunnel = CloudflareTunnelController()
+    private var cloudflareCancellables: Set<AnyCancellable> = []
     /// Applies remote access settings in the order that they change.
     private var remoteAccessConfigurationTask: Task<Void, Never>?
 
@@ -602,12 +606,32 @@ final class ServerController: ObservableObject {
         try tokenStore.remove(id: id)
     }
 
+    /// All currently active public MCP endpoints (`https://<host>/mcp`) from Cloudflare Tunnel and Tailscale Funnel.
+    var activePublicURLs: [(provider: String, url: String)] {
+        var urls: [(provider: String, url: String)] = []
+        if let cfURL = cloudflareTunnel.state.activeURL {
+            urls.append(("Cloudflare Tunnel", cfURL))
+        }
+        if case .running(let endpoint) = remoteAccessState,
+            case .active(let funnelURL) = endpoint.funnel
+        {
+            urls.append(("Tailscale Funnel", funnelURL))
+        }
+        return urls
+    }
+
+    /// Preferred URL shown in token setup instructions.
+    var preferredClientEndpoint: String? {
+        activePublicURLs.first?.url ?? remoteAccessState.endpoint
+    }
+
     private func applyRemoteAccessConfiguration() {
         let configuration = RemoteAccessServer.Configuration(
             isEnabled: remoteAccessEnabled,
             port: UInt16(clamping: remoteAccessPortValue),
             hostname: remoteAccessHostname,
-            funnelEnabled: remoteAccessFunnelEnabled
+            funnelEnabled: remoteAccessFunnelEnabled,
+            cloudflareHostname: cloudflareTunnel.activeHostname
         )
         afterRemoteAccessConfiguration { await $0.configure(configuration) }
     }
@@ -795,6 +819,20 @@ final class ServerController: ObservableObject {
     }
 
     init() {
+        cloudflareTunnel.onActiveHostnameChanged = { [weak self] _ in
+            self?.applyRemoteAccessConfiguration()
+        }
+        cloudflareTunnel.objectWillChange
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }
+            .store(in: &cloudflareCancellables)
+        NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)
+            .sink { [weak self] _ in
+                self?.cloudflareTunnel.stopRunningProcess()
+            }
+            .store(in: &cloudflareCancellables)
+
         Task { [self] in
             // Initialize bindings from AppStorage before the server starts.
             // The menu sends the enabled state only when its content first appears,
@@ -855,6 +893,19 @@ final class ServerController: ObservableObject {
                     }
                 }
             )
+            await self.networkManager.remoteAccess.setPublicLoopbackHandler { [weak self] loopbackState in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    switch loopbackState {
+                    case .listening(let port):
+                        self.cloudflareTunnel.handleLoopbackPortChange(port)
+                    case .stopped:
+                        self.cloudflareTunnel.handleLoopbackPortChange(nil)
+                    case .failed(let message):
+                        self.cloudflareTunnel.reportLoopbackFailure(message)
+                    }
+                }
+            }
             await self.networkManager.remoteAccess.setOAuthApprovalHandler { [weak self] request in
                 guard let self else { return .denied }
                 return await self.requestOAuthApproval(request)
@@ -881,6 +932,7 @@ final class ServerController: ObservableObject {
     }
 
     func stopServer() async {
+        cloudflareTunnel.stopRunningProcess()
         await networkManager.stop()
         updateServerStatus("Stopped")
     }
