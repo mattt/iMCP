@@ -24,6 +24,7 @@ struct MobileSettingsView: View {
     @AppStorage(MobileService.cloudflareLocalPortKey) private var cloudflareLocalPort = Int(
         MobileLink.defaultWebSocketPort
     )
+    @State private var isAdvancedExpanded = false
 
     private var transportMode: Binding<MobileTransportMode> {
         Binding(
@@ -90,77 +91,70 @@ struct MobileSettingsView: View {
             }
 
             Section {
-                Picker("Preferred Transport", selection: transportMode) {
+                Picker("Connection Route", selection: transportMode) {
                     ForEach(MobileTransportMode.allCases, id: \.self) { mode in
                         Text(mode.label).tag(mode)
                     }
                 }
 
-                Toggle("Allow Tailscale VPN", isOn: $tailscaleVPNEnabled)
-                if tailscaleVPNEnabled {
-                    LabeledContent("Tailscale Host") {
-                        TextField(
-                            "Tailscale Host",
-                            text: $tailscaleHostOverride,
-                            prompt: Text(activeTailnetHost ?? "Auto from Remote Access")
-                        )
-                        .labelsHidden()
-                        .multilineTextAlignment(.trailing)
-                        .frame(width: 220)
-                    }
-                    LabeledContent("Tailscale Mobile Port") {
-                        TextField("Port", value: $remotePort, format: .number.grouping(.never))
-                            .labelsHidden()
-                            .multilineTextAlignment(.trailing)
-                            .frame(width: 80)
-                    }
-                }
-
-                if let funnelURL = activeFunnelURL {
-                    LabeledContent("Tailscale Funnel URL") {
-                        HStack {
-                            Text(funnelURL)
-                                .textSelection(.enabled)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                            Button("Copy") { copyToPasteboard(funnelURL) }
-                        }
-                    }
-                } else {
-                    LabeledContent("Tailscale Funnel URL") {
-                        Text("Off (enable Public Access in Remote Access)")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                Toggle("Enable Cloudflare Tunnel", isOn: $cloudflareEnabled)
-                if cloudflareEnabled {
-                    LabeledContent("Cloudflare URL") {
-                        TextField("wss://example.com/mobile", text: $cloudflareURL)
-                            .labelsHidden()
-                            .multilineTextAlignment(.trailing)
-                            .frame(width: 240)
-                    }
-                    LabeledContent("Local Tunnel Target") {
-                        HStack {
-                            Text("http://127.0.0.1:\(cloudflareLocalPort)")
-                                .font(.caption.monospaced())
-                                .textSelection(.enabled)
-                            TextField("Port", value: $cloudflareLocalPort, format: .number.grouping(.never))
+                DisclosureGroup("Developer & Advanced", isExpanded: $isAdvancedExpanded) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Toggle("Allow Tailscale VPN", isOn: $tailscaleVPNEnabled)
+                        if tailscaleVPNEnabled {
+                            LabeledContent("Tailscale Host Override") {
+                                TextField(
+                                    "Tailscale Host",
+                                    text: $tailscaleHostOverride,
+                                    prompt: Text(activeTailnetHost ?? "Auto from Remote Access")
+                                )
                                 .labelsHidden()
                                 .multilineTextAlignment(.trailing)
-                                .frame(width: 70)
-                            Button("Copy") {
-                                copyToPasteboard("http://127.0.0.1:\(cloudflareLocalPort)")
+                                .frame(width: 220)
+                            }
+                            LabeledContent("Tailscale Mobile Port") {
+                                TextField("Port", value: $remotePort, format: .number.grouping(.never))
+                                    .labelsHidden()
+                                    .multilineTextAlignment(.trailing)
+                                    .frame(width: 80)
+                            }
+                        }
+
+                        if let funnelURL = activeFunnelURL {
+                            LabeledContent("Tailscale Funnel Mobile URL") {
+                                HStack {
+                                    Text(funnelURL)
+                                        .font(.caption.monospaced())
+                                        .textSelection(.enabled)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                    Button("Copy") { copyToPasteboard(funnelURL) }
+                                }
+                            }
+                        }
+
+                        Toggle("Custom Cloudflare Mobile Override", isOn: $cloudflareEnabled)
+                        if cloudflareEnabled {
+                            LabeledContent("Cloudflare Mobile URL") {
+                                TextField("wss://example.com/mobile", text: $cloudflareURL)
+                                    .labelsHidden()
+                                    .multilineTextAlignment(.trailing)
+                                    .frame(width: 240)
+                            }
+                            LabeledContent("Local WebSocket Port") {
+                                TextField("Port", value: $cloudflareLocalPort, format: .number.grouping(.never))
+                                    .labelsHidden()
+                                    .multilineTextAlignment(.trailing)
+                                    .frame(width: 70)
                             }
                         }
                     }
+                    .padding(.top, 6)
                 }
             } header: {
-                Text("Connectivity & Transports")
+                Text("Connection Route")
             } footer: {
                 Text(
-                    "Advertise Tailscale VPN, Tailscale Funnel, or Cloudflare Tunnel endpoints in pairing codes and connection handshakes. WebSocket tunnels use end-to-end ChaCha20-Poly1305 encryption inside wss://."
+                    "In Automatic mode, your iPhone or iPad connects over Local Wi-Fi first, then falls back to Tailscale VPN, Tailscale Funnel, or Cloudflare Tunnel."
                 )
             }
             .onChange(of: transportModeRaw) { _, _ in applyTransportSettings() }
