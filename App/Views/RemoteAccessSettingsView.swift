@@ -43,7 +43,7 @@ struct RemoteAccessSettingsView: View {
                     if case .running(let endpoint) = serverController.remoteAccessState {
                         switch endpoint.funnel {
                         case .active(let url):
-                            LabeledContent("Public URL") {
+                            LabeledContent("Connector URL") {
                                 HStack {
                                     Text(url)
                                         .textSelection(.enabled)
@@ -95,13 +95,27 @@ struct RemoteAccessSettingsView: View {
                                     .frame(width: 80)
                             }
                             if case .running(let endpoint) = serverController.remoteAccessState {
-                                LabeledContent("Tailnet URL") {
+                                LabeledContent("Private Tailnet URL") {
                                     HStack {
                                         Text(endpoint.url)
                                             .font(.caption.monospaced())
                                             .textSelection(.enabled)
                                         Button("Copy") { copyToPasteboard(endpoint.url) }
                                     }
+                                }
+                                if let dnsName = endpoint.dnsName {
+                                    LabeledContent("MagicDNS Name") {
+                                        Text(dnsName).textSelection(.enabled)
+                                    }
+                                }
+                                LabeledContent("Tailnet Address") {
+                                    VStack(alignment: .trailing) {
+                                        Text(endpoint.ipv4Address)
+                                        if let ipv6Address = endpoint.ipv6Address {
+                                            Text(ipv6Address)
+                                        }
+                                    }
+                                    .textSelection(.enabled)
                                 }
                             }
                             LabeledContent("Headless Login") {
@@ -249,33 +263,7 @@ struct RemoteAccessSettingsView: View {
                 Text("Waiting for Approval")
                 Text("An admin of your tailnet must approve this device in the Tailscale admin console.")
             }
-        case .running(let endpoint):
-            LabeledContent("URL") {
-                HStack {
-                    Text(endpoint.url)
-                        .textSelection(.enabled)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Button("Copy") {
-                        copyToPasteboard(endpoint.url)
-                    }
-                }
-            }
-            if let dnsName = endpoint.dnsName {
-                LabeledContent("MagicDNS Name") {
-                    Text(dnsName)
-                        .textSelection(.enabled)
-                }
-            }
-            LabeledContent("Tailnet Address") {
-                VStack(alignment: .trailing) {
-                    Text(endpoint.ipv4Address)
-                    if let ipv6Address = endpoint.ipv6Address {
-                        Text(ipv6Address)
-                    }
-                }
-                .textSelection(.enabled)
-            }
+        case .running:
             LabeledContent("Tailscale Account") {
                 Button("Log Out…") { isConfirmingLogOut = true }
             }
@@ -823,6 +811,7 @@ private struct CloudflareTunnelSection: View {
 
     @State private var isShowingCredentialSheet = false
     @State private var isConfirmingLogOut = false
+    @State private var isAdvancedExpanded = false
 
     var body: some View {
         Section {
@@ -928,6 +917,38 @@ private struct CloudflareTunnelSection: View {
             }
         }
 
+        if case .connected(let url, _, _) = cloudflare.state {
+            LabeledContent("Connector URL") {
+                HStack {
+                    Text(url)
+                        .textSelection(.enabled)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Button("Copy") { copyToPasteboard(url) }
+                }
+            }
+            DisclosureGroup("Developer & Advanced", isExpanded: $isAdvancedExpanded) {
+                VStack(alignment: .leading, spacing: 10) {
+                    domainRows
+                    if case .connected(_, let tunnelName, _) = cloudflare.state {
+                        LabeledContent("Tunnel") {
+                            Text(tunnelName)
+                                .monospaced()
+                                .textSelection(.enabled)
+                        }
+                    }
+                    actionRows
+                }
+                .padding(.top, 6)
+            }
+        } else {
+            domainRows
+            actionRows
+        }
+    }
+
+    @ViewBuilder
+    private var domainRows: some View {
         if cloudflare.zones.count > 1 {
             Picker("Domain", selection: $cloudflare.selectedZoneID) {
                 ForEach(cloudflare.zones) { zone in
@@ -954,24 +975,10 @@ private struct CloudflareTunnelSection: View {
                 Task { await cloudflare.provisionAndConnect() }
             }
         }
+    }
 
-        if case .connected(let url, let tunnelName, _) = cloudflare.state {
-            LabeledContent("Public URL") {
-                HStack {
-                    Text(url)
-                        .textSelection(.enabled)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Button("Copy") { copyToPasteboard(url) }
-                }
-            }
-            LabeledContent("Tunnel") {
-                Text(tunnelName)
-                    .monospaced()
-                    .textSelection(.enabled)
-            }
-        }
-
+    @ViewBuilder
+    private var actionRows: some View {
         LabeledContent("Actions") {
             HStack {
                 if case .connected = cloudflare.state {
