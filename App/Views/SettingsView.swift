@@ -48,7 +48,10 @@ struct SettingsView: View {
             Group {
                 switch selection {
                 case .general:
-                    GeneralSettingsView(isMenuBarExtraInserted: isMenuBarExtraInserted)
+                    GeneralSettingsView(
+                        serverController: serverController,
+                        isMenuBarExtraInserted: isMenuBarExtraInserted
+                    )
                 case .clients:
                     ClientsSettingsView(serverController: serverController)
                 case .remoteAccess:
@@ -151,7 +154,9 @@ enum SettingsPane: Hashable, RawRepresentable {
 }
 
 struct GeneralSettingsView: View {
+    @ObservedObject var serverController: ServerController
     @AppStorage("showMenuBarExtra") private var showMenuBarExtra = true
+    @AppStorage("isEnabled") private var isEnabled = true
     var isMenuBarExtraInserted: Bool
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
 
@@ -185,6 +190,18 @@ struct GeneralSettingsView: View {
                         launchAtLogin = SMAppService.mainApp.status == .enabled
                     }
                 }
+
+                LabeledContent {
+                    Button("Set Up iMCP…") {
+                        OnboardingWindowController.shared.present(
+                            serverController: serverController,
+                            isEnabled: $isEnabled
+                        )
+                    }
+                } label: {
+                    Text("Setup Assistant")
+                    Text("Guided setup for services, remote tunnels, and connecting AI apps.")
+                }
             }
         }
         .formStyle(.grouped)
@@ -198,6 +215,7 @@ struct GeneralSettingsView: View {
 struct ClientsSettingsView: View {
     @ObservedObject var serverController: ServerController
     @State private var isConfirmingRemoveAll = false
+    @State private var isAdvancedExpanded = false
 
     private let serverCommand = Bundle.main.bundleURL
         .appendingPathComponent("Contents/MacOS/imcp-server")
@@ -206,9 +224,10 @@ struct ClientsSettingsView: View {
     var body: some View {
         let trustedClients = serverController.trustedClients
         let legacyTrustedClientNames = serverController.legacyTrustedClientNames
+        let publicURLs = serverController.activePublicURLs
 
         Form {
-            Section("Connect a Client") {
+            Section("Apps on This Mac") {
                 LabeledContent {
                     Button("Set Up…") {
                         ClaudeDesktop.showConfigurationPanel(serverController: serverController)
@@ -217,19 +236,54 @@ struct ClientsSettingsView: View {
                     Text("Claude Desktop")
                     Text("Adds iMCP to the MCP servers in Claude Desktop's configuration file.")
                 }
+            }
 
-                LabeledContent {
-                    Button("Copy") {
-                        let pasteboard = NSPasteboard.general
-                        pasteboard.clearContents()
-                        pasteboard.setString(serverCommand, forType: .string)
-                        _ = NSSound.play(.pop)
+            Section {
+                if publicURLs.isEmpty {
+                    LabeledContent {
+                        Button("Open Remote Access…") {
+                            UserDefaults.standard.set(SettingsPane.remoteAccess.rawValue, forKey: "settingsPane")
+                        }
+                    } label: {
+                        Text("No Public Tunnel Active")
+                        Text("Turn on Cloudflare Tunnel or Tailscale Funnel in Remote Access to connect cloud agents.")
                     }
-                } label: {
-                    Text("Server Command")
-                    Text(serverCommand)
-                        .textSelection(.enabled)
+                } else {
+                    ForEach(publicURLs, id: \.url) { item in
+                        LabeledContent(publicURLs.count > 1 ? item.provider : "Connector URL") {
+                            HStack {
+                                Text(item.url)
+                                    .font(.callout.monospaced())
+                                    .textSelection(.enabled)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                Button("Copy URL") {
+                                    let pasteboard = NSPasteboard.general
+                                    pasteboard.clearContents()
+                                    pasteboard.setString(item.url, forType: .string)
+                                    _ = NSSound.play(.pop)
+                                }
+                            }
+                        }
+                    }
+
+                    if let primaryURL = publicURLs.first?.url {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("• **claude.ai**: Settings -> Connectors -> Add custom connector -> paste `\(primaryURL)` -> Connect.")
+                                .font(.caption)
+                            Text("• **Claude Duet**: Add custom MCP connector -> paste `\(primaryURL)` -> approve once in iMCP.")
+                                .font(.caption)
+                            Text("• **Muse**: Add MCP server URL `\(primaryURL)` (supports OAuth 2.1).")
+                                .font(.caption)
+                        }
+                        .foregroundStyle(.secondary)
+                        .padding(.vertical, 2)
+                    }
                 }
+            } header: {
+                Text("Cloud Connectors (claude.ai, Claude Duet, Muse)")
+            } footer: {
+                Text("Cloud agents authenticate with OAuth 2.1 and refresh their access automatically after you approve them once.")
             }
 
             Section {
@@ -272,6 +326,10 @@ struct ClientsSettingsView: View {
                 }
             }
 
+            if !serverController.oauthConnections.grants.isEmpty || !publicURLs.isEmpty {
+                ConnectedOAuthAppsSection(model: serverController.oauthConnections)
+            }
+
             if !legacyTrustedClientNames.isEmpty {
                 Section {
                     ForEach(legacyTrustedClientNames, id: \.self) { name in
@@ -290,6 +348,26 @@ struct ClientsSettingsView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
+
+            Section {
+                DisclosureGroup("Developer & Advanced", isExpanded: $isAdvancedExpanded) {
+                    LabeledContent {
+                        Button("Copy") {
+                            let pasteboard = NSPasteboard.general
+                            pasteboard.clearContents()
+                            pasteboard.setString(serverCommand, forType: .string)
+                            _ = NSSound.play(.pop)
+                        }
+                    } label: {
+                        Text("Local stdio Server Binary")
+                        Text(serverCommand)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                    .padding(.top, 4)
+                }
+            }
         }
         .formStyle(.grouped)
         .navigationTitle("Clients")
@@ -300,6 +378,66 @@ struct ClientsSettingsView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Each client needs your approval again the next time it connects.")
+        }
+    }
+}
+
+/// Connected OAuth 2.1 cloud apps, shown in the Clients pane.
+struct ConnectedOAuthAppsSection: View {
+    @ObservedObject var model: OAuthConnectionsModel
+    @State private var appToRevoke: OAuthGrant?
+    @State private var revokeError: String?
+
+    var body: some View {
+        Section {
+            if let error = model.storageError {
+                Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.secondary)
+            } else if model.grants.isEmpty {
+                Text("No cloud apps connected yet.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(model.grants) { grant in
+                    LabeledContent {
+                        Button("Revoke…", role: .destructive) { appToRevoke = grant }
+                    } label: {
+                        Text(grant.clientName)
+                        Text("Returns to \(grant.redirectHost)")
+                        Text(
+                            "Connected \(grant.createdAt.formatted(date: .abbreviated, time: .omitted)). "
+                                + (grant.lastUsedAt.map {
+                                    "Last used \($0.formatted(.relative(presentation: .named)))."
+                                } ?? "Not used yet.")
+                        )
+                    }
+                }
+            }
+        } header: {
+            Text("Connected Cloud Apps (OAuth)")
+        } footer: {
+            Text("Revoking a cloud app ends its access right away.")
+        }
+        .confirmationDialog(
+            "Revoke \"\(appToRevoke?.clientName ?? "")\"?",
+            isPresented: Binding(get: { appToRevoke != nil }, set: { if !$0 { appToRevoke = nil } }),
+            presenting: appToRevoke
+        ) { grant in
+            Button("Revoke", role: .destructive) {
+                do {
+                    try model.revoke(grant.id)
+                } catch {
+                    revokeError = error.localizedDescription
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+        .alert(
+            "Couldn't Revoke the App",
+            isPresented: Binding(get: { revokeError != nil }, set: { if !$0 { revokeError = nil } })
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(revokeError ?? "")
         }
     }
 }

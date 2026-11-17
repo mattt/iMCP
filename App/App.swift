@@ -46,6 +46,28 @@ struct App: SwiftUI.App {
             NSApp.activate(ignoringOtherApps: true)
             openSettings()
         }
+        .onChange(of: appDelegate.shouldCheckOnboarding, initial: true) { _, shouldCheck in
+            guard shouldCheck else { return }
+            appDelegate.shouldCheckOnboarding = false
+            let defaults = UserDefaults.standard
+            let hasSeen = defaults.bool(forKey: OnboardingGate.seenDefaultsKey)
+            let hasTrusted = !serverController.trustedClients.isEmpty || !serverController.oauthConnections.grants.isEmpty
+            let hasConnected = !serverController.activePublicURLs.isEmpty
+            let hasServiceBeyondDefaults = serverController.computedServiceConfigs.contains {
+                $0.name != "Maps" && $0.name != "Utilities" && $0.binding.wrappedValue
+            }
+            if OnboardingGate.shouldOpenAutomatically(
+                hasSeenOnboarding: hasSeen,
+                hasTrustedClient: hasTrusted,
+                hasConnectedBefore: hasConnected,
+                hasServiceOnBeyondDefaults: hasServiceBeyondDefaults
+            ) {
+                OnboardingWindowController.shared.present(
+                    serverController: serverController,
+                    isEnabled: $isEnabled
+                )
+            }
+        }
 
         Settings {
             SettingsView(
@@ -68,11 +90,13 @@ struct App: SwiftUI.App {
 @Observable
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var shouldOpenSettings = false
+    var shouldCheckOnboarding = false
     // System removal must not overwrite the user's saved preference.
     var isMenuBarExtraInserted =
         UserDefaults.standard.object(forKey: "showMenuBarExtra") as? Bool ?? true
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        shouldCheckOnboarding = true
         // An unset preference defaults to showing the menu bar item.
         if UserDefaults.standard.object(forKey: "showMenuBarExtra") as? Bool == false {
             shouldOpenSettings = true

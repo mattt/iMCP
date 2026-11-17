@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 /// The Settings pane for clients on the owner's other devices,
-/// which connect over HTTP to iMCP's own Tailscale node with an access token.
+/// which connect over HTTP to iMCP's own Tailscale node or Cloudflare Tunnel.
 struct RemoteAccessSettingsView: View {
     @ObservedObject var serverController: ServerController
 
@@ -15,16 +15,19 @@ struct RemoteAccessSettingsView: View {
     @State private var tokenToReroll: AccessToken?
     @State private var tokenToDelete: AccessToken?
     @State private var tokenError: String?
+    @State private var isAdvancedExpanded = false
 
     var body: some View {
         let tokens = serverController.accessTokens
         let storageError = serverController.accessTokenStorageError
 
         Form {
+            CloudflareTunnelSection(cloudflare: serverController.cloudflareTunnel)
+
             Section {
                 Toggle(isOn: enabledBinding) {
-                    Text("Allow Remote Access")
-                    Text("Lets clients on your other devices use iMCP over your Tailscale network.")
+                    Text("Tailscale")
+                    Text("Connects this Mac to your Tailscale network for private VPN or public Funnel access.")
                 }
 
                 if serverController.isRemoteAccessEnabled {
@@ -32,44 +35,10 @@ struct RemoteAccessSettingsView: View {
                         RemoteAccessStatusView(state: serverController.remoteAccessState)
                     }
                     nodeRows(for: serverController.remoteAccessState)
-                }
-            } footer: {
-                Text(
-                    "iMCP joins your tailnet as its own device, with an address that only iMCP can use. It accepts connections only from devices that you own, and each client needs an access token. Tailscale encrypts the connection."
-                )
-            }
 
-            if serverController.isRemoteAccessEnabled {
-                Section {
-                    LabeledContent("Device Name") {
-                        TextField(
-                            "Device Name",
-                            text: $hostnameDraft,
-                            prompt: Text(serverController.defaultRemoteAccessHostname)
-                        )
-                        .labelsHidden()
-                        .multilineTextAlignment(.trailing)
-                        .frame(width: 220)
-                        .onSubmit { serverController.remoteAccessHostname = hostnameDraft }
-                    }
-                    LabeledContent("Port") {
-                        TextField("Port", value: portBinding, format: .number.grouping(.never))
-                            .labelsHidden()
-                            .multilineTextAlignment(.trailing)
-                            .frame(width: 80)
-                    }
-                } footer: {
-                    Text(
-                        "The device name is iMCP's name on your tailnet, and the first part of its MagicDNS name. Changing the name or port reconnects iMCP to Tailscale."
-                    )
-                }
-            }
-
-            if serverController.isRemoteAccessEnabled {
-                Section {
                     Toggle(isOn: funnelBinding) {
-                        Text("Public Access (Funnel)")
-                        Text("Lets clients on the internet use iMCP at a public https address.")
+                        Text("Public Access (Tailscale Funnel)")
+                        Text("Exposes iMCP at a public .ts.net HTTPS address for cloud agents.")
                     }
                     if case .running(let endpoint) = serverController.remoteAccessState {
                         switch endpoint.funnel {
@@ -95,66 +64,84 @@ struct RemoteAccessSettingsView: View {
                             }
                         }
                     }
-                } header: {
-                    Text("Tailscale Funnel")
-                } footer: {
-                    Text(
-                        "Anyone on the internet can reach the public address, so every request needs an access token, and tokens that belong to a device on your tailnet don't work there. Create a separate token for public access. Funnel needs MagicDNS, HTTPS certificates, and the funnel permission for this device in your Tailscale admin console."
-                    )
-                }
-            }
-
-            CloudflareTunnelSection(cloudflare: serverController.cloudflareTunnel)
-
-            if !serverController.activePublicURLs.isEmpty {
-                CloudAgentsConnectionSection(publicURLs: serverController.activePublicURLs)
-            }
-
-            Section {
-                if let storageError {
-                    Label(storageError, systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.secondary)
-                } else if tokens.isEmpty {
-                    VStack(spacing: 4) {
-                        Text("No Access Tokens")
-                        Text("Create a token for each client that connects from another device.")
-                            .font(.caption)
-                    }
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-                } else {
-                    ForEach(tokens) { token in
-                        AccessTokenRow(
-                            serverController: serverController,
-                            token: token,
-                            edit: { editingToken = EditingToken(token: token) },
-                            reroll: { tokenToReroll = token },
-                            delete: { tokenToDelete = token }
-                        )
-                    }
                 }
             } header: {
-                HStack {
-                    Text("Access Tokens")
-                    Spacer()
-                    Button("Create Token…") {
-                        editingToken = EditingToken(token: nil)
-                    }
-                    .disabled(storageError != nil)
-                }
+                Text("Tailscale")
             } footer: {
                 Text(
-                    "A token can use only the services and tools that are on in iMCP. When you turn off a service or tool, no token can use it, whatever the token's access allows."
+                    "iMCP joins your tailnet as its own device. Turn on Public Access (Tailscale Funnel) when you want cloud agents to connect through Tailscale."
                 )
             }
 
-            if serverController.isRemoteAccessEnabled
-                || serverController.cloudflareTunnel.isEnabled
-                || !serverController.oauthConnections.grants.isEmpty
-            {
-                ConnectedAppsSection(model: serverController.oauthConnections)
+            Section {
+                DisclosureGroup("Developer & Advanced", isExpanded: $isAdvancedExpanded) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        if serverController.isRemoteAccessEnabled {
+                            LabeledContent("Tailscale Device Name") {
+                                TextField(
+                                    "Device Name",
+                                    text: $hostnameDraft,
+                                    prompt: Text(serverController.defaultRemoteAccessHostname)
+                                )
+                                .labelsHidden()
+                                .multilineTextAlignment(.trailing)
+                                .frame(width: 220)
+                                .onSubmit { serverController.remoteAccessHostname = hostnameDraft }
+                            }
+                            LabeledContent("Tailscale Port") {
+                                TextField("Port", value: portBinding, format: .number.grouping(.never))
+                                    .labelsHidden()
+                                    .multilineTextAlignment(.trailing)
+                                    .frame(width: 80)
+                            }
+                            if case .running(let endpoint) = serverController.remoteAccessState {
+                                LabeledContent("Tailnet URL") {
+                                    HStack {
+                                        Text(endpoint.url)
+                                            .font(.caption.monospaced())
+                                            .textSelection(.enabled)
+                                        Button("Copy") { copyToPasteboard(endpoint.url) }
+                                    }
+                                }
+                            }
+                            LabeledContent("Headless Login") {
+                                Button("Use Tailscale Auth Key…") { isEnteringAuthKey = true }
+                            }
+                        }
+
+                        Divider()
+
+                        HStack {
+                            Text("Manual Bearer Access Tokens")
+                                .font(.subheadline.weight(.medium))
+                            Spacer()
+                            Button("Create Token…") {
+                                editingToken = EditingToken(token: nil)
+                            }
+                            .disabled(storageError != nil)
+                        }
+
+                        if let storageError {
+                            Label(storageError, systemImage: "exclamationmark.triangle")
+                                .foregroundStyle(.secondary)
+                        } else if tokens.isEmpty {
+                            Text("No manual bearer tokens created. Cloud connectors use OAuth 2.1 automatically.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ForEach(tokens) { token in
+                                AccessTokenRow(
+                                    serverController: serverController,
+                                    token: token,
+                                    edit: { editingToken = EditingToken(token: token) },
+                                    reroll: { tokenToReroll = token },
+                                    delete: { tokenToDelete = token }
+                                )
+                            }
+                        }
+                    }
+                    .padding(.top, 6)
+                }
             }
         }
         .formStyle(.grouped)
@@ -1119,74 +1106,6 @@ private struct CloudflareCredentialSheet: View {
         if panel.runModal() == .OK, let url = panel.url {
             dismiss()
             Task { await cloudflare.importCertPEM(from: url) }
-        }
-    }
-}
-
-/// Shows active public MCP URLs and step-by-step instructions for connecting cloud agents.
-private struct CloudAgentsConnectionSection: View {
-    let publicURLs: [(provider: String, url: String)]
-
-    private var primaryURL: String {
-        publicURLs.first?.url ?? ""
-    }
-
-    var body: some View {
-        Section {
-            ForEach(publicURLs, id: \.url) { item in
-                LabeledContent(publicURLs.count > 1 ? item.provider : "Public MCP URL") {
-                    HStack {
-                        Text(item.url)
-                            .monospaced()
-                            .textSelection(.enabled)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                        Button("Copy URL") {
-                            copyToPasteboard(item.url)
-                        }
-                    }
-                }
-            }
-
-            if !primaryURL.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    agentInstruction(
-                        title: "Claude (claude.ai & Claude Desktop)",
-                        steps:
-                            "Settings -> Connectors -> Add custom connector -> paste \(primaryURL) -> Connect -> approve once in iMCP."
-                    )
-                    Divider()
-                    agentInstruction(
-                        title: "Claude Duet",
-                        steps:
-                            "Add custom MCP connector -> paste \(primaryURL) -> approve once in iMCP."
-                    )
-                    Divider()
-                    agentInstruction(
-                        title: "Muse",
-                        steps:
-                            "Add MCP server URL \(primaryURL) (supports OAuth 2.1 or a dedicated Bearer token from Access Tokens)."
-                    )
-                }
-                .padding(.vertical, 4)
-            }
-        } header: {
-            Text("Connect Your Cloud Agents")
-        } footer: {
-            Text(
-                "Cloud agents discover OAuth 2.1 automatically from the public URL and ask you to approve access once on this Mac."
-            )
-        }
-    }
-
-    private func agentInstruction(title: String, steps: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-                .font(.subheadline.weight(.semibold))
-            Text(steps)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
         }
     }
 }

@@ -71,6 +71,13 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Divider()
 
+                MenuButton("Set Up iMCP...") {
+                    OnboardingWindowController.shared.present(
+                        serverController: serverController,
+                        isEnabled: $isEnabled
+                    )
+                }
+
                 MenuButton("Configure Claude Desktop") {
                     ClaudeDesktop.showConfigurationPanel(serverController: serverController)
                 }
