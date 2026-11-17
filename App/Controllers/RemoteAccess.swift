@@ -104,10 +104,13 @@ struct TailnetStatus: Equatable, Sendable {
     var state: State
     /// The host names of the other nodes, by stable ID.
     var peerNames: [String: String] = [:]
+    /// Whether the tailnet policy grants this node the `funnel` capability, when reported in status JSON.
+    var funnelCapabilityGranted: Bool? = nil
 
-    init(state: State, peerNames: [String: String] = [:]) {
+    init(state: State, peerNames: [String: String] = [:], funnelCapabilityGranted: Bool? = nil) {
         self.state = state
         self.peerNames = peerNames
+        self.funnelCapabilityGranted = funnelCapabilityGranted
     }
 
     /// Reads the JSON encoding of a node's `ipnstate.Status`.
@@ -119,6 +122,7 @@ struct TailnetStatus: Equatable, Sendable {
             var TailscaleIPs: [String]?
             var UserID: Int64?
             var Tags: [String]?
+            var Capabilities: [String]?
         }
         struct Status: Decodable {
             var BackendState: String
@@ -159,6 +163,11 @@ struct TailnetStatus: Equatable, Sendable {
                 return
             }
             let dnsName = node.DNSName.map { $0.hasSuffix(".") ? String($0.dropLast()) : $0 }
+            if let capabilities = node.Capabilities {
+                funnelCapabilityGranted = capabilities.contains {
+                    $0 == "funnel" || $0.hasSuffix("/funnel")
+                }
+            }
             state = .running(
                 TailnetSelf(
                     stableID: stableID,
@@ -226,6 +235,8 @@ actor RemoteAccessServer {
         var ipv4Address: String
         var ipv6Address: String?
         var funnel: Funnel = .off
+        /// Whether the tailnet policy reports the `funnel` capability for this node.
+        var funnelCapabilityGranted: Bool? = nil
     }
 
     /// Whether the server is open to the internet.
@@ -237,12 +248,21 @@ actor RemoteAccessServer {
         case failed(String)
     }
 
+    /// State of the shared public loopback listener (`127.0.0.1:<port>`).
+    enum PublicLoopbackState: Equatable, Sendable {
+        case stopped
+        case listening(port: UInt16)
+        case failed(String)
+    }
+
     struct Configuration: Equatable, Sendable {
         var isEnabled: Bool
         var port: UInt16
         var hostname: String
         /// Whether to also serve the internet through Tailscale Funnel.
         var funnelEnabled = false
+        /// The public hostname served through Cloudflare Tunnel, when Cloudflare Tunnel is enabled.
+        var cloudflareHostname: String? = nil
     }
 
     static let defaultPort: UInt16 = 4627
@@ -278,6 +298,7 @@ actor RemoteAccessServer {
     private var configuration = Configuration(isEnabled: false, port: defaultPort, hostname: "")
     private var stateHandler: (@Sendable (State) -> Void)?
     private var tokenUsageHandler: (@Sendable () -> Void)?
+    private var publicLoopbackHandler: (@Sendable (PublicLoopbackState) -> Void)?
     private var state: State = .off {
         didSet {
             guard state != oldValue else { return }
@@ -288,6 +309,8 @@ actor RemoteAccessServer {
 
     /// Counts node starts, so that work for a stopped node can tell that it's stale.
     private var generation = 0
+    /// Counts public loopback listener starts, independent of Tailscale node restarts.
+    private var publicGeneration = 0
     private var node: (any TailnetNode)?
     private var monitorTask: Task<Void, Never>?
     /// The node's identity, while the server listens on its address.
@@ -295,11 +318,13 @@ actor RemoteAccessServer {
     private var isListening = false
     /// The tasks that serve open connections.
     private var connections: [UUID: Task<Void, Never>] = [:]
-    /// The tasks that serve connections that came through Funnel.
+    /// The tasks that serve connections that came through the public loopback listener.
     private var funnelConnections: [UUID: Task<Void, Never>] = [:]
     private var funnelListener: (any LocalForwardListener)?
-    /// The node's public name, while Funnel is on.
-    private var funnelHost: String?
+    /// The node's public name, while Tailscale Funnel is on.
+    private var tailscaleFunnelHost: String?
+    /// The public hostname served through Cloudflare Tunnel, while Cloudflare Tunnel is on.
+    private var cloudflareHost: String?
     private var funnelState: Funnel = .off
     /// Whether this node start already turned Funnel on or decided not to.
     private var funnelConfigured = false
@@ -347,27 +372,53 @@ actor RemoteAccessServer {
         state(self.state)
     }
 
+    /// Sets how iMCP notifies the Cloudflare tunnel controller when the shared public loopback listener starts or stops.
+    func setPublicLoopbackHandler(_ handler: (@Sendable (PublicLoopbackState) -> Void)?) {
+        publicLoopbackHandler = handler
+        if let port = funnelListener?.port, cloudflareHost != nil {
+            handler?(.listening(port: port))
+        }
+    }
+
     /// Sets how iMCP asks its owner to approve an app that wants public access through OAuth.
     func setOAuthApprovalHandler(_ handler: OAuthEndpoints.ApprovalHandler?) {
         oauthEndpoints.setApprovalHandler(handler)
     }
 
     /// Starts the node when remote access is on, and stops it when it's off.
-    /// A change to the port or host name restarts the node.
+    /// A change to the port or host name restarts the node; a Cloudflare hostname change updates only the public pipeline.
     func configure(_ configuration: Configuration) async {
         guard configuration != self.configuration else { return }
+        let previous = self.configuration
         self.configuration = configuration
-        guard configuration.isEnabled else {
-            await stopNode()
-            state = .off
-            return
+
+        let tailscaleChanged =
+            configuration.isEnabled != previous.isEnabled
+            || configuration.port != previous.port
+            || configuration.hostname != previous.hostname
+            || configuration.funnelEnabled != previous.funnelEnabled
+
+        let normalizedCloudflare = configuration.cloudflareHostname
+            .map(FunnelPolicy.normalizedHost)
+            .flatMap { $0.isEmpty ? nil : $0 }
+        cloudflareHost = normalizedCloudflare
+
+        if tailscaleChanged {
+            if configuration.isEnabled {
+                await startNode()
+            } else {
+                await stopNode()
+                state = .off
+            }
         }
-        await startNode()
+
+        await syncPublicLoopbackListener()
     }
 
     func stop() async {
         var off = configuration
         off.isEnabled = false
+        off.cloudflareHostname = nil
         await configure(off)
     }
 
@@ -434,21 +485,22 @@ actor RemoteAccessServer {
         // A cancelled connection ends its stream and handles no more requests.
         // Each task closes its own connection, because closing it during a read isn't safe.
         for task in connections.values { task.cancel() }
-        for task in funnelConnections.values { task.cancel() }
-        funnelListener?.shutdown()
-        funnelListener = nil
         // A request in flight can still save its configuration, so let it finish before clearing.
         if let pending = funnelEnableTask {
             _ = try? await pending.value
         }
-        let hadFunnel = funnelHost != nil || funnelRequested
-        funnelHost = nil
+        let hadFunnel = tailscaleFunnelHost != nil || funnelRequested
+        tailscaleFunnelHost = nil
         funnelState = .off
         funnelConfigured = false
         funnelCleared = false
         funnelRequested = false
-        failedAuth = FailedAuthLimiter()
-        await closeAllSessions()
+        if cloudflareHost == nil {
+            shutdownPublicLoopbackListener()
+            await closeAllSessions()
+        } else {
+            await closeSessions { $0.deviceID != nil }
+        }
         if hadFunnel {
             // Funnel's configuration is saved with the node, so clear it,
             // or the public name would keep forwarding to a port that another process could take.
@@ -567,18 +619,62 @@ actor RemoteAccessServer {
                 dnsName: me.dnsName,
                 ipv4Address: me.ipv4Address,
                 ipv6Address: me.ipv6Address,
-                funnel: funnelState
+                funnel: funnelState,
+                funnelCapabilityGranted: status.funnelCapabilityGranted
             )
         )
     }
 
-    // MARK: Funnel
+    // MARK: Public Loopback & Funnel
+
+    private func ensurePublicLoopbackListener() async throws -> any LocalForwardListener {
+        if let existing = funnelListener {
+            return existing
+        }
+        let local = try await makeLocalListener()
+        publicGeneration += 1
+        let currentPublic = publicGeneration
+        funnelListener = local
+        // Accept first, so that no public request meets a closed port.
+        acceptFunnelConnections(from: local, publicGeneration: currentPublic)
+        return local
+    }
+
+    private func shutdownPublicLoopbackListener() {
+        publicGeneration += 1
+        for task in funnelConnections.values { task.cancel() }
+        funnelListener?.shutdown()
+        funnelListener = nil
+        failedAuth = FailedAuthLimiter()
+    }
+
+    private func syncPublicLoopbackListener() async {
+        if cloudflareHost != nil {
+            do {
+                let local = try await ensurePublicLoopbackListener()
+                publicLoopbackHandler?(.listening(port: local.port))
+            } catch {
+                log.error("Public access listener failed: \(error)")
+                publicLoopbackHandler?(.failed(error.localizedDescription))
+            }
+            return
+        }
+
+        publicLoopbackHandler?(.stopped)
+        let neededForTailscale = tailscaleFunnelHost != nil || funnelEnableTask != nil
+        if !neededForTailscale {
+            shutdownPublicLoopbackListener()
+            if !configuration.isEnabled {
+                await closeAllSessions()
+            }
+        }
+    }
 
     /// Listens on 127.0.0.1 and asks Tailscale to forward public HTTPS connections to it.
     private func startFunnel(_ node: any TailnetNode, generation current: Int) async {
         let local: any LocalForwardListener
         do {
-            local = try await makeLocalListener()
+            local = try await ensurePublicLoopbackListener()
         } catch {
             log.error("Public access listener failed: \(error)")
             guard current == generation else { return }
@@ -586,12 +682,11 @@ actor RemoteAccessServer {
             return
         }
         guard current == generation else {
-            local.shutdown()
+            if cloudflareHost == nil {
+                shutdownPublicLoopbackListener()
+            }
             return
         }
-        funnelListener = local
-        // Accept first, so that no public request meets a closed port.
-        acceptFunnelConnections(from: local, generation: current)
         funnelRequested = true
         let port = local.port
         let enable = Task { try await node.enableFunnel(localPort: port) }
@@ -600,14 +695,15 @@ actor RemoteAccessServer {
         do {
             let host = FunnelPolicy.normalizedHost(try await enable.value)
             guard current == generation else { return }
-            funnelHost = host
+            tailscaleFunnelHost = host
             funnelState = .active(url: FunnelPolicy.publicURL(host: host))
             log.notice("Public access is on")
         } catch {
             log.error("Couldn't turn on Funnel: \(error)")
             guard current == generation else { return }
-            local.shutdown()
-            funnelListener = nil
+            if cloudflareHost == nil {
+                shutdownPublicLoopbackListener()
+            }
             funnelState = .failed("Tailscale didn't turn on Funnel: \(error.localizedDescription)")
         }
     }
@@ -620,7 +716,7 @@ actor RemoteAccessServer {
         }
     }
 
-    private func acceptFunnelConnections(from listener: any LocalForwardListener, generation current: Int) {
+    private func acceptFunnelConnections(from listener: any LocalForwardListener, publicGeneration current: Int) {
         Task { [weak self] in
             while true {
                 let connection: any TailnetConnection
@@ -633,13 +729,14 @@ actor RemoteAccessServer {
                     await connection.close()
                     return
                 }
-                await self.acceptFunnel(connection, generation: current)
+                await self.acceptFunnel(connection, publicGeneration: current)
             }
         }
     }
 
-    private func acceptFunnel(_ connection: any TailnetConnection, generation current: Int) async {
-        guard current == generation, funnelHost != nil, funnelConnections.count < FunnelPolicy.maximumConnections
+    private func acceptFunnel(_ connection: any TailnetConnection, publicGeneration current: Int) async {
+        guard current == publicGeneration, !publicHosts.isEmpty,
+            funnelConnections.count < FunnelPolicy.maximumConnections
         else {
             await connection.close()
             return
@@ -853,19 +950,31 @@ actor RemoteAccessServer {
         )
     }
 
-    /// Whether Funnel is on, for tests.
-    var hasFunnelHost: Bool { funnelHost != nil }
+    /// All active public hosts allowed on the shared loopback pipeline.
+    var publicHosts: Set<String> {
+        var hosts: Set<String> = []
+        if let tailscaleFunnelHost { hosts.insert(tailscaleFunnelHost) }
+        if let cloudflareHost { hosts.insert(cloudflareHost) }
+        return hosts
+    }
 
-    /// Answers a request that came through Funnel.
+    /// The loopback port the shared public listener is listening on, if active.
+    var publicLoopbackPort: UInt16? { funnelListener?.port }
+
+    /// Whether any public host is active, for tests.
+    var hasFunnelHost: Bool { !publicHosts.isEmpty }
+
+    /// Answers a request that came through the shared public loopback listener (Tailscale Funnel or Cloudflare Tunnel).
     ///
     /// The request is internet traffic, whatever its address says.
     /// The OAuth paths come first, because they are how an app gets a token,
     /// and they need none. Everything else needs an access token that isn't bound to a tailnet device,
     /// or an OAuth access token issued for this endpoint.
-    /// The `Host` and `Origin` must name the node's public name for every path.
+    /// The `Host` and `Origin` must name an active public host for every path.
     func respondPublic(to message: HTTPRequestMessage) async -> ServedResponse {
-        guard let host = funnelHost else { return .mcp(Self.unavailableResponse) }
-        let validator = FunnelPolicy.originValidator(host: host)
+        let hosts = publicHosts
+        guard !hosts.isEmpty else { return .mcp(Self.unavailableResponse) }
+        let validator = FunnelPolicy.originValidator(hosts: hosts)
         let request = MCP.HTTPRequest(
             method: message.method,
             headers: message.headers,
@@ -885,15 +994,23 @@ actor RemoteAccessServer {
             if let rejection = validator.validate(request, context: context) {
                 return .mcp(rejection)
             }
-            return await oauthEndpoints.handle(message, host: host)
+            guard let requestHost = FunnelPolicy.matchedHost(in: message.header("Host"), allowedHosts: hosts) else {
+                return .mcp(.error(statusCode: 421, .invalidRequest("Misdirected Request")))
+            }
+            return await oauthEndpoints.handle(message, host: requestHost)
         }
 
-        let resource = FunnelPolicy.publicURL(host: host)
+        let requestHost = FunnelPolicy.matchedHost(in: message.header("Host"), allowedHosts: hosts)
+        let challengeHost = requestHost ?? hosts.sorted().first!
+        let resource = requestHost.map(FunnelPolicy.publicURL(host:))
         let oauth = oauthEndpoints.authority
         let decision = FunnelPolicy.authorize(
             authorizationField: message.header(HTTPHeaderName.authorization),
             lookup: tokenStore.token(secret:),
-            oauthLookup: { oauth.authenticate(accessToken: $0, resource: resource) },
+            oauthLookup: { token in
+                guard let resource else { return nil }
+                return oauth.authenticate(accessToken: token, resource: resource)
+            },
             limiter: &failedAuth
         )
         let caller: Caller
@@ -905,7 +1022,7 @@ actor RemoteAccessServer {
         case .unauthorized:
             return .mcp(
                 Self.publicUnauthorizedResponse(
-                    host: host,
+                    host: challengeHost,
                     presentedToken: message.header(HTTPHeaderName.authorization) != nil
                 )
             )

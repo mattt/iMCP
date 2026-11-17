@@ -86,6 +86,7 @@
 		485454500000000000000052 /* ../../App/Controllers/OAuthEndpoints.swift in Sources */ = {isa = PBXBuildFile; fileRef = 485454500000000000000032 /* ../../App/Controllers/OAuthEndpoints.swift */; };
 		485454500000000000000053 /* ../../App/Controllers/ClientMetadataFetcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 485454500000000000000033 /* ../../App/Controllers/ClientMetadataFetcher.swift */; };
 		485454500000000000000054 /* OAuthTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 485454500000000000000034 /* OAuthTests.swift */; };
+		485454500000000000000055 /* ../../App/Controllers/CloudflareTunnel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 485454500000000000000035 /* ../../App/Controllers/CloudflareTunnel.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -164,6 +165,7 @@
 		485454500000000000000032 /* ../../App/Controllers/OAuthEndpoints.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Controllers/OAuthEndpoints.swift; sourceTree = "<group>"; };
 		485454500000000000000033 /* ../../App/Controllers/ClientMetadataFetcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Controllers/ClientMetadataFetcher.swift; sourceTree = "<group>"; };
 		485454500000000000000034 /* OAuthTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OAuthTests.swift; sourceTree = "<group>"; };
+		485454500000000000000035 /* ../../App/Controllers/CloudflareTunnel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Controllers/CloudflareTunnel.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -322,6 +324,7 @@
 				485454500000000000000032 /* ../../App/Controllers/OAuthEndpoints.swift */,
 				485454500000000000000033 /* ../../App/Controllers/ClientMetadataFetcher.swift */,
 				485454500000000000000034 /* OAuthTests.swift */,
+				485454500000000000000035 /* ../../App/Controllers/CloudflareTunnel.swift */,
 				B0D1DEADBEEF000000000005 /* MCPServiceLoop.swift */,
 				5EC5A1E70000000000000001 /* LocalSocket.swift */,
 				5EC5A1E70000000000000004 /* LocalSocketTests.swift */,
@@ -655,6 +658,7 @@
 				485454500000000000000052 /* ../../App/Controllers/OAuthEndpoints.swift in Sources */,
 				485454500000000000000053 /* ../../App/Controllers/ClientMetadataFetcher.swift in Sources */,
 				485454500000000000000054 /* OAuthTests.swift in Sources */,
+				485454500000000000000055 /* ../../App/Controllers/CloudflareTunnel.swift in Sources */,
 				5EC5A1E70000000000000002 /* LocalSocket.swift in Sources */,
 				5EC5A1E70000000000000005 /* LocalSocketTests.swift in Sources */,
 				5EC5A1E70000000000000007 /* SocketTransport.swift in Sources */,

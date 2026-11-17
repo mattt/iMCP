@@ -86,15 +86,28 @@ struct RemoteAccessSettingsView: View {
                         case .failed(let reason):
                             Label(reason, systemImage: "exclamationmark.triangle")
                                 .foregroundStyle(.red)
+                            if FunnelPolicy.isMissingFunnelACLError(reason) {
+                                FunnelACLGuidanceView(ipv4Address: endpoint.ipv4Address)
+                            }
                         case .off:
-                            EmptyView()
+                            if endpoint.funnelCapabilityGranted == false {
+                                FunnelACLGuidanceView(ipv4Address: endpoint.ipv4Address)
+                            }
                         }
                     }
+                } header: {
+                    Text("Tailscale Funnel")
                 } footer: {
                     Text(
                         "Anyone on the internet can reach the public address, so every request needs an access token, and tokens that belong to a device on your tailnet don't work there. Create a separate token for public access. Funnel needs MagicDNS, HTTPS certificates, and the funnel permission for this device in your Tailscale admin console."
                     )
                 }
+            }
+
+            CloudflareTunnelSection(cloudflare: serverController.cloudflareTunnel)
+
+            if !serverController.activePublicURLs.isEmpty {
+                CloudAgentsConnectionSection(publicURLs: serverController.activePublicURLs)
             }
 
             Section {
@@ -137,7 +150,10 @@ struct RemoteAccessSettingsView: View {
                 )
             }
 
-            if serverController.isRemoteAccessEnabled {
+            if serverController.isRemoteAccessEnabled
+                || serverController.cloudflareTunnel.isEnabled
+                || !serverController.oauthConnections.grants.isEmpty
+            {
                 ConnectedAppsSection(model: serverController.oauthConnections)
             }
         }
@@ -174,7 +190,7 @@ struct RemoteAccessSettingsView: View {
             AccessTokenSecretView(
                 name: revealed.name,
                 secret: revealed.secret,
-                endpoint: serverController.remoteAccessState.endpoint
+                endpoint: serverController.preferredClientEndpoint
             )
         }
         .alert(
@@ -772,6 +788,406 @@ private struct AccessTokenSecretView: View {
         }
         .padding(20)
         .frame(width: 520)
+    }
+}
+
+/// Shows a copyable Tailscale ACL `nodeAttrs` snippet when the node lacks the `funnel` capability.
+private struct FunnelACLGuidanceView: View {
+    let ipv4Address: String
+    @Environment(\.openURL) private var openURL
+
+    private var snippet: String {
+        FunnelPolicy.tailscaleNodeAttrsSnippet(ipv4Address: ipv4Address)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Tailscale ACL Missing `funnel` Capability")
+                .font(.subheadline.weight(.semibold))
+            Text(
+                "Add this `nodeAttrs` entry to your Tailscale ACL policy so this node (\(ipv4Address)) can serve Funnel traffic:"
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            Text(snippet)
+                .font(.caption.monospaced())
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(8)
+                .background(RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.1)))
+            HStack {
+                Button("Copy nodeAttrs Snippet") {
+                    copyToPasteboard(snippet)
+                }
+                Button("Open Tailscale ACLs…") {
+                    if let url = URL(string: "https://login.tailscale.com/admin/acls/file") {
+                        openURL(url)
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+/// Guided setup and status for Cloudflare Tunnel (`cloudflared`).
+private struct CloudflareTunnelSection: View {
+    @ObservedObject var cloudflare: CloudflareTunnelController
+
+    @State private var isShowingCredentialSheet = false
+    @State private var isConfirmingLogOut = false
+
+    var body: some View {
+        Section {
+            if cloudflare.account == nil {
+                loginRows
+            } else {
+                configuredRows
+            }
+        } header: {
+            Text("Cloudflare Tunnel")
+        } footer: {
+            Text(
+                "Exposes iMCP at your own custom HTTPS hostname via Cloudflare without needing Tailscale. iMCP provisions a per-Mac tunnel, sets its ingress to the local loopback server, and manages the proxied DNS CNAME record automatically."
+            )
+        }
+        .onAppear { cloudflare.refreshEnvironment() }
+        .sheet(isPresented: $isShowingCredentialSheet) {
+            CloudflareCredentialSheet(cloudflare: cloudflare)
+        }
+        .alert("Log Out of Cloudflare?", isPresented: $isConfirmingLogOut) {
+            Button("Log Out", role: .destructive) {
+                cloudflare.logOut()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Stops the Cloudflare tunnel and removes the saved Cloudflare token from the Keychain.")
+        }
+    }
+
+    @ViewBuilder
+    private var loginRows: some View {
+        LabeledContent("Status") {
+            CloudflareStatusView(state: cloudflare.state)
+        }
+
+        if case .failed(let reason) = cloudflare.state {
+            Label(reason, systemImage: "exclamationmark.triangle")
+                .foregroundStyle(.red)
+        }
+
+        if !cloudflare.isBinaryAvailable {
+            HStack {
+                Label(
+                    "Install `cloudflared` (`brew install cloudflared`) to run browser login and tunnels.",
+                    systemImage: "terminal"
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                Spacer()
+                Button("Copy Command") {
+                    copyToPasteboard("brew install cloudflared")
+                }
+            }
+        }
+
+        LabeledContent {
+            HStack {
+                Button("Use API Token…") {
+                    isShowingCredentialSheet = true
+                }
+                Button("Log In with Browser") {
+                    Task { await cloudflare.logInWithBrowser() }
+                }
+                .disabled(!cloudflare.isBinaryAvailable || cloudflare.state == .loggingIn)
+                if cloudflare.detectedCertURL != nil {
+                    Button("Use Local cert.pem") {
+                        Task { await cloudflare.useDetectedCert() }
+                    }
+                }
+            }
+        } label: {
+            Text("Connect Cloudflare")
+            Text("Sign in with `cloudflared tunnel login` or paste a Cloudflare API token / `cert.pem`.")
+        }
+    }
+
+    @ViewBuilder
+    private var configuredRows: some View {
+        Toggle(isOn: enabledBinding) {
+            Text("Public Access (Cloudflare Tunnel)")
+            Text("Serves iMCP publicly over HTTPS on your Cloudflare domain.")
+        }
+        .disabled(cloudflare.zones.isEmpty && !cloudflare.isEnabled)
+
+        LabeledContent("Status") {
+            CloudflareStatusView(state: cloudflare.state)
+        }
+
+        if case .failed(let reason) = cloudflare.state {
+            Label(reason, systemImage: "exclamationmark.triangle")
+                .foregroundStyle(.red)
+        }
+
+        if !cloudflare.isBinaryAvailable {
+            HStack {
+                Label("`cloudflared` binary not found (`brew install cloudflared`).", systemImage: "terminal")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                Spacer()
+                Button("Copy Command") {
+                    copyToPasteboard("brew install cloudflared")
+                }
+            }
+        }
+
+        if cloudflare.zones.count > 1 {
+            Picker("Domain", selection: $cloudflare.selectedZoneID) {
+                ForEach(cloudflare.zones) { zone in
+                    Text(zone.name).tag(zone.id)
+                }
+            }
+        } else if let zone = cloudflare.selectedZone {
+            LabeledContent("Domain") {
+                Text(zone.name)
+                    .textSelection(.enabled)
+            }
+        }
+
+        LabeledContent("Hostname") {
+            TextField(
+                "Hostname",
+                text: $cloudflare.hostnameDraft,
+                prompt: Text("imcp.\(cloudflare.selectedZone?.name ?? "example.com")")
+            )
+            .labelsHidden()
+            .multilineTextAlignment(.trailing)
+            .frame(width: 240)
+            .onSubmit {
+                Task { await cloudflare.provisionAndConnect() }
+            }
+        }
+
+        if case .connected(let url, let tunnelName, _) = cloudflare.state {
+            LabeledContent("Public URL") {
+                HStack {
+                    Text(url)
+                        .textSelection(.enabled)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Button("Copy") { copyToPasteboard(url) }
+                }
+            }
+            LabeledContent("Tunnel") {
+                Text(tunnelName)
+                    .monospaced()
+                    .textSelection(.enabled)
+            }
+        }
+
+        LabeledContent("Actions") {
+            HStack {
+                if case .connected = cloudflare.state {
+                    if isHostnameDirty {
+                        Button("Update & Reconnect") {
+                            Task { await cloudflare.provisionAndConnect() }
+                        }
+                    }
+                    Button("Disconnect") {
+                        cloudflare.disconnect()
+                    }
+                } else {
+                    Button("Provision & Connect") {
+                        Task { await cloudflare.provisionAndConnect() }
+                    }
+                    .disabled(
+                        cloudflare.selectedZone == nil
+                            || cloudflare.hostnameDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            || cloudflare.state == .provisioning
+                            || !cloudflare.isBinaryAvailable
+                    )
+                }
+                Button("Refresh Domains") {
+                    Task { await cloudflare.refreshZones() }
+                }
+                Button("Log Out…", role: .destructive) {
+                    isConfirmingLogOut = true
+                }
+            }
+        }
+    }
+
+    private var enabledBinding: Binding<Bool> {
+        Binding(
+            get: { cloudflare.isEnabled },
+            set: { cloudflare.setEnabled($0) }
+        )
+    }
+
+    private var isHostnameDirty: Bool {
+        guard let zone = cloudflare.selectedZone,
+            let resolved = CloudflareTunnelController.resolvedHostname(
+                input: cloudflare.hostnameDraft,
+                zoneName: zone.name
+            )
+        else { return false }
+        return resolved != cloudflare.configuredHostname
+    }
+}
+
+private struct CloudflareStatusView: View {
+    let state: CloudflareTunnelController.State
+
+    var body: some View {
+        switch state {
+        case .off:
+            Text("Not signed in")
+                .foregroundStyle(.secondary)
+        case .loggingIn:
+            Text("Waiting for browser login…")
+                .foregroundStyle(.secondary)
+        case .discoveringZones:
+            Text("Discovering domains…")
+                .foregroundStyle(.secondary)
+        case .ready:
+            Text("Ready")
+                .foregroundStyle(.secondary)
+        case .provisioning:
+            Text("Provisioning tunnel & DNS…")
+                .foregroundStyle(.secondary)
+        case .connected:
+            Text("Connected")
+                .foregroundStyle(.green)
+        case .failed(let reason):
+            Text(reason)
+                .foregroundStyle(.red)
+                .lineLimit(2)
+        }
+    }
+}
+
+private struct CloudflareCredentialSheet: View {
+    @ObservedObject var cloudflare: CloudflareTunnelController
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var input = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Sign In to Cloudflare")
+                .font(.headline)
+            Text(
+                "Paste a Cloudflare API token (with Zone:Read, DNS:Edit, and Cloudflare Tunnel:Edit permissions) or paste the contents of `cert.pem`."
+            )
+            .fixedSize(horizontal: false, vertical: true)
+
+            TextEditor(text: $input)
+                .font(.body.monospaced())
+                .frame(height: 110)
+                .padding(4)
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.3)))
+
+            HStack {
+                Button("Import cert.pem…") {
+                    chooseCertFile()
+                }
+                Spacer()
+                Button("Cancel") {
+                    dismiss()
+                }
+                .keyboardShortcut(.cancelAction)
+                Button("Continue") {
+                    let value = input
+                    dismiss()
+                    Task { await cloudflare.logIn(credentialInput: value) }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 500)
+    }
+
+    private func chooseCertFile() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.showsHiddenFiles = true
+        panel.message = "Select your Cloudflare cert.pem file (for example ~/.cloudflared/cert.pem)."
+        if panel.runModal() == .OK, let url = panel.url {
+            dismiss()
+            Task { await cloudflare.importCertPEM(from: url) }
+        }
+    }
+}
+
+/// Shows active public MCP URLs and step-by-step instructions for connecting cloud agents.
+private struct CloudAgentsConnectionSection: View {
+    let publicURLs: [(provider: String, url: String)]
+
+    private var primaryURL: String {
+        publicURLs.first?.url ?? ""
+    }
+
+    var body: some View {
+        Section {
+            ForEach(publicURLs, id: \.url) { item in
+                LabeledContent(publicURLs.count > 1 ? item.provider : "Public MCP URL") {
+                    HStack {
+                        Text(item.url)
+                            .monospaced()
+                            .textSelection(.enabled)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Button("Copy URL") {
+                            copyToPasteboard(item.url)
+                        }
+                    }
+                }
+            }
+
+            if !primaryURL.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    agentInstruction(
+                        title: "Claude (claude.ai & Claude Desktop)",
+                        steps:
+                            "Settings -> Connectors -> Add custom connector -> paste \(primaryURL) -> Connect -> approve once in iMCP."
+                    )
+                    Divider()
+                    agentInstruction(
+                        title: "Claude Duet",
+                        steps:
+                            "Add custom MCP connector -> paste \(primaryURL) -> approve once in iMCP."
+                    )
+                    Divider()
+                    agentInstruction(
+                        title: "Muse",
+                        steps:
+                            "Add MCP server URL \(primaryURL) (supports OAuth 2.1 or a dedicated Bearer token from Access Tokens)."
+                    )
+                }
+                .padding(.vertical, 4)
+            }
+        } header: {
+            Text("Connect Your Cloud Agents")
+        } footer: {
+            Text(
+                "Cloud agents discover OAuth 2.1 automatically from the public URL and ask you to approve access once on this Mac."
+            )
+        }
+    }
+
+    private func agentInstruction(title: String, steps: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+            Text(steps)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+        }
     }
 }
 
