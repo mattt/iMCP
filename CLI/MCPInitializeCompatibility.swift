@@ -1,6 +1,19 @@
 import Foundation
 
-/// The bundled SDK cannot decode Codex's unused, object-valued auth-change capability.
+/// Removes experimental client capabilities that the bundled SDK can't decode.
+///
+/// Swift MCP SDK 0.12 decodes `capabilities.experimental` as `[String: String]`,
+/// so an `initialize` request with any other value fails with `-32603`
+/// before iMCP can ask the user to approve the client.
+/// Codex sends an object for `codex/auth-change`,
+/// and ChatGPT sends an object for `openai/visibility`.
+/// iMCP doesn't use experimental capabilities,
+/// so the normalizer removes each entry that isn't a string
+/// and removes the map if no entries remain.
+/// Other data passes through unchanged.
+///
+/// Remove this workaround when a swift-sdk release decodes arbitrary JSON
+/// in `experimental` (modelcontextprotocol/swift-sdk#276).
 enum MCPInitializeCompatibility {
     static func normalize(_ data: Data) -> Data {
         guard var request = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -9,15 +22,16 @@ enum MCPInitializeCompatibility {
             let id = request["id"], !(id is NSNull),
             var params = request["params"] as? [String: Any],
             var capabilities = params["capabilities"] as? [String: Any],
-            var experimental = capabilities["experimental"] as? [String: Any],
-            experimental["codex/auth-change"] is [String: Any]
+            let experimental = capabilities["experimental"] as? [String: Any]
         else { return data }
 
-        experimental.removeValue(forKey: "codex/auth-change")
-        if experimental.isEmpty {
+        let supported = experimental.filter { $0.value is String }
+        guard supported.count < experimental.count else { return data }
+
+        if supported.isEmpty {
             capabilities.removeValue(forKey: "experimental")
         } else {
-            capabilities["experimental"] = experimental
+            capabilities["experimental"] = supported
         }
         params["capabilities"] = capabilities
         request["params"] = params
