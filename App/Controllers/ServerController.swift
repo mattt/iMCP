@@ -649,12 +649,24 @@ final class ServerController: ObservableObject {
         try tokenStore.remove(id: id)
     }
 
+    func refreshRemoteMobileConfiguration() {
+        applyRemoteAccessConfiguration()
+    }
+
     private func applyRemoteAccessConfiguration() {
+        let mobileVPNEnabled = UserDefaults.standard.object(forKey: MobileService.tailscaleVPNEnabledKey) as? Bool ?? true
+        let storedMobilePort = UserDefaults.standard.integer(forKey: MobileService.remotePortKey)
+        let mobilePort: UInt16? =
+            mobileVPNEnabled
+            ? ((storedMobilePort > 0 && storedMobilePort <= Int(UInt16.max))
+                ? UInt16(storedMobilePort) : MobileLink.defaultRemotePort)
+            : nil
         let configuration = RemoteAccessServer.Configuration(
             isEnabled: remoteAccessEnabled,
             port: UInt16(clamping: remoteAccessPortValue),
             hostname: remoteAccessHostname,
-            funnelEnabled: remoteAccessFunnelEnabled
+            funnelEnabled: remoteAccessFunnelEnabled,
+            mobilePort: mobilePort
         )
         afterRemoteAccessConfiguration { await $0.configure(configuration) }
     }
@@ -1005,12 +1017,22 @@ final class ServerController: ObservableObject {
             self.updateServerStatus("Running")
 
             // Listen for a paired iPhone or iPad so it can sync before the first tool call.
-            if self.alarmsEnabled || self.healthEnabled {
+            if self.alarmsEnabled || self.healthEnabled || MobileService.shared.hasPairedDevice {
                 try? await MobileService.shared.start()
             }
             await self.networkManager.remoteAccess.setHandlers(
                 state: { [weak self] state in
                     Task { @MainActor in self?.remoteAccessState = state }
+                    Task {
+                        if case .running(let endpoint) = state {
+                            await MobileService.shared.updateRemoteEndpoints(
+                                tailnetHost: endpoint.dnsName ?? endpoint.ipv4Address,
+                                funnelURL: endpoint.mobileWebSocketURL
+                            )
+                        } else {
+                            await MobileService.shared.updateRemoteEndpoints(tailnetHost: nil, funnelURL: nil)
+                        }
+                    }
                 },
                 tokenUsage: { [weak self] in
                     Task { @MainActor in
@@ -1018,6 +1040,10 @@ final class ServerController: ObservableObject {
                         self?.oauthConnections.reload()
                     }
                 }
+            )
+            await self.networkManager.remoteAccess.setMobileHandlers(
+                tcp: { connection in await MobileService.shared.acceptTailnetConnection(connection) },
+                webSocket: { wire in await MobileService.shared.acceptWebSocket(wire, transportMode: .tailscaleFunnel) }
             )
             await self.networkManager.remoteAccess.setOAuthApprovalHandler { [weak self] request in
                 guard let self else { return .denied }
@@ -1252,11 +1278,20 @@ extension RemoteAccessServer {
             let gate = ConnectionApprovalGate()
             try? await gate.approve { true }
             // Read current permissions so changes apply to open sessions.
+            let initialClientName =
+                tokenStore.token(id: tokenID)?.name
+                ?? OAuthAuthority.shared.grant(id: tokenID)?.clientName
+                ?? "Remote access"
             await networkManager.registerHandlers(
                 for: server,
                 connectionID: UUID(),
                 gate: gate,
-                clientName: "Remote access"
+                clientName: initialClientName,
+                clientNameProvider: {
+                    tokenStore.token(id: tokenID)?.name
+                        ?? OAuthAuthority.shared.grant(id: tokenID)?.clientName
+                        ?? initialClientName
+                }
             ) { tool in
                 // A session belongs to an access token or to an OAuth grant.
                 // Read current permissions so that revoking or editing applies at once.
@@ -1814,6 +1849,7 @@ actor ServerNetworkManager {
         connectionID: UUID,
         gate: ConnectionApprovalGate,
         clientName: String?,
+        clientNameProvider: (@Sendable () -> String)? = nil,
         isToolAllowed: (@Sendable (Tool) async -> Bool)? = nil
     ) async {
         await server.withApprovedMethodHandler(ListPrompts.self, gate: gate) { _ in
@@ -1879,10 +1915,44 @@ actor ServerNetworkManager {
                 )
             }
 
+            let start = ContinuousClock.now
+            let resolvedClient = clientNameProvider?() ?? clientName ?? "Unknown client"
+            let services = await self.services
+            let matchedService = services.first { $0.tools.contains { $0.name == params.name } }
+            let matchedTool = matchedService?.tools.first { $0.name == params.name }
+            let defaultServiceName = matchedService.map(Self.serviceDisplayName) ?? "Unknown"
+            let defaultIsWrite = matchedTool?.isWrite ?? false
+
+            func record(
+                _ outcome: MobileActivityEvent.Outcome,
+                serviceName: String = defaultServiceName,
+                isWrite: Bool = defaultIsWrite,
+                detail: String? = nil
+            ) async {
+                let elapsed = ContinuousClock.now - start
+                let ms = max(
+                    0,
+                    Int(elapsed.components.seconds) * 1000
+                        + Int(elapsed.components.attoseconds / 1_000_000_000_000_000)
+                )
+                let event = MobileActivityEvent(
+                    timestamp: Date(),
+                    clientName: resolvedClient,
+                    serviceName: serviceName,
+                    toolName: params.name,
+                    isWrite: isWrite,
+                    outcome: outcome,
+                    detail: detail,
+                    durationMs: ms
+                )
+                await MobileService.shared.recordActivity(event)
+            }
+
             log.notice("Tool call received from \(connectionID): \(params.name)")
 
             guard await self.isEnabledState else {
                 log.notice("Tool call rejected: iMCP is disabled")
+                await record(.denied, detail: "iMCP is disabled")
                 return CallTool.Result(
                     content: [
                         .text(
@@ -1897,6 +1967,7 @@ actor ServerNetworkManager {
 
             if await self.disabledTools.contains(params.name) {
                 log.notice("Tool call rejected: \(params.name) is disabled")
+                await record(.denied, detail: "Tool disabled in settings")
                 return CallTool.Result(
                     content: [
                         .text(
@@ -1910,9 +1981,10 @@ actor ServerNetworkManager {
             }
 
             if let isToolAllowed {
-                let tool = await self.services.lazy.flatMap(\.tools).first { $0.name == params.name }
+                let tool = services.lazy.flatMap(\.tools).first { $0.name == params.name }
                 guard let tool, await isToolAllowed(tool) else {
                     log.notice("Tool call rejected: \(params.name) isn't allowed for this access token")
+                    await record(.denied, detail: "Not allowed by access token")
                     return CallTool.Result(
                         content: [
                             .text(
@@ -1926,8 +1998,10 @@ actor ServerNetworkManager {
                 }
             }
 
-            for service in await self.services {
+            for service in services {
                 let serviceId = String(describing: type(of: service))
+                let serviceName = Self.serviceDisplayName(service)
+                let serviceTool = service.tools.first { $0.name == params.name }
 
                 // Read binding on the actor for consistency.
                 if let isServiceEnabled = await self.serviceBindings[serviceId]?.wrappedValue,
@@ -1937,7 +2011,7 @@ actor ServerNetworkManager {
                         // Make the captured client name available to tools.
                         guard
                             let value = try await ToolCallContext.$clientName.withValue(
-                                clientName,
+                                resolvedClient,
                                 operation: {
                                     try await service.call(
                                         tool: params.name,
@@ -1950,6 +2024,11 @@ actor ServerNetworkManager {
                         }
 
                         log.notice("Tool \(params.name) executed successfully for \(connectionID)")
+                        await record(
+                            .succeeded,
+                            serviceName: serviceName,
+                            isWrite: serviceTool?.isWrite ?? defaultIsWrite
+                        )
                         switch value {
                         case .data(let mimeType?, let data) where mimeType.hasPrefix("audio/"):
                             return CallTool.Result(
@@ -1994,6 +2073,14 @@ actor ServerNetworkManager {
                         log.error(
                             "Error executing tool \(params.name): \(error.localizedDescription)"
                         )
+                        let outcome: MobileActivityEvent.Outcome =
+                            (error is WritesDisabledError || error is OutboundConfirmationError) ? .denied : .failed
+                        await record(
+                            outcome,
+                            serviceName: serviceName,
+                            isWrite: serviceTool?.isWrite ?? defaultIsWrite,
+                            detail: error.localizedDescription
+                        )
                         return CallTool.Result(
                             content: [.text(text: "Error: \(error)", annotations: nil, _meta: nil)],
                             isError: true
@@ -2003,13 +2090,16 @@ actor ServerNetworkManager {
             }
 
             // Say why no service answered, so that an intermittent failure can be traced.
-            if let owner = await self.services.first(where: { $0.tools.contains { $0.name == params.name } }) {
+            if let owner = matchedService {
                 let serviceId = String(describing: type(of: owner))
                 let binding = await self.serviceBindings[serviceId]
                 let state = binding.map { $0.wrappedValue ? "on" : "off" } ?? "missing"
                 log.error(
                     "Tool \(params.name, privacy: .public) belongs to \(serviceId, privacy: .public), whose binding is \(state, privacy: .public)"
                 )
+                await record(.denied, detail: "Service \(defaultServiceName) is disabled")
+            } else {
+                await record(.failed, detail: "Tool not found")
             }
             log.error("Tool not found or service not enabled: \(params.name)")
             return CallTool.Result(
@@ -2018,6 +2108,32 @@ actor ServerNetworkManager {
                 ],
                 isError: true
             )
+        }
+    }
+
+    private static func serviceDisplayName(_ service: any Service) -> String {
+        switch service {
+        case is AlarmsService: return "Alarms"
+        case is CalendarService: return "Calendar"
+        case is CaptureService: return "Capture"
+        case is ContactsService: return "Contacts"
+        case is FilesService: return "Files"
+        case is HealthService: return "Health"
+        case is HomeService: return "Home"
+        case is LocationService: return "Location"
+        case is MapsService: return "Maps"
+        case is MailService: return "Mail"
+        case is MessageService: return "Messages"
+        case is MusicService: return "Music"
+        case is NotesService: return "Notes"
+        case is PhoneService: return "Phone"
+        case is RemindersService: return "Reminders"
+        case is ShortcutsService: return "Shortcuts"
+        case is UtilitiesService: return "Utilities"
+        case is VoiceMemosService: return "Voice Memos"
+        default:
+            let raw = String(describing: type(of: service))
+            return raw.hasSuffix("Service") ? String(raw.dropLast("Service".count)) : raw
         }
     }
 

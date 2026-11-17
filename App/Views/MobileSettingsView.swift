@@ -2,10 +2,12 @@ import CoreImage
 import CoreImage.CIFilterBuiltins
 import SwiftUI
 
-/// Pairing, sync status, and cached data for iMCP on iPhone and iPad.
+/// Pairing, sync status, transport configuration, and cached data for iMCP on iPhone and iPad.
 struct MobileSettingsView: View {
+    @ObservedObject var serverController: ServerController
     @State private var devices: [MobileDevice] = []
     @State private var connected: MobileDevice?
+    @State private var connectedTransport: MobileTransportMode?
     @State private var syncedAt: [MobileDomain: Date] = [:]
     @State private var code: MobilePairingCode?
     @State private var expires: Date?
@@ -13,6 +15,44 @@ struct MobileSettingsView: View {
     @State private var confirmingDelete = false
     @State private var removing: MobileDevice?
     @AppStorage(RemoteApprovals.defaultsKey) private var approveOnIPhone = true
+    @AppStorage(MobileService.transportModeKey) private var transportModeRaw = MobileTransportMode.automatic.rawValue
+    @AppStorage(MobileService.tailscaleVPNEnabledKey) private var tailscaleVPNEnabled = true
+    @AppStorage(MobileService.tailscaleHostOverrideKey) private var tailscaleHostOverride = ""
+    @AppStorage(MobileService.remotePortKey) private var remotePort = Int(MobileLink.defaultRemotePort)
+    @AppStorage(MobileService.cloudflareEnabledKey) private var cloudflareEnabled = false
+    @AppStorage(MobileService.cloudflareURLKey) private var cloudflareURL = ""
+    @AppStorage(MobileService.cloudflareLocalPortKey) private var cloudflareLocalPort = Int(
+        MobileLink.defaultWebSocketPort
+    )
+
+    private var transportMode: Binding<MobileTransportMode> {
+        Binding(
+            get: { MobileTransportMode(rawValue: transportModeRaw) ?? .automatic },
+            set: { transportModeRaw = $0.rawValue }
+        )
+    }
+
+    private var connectionSummary: String {
+        guard connected != nil else { return "Not connected" }
+        if let connectedTransport {
+            return "Connected via \(connectedTransport.shortLabel)"
+        }
+        return "Connected"
+    }
+
+    private var activeTailnetHost: String? {
+        if case .running(let endpoint) = serverController.remoteAccessState {
+            return endpoint.dnsName ?? endpoint.ipv4Address
+        }
+        return nil
+    }
+
+    private var activeFunnelURL: String? {
+        if case .running(let endpoint) = serverController.remoteAccessState {
+            return endpoint.mobileWebSocketURL
+        }
+        return nil
+    }
 
     var body: some View {
         Form {
@@ -25,7 +65,7 @@ struct MobileSettingsView: View {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(device.name)
-                            Text(connected?.id == device.id ? "Connected" : "Not connected")
+                            Text(connected?.id == device.id ? connectionSummary : "Not connected")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -45,9 +85,89 @@ struct MobileSettingsView: View {
                 Text("Paired Devices")
             } footer: {
                 Text(
-                    "Build and install iMCP for iOS with Scripts/install-ios.sh from the iMCP repository. The device connects to this Mac over your local network with encryption, and nothing goes through iCloud or another server."
+                    "Build and install iMCP for iOS with Scripts/install-ios.sh from the iMCP repository. Connections are end-to-end encrypted with your device key, and nothing goes through iCloud."
                 )
             }
+
+            Section {
+                Picker("Preferred Transport", selection: transportMode) {
+                    ForEach(MobileTransportMode.allCases, id: \.self) { mode in
+                        Text(mode.label).tag(mode)
+                    }
+                }
+
+                Toggle("Allow Tailscale VPN", isOn: $tailscaleVPNEnabled)
+                if tailscaleVPNEnabled {
+                    LabeledContent("Tailscale Host") {
+                        TextField(
+                            "Tailscale Host",
+                            text: $tailscaleHostOverride,
+                            prompt: Text(activeTailnetHost ?? "Auto from Remote Access")
+                        )
+                        .labelsHidden()
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 220)
+                    }
+                    LabeledContent("Tailscale Mobile Port") {
+                        TextField("Port", value: $remotePort, format: .number.grouping(.never))
+                            .labelsHidden()
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 80)
+                    }
+                }
+
+                if let funnelURL = activeFunnelURL {
+                    LabeledContent("Tailscale Funnel URL") {
+                        HStack {
+                            Text(funnelURL)
+                                .textSelection(.enabled)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Button("Copy") { copyToPasteboard(funnelURL) }
+                        }
+                    }
+                } else {
+                    LabeledContent("Tailscale Funnel URL") {
+                        Text("Off (enable Public Access in Remote Access)")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Toggle("Enable Cloudflare Tunnel", isOn: $cloudflareEnabled)
+                if cloudflareEnabled {
+                    LabeledContent("Cloudflare URL") {
+                        TextField("wss://example.com/mobile", text: $cloudflareURL)
+                            .labelsHidden()
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 240)
+                    }
+                    LabeledContent("Local Tunnel Target") {
+                        HStack {
+                            Text("http://127.0.0.1:\(cloudflareLocalPort)")
+                                .font(.caption.monospaced())
+                                .textSelection(.enabled)
+                            TextField("Port", value: $cloudflareLocalPort, format: .number.grouping(.never))
+                                .labelsHidden()
+                                .multilineTextAlignment(.trailing)
+                                .frame(width: 70)
+                            Button("Copy") {
+                                copyToPasteboard("http://127.0.0.1:\(cloudflareLocalPort)")
+                            }
+                        }
+                    }
+                }
+            } header: {
+                Text("Connectivity & Transports")
+            } footer: {
+                Text(
+                    "Advertise Tailscale VPN, Tailscale Funnel, or Cloudflare Tunnel endpoints in pairing codes and connection handshakes. WebSocket tunnels use end-to-end ChaCha20-Poly1305 encryption inside wss://."
+                )
+            }
+            .onChange(of: transportModeRaw) { _, _ in applyTransportSettings() }
+            .onChange(of: tailscaleVPNEnabled) { _, _ in applyTransportSettings() }
+            .onChange(of: remotePort) { _, _ in applyTransportSettings() }
+            .onChange(of: cloudflareEnabled) { _, _ in applyTransportSettings() }
+            .onChange(of: cloudflareLocalPort) { _, _ in applyTransportSettings() }
 
             Section {
                 Toggle(
@@ -174,6 +294,7 @@ struct MobileSettingsView: View {
         let before = devices
         devices = await service.devices
         connected = await service.connectedDevice
+        connectedTransport = await service.connectedTransport
         for domain in MobileDomain.allCases {
             syncedAt[domain] = await service.syncedAt(domain)
         }
@@ -185,6 +306,16 @@ struct MobileSettingsView: View {
             expires = nil
         }
         if code == nil, let message = await service.pairingError { error = message }
+    }
+
+    private func applyTransportSettings() {
+        serverController.refreshRemoteMobileConfiguration()
+        Task { await MobileService.shared.applyTransportSettings() }
+    }
+
+    private func copyToPasteboard(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
     }
 
     private func syncText(_ domain: MobileDomain) -> String {

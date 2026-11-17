@@ -130,6 +130,8 @@
 		E1A000000000000000000011 /* ../../Shared/Mobile/MobileApprovals.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A000000000000000000010 /* ../../Shared/Mobile/MobileApprovals.swift */; };
 		E1A000000000000000000021 /* ../../App/Services/RemoteApprovals.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A000000000000000000020 /* ../../App/Services/RemoteApprovals.swift */; };
 		E1A000000000000000000031 /* RemoteApprovalTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A000000000000000000030 /* RemoteApprovalTests.swift */; };
+		F1A000000000000000000011 /* ../../Shared/Mobile/MobileActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A000000000000000000010 /* ../../Shared/Mobile/MobileActivity.swift */; };
+		F1A000000000000000000021 /* MobileActivityAndTransportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A000000000000000000020 /* MobileActivityAndTransportTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -268,6 +270,8 @@
 		E1A000000000000000000010 /* ../../Shared/Mobile/MobileApprovals.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../Shared/Mobile/MobileApprovals.swift; sourceTree = "<group>"; };
 		E1A000000000000000000020 /* ../../App/Services/RemoteApprovals.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/RemoteApprovals.swift; sourceTree = "<group>"; };
 		E1A000000000000000000030 /* RemoteApprovalTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteApprovalTests.swift; sourceTree = "<group>"; };
+		F1A000000000000000000010 /* ../../Shared/Mobile/MobileActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../Shared/Mobile/MobileActivity.swift; sourceTree = "<group>"; };
+		F1A000000000000000000020 /* MobileActivityAndTransportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileActivityAndTransportTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -288,6 +292,7 @@
 		C5000000000000000000000B /* Exceptions for "Shared" folder in "iMCP Helper" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				Mobile/MobileActivity.swift,
 				Mobile/MobileAlarmRequest.swift,
 				Mobile/MobileApprovals.swift,
 				Mobile/MobileDatabase.swift,
@@ -487,6 +492,8 @@
 				E1A000000000000000000010 /* ../../Shared/Mobile/MobileApprovals.swift */,
 				E1A000000000000000000020 /* ../../App/Services/RemoteApprovals.swift */,
 				E1A000000000000000000030 /* RemoteApprovalTests.swift */,
+				F1A000000000000000000010 /* ../../Shared/Mobile/MobileActivity.swift */,
+				F1A000000000000000000020 /* MobileActivityAndTransportTests.swift */,
 				CF94985E325A869657ADEA03 /* MobileOutboxTests.swift */,
 				AEA9566F574C683C4FB198FB /* ../../Shared/Mobile/MobileTransport.swift */,
 				D623AA705C646B58688D52F0 /* MobileLinkTests.swift */,
@@ -935,6 +942,8 @@
 				E1A000000000000000000011 /* ../../Shared/Mobile/MobileApprovals.swift in Sources */,
 				E1A000000000000000000021 /* ../../App/Services/RemoteApprovals.swift in Sources */,
 				E1A000000000000000000031 /* RemoteApprovalTests.swift in Sources */,
+				F1A000000000000000000011 /* ../../Shared/Mobile/MobileActivity.swift in Sources */,
+				F1A000000000000000000021 /* MobileActivityAndTransportTests.swift in Sources */,
 				7976D430435CEB5885069EDC /* MobileOutboxTests.swift in Sources */,
 				1201B5B17FF1368F8E9CD48F /* ../../Shared/Mobile/MobileTransport.swift in Sources */,
 				C74EAB68D139846AC0C118E1 /* MobileLinkTests.swift in Sources */,

@@ -54,7 +54,7 @@ struct SettingsView: View {
                 case .clients:
                     ClientsSettingsView(serverController: serverController)
                 case .mobile:
-                    MobileSettingsView()
+                    MobileSettingsView(serverController: serverController)
                 case .remoteAccess:
                     RemoteAccessSettingsView(serverController: serverController)
                 case .service(let id):

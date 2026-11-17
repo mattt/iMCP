@@ -9,10 +9,11 @@ struct MobileApp: App {
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var connection = PhoneConnection.shared
     @StateObject private var approvals = PhoneApprovals.shared
+    @StateObject private var activity = PhoneActivityStore.shared
 
     var body: some Scene {
         WindowGroup {
-            StatusView(connection: connection, approvals: approvals)
+            StatusView(connection: connection, approvals: approvals, activity: activity)
                 .onOpenURL { url in
                     // A pairing link opened from the Mac, for example through AirDrop.
                     guard let code = MobilePairingCode(url: url) else { return }
@@ -85,6 +86,7 @@ final class MobileAppDelegate: NSObject, UIApplicationDelegate {
 struct StatusView: View {
     @ObservedObject var connection: PhoneConnection
     @ObservedObject var approvals: PhoneApprovals
+    @ObservedObject var activity: PhoneActivityStore
     @State private var showingPairing = false
     @State private var confirmingUnpair = false
 
@@ -95,6 +97,14 @@ struct StatusView: View {
                 Section {
                     LabeledContent("Mac", value: connection.credentials?.macName ?? "Not paired")
                     LabeledContent("Status", value: statusText)
+                    if let active = connection.activeTransport {
+                        LabeledContent("Via", value: active.shortLabel)
+                    }
+                    NavigationLink {
+                        TransportSettingsView(connection: connection)
+                    } label: {
+                        LabeledContent("Connection Mode", value: connection.transportMode.shortLabel)
+                    }
                     if connection.queuedBatches > 0 {
                         LabeledContent("Waiting to send", value: "\(connection.queuedBatches) batches")
                     }
@@ -105,9 +115,11 @@ struct StatusView: View {
                     }
                 } footer: {
                     Text(
-                        "iMCP sends data only to the Mac you pair, over your local network with encryption. Nothing goes to iCloud or another server."
+                        "iMCP sends data only to the Mac you pair, encrypted with your device key over Local Network, Tailscale, or Cloudflare Tunnel. Nothing goes through iCloud."
                     )
                 }
+
+                ActivitySection(activity: activity)
 
                 ForEach(MobileDomain.allCases, id: \.self) { domain in
                     ServiceSection(domain: domain)
@@ -285,7 +297,7 @@ struct PairingView: View {
                     }
                 } footer: {
                     Text(
-                        "In iMCP on your Mac, open Settings > iPhone & iPad and click Pair, then scan the code. Both devices must be on the same network."
+                        "In iMCP on your Mac, open Settings > iPhone & iPad and click Pair, then scan the code or paste the pairing link."
                     )
                 }
                 Section("Or Paste the Pairing Link") {
@@ -327,5 +339,116 @@ struct PairingView: View {
             }
             pairing = false
         }
+    }
+}
+
+struct TransportSettingsView: View {
+    @ObservedObject var connection: PhoneConnection
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var selectedMode: MobileTransportMode
+    @State private var tailnetHost: String
+    @State private var tailnetPort: String
+    @State private var funnelURL: String
+    @State private var cloudflareURL: String
+    @State private var error: String?
+
+    init(connection: PhoneConnection) {
+        self.connection = connection
+        _selectedMode = State(initialValue: connection.transportMode)
+        _tailnetHost = State(initialValue: connection.credentials?.tailnetHost ?? "")
+        _tailnetPort = State(
+            initialValue: connection.credentials?.tailnetPort.map(String.init)
+                ?? String(MobileLink.defaultRemotePort)
+        )
+        _funnelURL = State(initialValue: connection.credentials?.funnelURL ?? "")
+        _cloudflareURL = State(initialValue: connection.credentials?.cloudflareURL ?? "")
+    }
+
+    var body: some View {
+        Form {
+            Section {
+                Picker("Transport Mode", selection: $selectedMode) {
+                    ForEach(MobileTransportMode.allCases, id: \.self) { mode in
+                        Text(mode.label).tag(mode)
+                    }
+                }
+                .pickerStyle(.inline)
+                .labelsHidden()
+            } header: {
+                Text("Connection Mode")
+            } footer: {
+                Text("Automatic tries Local Network first, then Tailscale VPN, Tailscale Funnel, and Cloudflare Tunnel.")
+            }
+
+            if connection.credentials != nil {
+                Section("Tailscale VPN") {
+                    TextField("Mac Tailscale Host or IP", text: $tailnetHost)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.URL)
+                    TextField("Port (\(MobileLink.defaultRemotePort))", text: $tailnetPort)
+                        .keyboardType(.numberPad)
+                }
+
+                Section("Tailscale Funnel") {
+                    TextField("wss://mac.tailnet.ts.net/mobile", text: $funnelURL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.URL)
+                }
+
+                Section("Cloudflare Tunnel") {
+                    TextField("wss://imcp.example.com/mobile", text: $cloudflareURL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.URL)
+                }
+
+                if let error {
+                    Section {
+                        Text(error).foregroundStyle(.red)
+                    }
+                }
+            } else {
+                Section {
+                    Text("Pair with a Mac to customize remote endpoints.")
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .navigationTitle("Connection & Transports")
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Save") { save() }
+            }
+        }
+        .onChange(of: selectedMode) { _, mode in
+            connection.setTransportMode(mode)
+        }
+    }
+
+    private func save() {
+        connection.setTransportMode(selectedMode)
+        if connection.credentials != nil {
+            let trimmedPort = tailnetPort.trimmingCharacters(in: .whitespacesAndNewlines)
+            let parsedPort = trimmedPort.isEmpty ? nil : UInt16(trimmedPort)
+            if !trimmedPort.isEmpty, parsedPort == nil || parsedPort == 0 {
+                error = "Enter a valid port from 1 to 65535."
+                return
+            }
+            do {
+                try connection.updateEndpoints(
+                    tailnetHost: tailnetHost,
+                    tailnetPort: parsedPort,
+                    funnelURL: funnelURL,
+                    cloudflareURL: cloudflareURL
+                )
+            } catch {
+                self.error = error.localizedDescription
+                return
+            }
+        }
+        dismiss()
     }
 }

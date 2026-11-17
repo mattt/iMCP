@@ -11,6 +11,10 @@ struct PhoneCredentials: Codable, Equatable, Sendable {
     var key: Data
     /// The Mac's Bonjour service name.
     var service: String
+    var tailnetHost: String?
+    var tailnetPort: UInt16?
+    var funnelURL: String?
+    var cloudflareURL: String?
 
     private static let account = "pairing"
     private static let keychainService = "co.dododo.iMCP.iOS"
@@ -61,6 +65,23 @@ struct PhoneCredentials: Codable, Equatable, Sendable {
     var endpoint: NWEndpoint {
         .service(name: service, type: MobileLink.serviceType, domain: "local.", interface: nil)
     }
+
+    func updating(from welcome: MobileWelcome) -> PhoneCredentials {
+        var copy = self
+        if let host = welcome.tailnetHost, !host.isEmpty {
+            copy.tailnetHost = host
+        }
+        if let port = welcome.tailnetPort, port > 0 {
+            copy.tailnetPort = port
+        }
+        if let funnel = MobileLink.normalizedWebSocketURL(welcome.funnelURL) {
+            copy.funnelURL = funnel
+        }
+        if let cloudflare = MobileLink.normalizedWebSocketURL(welcome.cloudflareURL) {
+            copy.cloudflareURL = cloudflare
+        }
+        return copy
+    }
 }
 
 /// Keeps the device connected to the paired Mac and serves the mobile tools on that connection.
@@ -80,21 +101,61 @@ final class PhoneConnection: ObservableObject {
         case failed(String)
     }
 
+    private static let transportModeDefaultsKey = "mobile.transportMode"
+
     @Published private(set) var phase: Phase = .unpaired
     @Published private(set) var credentials: PhoneCredentials? = PhoneCredentials.load()
     @Published private(set) var queuedBatches = 0
+    @Published private(set) var activeTransport: MobileTransportMode?
+    @Published private(set) var transportMode: MobileTransportMode
 
     private let log = Logger(subsystem: "co.dododo.iMCP.iOS", category: "connection")
     private var loop: Task<Void, Never>?
-    private var channel: MobileChannel?
+    private var channel: (any MobileTransportChannel)?
 
     private init() {
+        let storedMode =
+            MobileAppGroup.defaults.string(forKey: Self.transportModeDefaultsKey)
+            .flatMap(MobileTransportMode.init(rawValue:)) ?? .automatic
+        self.transportMode = storedMode
         phase = credentials == nil ? .unpaired : .searching
     }
 
     static var deviceName: String { UIDevice.current.name }
 
     private var version: String { Bundle.main.shortVersionString ?? "unknown" }
+
+    // MARK: - Transport Configuration
+
+    func setTransportMode(_ mode: MobileTransportMode) {
+        guard mode != transportMode else { return }
+        transportMode = mode
+        MobileAppGroup.defaults.set(mode.rawValue, forKey: Self.transportModeDefaultsKey)
+        restartIfNeeded()
+    }
+
+    func updateEndpoints(
+        tailnetHost: String?,
+        tailnetPort: UInt16?,
+        funnelURL: String?,
+        cloudflareURL: String?
+    ) throws {
+        guard var current = credentials else { return }
+        let trimmedHost = tailnetHost?.trimmingCharacters(in: .whitespacesAndNewlines)
+        current.tailnetHost = (trimmedHost?.isEmpty == false) ? trimmedHost : nil
+        current.tailnetPort = (tailnetPort ?? 0) > 0 ? tailnetPort : nil
+        current.funnelURL = MobileLink.normalizedWebSocketURL(funnelURL)
+        current.cloudflareURL = MobileLink.normalizedWebSocketURL(cloudflareURL)
+        try current.save()
+        credentials = current
+        restartIfNeeded()
+    }
+
+    private func restartIfNeeded() {
+        guard credentials != nil, loop != nil else { return }
+        stop()
+        start()
+    }
 
     // MARK: - Foreground
 
@@ -123,6 +184,7 @@ final class PhoneConnection: ObservableObject {
     func stop() {
         loop?.cancel()
         loop = nil
+        activeTransport = nil
         let channel = self.channel
         self.channel = nil
         Task { await channel?.disconnect() }
@@ -130,18 +192,31 @@ final class PhoneConnection: ObservableObject {
 
     private func serve(_ credentials: PhoneCredentials) async throws {
         phase = .searching
-        let channel = try await MobileDialer.connect(
-            to: credentials.endpoint,
-            with: MobileDialer.paired(
-                device: credentials.device,
-                name: Self.deviceName,
-                key: SymmetricKey(data: credentials.key)
-            )
-        ).channel
-        self.channel = channel
+        let result = try await dial(
+            transportMode.candidates(
+                service: credentials.service,
+                tailnetHost: credentials.tailnetHost,
+                tailnetPort: credentials.tailnetPort,
+                funnelURL: credentials.funnelURL,
+                cloudflareURL: credentials.cloudflareURL
+            ),
+            mode: transportMode,
+            device: credentials.device,
+            key: SymmetricKey(data: credentials.key)
+        )
+        let updated = credentials.updating(from: result.welcome)
+        if updated != credentials {
+            try? updated.save()
+            self.credentials = updated
+        }
+        self.channel = result.channel
+        self.activeTransport = result.transport
         phase = .connected
-        defer { self.channel = nil }
-        try await MobilePeer.serve(channel, tools: PhoneBackend.shared.tools, version: version)
+        defer {
+            self.channel = nil
+            self.activeTransport = nil
+        }
+        try await MobilePeer.serve(result.channel, tools: PhoneBackend.shared.tools, version: version)
     }
 
     func refreshQueue() async {
@@ -171,15 +246,20 @@ final class PhoneConnection: ObservableObject {
         // A foreground connection already serves the Mac's pulls.
         if channel != nil { return await waitForEmptyQueue(timeout: timeout) }
         do {
-            let channel = try await MobileDialer.connect(
-                to: credentials.endpoint,
-                with: MobileDialer.paired(
-                    device: credentials.device,
-                    name: Self.deviceName,
-                    key: SymmetricKey(data: credentials.key)
+            let result = try await dial(
+                transportMode.candidates(
+                    service: credentials.service,
+                    tailnetHost: credentials.tailnetHost,
+                    tailnetPort: credentials.tailnetPort,
+                    funnelURL: credentials.funnelURL,
+                    cloudflareURL: credentials.cloudflareURL
                 ),
+                mode: transportMode,
+                device: credentials.device,
+                key: SymmetricKey(data: credentials.key),
                 timeout: .seconds(10)
-            ).channel
+            )
+            let channel = result.channel
             let tools = PhoneBackend.shared.tools
             let version = self.version
             let server = Task { try await MobilePeer.serve(channel, tools: tools, version: version) }
@@ -209,25 +289,33 @@ final class PhoneConnection: ObservableObject {
     func pair(_ code: MobilePairingCode) async throws {
         stop()
         let device = credentials?.device ?? UUID().uuidString
-        let session = try await MobileDialer.connect(
-            to: NWEndpoint.service(
-                name: code.service,
-                type: MobileLink.serviceType,
-                domain: "local.",
-                interface: nil
-            ),
-            with: MobileDialer.pairing(code, device: device, name: Self.deviceName)
+        let candidates = transportMode.candidates(for: code)
+        let result = try await dial(
+            candidates,
+            mode: transportMode,
+            pairing: code,
+            device: device,
+            key: nil
         )
-        let channel = session.channel
-        guard let key = session.deviceKey else {
+        let channel = result.channel
+        guard let key = result.deviceKey else {
             await channel.disconnect()
             throw MobileError("Pairing didn't produce a device key. Show a new code and try again.")
         }
-        let credentials = PhoneCredentials(device: device, key: key.withUnsafeBytes { Data($0) }, service: code.service)
+        let credentials = PhoneCredentials(
+            device: device,
+            key: key.withUnsafeBytes { Data($0) },
+            service: code.service,
+            tailnetHost: code.tailnetHost,
+            tailnetPort: code.tailnetPort,
+            funnelURL: code.funnelURL,
+            cloudflareURL: code.cloudflareURL
+        ).updating(from: result.welcome)
         try credentials.save()
         // A new Mac has a new cache, which resets the outbox on its first pull.
         self.credentials = credentials
         self.channel = channel
+        self.activeTransport = result.transport
         phase = .connected
         let tools = PhoneBackend.shared.tools
         let version = self.version
@@ -235,6 +323,7 @@ final class PhoneConnection: ObservableObject {
             try? await MobilePeer.serve(channel, tools: tools, version: version)
             guard let self else { return }
             self.channel = nil
+            self.activeTransport = nil
             self.loop = nil
             self.start()
         }
@@ -246,25 +335,157 @@ final class PhoneConnection: ObservableObject {
         let credentials = self.credentials
         stop()
         if let credentials {
+            let candidates = transportMode.candidates(
+                service: credentials.service,
+                tailnetHost: credentials.tailnetHost,
+                tailnetPort: credentials.tailnetPort,
+                funnelURL: credentials.funnelURL,
+                cloudflareURL: credentials.cloudflareURL
+            )
             // The Mac forgets the device when it can verify the request; if it's away,
             // the user can remove the phone in iMCP Settings.
-            if let channel = try? await MobileDialer.connect(
-                to: credentials.endpoint,
-                with: MobileDialer.paired(
-                    device: credentials.device,
-                    name: Self.deviceName,
-                    key: SymmetricKey(data: credentials.key),
-                    revoke: true
-                ),
+            if let result = try? await dial(
+                candidates,
+                mode: transportMode,
+                device: credentials.device,
+                key: SymmetricKey(data: credentials.key),
+                revoke: true,
                 timeout: .seconds(5)
-            ).channel {
-                await channel.disconnect()
+            ) {
+                await result.channel.disconnect()
             }
         }
         PhoneCredentials.delete()
         try? await PhoneBackend.shared.openOutbox().deleteAll()
+        PhoneActivityStore.shared.reset()
         self.credentials = nil
+        self.activeTransport = nil
         phase = .unpaired
         await refreshQueue()
+    }
+
+    // MARK: - Multi-Transport Dialer
+
+    private struct DialResult {
+        var channel: any MobileTransportChannel
+        var transport: MobileTransportMode
+        var welcome: MobileWelcome
+        var deviceKey: SymmetricKey?
+    }
+
+    private func dial(
+        _ candidates: [MobileTransportCandidate],
+        mode: MobileTransportMode,
+        pairing: MobilePairingCode? = nil,
+        device: String,
+        key: SymmetricKey?,
+        revoke: Bool = false,
+        timeout: Duration = .seconds(15)
+    ) async throws -> DialResult {
+        guard !candidates.isEmpty else {
+            throw MobileError(
+                "No endpoint is configured for \(mode.shortLabel). Configure it in Connection Settings or pair again."
+            )
+        }
+        var lastError: Error?
+        for (index, candidate) in candidates.enumerated() {
+            if Task.isCancelled { throw CancellationError() }
+            let isLast = index == candidates.count - 1
+            let candidateTimeout: Duration =
+                (!isLast && candidate.mode == .localOnly) ? min(timeout, .seconds(5)) : timeout
+            do {
+                switch candidate {
+                case .bonjour(let service):
+                    let endpoint = NWEndpoint.service(
+                        name: service,
+                        type: MobileLink.serviceType,
+                        domain: "local.",
+                        interface: nil
+                    )
+                    let session = try await connectNW(
+                        endpoint: endpoint,
+                        pairing: pairing,
+                        device: device,
+                        key: key,
+                        revoke: revoke,
+                        timeout: candidateTimeout
+                    )
+                    return DialResult(
+                        channel: session.channel,
+                        transport: .localOnly,
+                        welcome: session.welcome,
+                        deviceKey: session.deviceKey
+                    )
+
+                case .tailscaleVPN(let host, let port):
+                    guard let nwPort = NWEndpoint.Port(rawValue: port) else {
+                        throw MobileError("Invalid Tailscale port \(port).")
+                    }
+                    let endpoint = NWEndpoint.hostPort(host: NWEndpoint.Host(host), port: nwPort)
+                    let session = try await connectNW(
+                        endpoint: endpoint,
+                        pairing: pairing,
+                        device: device,
+                        key: key,
+                        revoke: revoke,
+                        timeout: candidateTimeout
+                    )
+                    return DialResult(
+                        channel: session.channel,
+                        transport: .tailscaleVPN,
+                        welcome: session.welcome,
+                        deviceKey: session.deviceKey
+                    )
+
+                case .tailscaleFunnel(let url), .cloudflare(let url):
+                    let creds: MobileDialer.Credentials
+                    if let pairing {
+                        creds = MobileWebSocketDialer.pairing(pairing, device: device, name: Self.deviceName)
+                    } else if let key {
+                        creds = MobileWebSocketDialer.paired(
+                            device: device,
+                            name: Self.deviceName,
+                            key: key,
+                            revoke: revoke
+                        )
+                    } else {
+                        throw MobileError("Missing device credentials.")
+                    }
+                    let session = try await MobileWebSocketDialer.connect(
+                        to: url,
+                        with: creds,
+                        timeout: candidateTimeout
+                    )
+                    return DialResult(
+                        channel: session.channel,
+                        transport: candidate.mode,
+                        welcome: session.welcome,
+                        deviceKey: session.deviceKey
+                    )
+                }
+            } catch {
+                lastError = error
+            }
+        }
+        throw lastError ?? MobileError("Couldn't reach the Mac.")
+    }
+
+    private func connectNW(
+        endpoint: NWEndpoint,
+        pairing: MobilePairingCode?,
+        device: String,
+        key: SymmetricKey?,
+        revoke: Bool,
+        timeout: Duration
+    ) async throws -> MobileDialer.Session {
+        let creds: MobileDialer.Credentials
+        if let pairing {
+            creds = MobileDialer.pairing(pairing, device: device, name: Self.deviceName)
+        } else if let key {
+            creds = MobileDialer.paired(device: device, name: Self.deviceName, key: key, revoke: revoke)
+        } else {
+            throw MobileError("Missing device credentials.")
+        }
+        return try await MobileDialer.connect(to: endpoint, with: creds, timeout: timeout)
     }
 }
