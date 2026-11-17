@@ -234,6 +234,32 @@ enum ServiceRegistry {
         #endif
         return configs
     }
+
+    static func displayName(for service: any Service) -> String {
+        switch service {
+        case is CalendarService: return "Calendar"
+        case is CaptureService: return "Capture"
+        case is ContactsService: return "Contacts"
+        case is HomeService: return "Home"
+        case is LocationService: return "Location"
+        case is MapsService: return "Maps"
+        case is MailService: return "Mail"
+        case is MessageService: return "Messages"
+        case is MusicService: return "Music"
+        case is NotesService: return "Notes"
+        case is PhoneService: return "Phone"
+        case is RemindersService: return "Reminders"
+        case is ShortcutsService: return "Shortcuts"
+        case is UtilitiesService: return "Utilities"
+        case is VoiceMemosService: return "Voice Memos"
+        case is VoicemailService: return "Voicemail"
+        default:
+            #if WEATHERKIT_AVAILABLE
+                if service is WeatherService { return "Weather" }
+            #endif
+            return service.serviceID
+        }
+    }
 }
 
 @MainActor
@@ -274,9 +300,20 @@ final class ServerController: ObservableObject {
     /// so that revoking a credential closes them.
     private var credentialSessions = CredentialSessions()
 
-    // MARK: - AppStorage for Disabled Tools
+    // MARK: - AppStorage for Disabled Tools & Approval Mode
     @AppStorage("disabledTools") private var disabledToolsData = Data()
     private var disabledToolsGeneration = 0
+    @AppStorage(ApprovalMode.defaultsKey) private var approvalModeRawValue = ApprovalMode.defaultMode.rawValue
+
+    var approvalMode: ApprovalMode {
+        get { ApprovalMode(rawValue: approvalModeRawValue) ?? .defaultMode }
+        set {
+            guard approvalMode != newValue else { return }
+            objectWillChange.send()
+            approvalModeRawValue = newValue.rawValue
+            toolListChanged()
+        }
+    }
 
     // MARK: - Computed Properties for Service Configurations and Bindings
     var computedServiceConfigs: [ServiceConfig] {
@@ -1000,6 +1037,8 @@ actor ServerNetworkManager {
     private var serviceBindings: [String: Binding<Bool>] = [:]
     private var disabledTools: Set<String> = []
     private var disabledToolsLastGeneration = -1
+    private let confirmer: any OutboundConfirming = MacOutboundConfirmer()
+    private let confirmationQueue = ToolConfirmationQueue.shared
 
     func isRunning() -> Bool {
         isRunningState
@@ -1381,6 +1420,9 @@ actor ServerNetworkManager {
                 )
             }
 
+            let confirmer = self.confirmer
+            let confirmationQueue = self.confirmationQueue
+
             for service in await self.services {
                 let serviceId = String(describing: type(of: service))
 
@@ -1388,21 +1430,20 @@ actor ServerNetworkManager {
                 if let isServiceEnabled = await self.serviceBindings[serviceId]?.wrappedValue,
                     isServiceEnabled
                 {
+                    guard let tool = service.tools.first(where: { $0.name == params.name }) else {
+                        continue
+                    }
+
                     do {
-                        // Make the captured client name available to tools.
-                        guard
-                            let value = try await ToolCallContext.$clientName.withValue(
-                                clientName,
-                                operation: {
-                                    try await service.call(
-                                        tool: params.name,
-                                        with: params.arguments ?? [:]
-                                    )
-                                }
-                            )
-                        else {
-                            continue
-                        }
+                        let value = try await ToolCallApproval.execute(
+                            tool: tool,
+                            in: service,
+                            serviceName: ServiceRegistry.displayName(for: service),
+                            arguments: params.arguments ?? [:],
+                            clientName: clientName,
+                            confirmer: confirmer,
+                            queue: confirmationQueue
+                        )
 
                         log.notice("Tool \(params.name) executed successfully for \(connectionID)")
                         switch value {
