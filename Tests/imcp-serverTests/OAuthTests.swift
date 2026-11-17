@@ -415,6 +415,10 @@ final class OAuthTests: XCTestCase {
         let page = String(decoding: try rawBody(waiting), as: UTF8.self)
         XCTAssertTrue(page.contains("http-equiv=\"refresh\""))
         XCTAssertTrue(page.contains("Claude"))
+        // Wait for the spawned approval task to invoke the handler before reading `asked`.
+        for _ in 0 ..< 100 where asked.value == nil {
+            try await Task.sleep(for: .milliseconds(10))
+        }
         XCTAssertEqual(asked.value?.redirectHost, "claude.ai")
 
         let pendingID = try XCTUnwrap(asked.value?.id)
