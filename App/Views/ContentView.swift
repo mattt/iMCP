@@ -174,10 +174,10 @@ enum MenuMetrics {
     static let rowHeight: CGFloat = 22
     static let iconSize: CGFloat = 22
     static let serviceRowHeight: CGFloat = 30
-    /// The corner radius of a row's highlight and of the panel, measured from a native menu (Screens)
+    /// The corner radius of a row's highlight and of the panel, measured from a native menu
     /// on this system: about 6.5 pt and 10 pt.
-    static let highlightRadius: CGFloat = 6
-    static let panelRadius: CGFloat = 12
+    static let highlightRadius: CGFloat = 6.5
+    static let panelRadius: CGFloat = 10
 }
 
 /// Resizes the panel that shows ``ContentView`` to fit its content, keeping its top edge in place.
@@ -337,12 +337,12 @@ private struct MenuRowButtonStyle: ButtonStyle {
         configuration.label
             .foregroundStyle(
                 isHighlighted
-                    ? Color.primary
+                    ? Color(nsColor: .selectedMenuItemTextColor)
                     : isEnabled ? Color.primary : Color(nsColor: .disabledControlTextColor)
             )
             .background(
-                RoundedRectangle(cornerRadius: MenuMetrics.highlightRadius)
-                    .fill(isHighlighted ? Color.primary.opacity(0.12) : .clear)
+                RoundedRectangle(cornerRadius: MenuMetrics.highlightRadius, style: .continuous)
+                    .fill(isHighlighted ? Color(nsColor: .controlAccentColor) : .clear)
             )
             .onHover { isHovering = $0 }
     }

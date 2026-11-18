@@ -109,9 +109,7 @@ final class MenuBarController: NSObject {
         effect.material = .menu
         effect.state = .active
         effect.blendingMode = .behindWindow
-        effect.wantsLayer = true
-        effect.layer?.cornerRadius = MenuMetrics.panelRadius
-        effect.layer?.masksToBounds = true
+        effect.maskImage = Self.roundedMask(radius: MenuMetrics.panelRadius)
 
         let hosting = NSHostingView(
             rootView: MenuPanelRoot(
@@ -144,6 +142,19 @@ final class MenuBarController: NSObject {
             }
         }
         return panel
+    }
+
+    /// A rounded rectangle that stretches, so the visual effect view is clipped to a native menu's corners.
+    private static func roundedMask(radius: CGFloat) -> NSImage {
+        let side = radius * 2 + 1
+        let image = NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
+            NSColor.black.setFill()
+            NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
+            return true
+        }
+        image.capInsets = NSEdgeInsets(top: radius, left: radius, bottom: radius, right: radius)
+        image.resizingMode = .stretch
+        return image
     }
 }
 
