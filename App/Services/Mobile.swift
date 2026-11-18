@@ -27,6 +27,8 @@ actor MobileService: MobileBackend {
     static let transportModeKey = "mobileTransportMode"
     static let tailscaleVPNEnabledKey = "mobileTailscaleVPNEnabled"
     static let tailscaleHostOverrideKey = "mobileTailscaleHost"
+    /// How long a phone has to send its hello on a WebSocket before the Mac closes it.
+    static let helloTimeout: Duration = .seconds(15)
     static let cloudflareEnabledKey = "mobileCloudflareEnabled"
     static let cloudflareURLKey = "mobileCloudflareURL"
     static let cloudflareLocalPortKey = "mobileCloudflareLocalPort"
@@ -68,6 +70,7 @@ actor MobileService: MobileBackend {
     private var lastPairingError: String?
     private var advertisedTailnetHost: String?
     private var advertisedFunnelURL: String?
+    private var advertisedCloudflareURL: String?
 
     /// How long a pairing code works after iMCP shows it.
     static let pairingLifetime: TimeInterval = 600
@@ -167,12 +170,14 @@ actor MobileService: MobileBackend {
         await pushConfiguration()
     }
 
-    /// Sets the Tailscale host and Funnel WebSocket URL that remote access advertises.
+    /// Sets the Tailscale host, Funnel WebSocket URL and Cloudflare Tunnel WebSocket URL that remote access advertises.
     /// Without a caller, the Mac advertises the address of its own Tailscale interface and no Funnel URL.
-    func updateRemoteEndpoints(tailnetHost: String?, funnelURL: String?) {
+    /// A Cloudflare address typed in Settings takes priority over `cloudflareURL`.
+    func updateRemoteEndpoints(tailnetHost: String?, funnelURL: String?, cloudflareURL: String? = nil) {
         let trimmedHost = tailnetHost?.trimmingCharacters(in: .whitespacesAndNewlines)
         advertisedTailnetHost = (trimmedHost?.isEmpty == false) ? trimmedHost : nil
         advertisedFunnelURL = MobileLink.normalizedWebSocketURL(funnelURL)
+        advertisedCloudflareURL = MobileLink.normalizedWebSocketURL(cloudflareURL)
         Task { await pushConfiguration() }
     }
 
@@ -191,10 +196,12 @@ actor MobileService: MobileBackend {
         } else {
             disabled.insert(.tailscaleVPN)
         }
-        var cloudflareURL: String?
-        if defaults.bool(forKey: Self.cloudflareEnabledKey) {
-            cloudflareURL = MobileLink.normalizedWebSocketURL(defaults.string(forKey: Self.cloudflareURLKey))
-        } else {
+        // A Cloudflare address typed in Settings takes priority over the one remote access advertises.
+        let cloudflareEnabled = defaults.bool(forKey: Self.cloudflareEnabledKey)
+        let typedCloudflareURL =
+            cloudflareEnabled ? MobileLink.normalizedWebSocketURL(defaults.string(forKey: Self.cloudflareURLKey)) : nil
+        let cloudflareURL = typedCloudflareURL ?? advertisedCloudflareURL
+        if !cloudflareEnabled && advertisedCloudflareURL == nil {
             disabled.insert(.cloudflare)
         }
         return MobileMacState(
@@ -744,7 +751,12 @@ actor MobileService: MobileBackend {
     }
 
     /// Accepts an upgraded WebSocket wire (from Tailscale Funnel or Cloudflare Tunnel).
-    func acceptWebSocket(_ wire: any MobileFrameWire, transportMode: MobileTransportMode) async {
+    /// The phone has `helloTimeout` to send its hello and the Mac closes the connection if it doesn't.
+    func acceptWebSocket(
+        _ wire: any MobileFrameWire,
+        transportMode: MobileTransportMode,
+        helloTimeout: Duration = MobileService.helloTimeout
+    ) async {
         do {
             let helloFrame = try await withThrowingTaskGroup(of: Data.self) { group in
                 group.addTask {
@@ -754,7 +766,7 @@ actor MobileService: MobileBackend {
                     return frame
                 }
                 group.addTask {
-                    try await Task.sleep(for: .seconds(15))
+                    try await Task.sleep(for: helloTimeout)
                     await wire.close()
                     throw MobileError("The phone didn't send its hello in time.")
                 }
