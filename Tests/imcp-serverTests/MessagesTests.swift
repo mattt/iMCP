@@ -256,6 +256,29 @@ final class MessagesTests: XCTestCase {
         XCTAssertEqual(error as? OutboundConfirmationError, .busy(action: "Send Message"))
     }
 
+    func testSendAlreadyConfirmedByTheSharedGateDoesNotAskAgain() async throws {
+        let request = SendRequest(destination: .chat("iMessage;-;+15551234567"), text: "Hi")
+        let confirmer = Answering(.declined)
+        var delivered = 0
+
+        _ = try await MessageService.send(
+            request,
+            identity: identity(request, service: "iMessage"),
+            confirmation: sampleConfirmation,
+            confirmer: confirmer,
+            alreadyConfirmed: true,
+            deliver: { _ in
+                delivered += 1
+                return nil
+            },
+            locate: { _, _ in nil },
+            inFlight: MessageService.InFlightSends()
+        )
+
+        XCTAssertEqual(delivered, 1)
+        XCTAssertTrue(confirmer.requests.isEmpty)
+    }
+
     func testConfirmedSendDeliversOnceAndReportsTheSentMessage() async throws {
         let request = SendRequest(destination: .chat("iMessage;-;+15551234567"), text: "Hi")
         var events: [String] = []

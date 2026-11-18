@@ -500,6 +500,7 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                     clientName: ToolCallContext.clientName
                 ),
                 confirmer: self.confirmer,
+                alreadyConfirmed: ToolCallContext.alreadyConfirmedByGlobalGate,
                 deliver: { request in
                     try await self.deliver(request, approvedChat: approvedChat)
                 },
@@ -1434,16 +1435,29 @@ extension MessageService {
     /// read immediately before the Apple event, or `nil` when it can't be read;
     /// after delivery, `locate` looks for the sent message among newer rows.
     /// Not finding it leaves the result without an @id but doesn't fail the send.
+    ///
+    /// When `alreadyConfirmed` is true, the shared approval gate has just asked the person
+    /// about this very call, so asking again is skipped; everything else still runs.
     static func send(
         _ request: SendRequest,
         identity: SendIdentity,
         confirmation: OutboundConfirmationRequest,
         confirmer: any OutboundConfirming,
+        alreadyConfirmed: Bool = false,
         deliver: (SendRequest) async throws -> Int64?,
         locate: (SendRequest, Int64) async -> OutgoingMessage?,
         inFlight: InFlightSends = .shared
     ) async throws -> [String: Value] {
-        try await confirmer.approve(confirmation) {
+        if alreadyConfirmed {
+            return try await deliverAndLocate(
+                request,
+                identity: identity,
+                deliver: deliver,
+                locate: locate,
+                inFlight: inFlight
+            )
+        }
+        return try await confirmer.approve(confirmation) {
             try await deliverAndLocate(
                 request,
                 identity: identity,
