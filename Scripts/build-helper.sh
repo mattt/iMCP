@@ -10,11 +10,12 @@ set -euo pipefail
 
 # Developer ID builds can't carry the HomeKit entitlement,
 # so release builds leave the helper out;
-# developers build and sign it with Scripts/install-helper.sh.
+# a build signed with a team that has the HomeKit capability embeds it.
 if [[ "${EMBED_HOME_HELPER:-YES}" != YES ]]; then
     echo "Skipping iMCP Helper (EMBED_HOME_HELPER=${EMBED_HOME_HELPER})."
     # Remove a helper left by an earlier build in the same directory.
     rm -rf "$TARGET_BUILD_DIR/$WRAPPER_NAME/Contents/Helpers/iMCP Helper.app"
+    rm -f "$TARGET_BUILD_DIR/$WRAPPER_NAME/Contents/Library/LaunchAgents/$PRODUCT_BUNDLE_IDENTIFIER.home-helper.plist"
     exit 0
 fi
 
@@ -43,3 +44,12 @@ mkdir -p "$(dirname "$helper_destination")"
 # Remove stale files if the nested app's contents changed between builds.
 rm -rf "$helper_destination"
 ditto "$helper_product" "$helper_destination"
+
+# Write the launch agent that iMCP registers with SMAppService.
+# Its names derive from iMCP's bundle identifier, as HomeHelperIdentity does.
+agent_dir="$TARGET_BUILD_DIR/$WRAPPER_NAME/Contents/Library/LaunchAgents"
+mkdir -p "$agent_dir"
+sed "s/__APP_BUNDLE_IDENTIFIER__/$PRODUCT_BUNDLE_IDENTIFIER/g" \
+    "$SRCROOT/Scripts/home-helper.launchd.plist.in" \
+    >"$agent_dir/$PRODUCT_BUNDLE_IDENTIFIER.home-helper.plist"
+plutil -lint "$agent_dir/$PRODUCT_BUNDLE_IDENTIFIER.home-helper.plist"

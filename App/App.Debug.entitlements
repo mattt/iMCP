@@ -20,6 +20,7 @@
 	<array>
 		<string>$(PRODUCT_BUNDLE_IDENTIFIER)-spks</string>
 		<string>$(PRODUCT_BUNDLE_IDENTIFIER)-spki</string>
+		<string>$(PRODUCT_BUNDLE_IDENTIFIER).home-xpc</string>
 	</array>
 </dict>
 </plist>

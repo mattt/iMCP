@@ -775,100 +775,47 @@ only to Mac Catalyst apps.
 So the Home service runs in a separate Catalyst app,
 [`iMCP Helper`](/Helper/).
 Apple doesn't allow HomeKit in Developer ID apps,
-so iMCP's release build doesn't include the helper.
-Build and install it with your own Apple Developer account:
+so a build of iMCP carries the helper only when it is signed
+with a team that has the HomeKit capability (`EMBED_HOME_HELPER = YES`).
+The helper lives inside iMCP at `Contents/Helpers/iMCP Helper.app`,
+next to a launch agent plist at `Contents/Library/LaunchAgents`.
 
-```console
-git clone https://github.com/mattt/iMCP.git
-cd iMCP
-Scripts/install-helper.sh
-```
-
-The script signs the helper with your team's development certificate
-and installs it in `/Applications`.
-Run it with `--help` to choose another team, bundle ID, or install directory.
-Xcode must be signed in to your account (Xcode > Settings > Accounts),
-and the helper runs only on Macs registered to your team.
-Whether free personal teams can use HomeKit isn't verified.
-Then turn on Home in iMCP.
-iMCP finds the helper in `/Applications`.
-If you installed it somewhere else,
-iMCP asks you to choose it when you turn on Home,
-or you can choose it in Settings > Home.
-When you enable Home,
-iMCP launches the helper if it isn't running,
-and the helper asks for HomeKit access.
-The first time, the helper's window shows an eight-character pairing code,
-such as `7KQ2-M9XD`, and numbered steps:
-click Copy Code,
-click Open iMCP… to open iMCP's Pair with iMCP Helper window,
-then paste the code and click Pair.
-The button opens the URL `imcp://pair`, which carries no data;
-iMCP only opens its pairing window for it.
-The helper opens that URL only with the app that has iMCP's bundle ID, `co.dododo.iMCP`,
-preferring the running copy, and not with a copy that doesn't declare the `imcp` scheme;
-otherwise, for example if you built iMCP with another bundle ID,
-the helper tells you to choose Pair… in Settings > Home instead.
-If the helper's window is behind other windows,
-click Open iMCP Helper… in iMCP's window.
-The code works once:
-when you pair, iMCP sends the helper a new random key,
-and both apps keep that key in their keychains.
-After five wrong codes, the helper shows a new one.
-To pair again, click Pair Again… in the helper's window and confirm;
-the helper ends iMCP's connection and shows a new code and the same steps.
-The helper keeps running after iMCP quits;
-choose Quit iMCP Helper from its app menu, or press Command-Q, to stop it.
-The window also reports startup and permission errors.
+When you turn on Home, iMCP registers that agent with `SMAppService`.
+macOS can ask you to allow iMCP in System Settings > General > Login Items & Extensions;
+iMCP opens that pane and turns Home off until you do.
+Once the agent is registered, launchd starts the helper in your login session
+the first time iMCP connects to its Mach service,
+so the helper can show a window and HomeKit's permission prompt.
+The prompt names iMCP, not the helper:
+macOS attributes the helper's HomeKit request to the app that contains it,
+which is why iMCP's own Info.plist carries `NSHomeKitUsageDescription`.
 The Mac's iCloud account must have access to the home,
 and writes can require the owner or administrator role.
 
-Sparkle updates iMCP but not the helper.
-After an iMCP update,
-rebuild the helper from the tag that matches the new version:
-
-```console
-git fetch --tags
-git checkout <version>
-Scripts/install-helper.sh
-```
-
-A helper from an older version may not match the app's Home tools.
+There is no pairing code and no stored key.
+iMCP and the helper talk over XPC,
+and each requires the other's code signature:
+iMCP requires the helper's signing identifier and iMCP's own team,
+and the helper requires iMCP's signing identifier and the helper's own team.
+A build that isn't signed with a team can't verify the helper and says so.
+In Settings > Home, Unregister… stops the helper and removes the agent
+(this replaces Unpair); Register, or turning Home on, starts over.
+If you remove iMCP, remove the agent too, or macOS lists it under Login Items.
 
 The helper's development certificate and provisioning profile expire.
 Each is usually valid for one year,
 but the certificate can expire first.
-To read the profile's expiration date, run:
-
-```console
-security cms -D -i "/Applications/iMCP Helper.app/Contents/embedded.provisionprofile" |
-  plutil -extract ExpirationDate raw -o - -
-```
-
-To read the certificate's expiration date, run:
-
-```console
-codesign -d --extract-certificates=/tmp/imcp-helper-cert "/Applications/iMCP Helper.app"
-openssl x509 -inform DER -in /tmp/imcp-helper-cert0 -noout -enddate
-```
-
-After the earlier of the two dates, the helper may stop launching.
-Run `Scripts/install-helper.sh` again to renew it;
-the script lets Xcode create a new certificate and profile
-when the old ones have expired.
-
+After the earlier of the two dates, the helper may stop launching;
+rebuild iMCP to renew them.
 On the first run, provisioning can fail with "PLA Update available".
 The team's Account Holder must accept the latest Program License Agreement
 in the Apple Developer account.
-If you can't write to `/Applications` (for example, as a non-admin user),
-the install can fail with a permission error.
-Run the script with `--destination ~/Applications` instead.
-iMCP then asks you to choose the helper.
 
 Both apps compile the same tool definitions from
 [`Shared/Home/HomeTools.swift`](/Shared/Home/HomeTools.swift).
 The helper implements them with HomeKit;
-the app forwards each call over an MCP connection on the loopback interface,
+the app forwards each call as JSON over the XPC interface in
+[`Shared/Home/HomeHelperXPC.swift`](/Shared/Home/HomeHelperXPC.swift),
 so the usual service and per-tool switches apply.
 Object IDs are HomeKit UUID strings.
 Inventory tools return live characteristic values only when `include_values` is true,
@@ -884,21 +831,6 @@ but other tests didn't reproduce them, so the cause isn't confirmed.
 The error keeps HomeKit's description, domain, and code,
 and suggests showing iMCP Helper's window and retrying;
 the window can stay behind other windows.
-
-The helper advertises "\_imcp-helper.\_tcp" on the local-only DNS-SD interface,
-and iMCP finds it there, whether or not iMCP launched it.
-If more than one helper is running,
-iMCP tries the one at the chosen location first, then the others.
-Connections use TLS with the key from pairing as a pre-shared key,
-so a connection without the key fails the TLS handshake.
-The cipher suite adds an ECDHE key exchange,
-so a recorded connection stays secret even if the key or code is found later.
-The pairing connection uses a key derived from the code with PBKDF2,
-which makes each guess slow for a process
-that advertises itself as the helper while you pair.
-If you built the helper with an earlier version of iMCP,
-quit it and rebuild it with `Scripts/install-helper.sh`;
-iMCP refuses a helper that doesn't declare the current protocol version.
 With Home turned on in iMCP,
 `uv run Scripts/check-home.py <path-to-imcp-server>` runs a read-only
 integration check through iMCP.
@@ -911,6 +843,10 @@ which builds the `iMCP Helper` scheme for Mac Catalyst in its own
 derived-data directory and copies the product into the app.
 A direct target dependency selects the iOS variant of the helper,
 so the nested build is required.
+The script also writes the launch agent plist from
+[`Scripts/home-helper.launchd.plist.in`](/Scripts/home-helper.launchd.plist.in),
+naming the agent and its Mach service after iMCP's bundle identifier,
+and the app's entitlements let its sandbox look that Mach service up.
 Release builds set `EMBED_HOME_HELPER = NO` and leave the helper out.
 
 The HomeKit entitlement requires a development certificate and a
@@ -922,8 +858,7 @@ Signing & Capabilities tab.
 The first Mac Catalyst build for a new bundle ID can fail with
 "Entitlement com.apple.developer.homekit not found and could not be included in profile",
 because automatic provisioning registers the capability only for the iOS destination.
-`Scripts/install-helper.sh` handles this by building for iOS once and retrying.
-To do it by hand, build the helper once for iOS to register it,
+To work around it, build the helper once for iOS to register it,
 then build for Mac Catalyst:
 
 ```console
