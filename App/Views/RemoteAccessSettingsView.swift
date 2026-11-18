@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 /// The Settings pane for clients on the owner's other devices,
-/// which connect over HTTP to iMCP's own Tailscale node with an access token.
+/// which connect over HTTP to iMCP's own Tailscale node or Cloudflare Tunnel.
 struct RemoteAccessSettingsView: View {
     @ObservedObject var serverController: ServerController
 
@@ -15,16 +15,19 @@ struct RemoteAccessSettingsView: View {
     @State private var tokenToReroll: AccessToken?
     @State private var tokenToDelete: AccessToken?
     @State private var tokenError: String?
+    @State private var isAdvancedExpanded = false
 
     var body: some View {
         let tokens = serverController.accessTokens
         let storageError = serverController.accessTokenStorageError
 
         Form {
+            CloudflareTunnelSection(cloudflare: serverController.cloudflareTunnel)
+
             Section {
                 Toggle(isOn: enabledBinding) {
-                    Text("Allow Remote Access")
-                    Text("Lets clients on your other devices use iMCP over your Tailscale network.")
+                    Text("Tailscale")
+                    Text("Connects this Mac to your Tailscale network for private VPN or public Funnel access.")
                 }
 
                 if serverController.isRemoteAccessEnabled {
@@ -32,77 +35,127 @@ struct RemoteAccessSettingsView: View {
                         RemoteAccessStatusView(state: serverController.remoteAccessState)
                     }
                     nodeRows(for: serverController.remoteAccessState)
-                }
-            } footer: {
-                Text(
-                    "iMCP joins your tailnet as its own device, with an address that only iMCP can use. It accepts connections only from devices that you own, and each client needs an access token. Tailscale encrypts the connection."
-                )
-            }
 
-            if serverController.isRemoteAccessEnabled {
-                Section {
-                    LabeledContent("Device Name") {
-                        TextField(
-                            "Device Name",
-                            text: $hostnameDraft,
-                            prompt: Text(serverController.defaultRemoteAccessHostname)
-                        )
-                        .labelsHidden()
-                        .multilineTextAlignment(.trailing)
-                        .frame(width: 220)
-                        .onSubmit { serverController.remoteAccessHostname = hostnameDraft }
+                    Toggle(isOn: funnelBinding) {
+                        Text("Public Access (Tailscale Funnel)")
+                        Text("Exposes iMCP at a public .ts.net HTTPS address for cloud agents.")
                     }
-                    LabeledContent("Port") {
-                        TextField("Port", value: portBinding, format: .number.grouping(.never))
-                            .labelsHidden()
-                            .multilineTextAlignment(.trailing)
-                            .frame(width: 80)
-                    }
-                } footer: {
-                    Text(
-                        "The device name is iMCP's name on your tailnet, and the first part of its MagicDNS name. Changing the name or port reconnects iMCP to Tailscale."
-                    )
-                }
-            }
-
-            Section {
-                if let storageError {
-                    Label(storageError, systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.secondary)
-                } else if tokens.isEmpty {
-                    VStack(spacing: 4) {
-                        Text("No Access Tokens")
-                        Text("Create a token for each client that connects from another device.")
-                            .font(.caption)
-                    }
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-                } else {
-                    ForEach(tokens) { token in
-                        AccessTokenRow(
-                            serverController: serverController,
-                            token: token,
-                            edit: { editingToken = EditingToken(token: token) },
-                            reroll: { tokenToReroll = token },
-                            delete: { tokenToDelete = token }
-                        )
+                    if case .running(let endpoint) = serverController.remoteAccessState {
+                        switch endpoint.funnel {
+                        case .active(let url):
+                            LabeledContent("Connector URL") {
+                                HStack {
+                                    Text(url)
+                                        .textSelection(.enabled)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                    Button("Copy") { copyToPasteboard(url) }
+                                }
+                            }
+                        case .failed(let reason):
+                            Label(reason, systemImage: "exclamationmark.triangle")
+                                .foregroundStyle(.red)
+                            if FunnelPolicy.isMissingFunnelACLError(reason) {
+                                FunnelACLGuidanceView(ipv4Address: endpoint.ipv4Address)
+                            }
+                        case .off:
+                            if endpoint.funnelCapabilityGranted == false {
+                                FunnelACLGuidanceView(ipv4Address: endpoint.ipv4Address)
+                            }
+                        }
                     }
                 }
             } header: {
-                HStack {
-                    Text("Access Tokens")
-                    Spacer()
-                    Button("Create Token…") {
-                        editingToken = EditingToken(token: nil)
-                    }
-                    .disabled(storageError != nil)
-                }
+                Text("Tailscale")
             } footer: {
                 Text(
-                    "A token can use only the services and tools that are on in iMCP. When you turn off a service or tool, no token can use it, whatever the token's access allows."
+                    "iMCP joins your tailnet as its own device. Turn on Public Access (Tailscale Funnel) when you want cloud agents to connect through Tailscale."
                 )
+            }
+
+            Section {
+                DisclosureGroup("Developer & Advanced", isExpanded: $isAdvancedExpanded) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        if serverController.isRemoteAccessEnabled {
+                            LabeledContent("Tailscale Device Name") {
+                                TextField(
+                                    "Device Name",
+                                    text: $hostnameDraft,
+                                    prompt: Text(serverController.defaultRemoteAccessHostname)
+                                )
+                                .labelsHidden()
+                                .multilineTextAlignment(.trailing)
+                                .frame(width: 220)
+                                .onSubmit { serverController.remoteAccessHostname = hostnameDraft }
+                            }
+                            LabeledContent("Tailscale Port") {
+                                TextField("Port", value: portBinding, format: .number.grouping(.never))
+                                    .labelsHidden()
+                                    .multilineTextAlignment(.trailing)
+                                    .frame(width: 80)
+                            }
+                            if case .running(let endpoint) = serverController.remoteAccessState {
+                                LabeledContent("Private Tailnet URL") {
+                                    HStack {
+                                        Text(endpoint.url)
+                                            .font(.caption.monospaced())
+                                            .textSelection(.enabled)
+                                        Button("Copy") { copyToPasteboard(endpoint.url) }
+                                    }
+                                }
+                                if let dnsName = endpoint.dnsName {
+                                    LabeledContent("MagicDNS Name") {
+                                        Text(dnsName).textSelection(.enabled)
+                                    }
+                                }
+                                LabeledContent("Tailnet Address") {
+                                    VStack(alignment: .trailing) {
+                                        Text(endpoint.ipv4Address)
+                                        if let ipv6Address = endpoint.ipv6Address {
+                                            Text(ipv6Address)
+                                        }
+                                    }
+                                    .textSelection(.enabled)
+                                }
+                            }
+                            LabeledContent("Headless Login") {
+                                Button("Use Tailscale Auth Key…") { isEnteringAuthKey = true }
+                            }
+                        }
+
+                        Divider()
+
+                        HStack {
+                            Text("Manual Bearer Access Tokens")
+                                .font(.subheadline.weight(.medium))
+                            Spacer()
+                            Button("Create Token…") {
+                                editingToken = EditingToken(token: nil)
+                            }
+                            .disabled(storageError != nil)
+                        }
+
+                        if let storageError {
+                            Label(storageError, systemImage: "exclamationmark.triangle")
+                                .foregroundStyle(.secondary)
+                        } else if tokens.isEmpty {
+                            Text("No manual bearer tokens created. Cloud connectors use OAuth 2.1 automatically.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ForEach(tokens) { token in
+                                AccessTokenRow(
+                                    serverController: serverController,
+                                    token: token,
+                                    edit: { editingToken = EditingToken(token: token) },
+                                    reroll: { tokenToReroll = token },
+                                    delete: { tokenToDelete = token }
+                                )
+                            }
+                        }
+                    }
+                    .padding(.top, 6)
+                }
             }
         }
         .formStyle(.grouped)
@@ -138,7 +191,7 @@ struct RemoteAccessSettingsView: View {
             AccessTokenSecretView(
                 name: revealed.name,
                 secret: revealed.secret,
-                endpoint: serverController.remoteAccessState.endpoint
+                endpoint: serverController.preferredClientEndpoint
             )
         }
         .alert(
@@ -210,33 +263,7 @@ struct RemoteAccessSettingsView: View {
                 Text("Waiting for Approval")
                 Text("An admin of your tailnet must approve this device in the Tailscale admin console.")
             }
-        case .running(let endpoint):
-            LabeledContent("URL") {
-                HStack {
-                    Text(endpoint.url)
-                        .textSelection(.enabled)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Button("Copy") {
-                        copyToPasteboard(endpoint.url)
-                    }
-                }
-            }
-            if let dnsName = endpoint.dnsName {
-                LabeledContent("MagicDNS Name") {
-                    Text(dnsName)
-                        .textSelection(.enabled)
-                }
-            }
-            LabeledContent("Tailnet Address") {
-                VStack(alignment: .trailing) {
-                    Text(endpoint.ipv4Address)
-                    if let ipv6Address = endpoint.ipv6Address {
-                        Text(ipv6Address)
-                    }
-                }
-                .textSelection(.enabled)
-            }
+        case .running:
             LabeledContent("Tailscale Account") {
                 Button("Log Out…") { isConfirmingLogOut = true }
             }
@@ -254,6 +281,13 @@ struct RemoteAccessSettingsView: View {
         Binding(
             get: { serverController.isRemoteAccessEnabled },
             set: { serverController.isRemoteAccessEnabled = $0 }
+        )
+    }
+
+    private var funnelBinding: Binding<Bool> {
+        Binding(
+            get: { serverController.isRemoteAccessFunnelEnabled },
+            set: { serverController.isRemoteAccessFunnelEnabled = $0 }
         )
     }
 
@@ -366,6 +400,71 @@ private struct AuthKeyView: View {
         }
         .padding(20)
         .frame(width: 460)
+    }
+}
+
+/// The apps that the owner approved through public access, with a button to end each one.
+private struct ConnectedAppsSection: View {
+    @ObservedObject var model: OAuthConnectionsModel
+    @State private var appToRevoke: OAuthGrant?
+    @State private var revokeError: String?
+
+    var body: some View {
+        Section {
+            if let error = model.storageError {
+                Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.secondary)
+            } else if model.grants.isEmpty {
+                Text(
+                    "No apps are connected. When an app asks to connect through public access, you approve it here on your Mac."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            } else {
+                ForEach(model.grants) { grant in
+                    LabeledContent {
+                        Button("Revoke…", role: .destructive) { appToRevoke = grant }
+                    } label: {
+                        Text(grant.clientName)
+                        Text("Returns to \(grant.redirectHost)")
+                        Text(
+                            "Connected \(grant.createdAt.formatted(date: .abbreviated, time: .omitted)). "
+                                + (grant.lastUsedAt.map {
+                                    "Last used \($0.formatted(.relative(presentation: .named)))."
+                                }
+                                    ?? "Not used yet.")
+                        )
+                    }
+                }
+            }
+        } header: {
+            Text("Connected Apps")
+        } footer: {
+            Text("Revoking an app ends its access right away. It has to ask you to connect again.")
+        }
+        .confirmationDialog(
+            "Revoke \"\(appToRevoke?.clientName ?? "")\"?",
+            isPresented: Binding(get: { appToRevoke != nil }, set: { if !$0 { appToRevoke = nil } }),
+            presenting: appToRevoke
+        ) { grant in
+            Button("Revoke", role: .destructive) {
+                do {
+                    try model.revoke(grant.id)
+                } catch {
+                    revokeError = "\(error.localizedDescription) The app can't connect until iMCP saves the change."
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("The app loses access right away.")
+        }
+        .alert(
+            "Couldn't Revoke the App",
+            isPresented: Binding(get: { revokeError != nil }, set: { if !$0 { revokeError = nil } })
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(revokeError ?? "")
+        }
     }
 }
 
@@ -664,6 +763,357 @@ private struct AccessTokenSecretView: View {
         }
         .padding(20)
         .frame(width: 520)
+    }
+}
+
+/// Shows a copyable Tailscale ACL `nodeAttrs` snippet when the node lacks the `funnel` capability.
+private struct FunnelACLGuidanceView: View {
+    let ipv4Address: String
+    @Environment(\.openURL) private var openURL
+
+    private var snippet: String {
+        FunnelPolicy.tailscaleNodeAttrsSnippet(ipv4Address: ipv4Address)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Tailscale ACL Missing `funnel` Capability")
+                .font(.subheadline.weight(.semibold))
+            Text(
+                "Add this `nodeAttrs` entry to your Tailscale ACL policy so this node (\(ipv4Address)) can serve Funnel traffic:"
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            Text(snippet)
+                .font(.caption.monospaced())
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(8)
+                .background(RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.1)))
+            HStack {
+                Button("Copy nodeAttrs Snippet") {
+                    copyToPasteboard(snippet)
+                }
+                Button("Open Tailscale ACLs…") {
+                    if let url = URL(string: "https://login.tailscale.com/admin/acls/file") {
+                        openURL(url)
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+/// Guided setup and status for Cloudflare Tunnel (`cloudflared`).
+private struct CloudflareTunnelSection: View {
+    @ObservedObject var cloudflare: CloudflareTunnelController
+
+    @State private var isShowingCredentialSheet = false
+    @State private var isConfirmingLogOut = false
+    @State private var isAdvancedExpanded = false
+
+    var body: some View {
+        Section {
+            if cloudflare.account == nil {
+                loginRows
+            } else {
+                configuredRows
+            }
+        } header: {
+            Text("Cloudflare Tunnel")
+        } footer: {
+            Text(
+                "Exposes iMCP at your own custom HTTPS hostname via Cloudflare without needing Tailscale. iMCP provisions a per-Mac tunnel, sets its ingress to the local loopback server, and manages the proxied DNS CNAME record automatically."
+            )
+        }
+        .onAppear { cloudflare.refreshEnvironment() }
+        .sheet(isPresented: $isShowingCredentialSheet) {
+            CloudflareCredentialSheet(cloudflare: cloudflare)
+        }
+        .alert("Log Out of Cloudflare?", isPresented: $isConfirmingLogOut) {
+            Button("Log Out", role: .destructive) {
+                cloudflare.logOut()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Stops the Cloudflare tunnel and removes the saved Cloudflare token from the Keychain.")
+        }
+    }
+
+    @ViewBuilder
+    private var loginRows: some View {
+        LabeledContent("Status") {
+            CloudflareStatusView(state: cloudflare.state)
+        }
+
+        if case .failed(let reason) = cloudflare.state {
+            Label(reason, systemImage: "exclamationmark.triangle")
+                .foregroundStyle(.red)
+        }
+
+        if !cloudflare.isBinaryAvailable {
+            HStack {
+                Label(
+                    "Install `cloudflared` (`brew install cloudflared`) to run browser login and tunnels.",
+                    systemImage: "terminal"
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                Spacer()
+                Button("Copy Command") {
+                    copyToPasteboard("brew install cloudflared")
+                }
+            }
+        }
+
+        LabeledContent {
+            HStack {
+                Button("Use API Token…") {
+                    isShowingCredentialSheet = true
+                }
+                Button("Log In with Browser") {
+                    Task { await cloudflare.logInWithBrowser() }
+                }
+                .disabled(!cloudflare.isBinaryAvailable || cloudflare.state == .loggingIn)
+                if cloudflare.detectedCertURL != nil {
+                    Button("Use Local cert.pem") {
+                        Task { await cloudflare.useDetectedCert() }
+                    }
+                }
+            }
+        } label: {
+            Text("Connect Cloudflare")
+            Text("Sign in with `cloudflared tunnel login` or paste a Cloudflare API token / `cert.pem`.")
+        }
+    }
+
+    @ViewBuilder
+    private var configuredRows: some View {
+        Toggle(isOn: enabledBinding) {
+            Text("Public Access (Cloudflare Tunnel)")
+            Text("Serves iMCP publicly over HTTPS on your Cloudflare domain.")
+        }
+        .disabled(cloudflare.zones.isEmpty && !cloudflare.isEnabled)
+
+        LabeledContent("Status") {
+            CloudflareStatusView(state: cloudflare.state)
+        }
+
+        if case .failed(let reason) = cloudflare.state {
+            Label(reason, systemImage: "exclamationmark.triangle")
+                .foregroundStyle(.red)
+        }
+
+        if !cloudflare.isBinaryAvailable {
+            HStack {
+                Label("`cloudflared` binary not found (`brew install cloudflared`).", systemImage: "terminal")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                Spacer()
+                Button("Copy Command") {
+                    copyToPasteboard("brew install cloudflared")
+                }
+            }
+        }
+
+        if case .connected(let url, _, _) = cloudflare.state {
+            LabeledContent("Connector URL") {
+                HStack {
+                    Text(url)
+                        .textSelection(.enabled)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Button("Copy") { copyToPasteboard(url) }
+                }
+            }
+            DisclosureGroup("Developer & Advanced", isExpanded: $isAdvancedExpanded) {
+                VStack(alignment: .leading, spacing: 10) {
+                    domainRows
+                    if case .connected(_, let tunnelName, _) = cloudflare.state {
+                        LabeledContent("Tunnel") {
+                            Text(tunnelName)
+                                .monospaced()
+                                .textSelection(.enabled)
+                        }
+                    }
+                    actionRows
+                }
+                .padding(.top, 6)
+            }
+        } else {
+            domainRows
+            actionRows
+        }
+    }
+
+    @ViewBuilder
+    private var domainRows: some View {
+        if cloudflare.zones.count > 1 {
+            Picker("Domain", selection: $cloudflare.selectedZoneID) {
+                ForEach(cloudflare.zones) { zone in
+                    Text(zone.name).tag(zone.id)
+                }
+            }
+        } else if let zone = cloudflare.selectedZone {
+            LabeledContent("Domain") {
+                Text(zone.name)
+                    .textSelection(.enabled)
+            }
+        }
+
+        LabeledContent("Hostname") {
+            TextField(
+                "Hostname",
+                text: $cloudflare.hostnameDraft,
+                prompt: Text("imcp.\(cloudflare.selectedZone?.name ?? "example.com")")
+            )
+            .labelsHidden()
+            .multilineTextAlignment(.trailing)
+            .frame(width: 240)
+            .onSubmit {
+                Task { await cloudflare.provisionAndConnect() }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var actionRows: some View {
+        LabeledContent("Actions") {
+            HStack {
+                if case .connected = cloudflare.state {
+                    if isHostnameDirty {
+                        Button("Update & Reconnect") {
+                            Task { await cloudflare.provisionAndConnect() }
+                        }
+                    }
+                    Button("Disconnect") {
+                        cloudflare.disconnect()
+                    }
+                } else {
+                    Button("Provision & Connect") {
+                        Task { await cloudflare.provisionAndConnect() }
+                    }
+                    .disabled(
+                        cloudflare.selectedZone == nil
+                            || cloudflare.hostnameDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            || cloudflare.state == .provisioning
+                            || !cloudflare.isBinaryAvailable
+                    )
+                }
+                Button("Refresh Domains") {
+                    Task { await cloudflare.refreshZones() }
+                }
+                Button("Log Out…", role: .destructive) {
+                    isConfirmingLogOut = true
+                }
+            }
+        }
+    }
+
+    private var enabledBinding: Binding<Bool> {
+        Binding(
+            get: { cloudflare.isEnabled },
+            set: { cloudflare.setEnabled($0) }
+        )
+    }
+
+    private var isHostnameDirty: Bool {
+        guard let zone = cloudflare.selectedZone,
+            let resolved = CloudflareTunnelController.resolvedHostname(
+                input: cloudflare.hostnameDraft,
+                zoneName: zone.name
+            )
+        else { return false }
+        return resolved != cloudflare.configuredHostname
+    }
+}
+
+private struct CloudflareStatusView: View {
+    let state: CloudflareTunnelController.State
+
+    var body: some View {
+        switch state {
+        case .off:
+            Text("Not signed in")
+                .foregroundStyle(.secondary)
+        case .loggingIn:
+            Text("Waiting for browser login…")
+                .foregroundStyle(.secondary)
+        case .discoveringZones:
+            Text("Discovering domains…")
+                .foregroundStyle(.secondary)
+        case .ready:
+            Text("Ready")
+                .foregroundStyle(.secondary)
+        case .provisioning:
+            Text("Provisioning tunnel & DNS…")
+                .foregroundStyle(.secondary)
+        case .connected:
+            Text("Connected")
+                .foregroundStyle(.green)
+        case .failed(let reason):
+            Text(reason)
+                .foregroundStyle(.red)
+                .lineLimit(2)
+        }
+    }
+}
+
+private struct CloudflareCredentialSheet: View {
+    @ObservedObject var cloudflare: CloudflareTunnelController
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var input = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Sign In to Cloudflare")
+                .font(.headline)
+            Text(
+                "Paste a Cloudflare API token (with Zone:Read, DNS:Edit, and Cloudflare Tunnel:Edit permissions) or paste the contents of `cert.pem`."
+            )
+            .fixedSize(horizontal: false, vertical: true)
+
+            TextEditor(text: $input)
+                .font(.body.monospaced())
+                .frame(height: 110)
+                .padding(4)
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.3)))
+
+            HStack {
+                Button("Import cert.pem…") {
+                    chooseCertFile()
+                }
+                Spacer()
+                Button("Cancel") {
+                    dismiss()
+                }
+                .keyboardShortcut(.cancelAction)
+                Button("Continue") {
+                    let value = input
+                    dismiss()
+                    Task { await cloudflare.logIn(credentialInput: value) }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 500)
+    }
+
+    private func chooseCertFile() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.showsHiddenFiles = true
+        panel.message = "Select your Cloudflare cert.pem file (for example ~/.cloudflared/cert.pem)."
+        if panel.runModal() == .OK, let url = panel.url {
+            dismiss()
+            Task { await cloudflare.importCertPEM(from: url) }
+        }
     }
 }
 

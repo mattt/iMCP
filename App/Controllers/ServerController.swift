@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import MCP
 import OSLog
 import Ontology
@@ -252,6 +253,8 @@ final class ServerController: ObservableObject {
     /// and each connection without one gets its own.
     private var approvals = ApprovalQueue<ClientCredentialStore.Request, ApprovalWaiter>()
     private let approvalWindowController = ConnectionApprovalWindowController()
+    /// Apps that wait for the owner to approve public access through OAuth, keyed by request ID.
+    private var oauthApprovals = ApprovalQueue<OAuthApprovalRequest, OAuthApprovalWaiter>()
 
     private let networkManager = ServerNetworkManager()
 
@@ -289,8 +292,15 @@ final class ServerController: ObservableObject {
     @AppStorage("remoteAccessPort") private var remoteAccessPortValue = Int(RemoteAccessServer.defaultPort)
     /// The host name for iMCP's node, or empty for one made from the Mac's name.
     @AppStorage("remoteAccessHostname") private var remoteAccessHostnameValue = ""
+    /// Whether the server is also open to the internet through Tailscale Funnel. Off by default.
+    @AppStorage("remoteAccessFunnelEnabled") private var remoteAccessFunnelEnabled = false
     @Published private(set) var remoteAccessState: RemoteAccessServer.State = .off
     private let tokenStore = AccessTokenStore.shared
+    /// The apps that the owner approved through OAuth, for Settings.
+    let oauthConnections = OAuthConnectionsModel()
+    /// Manages Cloudflare Tunnel login, API provisioning, and `cloudflared` process lifecycle.
+    let cloudflareTunnel = CloudflareTunnelController()
+    private var cloudflareCancellables: Set<AnyCancellable> = []
     /// Applies remote access settings in the order that they change.
     private var remoteAccessConfigurationTask: Task<Void, Never>?
 
@@ -461,6 +471,16 @@ final class ServerController: ObservableObject {
         }
     }
 
+    var isRemoteAccessFunnelEnabled: Bool {
+        get { remoteAccessFunnelEnabled }
+        set {
+            guard newValue != remoteAccessFunnelEnabled else { return }
+            objectWillChange.send()
+            remoteAccessFunnelEnabled = newValue
+            applyRemoteAccessConfiguration()
+        }
+    }
+
     var remoteAccessPort: Int {
         get { remoteAccessPortValue }
         set {
@@ -586,11 +606,32 @@ final class ServerController: ObservableObject {
         try tokenStore.remove(id: id)
     }
 
+    /// All currently active public MCP endpoints (`https://<host>/mcp`) from Cloudflare Tunnel and Tailscale Funnel.
+    var activePublicURLs: [(provider: String, url: String)] {
+        var urls: [(provider: String, url: String)] = []
+        if let cfURL = cloudflareTunnel.state.activeURL {
+            urls.append(("Cloudflare Tunnel", cfURL))
+        }
+        if case .running(let endpoint) = remoteAccessState,
+            case .active(let funnelURL) = endpoint.funnel
+        {
+            urls.append(("Tailscale Funnel", funnelURL))
+        }
+        return urls
+    }
+
+    /// Preferred URL shown in token setup instructions.
+    var preferredClientEndpoint: String? {
+        activePublicURLs.first?.url ?? remoteAccessState.endpoint
+    }
+
     private func applyRemoteAccessConfiguration() {
         let configuration = RemoteAccessServer.Configuration(
             isEnabled: remoteAccessEnabled,
             port: UInt16(clamping: remoteAccessPortValue),
-            hostname: remoteAccessHostname
+            hostname: remoteAccessHostname,
+            funnelEnabled: remoteAccessFunnelEnabled,
+            cloudflareHostname: cloudflareTunnel.activeHostname
         )
         afterRemoteAccessConfiguration { await $0.configure(configuration) }
     }
@@ -602,6 +643,67 @@ final class ServerController: ObservableObject {
         remoteAccessConfigurationTask = Task {
             await previous?.value
             await body(await networkManager.remoteAccess)
+        }
+    }
+
+    // MARK: - OAuth Approval
+
+    /// Asks the owner to approve an app that wants public access, and waits for the answer.
+    /// A denial, an expiry, and a refusal for too many requests all answer `.denied`.
+    func requestOAuthApproval(_ request: OAuthApprovalRequest) async -> OAuthDecision {
+        await withCheckedContinuation { continuation in
+            let admission = oauthApprovals.enqueue(
+                key: request.id,
+                cooldownKey: nil,
+                request: request,
+                id: request.id,
+                waiter: OAuthApprovalWaiter(resume: { continuation.resume(returning: $0) }),
+                now: .now
+            )
+            switch admission {
+            case .show(let deadline):
+                scheduleOAuthExpiry(at: deadline)
+                if let entry = oauthApprovals.entries.last { presentOAuthApproval(entry) }
+            case .queued(let deadline):
+                scheduleOAuthExpiry(at: deadline)
+            case .coalesced, .rejected:
+                continuation.resume(returning: .denied)
+            }
+        }
+    }
+
+    private func presentOAuthApproval(_ entry: ApprovalQueue<OAuthApprovalRequest, OAuthApprovalWaiter>.Entry) {
+        let key = entry.key
+        approvalWindowController.showOAuthApprovalWindow(
+            id: key,
+            request: entry.request,
+            enabledServiceNames: computedServiceConfigs.filter { $0.binding.wrappedValue }.map { $0.name },
+            onApprove: { readOnly in self.finishOAuthApproval(key: key, decision: .approved(readOnly: readOnly)) },
+            onDeny: { self.finishOAuthApproval(key: key, decision: .denied) }
+        )
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func finishOAuthApproval(key: String, decision: OAuthDecision) {
+        let resolution = oauthApprovals.resolve(key: key, approved: decision != .denied, now: .now)
+        guard let entry = resolution.removed.first else { return }
+        log.notice(
+            "\(decision == .denied ? "Denying" : "Approving") public access for app: \(entry.request.clientName, privacy: .public)"
+        )
+        for (_, waiter) in entry.waiters { waiter.resume(decision) }
+        resolution.promoted.forEach(presentOAuthApproval)
+    }
+
+    private func scheduleOAuthExpiry(at deadline: ContinuousClock.Instant) {
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(until: deadline, clock: .continuous)
+            guard let self else { return }
+            let resolution = self.oauthApprovals.expire(now: .now)
+            for entry in resolution.removed {
+                self.approvalWindowController.closeWindow(for: entry.key)
+                for (_, waiter) in entry.waiters { waiter.resume(.denied) }
+            }
+            resolution.promoted.forEach(self.presentOAuthApproval)
         }
     }
 
@@ -717,6 +819,20 @@ final class ServerController: ObservableObject {
     }
 
     init() {
+        cloudflareTunnel.onActiveHostnameChanged = { [weak self] _ in
+            self?.applyRemoteAccessConfiguration()
+        }
+        cloudflareTunnel.objectWillChange
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }
+            .store(in: &cloudflareCancellables)
+        NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)
+            .sink { [weak self] _ in
+                self?.cloudflareTunnel.stopRunningProcess()
+            }
+            .store(in: &cloudflareCancellables)
+
         Task { [self] in
             // Initialize bindings from AppStorage before the server starts.
             // The menu sends the enabled state only when its content first appears,
@@ -771,9 +887,33 @@ final class ServerController: ObservableObject {
                     Task { @MainActor in self?.remoteAccessState = state }
                 },
                 tokenUsage: { [weak self] in
-                    Task { @MainActor in self?.objectWillChange.send() }
+                    Task { @MainActor in
+                        self?.objectWillChange.send()
+                        self?.oauthConnections.reload()
+                    }
                 }
             )
+            await self.networkManager.remoteAccess.setPublicLoopbackHandler { [weak self] loopbackState in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    switch loopbackState {
+                    case .listening(let port):
+                        self.cloudflareTunnel.handleLoopbackPortChange(port)
+                    case .stopped:
+                        self.cloudflareTunnel.handleLoopbackPortChange(nil)
+                    case .failed(let message):
+                        self.cloudflareTunnel.reportLoopbackFailure(message)
+                    }
+                }
+            }
+            await self.networkManager.remoteAccess.setOAuthApprovalHandler { [weak self] request in
+                guard let self else { return .denied }
+                return await self.requestOAuthApproval(request)
+            }
+            self.oauthConnections.didRevoke = { [weak self] id in
+                guard let self else { return }
+                Task { await self.networkManager.remoteAccess.closeSessions(forToken: id) }
+            }
             self.applyRemoteAccessConfiguration()
         }
     }
@@ -792,6 +932,7 @@ final class ServerController: ObservableObject {
     }
 
     func stopServer() async {
+        cloudflareTunnel.stopRunningProcess()
         await networkManager.stop()
         updateServerStatus("Stopped")
     }
@@ -937,6 +1078,11 @@ final class ServerController: ObservableObject {
     }
 }
 
+/// Resumes an app that waits for the owner to decide on public access.
+private struct OAuthApprovalWaiter {
+    let resume: (OAuthDecision) -> Void
+}
+
 /// The callbacks that resume a connection waiting for approval.
 private struct ApprovalWaiter {
     let approve: () -> Void
@@ -967,7 +1113,10 @@ extension RemoteAccessServer {
             try? await gate.approve { true }
             // Read current permissions so changes apply to open sessions.
             await networkManager.registerHandlers(for: server, connectionID: UUID(), gate: gate) { tool in
-                tokenStore.token(id: tokenID)?.permissions.allows(tool) ?? false
+                // A session belongs to an access token or to an OAuth grant.
+                // Read current permissions so that revoking or editing applies at once.
+                (tokenStore.token(id: tokenID)?.permissions ?? OAuthAuthority.shared.grant(id: tokenID)?.permissions)?
+                    .allows(tool) ?? false
             }
             return server
         }

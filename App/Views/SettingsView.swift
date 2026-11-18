@@ -272,6 +272,10 @@ struct ClientsSettingsView: View {
                 }
             }
 
+            if !serverController.oauthConnections.grants.isEmpty || !serverController.activePublicURLs.isEmpty {
+                ConnectedOAuthAppsSection(model: serverController.oauthConnections)
+            }
+
             if !legacyTrustedClientNames.isEmpty {
                 Section {
                     ForEach(legacyTrustedClientNames, id: \.self) { name in
@@ -300,6 +304,65 @@ struct ClientsSettingsView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Each client needs your approval again the next time it connects.")
+        }
+    }
+}
+/// Connected OAuth 2.1 cloud apps, shown in the Clients pane.
+struct ConnectedOAuthAppsSection: View {
+    @ObservedObject var model: OAuthConnectionsModel
+    @State private var appToRevoke: OAuthGrant?
+    @State private var revokeError: String?
+
+    var body: some View {
+        Section {
+            if let error = model.storageError {
+                Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.secondary)
+            } else if model.grants.isEmpty {
+                Text("No cloud apps connected yet.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(model.grants) { grant in
+                    LabeledContent {
+                        Button("Revoke…", role: .destructive) { appToRevoke = grant }
+                    } label: {
+                        Text(grant.clientName)
+                        Text("Returns to \(grant.redirectHost)")
+                        Text(
+                            "Connected \(grant.createdAt.formatted(date: .abbreviated, time: .omitted)). "
+                                + (grant.lastUsedAt.map {
+                                    "Last used \($0.formatted(.relative(presentation: .named)))."
+                                } ?? "Not used yet.")
+                        )
+                    }
+                }
+            }
+        } header: {
+            Text("Connected Cloud Apps (OAuth)")
+        } footer: {
+            Text("Revoking a cloud app ends its access right away.")
+        }
+        .confirmationDialog(
+            "Revoke \"\(appToRevoke?.clientName ?? "")\"?",
+            isPresented: Binding(get: { appToRevoke != nil }, set: { if !$0 { appToRevoke = nil } }),
+            presenting: appToRevoke
+        ) { grant in
+            Button("Revoke", role: .destructive) {
+                do {
+                    try model.revoke(grant.id)
+                } catch {
+                    revokeError = error.localizedDescription
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+        .alert(
+            "Couldn't Revoke the App",
+            isPresented: Binding(get: { revokeError != nil }, set: { if !$0 { revokeError = nil } })
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(revokeError ?? "")
         }
     }
 }

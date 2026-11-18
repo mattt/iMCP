@@ -31,10 +31,10 @@
     {
       "identity" : "libtailscale",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/mattt/libtailscale",
+      "location" : "https://github.com/oliverames/libtailscale",
       "state" : {
-        "revision" : "73c25e6250a0220219107ab545d6ab4fdc110563",
-        "version" : "0.2.0-imcp.2"
+        "revision" : "3cf964ea1668c0c84eef4c88fd6ed8162d776b4e",
+        "version" : "0.2.0-imcp.2-funnel.1"
       }
     },
     {

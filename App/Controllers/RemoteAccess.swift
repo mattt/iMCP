@@ -28,6 +28,12 @@ protocol TailnetNode: Sendable {
     /// Listens for TCP connections on one of the node's tailnet addresses.
     func listen(on address: String, port: UInt16) async throws -> any TailnetListener
     func logout() async throws
+    /// Publishes the node on the internet through Tailscale Funnel,
+    /// forwarding HTTPS connections to `127.0.0.1` at the port.
+    /// Returns the node's public host name.
+    func enableFunnel(localPort: UInt16) async throws -> String
+    /// Stops Funnel and clears its saved configuration.
+    func disableFunnel() async throws
     /// Stops the node.
     /// The node's listeners and connections close.
     func close() async
@@ -98,10 +104,13 @@ struct TailnetStatus: Equatable, Sendable {
     var state: State
     /// The host names of the other nodes, by stable ID.
     var peerNames: [String: String] = [:]
+    /// Whether the tailnet policy grants this node the `funnel` capability, when reported in status JSON.
+    var funnelCapabilityGranted: Bool? = nil
 
-    init(state: State, peerNames: [String: String] = [:]) {
+    init(state: State, peerNames: [String: String] = [:], funnelCapabilityGranted: Bool? = nil) {
         self.state = state
         self.peerNames = peerNames
+        self.funnelCapabilityGranted = funnelCapabilityGranted
     }
 
     /// Reads the JSON encoding of a node's `ipnstate.Status`.
@@ -113,6 +122,7 @@ struct TailnetStatus: Equatable, Sendable {
             var TailscaleIPs: [String]?
             var UserID: Int64?
             var Tags: [String]?
+            var Capabilities: [String]?
         }
         struct Status: Decodable {
             var BackendState: String
@@ -153,6 +163,11 @@ struct TailnetStatus: Equatable, Sendable {
                 return
             }
             let dnsName = node.DNSName.map { $0.hasSuffix(".") ? String($0.dropLast()) : $0 }
+            if let capabilities = node.Capabilities {
+                funnelCapabilityGranted = capabilities.contains {
+                    $0 == "funnel" || $0.hasSuffix("/funnel")
+                }
+            }
             state = .running(
                 TailnetSelf(
                     stableID: stableID,
@@ -179,6 +194,11 @@ struct TailnetStatus: Equatable, Sendable {
 /// that belongs to the same Tailscale user as the node,
 /// and must carry an access token.
 /// Sessions follow the 2025-11-25 Streamable HTTP transport.
+///
+/// When public access is on, the node also serves the internet through Tailscale Funnel.
+/// Funnel forwards each request to a listener on 127.0.0.1,
+/// which can't tell who sent it, so those requests get none of the tailnet's trust.
+/// See `FunnelPolicy`.
 actor RemoteAccessServer {
     enum State: Equatable, Sendable {
         case off
@@ -214,12 +234,35 @@ actor RemoteAccessServer {
         var dnsName: String?
         var ipv4Address: String
         var ipv6Address: String?
+        var funnel: Funnel = .off
+        /// Whether the tailnet policy reports the `funnel` capability for this node.
+        var funnelCapabilityGranted: Bool? = nil
+    }
+
+    /// Whether the server is open to the internet.
+    enum Funnel: Equatable, Sendable {
+        case off
+        /// The URL that anyone on the internet can use, with a token.
+        case active(url: String)
+        /// Funnel didn't start. The tailnet server keeps running.
+        case failed(String)
+    }
+
+    /// State of the shared public loopback listener (`127.0.0.1:<port>`).
+    enum PublicLoopbackState: Equatable, Sendable {
+        case stopped
+        case listening(port: UInt16)
+        case failed(String)
     }
 
     struct Configuration: Equatable, Sendable {
         var isEnabled: Bool
         var port: UInt16
         var hostname: String
+        /// Whether to also serve the internet through Tailscale Funnel.
+        var funnelEnabled = false
+        /// The public hostname served through Cloudflare Tunnel, when Cloudflare Tunnel is enabled.
+        var cloudflareHostname: String? = nil
     }
 
     static let defaultPort: UInt16 = 4627
@@ -235,7 +278,7 @@ actor RemoteAccessServer {
     private struct Session {
         let tokenID: UUID
         /// The stable ID of the device that started the session.
-        let deviceID: String
+        let deviceID: String?
         let transport: StatefulHTTPServerTransport
         let server: MCP.Server
         var lastActivity: Date
@@ -248,10 +291,14 @@ actor RemoteAccessServer {
     private let makeSessionServer: @Sendable (UUID) async -> MCP.Server?
     /// How long iMCP trusts a whois answer before it asks again.
     private let peerLifetime: TimeInterval
+    private let makeLocalListener: @Sendable () async throws -> any LocalForwardListener
+    /// The OAuth authorization server for public access.
+    private let oauthEndpoints: OAuthEndpoints
 
     private var configuration = Configuration(isEnabled: false, port: defaultPort, hostname: "")
     private var stateHandler: (@Sendable (State) -> Void)?
     private var tokenUsageHandler: (@Sendable () -> Void)?
+    private var publicLoopbackHandler: (@Sendable (PublicLoopbackState) -> Void)?
     private var state: State = .off {
         didSet {
             guard state != oldValue else { return }
@@ -262,6 +309,8 @@ actor RemoteAccessServer {
 
     /// Counts node starts, so that work for a stopped node can tell that it's stale.
     private var generation = 0
+    /// Counts public loopback listener starts, independent of Tailscale node restarts.
+    private var publicGeneration = 0
     private var node: (any TailnetNode)?
     private var monitorTask: Task<Void, Never>?
     /// The node's identity, while the server listens on its address.
@@ -269,6 +318,23 @@ actor RemoteAccessServer {
     private var isListening = false
     /// The tasks that serve open connections.
     private var connections: [UUID: Task<Void, Never>] = [:]
+    /// The tasks that serve connections that came through the public loopback listener.
+    private var funnelConnections: [UUID: Task<Void, Never>] = [:]
+    private var funnelListener: (any LocalForwardListener)?
+    /// The node's public name, while Tailscale Funnel is on.
+    private var tailscaleFunnelHost: String?
+    /// The public hostname served through Cloudflare Tunnel, while Cloudflare Tunnel is on.
+    private var cloudflareHost: String?
+    private var funnelState: Funnel = .off
+    /// Whether this node start already turned Funnel on or decided not to.
+    private var funnelConfigured = false
+    /// Whether this node start already cleared the Funnel configuration that an earlier run left.
+    private var funnelCleared = false
+    /// Whether this node start asked for Funnel, so that a later stop clears what the request may have saved.
+    private var funnelRequested = false
+    /// The request to turn Funnel on, while it's in flight.
+    private var funnelEnableTask: Task<String, any Error>?
+    private var failedAuth = FailedAuthLimiter()
     private var peers: [String: (peer: TailnetPeer?, expires: Date)] = [:]
     private var sessions: [String: Session] = [:]
     /// Counts the times that every session closed,
@@ -282,13 +348,19 @@ actor RemoteAccessServer {
         stateDirectory: URL,
         makeNode: @escaping @Sendable (TailnetNodeConfiguration) async throws -> any TailnetNode,
         makeSessionServer: @escaping @Sendable (UUID) async -> MCP.Server?,
-        peerLifetime: TimeInterval = 60
+        peerLifetime: TimeInterval = 60,
+        makeLocalListener: @escaping @Sendable () async throws -> any LocalForwardListener = {
+            try await LoopbackListener.start()
+        },
+        oauth: OAuthAuthority = .shared
     ) {
+        self.oauthEndpoints = OAuthEndpoints(authority: oauth)
         self.tokenStore = tokenStore
         self.stateDirectory = stateDirectory
         self.makeNode = makeNode
         self.makeSessionServer = makeSessionServer
         self.peerLifetime = peerLifetime
+        self.makeLocalListener = makeLocalListener
     }
 
     func setHandlers(
@@ -300,21 +372,54 @@ actor RemoteAccessServer {
         state(self.state)
     }
 
+    /// Sets how iMCP notifies the Cloudflare tunnel controller when the shared public loopback listener starts or stops.
+    func setPublicLoopbackHandler(_ handler: (@Sendable (PublicLoopbackState) -> Void)?) {
+        publicLoopbackHandler = handler
+        if let port = funnelListener?.port, cloudflareHost != nil {
+            handler?(.listening(port: port))
+        }
+    }
+
+    /// Sets how iMCP asks its owner to approve an app that wants public access through OAuth.
+    func setOAuthApprovalHandler(_ handler: OAuthEndpoints.ApprovalHandler?) {
+        oauthEndpoints.setApprovalHandler(handler)
+    }
+
     /// Starts the node when remote access is on, and stops it when it's off.
-    /// A change to the port or host name restarts the node.
+    /// A change to the port or host name restarts the node; a Cloudflare hostname change updates only the public pipeline.
     func configure(_ configuration: Configuration) async {
         guard configuration != self.configuration else { return }
+        let previous = self.configuration
         self.configuration = configuration
-        guard configuration.isEnabled else {
-            await stopNode()
-            state = .off
-            return
+
+        let tailscaleChanged =
+            configuration.isEnabled != previous.isEnabled
+            || configuration.port != previous.port
+            || configuration.hostname != previous.hostname
+            || configuration.funnelEnabled != previous.funnelEnabled
+
+        let normalizedCloudflare = configuration.cloudflareHostname
+            .map(FunnelPolicy.normalizedHost)
+            .flatMap { $0.isEmpty ? nil : $0 }
+        cloudflareHost = normalizedCloudflare
+
+        if tailscaleChanged {
+            if configuration.isEnabled {
+                await startNode()
+            } else {
+                await stopNode()
+                state = .off
+            }
         }
-        await startNode()
+
+        await syncPublicLoopbackListener()
     }
 
     func stop() async {
-        await configure(Configuration(isEnabled: false, port: configuration.port, hostname: configuration.hostname))
+        var off = configuration
+        off.isEnabled = false
+        off.cloudflareHostname = nil
+        await configure(off)
     }
 
     // MARK: Node
@@ -380,7 +485,27 @@ actor RemoteAccessServer {
         // A cancelled connection ends its stream and handles no more requests.
         // Each task closes its own connection, because closing it during a read isn't safe.
         for task in connections.values { task.cancel() }
-        await closeAllSessions()
+        // A request in flight can still save its configuration, so let it finish before clearing.
+        if let pending = funnelEnableTask {
+            _ = try? await pending.value
+        }
+        let hadFunnel = tailscaleFunnelHost != nil || funnelRequested
+        tailscaleFunnelHost = nil
+        funnelState = .off
+        funnelConfigured = false
+        funnelCleared = false
+        funnelRequested = false
+        if cloudflareHost == nil {
+            shutdownPublicLoopbackListener()
+            await closeAllSessions()
+        } else {
+            await closeSessions { $0.deviceID != nil }
+        }
+        if hadFunnel {
+            // Funnel's configuration is saved with the node, so clear it,
+            // or the public name would keep forwarding to a port that another process could take.
+            await clearFunnel(node)
+        }
         await node?.close()
     }
 
@@ -435,6 +560,13 @@ actor RemoteAccessServer {
             return
         }
 
+        // An earlier run may have left Funnel on. Clear it before anything can return early.
+        if !funnelCleared {
+            funnelCleared = true
+            await clearFunnel(node)
+            guard current == generation else { return }
+        }
+
         guard !me.isTagged else {
             if identity != nil {
                 identity = nil
@@ -472,15 +604,165 @@ actor RemoteAccessServer {
             }
         }
 
+        if !funnelConfigured {
+            funnelConfigured = true
+            if configuration.funnelEnabled {
+                await startFunnel(node, generation: current)
+                guard current == generation else { return }
+            }
+        }
+
         let host = me.dnsName ?? me.ipv4Address
         state = .running(
             Endpoint(
                 url: "http://\(host):\(configuration.port)/mcp",
                 dnsName: me.dnsName,
                 ipv4Address: me.ipv4Address,
-                ipv6Address: me.ipv6Address
+                ipv6Address: me.ipv6Address,
+                funnel: funnelState,
+                funnelCapabilityGranted: status.funnelCapabilityGranted
             )
         )
+    }
+
+    // MARK: Public Loopback & Funnel
+
+    private func ensurePublicLoopbackListener() async throws -> any LocalForwardListener {
+        if let existing = funnelListener {
+            return existing
+        }
+        let local = try await makeLocalListener()
+        publicGeneration += 1
+        let currentPublic = publicGeneration
+        funnelListener = local
+        // Accept first, so that no public request meets a closed port.
+        acceptFunnelConnections(from: local, publicGeneration: currentPublic)
+        return local
+    }
+
+    private func shutdownPublicLoopbackListener() {
+        publicGeneration += 1
+        for task in funnelConnections.values { task.cancel() }
+        funnelListener?.shutdown()
+        funnelListener = nil
+        failedAuth = FailedAuthLimiter()
+    }
+
+    private func syncPublicLoopbackListener() async {
+        if cloudflareHost != nil {
+            do {
+                let local = try await ensurePublicLoopbackListener()
+                publicLoopbackHandler?(.listening(port: local.port))
+            } catch {
+                log.error("Public access listener failed: \(error)")
+                publicLoopbackHandler?(.failed(error.localizedDescription))
+            }
+            return
+        }
+
+        publicLoopbackHandler?(.stopped)
+        let neededForTailscale = tailscaleFunnelHost != nil || funnelEnableTask != nil
+        if !neededForTailscale {
+            shutdownPublicLoopbackListener()
+            if !configuration.isEnabled {
+                await closeAllSessions()
+            }
+        }
+    }
+
+    /// Listens on 127.0.0.1 and asks Tailscale to forward public HTTPS connections to it.
+    private func startFunnel(_ node: any TailnetNode, generation current: Int) async {
+        let local: any LocalForwardListener
+        do {
+            local = try await ensurePublicLoopbackListener()
+        } catch {
+            log.error("Public access listener failed: \(error)")
+            guard current == generation else { return }
+            funnelState = .failed("iMCP couldn't listen for public connections: \(error.localizedDescription)")
+            return
+        }
+        guard current == generation else {
+            if cloudflareHost == nil {
+                shutdownPublicLoopbackListener()
+            }
+            return
+        }
+        funnelRequested = true
+        let port = local.port
+        let enable = Task { try await node.enableFunnel(localPort: port) }
+        funnelEnableTask = enable
+        defer { funnelEnableTask = nil }
+        do {
+            let host = FunnelPolicy.normalizedHost(try await enable.value)
+            guard current == generation else { return }
+            tailscaleFunnelHost = host
+            funnelState = .active(url: FunnelPolicy.publicURL(host: host))
+            log.notice("Public access is on")
+        } catch {
+            log.error("Couldn't turn on Funnel: \(error)")
+            guard current == generation else { return }
+            if cloudflareHost == nil {
+                shutdownPublicLoopbackListener()
+            }
+            funnelState = .failed("Tailscale didn't turn on Funnel: \(error.localizedDescription)")
+        }
+    }
+
+    private func clearFunnel(_ node: (any TailnetNode)?) async {
+        do {
+            try await node?.disableFunnel()
+        } catch {
+            log.error("Couldn't clear Funnel: \(error)")
+        }
+    }
+
+    private func acceptFunnelConnections(from listener: any LocalForwardListener, publicGeneration current: Int) {
+        Task { [weak self] in
+            while true {
+                let connection: any TailnetConnection
+                do {
+                    connection = try await listener.accept()
+                } catch {
+                    break
+                }
+                guard let self else {
+                    await connection.close()
+                    return
+                }
+                await self.acceptFunnel(connection, publicGeneration: current)
+            }
+        }
+    }
+
+    private func acceptFunnel(_ connection: any TailnetConnection, publicGeneration current: Int) async {
+        guard current == publicGeneration, !publicHosts.isEmpty,
+            funnelConnections.count < FunnelPolicy.maximumConnections
+        else {
+            await connection.close()
+            return
+        }
+        let id = UUID()
+        let http = HTTPServerConnection(
+            connection,
+            limits: .publicInternet,
+            idleTimeout: FunnelPolicy.idleTimeout,
+            requestDeadline: FunnelPolicy.requestDeadline
+        )
+        funnelConnections[id] = Task {
+            await http.serve(
+                { request in
+                    let response = await self.respondPublic(to: request)
+                    Self.logPublicRequest(request, statusCode: response.statusCode)
+                    return (response, keepAlive: !FunnelPolicy.closesConnection(afterStatus: response.statusCode))
+                },
+                streamEnded: { sessionID in await self.streamEnded(sessionID: sessionID) }
+            )
+            self.funnelConnectionClosed(id)
+        }
+    }
+
+    private func funnelConnectionClosed(_ id: UUID) {
+        funnelConnections.removeValue(forKey: id)
     }
 
     private func acceptConnections(
@@ -532,11 +814,11 @@ actor RemoteAccessServer {
                         let error = MCPError.invalidRequest(
                             "Forbidden: Only devices that belong to the owner of this node can connect."
                         )
-                        return (MCP.HTTPResponse.error(statusCode: 403, error), keepAlive: false)
+                        return (ServedResponse.mcp(.error(statusCode: 403, error)), keepAlive: false)
                     }
                     let response = await self.respond(to: request, from: peer)
                     Self.logRequest(request, response: response, from: peer)
-                    return (response, keepAlive: true)
+                    return (.mcp(response), keepAlive: true)
                 },
                 streamEnded: { sessionID in await self.streamEnded(sessionID: sessionID) }
             )
@@ -626,6 +908,13 @@ actor RemoteAccessServer {
         )
     }
 
+    /// Logs a request that came through Funnel, without its body, credentials, or address.
+    private static func logPublicRequest(_ request: HTTPRequestMessage, statusCode: Int) {
+        log.info(
+            "Public request: \(request.method, privacy: .public) \(request.path, privacy: .public), token \(request.header(HTTPHeaderName.authorization) == nil ? "none" : "set", privacy: .public) -> \(statusCode)"
+        )
+    }
+
     func respond(to message: HTTPRequestMessage, from peer: TailnetPeer) async -> MCP.HTTPResponse {
         guard message.path == "/mcp" else {
             return .error(statusCode: 404, .invalidRequest("Not Found: The MCP endpoint is /mcp."))
@@ -652,10 +941,152 @@ actor RemoteAccessServer {
         if let bound = token.boundDevice, bound.stableID != peer.stableID {
             return Self.rejectDevice(peer)
         }
+        return await continueRequest(
+            message,
+            request,
+            caller: Caller(id: token.id, name: token.name, token: token),
+            peer: peer,
+            validator: originValidator
+        )
+    }
 
+    /// All active public hosts allowed on the shared loopback pipeline.
+    var publicHosts: Set<String> {
+        var hosts: Set<String> = []
+        if let tailscaleFunnelHost { hosts.insert(tailscaleFunnelHost) }
+        if let cloudflareHost { hosts.insert(cloudflareHost) }
+        return hosts
+    }
+
+    /// The loopback port the shared public listener is listening on, if active.
+    var publicLoopbackPort: UInt16? { funnelListener?.port }
+
+    /// Whether any public host is active, for tests.
+    var hasFunnelHost: Bool { !publicHosts.isEmpty }
+
+    /// Answers a request that came through the shared public loopback listener (Tailscale Funnel or Cloudflare Tunnel).
+    ///
+    /// The request is internet traffic, whatever its address says.
+    /// The OAuth paths come first, because they are how an app gets a token,
+    /// and they need none. Everything else needs an access token that isn't bound to a tailnet device,
+    /// or an OAuth access token issued for this endpoint.
+    /// The `Host` and `Origin` must name an active public host for every path.
+    func respondPublic(to message: HTTPRequestMessage) async -> ServedResponse {
+        let hosts = publicHosts
+        guard !hosts.isEmpty else { return .mcp(Self.unavailableResponse) }
+        let validator = FunnelPolicy.originValidator(hosts: hosts)
+        let request = MCP.HTTPRequest(
+            method: message.method,
+            headers: message.headers,
+            body: message.body.isEmpty ? nil : message.body,
+            path: message.path
+        )
+        let context = HTTPValidationContext(
+            httpMethod: message.method,
+            sessionID: nil,
+            isInitializationRequest: false,
+            supportedProtocolVersions: MCP.Version.supported
+        )
+
+        if OAuthEndpoints.handles(path: message.path) {
+            // A browser's top-level navigation and a server-side client send no `Origin`,
+            // and a page on another site does, so the check stops cross-site requests from browsers.
+            if let rejection = validator.validate(request, context: context) {
+                return .mcp(rejection)
+            }
+            guard let requestHost = FunnelPolicy.matchedHost(in: message.header("Host"), allowedHosts: hosts) else {
+                return .mcp(.error(statusCode: 421, .invalidRequest("Misdirected Request")))
+            }
+            return await oauthEndpoints.handle(message, host: requestHost)
+        }
+
+        let requestHost = FunnelPolicy.matchedHost(in: message.header("Host"), allowedHosts: hosts)
+        let challengeHost = requestHost ?? hosts.sorted().first!
+        let resource = requestHost.map(FunnelPolicy.publicURL(host:))
+        let oauth = oauthEndpoints.authority
+        let decision = FunnelPolicy.authorize(
+            authorizationField: message.header(HTTPHeaderName.authorization),
+            lookup: tokenStore.token(secret:),
+            oauthLookup: { token in
+                guard let resource else { return nil }
+                return oauth.authenticate(accessToken: token, resource: resource)
+            },
+            limiter: &failedAuth
+        )
+        let caller: Caller
+        switch decision {
+        case .allowed(let allowed):
+            caller = Caller(id: allowed.id, name: allowed.name, token: allowed)
+        case .allowedOAuth(let grant):
+            caller = Caller(id: grant.id, name: grant.clientName, token: nil)
+        case .unauthorized:
+            return .mcp(
+                Self.publicUnauthorizedResponse(
+                    host: challengeHost,
+                    presentedToken: message.header(HTTPHeaderName.authorization) != nil
+                )
+            )
+        case .rateLimited(let retryAfter):
+            return .mcp(
+                .error(
+                    statusCode: 429,
+                    .invalidRequest("Too Many Requests: Try again later."),
+                    extraHeaders: ["Retry-After": String(retryAfter)]
+                )
+            )
+        case .boundToDevice:
+            return .mcp(
+                .error(
+                    statusCode: 403,
+                    .invalidRequest(
+                        "Forbidden: This access token belongs to a device on the tailnet. Create a token for public access."
+                    )
+                )
+            )
+        }
+        guard message.path == "/mcp" else {
+            return .mcp(.error(statusCode: 404, .invalidRequest("Not Found: The MCP endpoint is /mcp.")))
+        }
+        if let rejection = validator.validate(request, context: context) {
+            return .mcp(rejection)
+        }
+        return .mcp(await continueRequest(message, request, caller: caller, peer: nil, validator: validator))
+    }
+
+    /// The `401` for a request through Funnel.
+    /// It points clients to the protected resource metadata, so that an OAuth client can find the way to get a token.
+    static func publicUnauthorizedResponse(host: String, presentedToken: Bool) -> MCP.HTTPResponse {
+        var challenge = #"Bearer realm="iMCP""#
+        if presentedToken { challenge += #", error="invalid_token""# }
+        challenge +=
+            #", resource_metadata="\#(OAuthEndpoints.resourceMetadataURL(host: host))", scope="\#(OAuthAuthority.scope)""#
+        return .error(
+            statusCode: 401,
+            .invalidRequest("Unauthorized: Send an access token in the Authorization header."),
+            extraHeaders: [HTTPHeaderName.wwwAuthenticate: challenge]
+        )
+    }
+
+    /// Who is calling: an access token, or an OAuth grant.
+    private struct Caller {
+        var id: UUID
+        var name: String
+        /// The access token, which a tailnet device can bind itself to. `nil` for an OAuth grant.
+        var token: AccessToken?
+    }
+
+    /// Handles a request whose token and origin are checked.
+    /// `peer` is `nil` for a request that came through Funnel.
+    private func continueRequest(
+        _ message: HTTPRequestMessage,
+        _ request: MCP.HTTPRequest,
+        caller: Caller,
+        peer: TailnetPeer?,
+        validator: OriginValidator
+    ) async -> MCP.HTTPResponse {
         if let sessionID = request.header(HTTPHeaderName.sessionID) {
             // A session belongs to the token that started it.
-            guard var session = sessions[sessionID], session.tokenID == token.id else {
+            guard var session = sessions[sessionID], session.tokenID == caller.id else {
                 return .error(statusCode: 404, .invalidRequest("Not Found: Session not found."))
             }
             session.lastActivity = Date()
@@ -673,13 +1104,14 @@ actor RemoteAccessServer {
         guard message.method == "POST", Self.isInitializeRequest(message.body) else {
             return .error(statusCode: 400, .invalidRequest("Bad Request: Mcp-Session-Id header is required."))
         }
-        return await startSession(with: request, token: token, peer: peer)
+        return await startSession(with: request, caller: caller, peer: peer, validator: validator)
     }
 
     private func startSession(
         with request: MCP.HTTPRequest,
-        token: AccessToken,
-        peer: TailnetPeer
+        caller: Caller,
+        peer: TailnetPeer?,
+        validator: OriginValidator
     ) async -> MCP.HTTPResponse {
         // Each wait below can outlast a shutdown or a change of node,
         // so check the epoch after each one.
@@ -697,20 +1129,20 @@ actor RemoteAccessServer {
                 return .error(statusCode: 503, .internalError("Service Unavailable: Too many sessions."))
             }
         }
-        guard epoch == sessionEpoch, let server = await makeSessionServer(token.id), epoch == sessionEpoch else {
+        guard epoch == sessionEpoch, let server = await makeSessionServer(caller.id), epoch == sessionEpoch else {
             return Self.unavailableResponse
         }
 
         let transport = StatefulHTTPServerTransport(
             validationPipeline: StandardValidationPipeline(validators: [
-                originValidator,
+                validator,
                 AcceptHeaderValidator(mode: .sseRequired),
                 ContentTypeValidator(),
                 ProtocolVersionValidator(),
                 SessionValidator(),
             ])
         )
-        let tokenID = token.id
+        let tokenID = caller.id
         do {
             try await server.start(transport: transport)
         } catch {
@@ -733,12 +1165,15 @@ actor RemoteAccessServer {
             return response
         }
         do {
-            try tokenStore.bind(token, to: .init(stableID: peer.stableID, name: peer.deviceName))
+            // A request through Funnel has no device to bind the token to.
+            if let peer, let token = caller.token {
+                try tokenStore.bind(token, to: .init(stableID: peer.stableID, name: peer.deviceName))
+            }
         } catch {
             await server.stop()
             switch error {
             case AccessTokenStore.BindingError.differentDevice:
-                return Self.rejectDevice(peer)
+                return peer.map(Self.rejectDevice) ?? Self.unauthorizedResponse
             case is AccessTokenStore.StorageError:
                 // A binding that isn't saved could let another device claim the token later.
                 log.error("Couldn't save a remote access token's device: \(error)")
@@ -751,7 +1186,7 @@ actor RemoteAccessServer {
         if case .stream = response { openStreams = 1 }
         sessions[sessionID] = Session(
             tokenID: tokenID,
-            deviceID: peer.stableID,
+            deviceID: peer?.stableID,
             transport: transport,
             server: server,
             lastActivity: Date(),
@@ -759,7 +1194,7 @@ actor RemoteAccessServer {
         )
         tokenUsageHandler?()
         log.notice(
-            "Remote session started with token \(token.name, privacy: .public) from \(peer.deviceName, privacy: .public)"
+            "Remote session started with token \(caller.name, privacy: .public) from \(peer?.deviceName ?? "the internet", privacy: .public)"
         )
         return response
     }
@@ -830,10 +1265,7 @@ actor RemoteAccessServer {
     }
 
     private static func bearerToken(in request: MCP.HTTPRequest) -> String? {
-        guard let field = request.header(HTTPHeaderName.authorization) else { return nil }
-        let parts = field.split(separator: " ", maxSplits: 1)
-        guard parts.count == 2, parts[0].caseInsensitiveCompare("Bearer") == .orderedSame else { return nil }
-        return parts[1].trimmingCharacters(in: .whitespaces)
+        FunnelPolicy.bearerToken(in: request.header(HTTPHeaderName.authorization))
     }
 
     private static func isInitializeRequest(_ body: Data) -> Bool {
@@ -873,7 +1305,7 @@ actor RemoteAccessServer {
 /// One client connection to the remote access server.
 /// It reads a request, writes the response, and repeats while the client keeps the connection open.
 final class HTTPServerConnection: @unchecked Sendable {
-    typealias Handler = @Sendable (HTTPRequestMessage) async -> (MCP.HTTPResponse, keepAlive: Bool)
+    typealias Handler = @Sendable (HTTPRequestMessage) async -> (ServedResponse, keepAlive: Bool)
 
     /// How long a connection can wait for a request.
     static let idleTimeout: Duration = .seconds(120)
@@ -883,11 +1315,24 @@ final class HTTPServerConnection: @unchecked Sendable {
     static let keepAliveInterval: Duration = .seconds(25)
 
     private let connection: any TailnetConnection
+    private let limits: HTTPRequestParser.Limits
+    private let idleTimeout: Duration
+    /// How long a request can take to arrive in full, from its first byte.
+    /// Without it, a client that sends one byte at a time keeps the connection for as long as it likes.
+    private let requestDeadline: Duration?
     // Only `serve(_:streamEnded:)` reads and writes the buffer, one request at a time.
     private var buffer = Data()
 
-    init(_ connection: any TailnetConnection) {
+    init(
+        _ connection: any TailnetConnection,
+        limits: HTTPRequestParser.Limits = .tailnet,
+        idleTimeout: Duration = HTTPServerConnection.idleTimeout,
+        requestDeadline: Duration? = nil
+    ) {
         self.connection = connection
+        self.limits = limits
+        self.idleTimeout = idleTimeout
+        self.requestDeadline = requestDeadline
     }
 
     /// Serves requests until the client or the handler ends the connection, then closes it.
@@ -909,7 +1354,7 @@ final class HTTPServerConnection: @unchecked Sendable {
                 guard sent, shouldKeepAlive else { return }
             case .failure(let status, let reason):
                 _ = await write(
-                    .error(statusCode: status, .invalidRequest(reason)),
+                    .mcp(.error(statusCode: status, .invalidRequest(reason))),
                     keepAlive: false,
                     streamEnded: streamEnded
                 )
@@ -923,8 +1368,10 @@ final class HTTPServerConnection: @unchecked Sendable {
     /// The next request, or `nil` when the connection closes or waits too long.
     private func readRequest() async -> HTTPRequestParser.Result? {
         var sentContinue = false
+        // When the request's first byte arrived. Bytes left over from the last read count as arrived.
+        var firstByte: ContinuousClock.Instant? = buffer.isEmpty ? nil : .now
         while true {
-            let result = HTTPRequestParser.parse(buffer)
+            let result = HTTPRequestParser.parse(buffer, limits: limits)
             switch result {
             case .request(_, let length):
                 buffer =
@@ -937,14 +1384,22 @@ final class HTTPServerConnection: @unchecked Sendable {
                     sentContinue = true
                     guard await send(HTTPResponseEncoder.continueResponse) else { return nil }
                 }
-                guard let data = await receive() else { return nil }
+                var timeout = idleTimeout
+                if let requestDeadline, let firstByte {
+                    let remaining = requestDeadline - (.now - firstByte)
+                    // The request took too long. Close the connection.
+                    guard remaining > .zero else { return nil }
+                    timeout = min(timeout, remaining)
+                }
+                guard let data = await receive(timeout: timeout) else { return nil }
+                firstByte = firstByte ?? .now
                 buffer.append(data)
             }
         }
     }
 
-    private func receive() async -> Data? {
-        guard let data = try? await connection.receive(timeout: Self.idleTimeout), !data.isEmpty else {
+    private func receive(timeout: Duration) async -> Data? {
+        guard let data = try? await connection.receive(timeout: timeout), !data.isEmpty else {
             return nil
         }
         return data
@@ -960,10 +1415,24 @@ final class HTTPServerConnection: @unchecked Sendable {
     }
 
     private func write(
-        _ response: MCP.HTTPResponse,
+        _ served: ServedResponse,
         keepAlive: Bool,
         streamEnded: @Sendable (String?) async -> Void
     ) async -> Bool {
+        let response: MCP.HTTPResponse
+        switch served {
+        case .mcp(let mcp):
+            response = mcp
+        case .raw(let status, let headers, let body):
+            var data = HTTPResponseEncoder.head(
+                status: status,
+                headers: headers,
+                contentLength: body.count,
+                keepAlive: keepAlive
+            )
+            data.append(body)
+            return await send(data)
+        }
         guard case .stream(let stream, var headers) = response else {
             let body = response.bodyData ?? Data()
             var data = HTTPResponseEncoder.head(

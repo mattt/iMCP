@@ -80,6 +80,14 @@ final class EmbeddedTailnetNode: TailnetNode {
         try await blocking { try await node.logout() }
     }
 
+    func enableFunnel(localPort: UInt16) async throws -> String {
+        try await blocking { try await node.enableFunnel(localPort: localPort) }
+    }
+
+    func disableFunnel() async throws {
+        try await blocking { try await node.disableFunnel() }
+    }
+
     func close() async {
         do {
             try await blocking { try await node.close() }

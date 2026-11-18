@@ -144,10 +144,6 @@ class ConnectionApprovalWindowController: NSObject, NSWindowDelegate {
         onApprove: @escaping (Bool) -> Void,
         onDeny: @escaping () -> Void
     ) {
-        // Replace any stale window for the same key.
-        closeWindow(for: id)
-
-        // Create the SwiftUI view
         let approvalView = ConnectionApprovalView(
             request: request,
             enabledServiceNames: enabledServiceNames,
@@ -162,6 +158,42 @@ class ConnectionApprovalWindowController: NSObject, NSWindowDelegate {
                 self?.closeWindow(for: id)
             }
         )
+        present(approvalView, id: id, title: "Connection Request", onDeny: onDeny)
+    }
+
+    /// Asks the owner to approve an app that wants public access through OAuth.
+    func showOAuthApprovalWindow(
+        id: String,
+        request: OAuthApprovalRequest,
+        enabledServiceNames: [String],
+        onApprove: @escaping (Bool) -> Void,
+        onDeny: @escaping () -> Void
+    ) {
+        let view = OAuthApprovalView(
+            request: request,
+            enabledServiceNames: enabledServiceNames,
+            onApprove: { [weak self] readOnly in
+                self?.denyHandlers.removeValue(forKey: id)
+                onApprove(readOnly)
+                self?.closeWindow(for: id)
+            },
+            onDeny: { [weak self] in
+                self?.denyHandlers.removeValue(forKey: id)
+                onDeny()
+                self?.closeWindow(for: id)
+            }
+        )
+        present(view, id: id, title: "App Access Request", onDeny: onDeny)
+    }
+
+    private func present<Content: View>(
+        _ approvalView: Content,
+        id: String,
+        title: String,
+        onDeny: @escaping () -> Void
+    ) {
+        // Replace any stale window for the same key.
+        closeWindow(for: id)
 
         // Create the hosting controller
         let hostingController = NSHostingController(rootView: approvalView)
@@ -174,7 +206,7 @@ class ConnectionApprovalWindowController: NSObject, NSWindowDelegate {
             defer: false
         )
 
-        window.title = "Connection Request"
+        window.title = title
         window.contentViewController = hostingController
         window.isReleasedWhenClosed = false
         window.level = .floating
