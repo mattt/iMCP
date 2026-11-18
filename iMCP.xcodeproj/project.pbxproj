@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B2C4D6E80000000000000006 /* MobileActivityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C4D6E80000000000000005 /* MobileActivityTests.swift */; };
+		B2C4D6E80000000000000004 /* ../../App/Services/MobileActivityStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C4D6E80000000000000003 /* ../../App/Services/MobileActivityStore.swift */; };
+		B2C4D6E80000000000000002 /* ../../Shared/Mobile/MobileActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C4D6E80000000000000001 /* ../../Shared/Mobile/MobileActivity.swift */; };
 		158948D22D0E610E83A4433C /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = B75D49165A453E912E36DBFE /* Sparkle */; };
 		76F80A6E3EDBFB02048A6ED8 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E0E66768348853754D32208C /* Cocoa.framework */; };
 		826C0834A5B647F8A918E54D /* ServiceLifecycle in Frameworks */ = {isa = PBXBuildFile; productRef = DCE061F8A68D0CD546D919E2 /* ServiceLifecycle */; };
@@ -140,6 +143,9 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		B2C4D6E80000000000000005 /* MobileActivityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileActivityTests.swift; sourceTree = "<group>"; };
+		B2C4D6E80000000000000003 /* ../../App/Services/MobileActivityStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/MobileActivityStore.swift; sourceTree = "<group>"; };
+		B2C4D6E80000000000000001 /* ../../Shared/Mobile/MobileActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../Shared/Mobile/MobileActivity.swift; sourceTree = "<group>"; };
 		6A5CFBBEC66BC8CDA9D65496 /* imcp-serverTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "imcp-serverTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		75E148EAC5AC8B3263C5AA13 /* ServiceGroupConfigurationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ServiceGroupConfigurationTests.swift; sourceTree = "<group>"; };
 		A10000000000000000000001 /* iMCP Helper.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; path = "iMCP Helper.app"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -217,6 +223,7 @@
 		C5000000000000000000000B /* Exceptions for "Shared" folder in "iMCP Helper" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				Mobile/MobileActivity.swift,
 				Mobile/MobileAlarmRequest.swift,
 				Mobile/MobileDatabase.swift,
 				Mobile/MobileOutbox.swift,
@@ -398,6 +405,9 @@
 				CF94985E325A869657ADEA03 /* MobileOutboxTests.swift */,
 				AEA9566F574C683C4FB198FB /* ../../Shared/Mobile/MobileTransport.swift */,
 				D623AA705C646B58688D52F0 /* MobileLinkTests.swift */,
+				B2C4D6E80000000000000005 /* MobileActivityTests.swift */,
+				B2C4D6E80000000000000003 /* ../../App/Services/MobileActivityStore.swift */,
+				B2C4D6E80000000000000001 /* ../../Shared/Mobile/MobileActivity.swift */,
 				7BC3F2481A2BC3DA6FCD135F /* ../../App/Services/MobileCache.swift */,
 				DE3608360482D8D430F9A6FD /* ../../App/Services/Mobile.swift */,
 				528763F26319BDDB15541474 /* ../../Shared/Mobile/MobileDatabase.swift */,
@@ -807,6 +817,9 @@
 				7976D430435CEB5885069EDC /* MobileOutboxTests.swift in Sources */,
 				1201B5B17FF1368F8E9CD48F /* ../../Shared/Mobile/MobileTransport.swift in Sources */,
 				C74EAB68D139846AC0C118E1 /* MobileLinkTests.swift in Sources */,
+				B2C4D6E80000000000000006 /* MobileActivityTests.swift in Sources */,
+				B2C4D6E80000000000000004 /* ../../App/Services/MobileActivityStore.swift in Sources */,
+				B2C4D6E80000000000000002 /* ../../Shared/Mobile/MobileActivity.swift in Sources */,
 				1A4EBB7CECB525CCC26EE438 /* ../../App/Services/MobileCache.swift in Sources */,
 				A1BA6CCAD87FD4F9DABADE3F /* ../../App/Services/Mobile.swift in Sources */,
 				0EBDDCD81AB193D1DCDA3616 /* ../../Shared/Mobile/MobileDatabase.swift in Sources */,

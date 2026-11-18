@@ -18,8 +18,11 @@ actor MobileService: MobileBackend {
 
     private let log = Logger.service("mobile")
     private var cache: MobileCache?
+    private var activityStore: MobileActivityStore?
     private let pairings: any MobilePairingStore
     private let reconnectGrace: Duration
+    private let livenessTimeout: Duration
+    private let activityStoreOpener: @Sendable () throws -> MobileActivityStore
     private let advertise: Bool
     private let pollInterval: Duration
     private let codeLifetime: TimeInterval
@@ -32,6 +35,8 @@ actor MobileService: MobileBackend {
     private var link: (any MobilePeerLink)?
     private var syncTask: Task<Void, Never>?
     private var draining = false
+    private var syncingActivity = false
+    private var needsActivitySync = false
     private var lastPairingError: String?
 
     /// How long a pairing code works after iMCP shows it.
@@ -43,16 +48,22 @@ actor MobileService: MobileBackend {
     ///     While none is, the Mac listens only for a pairing code.
     init(
         cache: MobileCache? = nil,
+        activityStore: MobileActivityStore? = nil,
         pairings: any MobilePairingStore = MobileKeychainPairings(),
         reconnectGrace: Duration = .seconds(5),
+        livenessTimeout: Duration = .seconds(3),
+        activityStoreOpener: @escaping @Sendable () throws -> MobileActivityStore = { try .standard() },
         advertise: Bool = true,
         pollInterval: Duration = .seconds(15),
         codeLifetime: TimeInterval = MobileService.pairingLifetime,
         isEnabled: @escaping @Sendable () -> Bool = { true }
     ) {
         self.cache = cache
+        self.activityStore = activityStore
         self.pairings = pairings
         self.reconnectGrace = reconnectGrace
+        self.livenessTimeout = livenessTimeout
+        self.activityStoreOpener = activityStoreOpener
         self.advertise = advertise
         self.pollInterval = pollInterval
         self.codeLifetime = codeLifetime
@@ -299,6 +310,7 @@ actor MobileService: MobileBackend {
     /// also deletes the Mac's copy of mobile data.
     func unpair(_ device: String) async {
         pairings.remove(device)
+        await activityStore?.resetAcknowledgement(for: device)
         if let current = link, current.device.id == device {
             link = nil
             syncTask?.cancel()
@@ -416,8 +428,11 @@ actor MobileService: MobileBackend {
                 // Disconnecting the client fails its pending requests and stops its receive loop.
                 await link.close()
             }
-            attach(link)
-            log.notice("\(device.name, privacy: .public) connected")
+            if await attach(link) {
+                log.notice("\(device.name, privacy: .public) connected")
+            } else {
+                log.notice("\(device.name, privacy: .public) opened a second connection; kept the live one")
+            }
         } catch let refusal as Refusal {
             lastPairingError = refusal.message
             log.error("Refused a mobile connection: \(refusal.message, privacy: .public)")
@@ -432,12 +447,27 @@ actor MobileService: MobileBackend {
     // MARK: - Links
 
     /// Makes `link` the connection that calls go to, replacing any other.
-    func attach(_ link: any MobilePeerLink) {
+    ///
+    /// A second connection from the device that already has a live one
+    /// (the app dials from two places at once) doesn't replace it
+    /// while it still answers a quick status call,
+    /// because replacing it would cancel the sync in progress and start the same fight again.
+    /// A link that doesn't answer is stale, so the new one replaces it.
+    /// Returns whether `link` is now the connection; if not, it has been closed.
+    @discardableResult
+    func attach(_ link: any MobilePeerLink) async -> Bool {
+        if let current = self.link, current !== link, current.device.id == link.device.id,
+            await current.answers(within: livenessTimeout), self.link === current
+        {
+            await link.close()
+            return false
+        }
         let previous = self.link
         self.link = link
         if let previous, previous !== link { Task { await previous.close() } }
         syncTask?.cancel()
         syncTask = Task { [weak self] in await self?.syncLoop(link) }
+        return true
     }
 
     func detach(_ link: any MobilePeerLink) {
@@ -483,9 +513,75 @@ actor MobileService: MobileBackend {
     private func syncLoop(_ link: any MobilePeerLink) async {
         await refreshPhoneStatus(link)
         while !Task.isCancelled, self.link === link {
+            // Activity first: it is small, and a long drain of queued batches
+            // must not keep the phone's history empty if the connection is short.
+            await syncActivity(link)
             await drain(link)
             try? await Task.sleep(for: pollInterval)
         }
+    }
+
+    // MARK: - Activity History
+
+    private func openActivityStore() throws -> MobileActivityStore {
+        if let activityStore { return activityStore }
+        let store = try activityStoreOpener()
+        self.activityStore = store
+        return store
+    }
+
+    /// Records a tool call in the Mac's activity history and pushes it to the connected phone.
+    func recordActivity(_ event: MobileActivityEvent) async {
+        guard let store = try? openActivityStore() else { return }
+        _ = await store.record(event)
+        if let link {
+            await syncActivity(link)
+        }
+    }
+
+    func activityEvents() async -> [MobileActivityEvent] {
+        guard let store = try? openActivityStore() else { return [] }
+        return await store.allEvents()
+    }
+
+    /// Pushes unsent activity events to `link` and records the phone's acknowledgement.
+    func syncActivity(_ link: any MobilePeerLink) async {
+        // Open the store from disk: after a relaunch it holds events that no phone has received yet.
+        guard let store = try? openActivityStore() else { return }
+        if syncingActivity {
+            needsActivitySync = true
+            return
+        }
+        syncingActivity = true
+        defer { syncingActivity = false }
+
+        repeat {
+            needsActivitySync = false
+            while self.link === link {
+                let pending = await store.pendingEvents(for: link.device.id)
+                guard !pending.isEmpty else { break }
+                do {
+                    let request = MobileActivitySyncRequest(events: pending)
+                    let arguments = try JSONDecoder().decode(
+                        [String: Value].self,
+                        from: MobileCoding.encoder.encode(request)
+                    )
+                    let text = try await link.call(MobileActivityLink.syncTool, arguments)
+                    let response = try MobileCoding.decoder.decode(
+                        MobileActivitySyncResponse.self,
+                        from: Data(text.utf8)
+                    )
+                    let acked = response.ackedSequence > 0 ? response.ackedSequence : (pending.last?.sequence ?? 0)
+                    await store.acknowledge(acked, for: link.device.id)
+                } catch is MobileLinkLost {
+                    detach(link)
+                    return
+                } catch {
+                    log.debug("Activity sync skipped or failed: \(error.localizedDescription, privacy: .public)")
+                    return
+                }
+            }
+        } while needsActivitySync && self.link === link
     }
 
     /// Pulls queued batches from the phone, applies each to the cache,
@@ -514,7 +610,12 @@ actor MobileService: MobileBackend {
         } catch is MobileLinkLost {
             detach(link)
         } catch {
-            log.error("Mobile sync failed: \(error.localizedDescription, privacy: .public)")
+            // A newer connection or a disconnect cancels the sync; that isn't a failure.
+            if error is CancellationError || Task.isCancelled {
+                log.debug("Mobile sync cancelled")
+            } else {
+                log.error("Mobile sync failed: \(error.localizedDescription, privacy: .public)")
+            }
         }
     }
 
@@ -766,6 +867,33 @@ protocol MobilePeerLink: AnyObject, Sendable {
     func close() async
 }
 
+extension MobilePeerLink {
+    /// Whether the phone answers a status call within `timeout`.
+    /// Any reply, even an error from the phone, means the connection is alive.
+    func answers(within timeout: Duration) async -> Bool {
+        await withTaskGroup(of: Bool.self) { group in
+            group.addTask {
+                do {
+                    _ = try await self.call(MobileTools.statusTool, [:])
+                    return true
+                } catch is MobileLinkLost {
+                    return false
+                } catch is CancellationError {
+                    return false
+                } catch {
+                    return true
+                }
+            }
+            group.addTask {
+                try? await Task.sleep(for: timeout)
+                return false
+            }
+            defer { group.cancelAll() }
+            return await group.next() ?? false
+        }
+    }
+}
+
 struct MobileLinkLost: Error, CustomStringConvertible {
     var description: String { "The connection to the iPhone or iPad was lost." }
 }
@@ -794,6 +922,7 @@ final class MobileRemoteLink: MobilePeerLink, @unchecked Sendable {
                     let result = try await client.callTool(name: tool, arguments: input)
                     return (result.content, result.isError)
                 } catch {
+                    if error is CancellationError { throw error }
                     if await channel.isClosed { throw MobileLinkLost() }
                     throw MobileError("The iPhone or iPad didn't answer: \(error.localizedDescription)")
                 }

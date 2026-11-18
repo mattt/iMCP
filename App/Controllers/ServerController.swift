@@ -804,6 +804,8 @@ actor MCPConnectionManager {
     private let parentManager: ServerNetworkManager
     private let approvalGate = ConnectionApprovalGate()
     private var isStopping = false
+    /// The name the client gave when it connected, for the activity history.
+    private var clientName: String?
 
     /// Creates a manager for a socket whose client passed the code-signing check.
     /// The manager owns `descriptor` and closes it when it stops.
@@ -846,6 +848,7 @@ actor MCPConnectionManager {
 
                     // Request user approval for the connection.
                     let approved = await approvalHandler(clientInfo)
+                    if approved { await self.setClientName(clientInfo.name) }
                     log.info(
                         "Approval result for connection \(self.connectionID): \(approved ? "Approved" : "Denied")"
                     )
@@ -875,11 +878,16 @@ actor MCPConnectionManager {
         }
     }
 
+    private func setClientName(_ name: String) {
+        clientName = name
+    }
+
     private func registerHandlers() async {
         await parentManager.registerHandlers(
             for: server,
             connectionID: connectionID,
-            gate: approvalGate
+            gate: approvalGate,
+            clientName: { [weak self] in await self?.clientName }
         )
     }
 
@@ -1310,7 +1318,8 @@ actor ServerNetworkManager {
     func registerHandlers(
         for server: MCP.Server,
         connectionID: UUID,
-        gate: ConnectionApprovalGate
+        gate: ConnectionApprovalGate,
+        clientName: @escaping @Sendable () async -> String?
     ) async {
         await server.withApprovedMethodHandler(ListPrompts.self, gate: gate) { _ in
             log.debug("Handling ListPrompts request for \(connectionID)")
@@ -1372,10 +1381,39 @@ actor ServerNetworkManager {
                 )
             }
 
+            let start = ContinuousClock.now
+            let resolvedClient = await clientName() ?? "Unknown client"
+            let services = await self.services
+            let matchedService = services.first { $0.tools.contains { $0.name == params.name } }
+            let matchedTool = matchedService?.tools.first { $0.name == params.name }
+            let serviceName = matchedService.map(Self.serviceDisplayName) ?? "Unknown"
+            let isWrite = matchedTool.map { $0.annotations.readOnlyHint != true } ?? false
+
+            /// Adds the call to the activity history that paired iPhones and iPads show.
+            func record(_ outcome: MobileActivityEvent.Outcome, detail: String? = nil) async {
+                let elapsed = ContinuousClock.now - start
+                let milliseconds = max(
+                    0,
+                    Int(elapsed.components.seconds) * 1000 + Int(elapsed.components.attoseconds / 1_000_000_000_000_000)
+                )
+                await MobileService.shared.recordActivity(
+                    MobileActivityEvent(
+                        clientName: resolvedClient,
+                        serviceName: serviceName,
+                        toolName: params.name,
+                        isWrite: isWrite,
+                        outcome: outcome,
+                        detail: detail,
+                        durationMs: milliseconds
+                    )
+                )
+            }
+
             log.notice("Tool call received from \(connectionID): \(params.name)")
 
             guard await self.isEnabledState else {
                 log.notice("Tool call rejected: iMCP is disabled")
+                await record(.denied, detail: "iMCP is disabled")
                 return CallTool.Result(
                     content: [
                         .text(
@@ -1390,6 +1428,7 @@ actor ServerNetworkManager {
 
             if await self.disabledTools.contains(params.name) {
                 log.notice("Tool call rejected: \(params.name) is disabled")
+                await record(.denied, detail: "The tool is turned off in iMCP settings")
                 return CallTool.Result(
                     content: [
                         .text(
@@ -1420,6 +1459,7 @@ actor ServerNetworkManager {
                         }
 
                         log.notice("Tool \(params.name) executed successfully for \(connectionID)")
+                        await record(.succeeded)
                         switch value {
                         case .data(let mimeType?, let data) where mimeType.hasPrefix("audio/"):
                             return CallTool.Result(
@@ -1464,6 +1504,7 @@ actor ServerNetworkManager {
                         log.error(
                             "Error executing tool \(params.name): \(error.localizedDescription)"
                         )
+                        await record(.failed, detail: error.localizedDescription)
                         return CallTool.Result(
                             content: [.text(text: "Error: \(error)", annotations: nil, _meta: nil)],
                             isError: true
@@ -1473,13 +1514,18 @@ actor ServerNetworkManager {
             }
 
             // Say why no service answered, so that an intermittent failure can be traced.
-            if let owner = await self.services.first(where: { $0.tools.contains { $0.name == params.name } }) {
+            if let owner = matchedService {
                 let serviceId = String(describing: type(of: owner))
                 let binding = await self.serviceBindings[serviceId]
                 let state = binding.map { $0.wrappedValue ? "on" : "off" } ?? "missing"
                 log.error(
                     "Tool \(params.name, privacy: .public) belongs to \(serviceId, privacy: .public), whose binding is \(state, privacy: .public)"
                 )
+            }
+            if matchedService == nil {
+                await record(.failed, detail: "Tool not found")
+            } else {
+                await record(.denied, detail: "The \(serviceName) service is turned off")
             }
             log.error("Tool not found or service not enabled: \(params.name)")
             return CallTool.Result(
@@ -1488,6 +1534,31 @@ actor ServerNetworkManager {
                 ],
                 isError: true
             )
+        }
+    }
+
+    private static func serviceDisplayName(_ service: any Service) -> String {
+        switch service {
+        case is AlarmsService: return "Alarms"
+        case is CalendarService: return "Calendar"
+        case is CaptureService: return "Capture"
+        case is ContactsService: return "Contacts"
+        case is HealthService: return "Health"
+        case is HomeService: return "Home"
+        case is LocationService: return "Location"
+        case is MapsService: return "Maps"
+        case is MailService: return "Mail"
+        case is MessageService: return "Messages"
+        case is MusicService: return "Music"
+        case is NotesService: return "Notes"
+        case is PhoneService: return "Phone"
+        case is RemindersService: return "Reminders"
+        case is ShortcutsService: return "Shortcuts"
+        case is UtilitiesService: return "Utilities"
+        case is VoiceMemosService: return "Voice Memos"
+        default:
+            let raw = String(describing: type(of: service))
+            return raw.hasSuffix("Service") ? String(raw.dropLast("Service".count)) : raw
         }
     }
 

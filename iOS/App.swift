@@ -8,10 +8,11 @@ struct MobileApp: App {
     @UIApplicationDelegateAdaptor(MobileAppDelegate.self) private var delegate
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var connection = PhoneConnection.shared
+    @StateObject private var activity = PhoneActivityStore.shared
 
     var body: some Scene {
         WindowGroup {
-            StatusView(connection: connection)
+            StatusView(connection: connection, activity: activity)
                 .onOpenURL { url in
                     // A pairing link opened from the Mac, for example through AirDrop.
                     guard let code = MobilePairingCode(url: url) else { return }
@@ -75,6 +76,7 @@ final class MobileAppDelegate: NSObject, UIApplicationDelegate {
 
 struct StatusView: View {
     @ObservedObject var connection: PhoneConnection
+    @ObservedObject var activity: PhoneActivityStore
     @State private var showingPairing = false
     @State private var confirmingUnpair = false
 
@@ -84,6 +86,9 @@ struct StatusView: View {
                 Section {
                     LabeledContent("Mac", value: connection.credentials?.macName ?? "Not paired")
                     LabeledContent("Status", value: statusText)
+                    if connection.phase != .connected, let last = connection.lastConnected {
+                        LabeledContent("Last connected", value: last.formatted(date: .omitted, time: .shortened))
+                    }
                     if connection.queuedBatches > 0 {
                         LabeledContent("Waiting to send", value: "\(connection.queuedBatches) batches")
                     }
@@ -98,14 +103,15 @@ struct StatusView: View {
                     )
                 }
 
+                ActivitySection(activity: activity)
+
                 ForEach(MobileDomain.allCases, id: \.self) { domain in
                     ServiceSection(domain: domain)
                 }
             }
             .navigationTitle("iMCP")
             .refreshable {
-                await PhoneBackend.shared.syncAll()
-                await connection.refreshQueue()
+                await connection.refresh()
             }
             .sheet(isPresented: $showingPairing) {
                 PairingView(connection: connection) { showingPairing = false }
