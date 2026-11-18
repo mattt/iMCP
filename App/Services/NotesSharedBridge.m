@@ -1173,6 +1173,13 @@ static NSDictionary *actionDebug(NSString *action, NSDictionary *args) {
                 send0(f, SEL_(markForDeletion));
                 folders++;
             }
+            // The tags the self-test made (all named iMCPtest…), so none stay in Oliver's tag list.
+            NSUInteger tags = 0;
+            NSFetchRequest *hr = [NSFetchRequest fetchRequestWithEntityName:@"ICHashtag"];
+            hr.predicate = [NSPredicate predicateWithFormat:@"markedForDeletion == NO"];
+            for (id h in [m executeFetchRequest:hr error:nil] ?: @[]) {
+                if ([[stripHash(strVal(h, @"displayText") ?: @"") lowercaseString] hasPrefix:@"imcptest"]) { send0(h, SEL_(markForDeletion)); tags++; }
+            }
             saveContext(m);
             NSManagedObjectContext *f = freshContext();
             NSNumber *live = onContext(f, ^id {
@@ -1181,9 +1188,11 @@ static NSDictionary *actionDebug(NSString *action, NSDictionary *args) {
                 NSUInteger liveFolders = [f countForFetchRequest:fr error:nil];
                 NSFetchRequest *nr = [NSFetchRequest fetchRequestWithEntityName:@"ICNote"];
                 nr.predicate = [NSPredicate predicateWithFormat:@"folder.title == %@ AND markedForDeletion == NO", prefix];
-                return @(liveFolders + [f countForFetchRequest:nr error:nil]);
+                NSFetchRequest *tr = [NSFetchRequest fetchRequestWithEntityName:@"ICHashtag"];
+                tr.predicate = [NSPredicate predicateWithFormat:@"displayText CONTAINS[c] %@ AND markedForDeletion == NO", @"iMCPtest"];
+                return @(liveFolders + [f countForFetchRequest:nr error:nil] + [f countForFetchRequest:tr error:nil]);
             });
-            return @{ @"notesDeleted" : @(notes), @"foldersDeleted" : @(folders), @"liveRemaining" : live };
+            return @{ @"notesDeleted" : @(notes), @"foldersDeleted" : @(folders), @"tagsDeleted" : @(tags), @"liveRemaining" : live };
         }
         if ([action isEqualToString:@"debug.fresh_text"]) {
             id note = findNote(args[@"id"]);
