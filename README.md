@@ -30,6 +30,13 @@ and a [growing list of clients][mcp-clients] that support the
   </tr>
   <tr>
     <th width="48">
+      <img src="Assets/files.svg" width="48" height="48" alt="" role="presentation"/>
+    </th>
+    <td><strong>Files</strong></td>
+    <td>List, read, and search the folders that you share, and, with the setting turned on, write, move, and trash files in them. Needs <a href="#shared-folders">folders that you add</a>.</td>
+  </tr>
+  <tr>
+    <th width="48">
       <img src="Assets/home.svg" width="48" height="48" alt="" role="presentation"/>
     </th>
     <td><strong>Home</strong></td>
@@ -739,6 +746,67 @@ For this project, we created [TSRP][tsrp]:
 a Swift package for reading your Voice Memos library.
 It reads transcripts from both `.m4a` and `.qta` files,
 which keep them in different places.
+
+### Shared Folders
+
+The Files service reaches only the folders that you add.
+Click <img style="display: inline" width="20" height="16" src="/Assets/icon.svg" />
+\> "Settings", click Files in the sidebar,
+and then click "Add Folder…" to choose a folder.
+Click "Remove" beside a folder to stop sharing it.
+iMCP keeps each folder as a security-scoped bookmark,
+which macOS ties to iMCP and which iMCP opens only while a tool runs.
+If a folder moves or stops working,
+Settings marks it, and you remove it and add it again.
+
+A path is the name of a shared folder followed by a path inside it,
+such as `Documents/Taxes/2025.pdf`,
+and `files_roots` lists the names.
+iMCP resolves symbolic links before it checks a path,
+so a link that points out of a shared folder is refused,
+and so are `..` and absolute paths.
+iMCP never opens a Photos library:
+it refuses to share one, or a folder inside one,
+and it refuses any path that goes through one.
+
+Reading, listing, and searching are always allowed:
+
+- `files_roots` lists the shared folders.
+- `files_list` lists a folder, 100 entries at a time by default,
+  with `nextOffset` for the next page.
+  It leaves out hidden files unless `includeHidden` is true.
+- `files_stat` describes a file or folder, and can include its SHA-256.
+- `files_read` returns text, decoded from UTF-8, UTF-16, or Windows text,
+  up to 256 KB at a time by default and 1 MB at most,
+  and says when it was cut short.
+  A binary file comes back as base64 up to 256 KB, and is refused beyond that
+  unless you ask for it in pieces.
+- `files_search` finds files by name, and text inside them,
+  and stops at a limit or after a time budget of 10 seconds by default,
+  and says when it did.
+  It reads only text files up to 2 MB, and never follows a link out of a folder.
+
+Changing files needs the service's **Allow writes** setting
+in the Files settings, where it is off by default.
+While it is off, clients aren't offered these tools,
+and one that calls them anyway is refused.
+Each of them opens the folder that holds the file one step at a time without following links,
+and does its work relative to that folder,
+so a folder or file that is swapped for a link after iMCP checked the path
+is refused and not written through.
+
+- `files_write` writes a text file of up to 1 MB.
+  It creates a new file, and replaces an existing one
+  only if you pass the `expectedModified` or `expectedSha256`
+  that `files_stat` or `files_read` returned and the file still matches,
+  or pass `overwrite`.
+  A replaced file doesn't go to the Trash, so the default is to refuse.
+- `files_append` adds text to the end of a file.
+- `files_mkdir` creates a folder, and the folders above it.
+- `files_move` moves or renames a file or folder
+  between shared folders, and never replaces one that is there.
+- `files_trash` moves a file or folder to the Trash.
+  iMCP never deletes anything for good.
 
 ### Notes Database Access
 
