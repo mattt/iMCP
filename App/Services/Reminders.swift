@@ -53,12 +53,15 @@ private let reminderProperties: OrderedDictionary<String, JSONSchema> = [
     "due": .anyOf([
         .string(
             description:
-                "Due date/time for the reminder. If timezone is omitted, local time is assumed. Date-only uses local midnight. Pass null to clear.",
-            format: .dateTime
+                "Due date. YYYY-MM-DD is all-day; YYYY-MM-DD HH:MM is timed in local time; an ISO 8601 datetime with an offset such as Z or +02:00 is also accepted. Pass null to clear (a repeating reminder must keep its due date)."
         ),
         .null,
     ]),
     "recurrence": .anyOf([
+        .string(
+            description:
+                "Recurrence spec: daily, weekly, monthly, or yearly, then optionally an interval xN and details. Examples: \"weekly mon,wed,fri\", \"monthly 1,15\", \"monthly 4th-fri\", \"monthly last-fri\", \"daily x2\", \"monthly x2 last-fri\". \"clear\", \"none\", or \"never\" stops repeating. A repeating reminder needs a due date."
+        ),
         .object(
             description:
                 "Recurrence rule for a repeating reminder. Pass null to stop repeating.",
@@ -126,10 +129,18 @@ private let reminderProperties: OrderedDictionary<String, JSONSchema> = [
         ),
         .null,
     ]),
-    "priority": .string(
-        default: .string(EKReminderPriority.none.stringValue),
-        enum: EKReminderPriority.allCases.map { .string($0.stringValue) }
-    ),
+    "priority": .anyOf([
+        .string(
+            description: "Priority name",
+            enum: EKReminderPriority.allCases.map { .string($0.stringValue) }
+        ),
+        .integer(
+            description:
+                "Apple priority number: 0 none, 1 to 4 high, 5 medium, 6 to 9 low",
+            minimum: 0,
+            maximum: 9
+        ),
+    ]),
     "alarms": .anyOf([
         .array(
             description: "Alarm configurations for the reminder. Pass null to remove all alarms.",
@@ -137,6 +148,10 @@ private let reminderProperties: OrderedDictionary<String, JSONSchema> = [
                 // Relative alarm in minutes, as accepted before alarms took
                 // structured configurations (kept for compatibility)
                 .integer(description: "Minutes before the due date"),
+                .string(
+                    description:
+                        "15m, 1h, 1d, or 1w before the due date (needs a due date), or a date such as 2026-05-27 09:30 for an absolute alarm"
+                ),
                 // Relative alarm (minutes before due date)
                 .object(
                     properties: [
@@ -190,7 +205,10 @@ private let reminderProperties: OrderedDictionary<String, JSONSchema> = [
                             "proximity": .string(
                                 description: "Proximity trigger type",
                                 default: .string("enter"),
-                                enum: [.string("enter"), .string("leave")]
+                                enum: [
+                                    .string("enter"), .string("leave"), .string("arriving"),
+                                    .string("leaving"),
+                                ]
                             ),
                             "location": .string(
                                 description:
@@ -219,9 +237,15 @@ private let reminderProperties: OrderedDictionary<String, JSONSchema> = [
                             "proximity": .string(
                                 description: "Proximity trigger type",
                                 default: .string("enter"),
-                                enum: [.string("enter"), .string("leave")]
+                                enum: [
+                                    .string("enter"), .string("leave"), .string("arriving"),
+                                    .string("leaving"),
+                                ]
                             ),
-                            "locationTitle": .string(),
+                            "locationTitle": .string(
+                                description:
+                                    "Title of the place (for example Apple Park); used with latitude and longitude"
+                            ),
                             "latitude": .number(
                                 minimum: -90,
                                 maximum: 90
@@ -243,6 +267,42 @@ private let reminderProperties: OrderedDictionary<String, JSONSchema> = [
                             ),
                         ],
                         required: ["type", "locationTitle", "latitude", "longitude"],
+                        additionalProperties: false
+                    ),
+                    .object(
+                        properties: [
+                            "type": .string(
+                                const: "proximity"
+                            ),
+                            "proximity": .string(
+                                description: "Proximity trigger type",
+                                default: .string("enter"),
+                                enum: [
+                                    .string("enter"), .string("leave"), .string("arriving"),
+                                    .string("leaving"),
+                                ]
+                            ),
+                            "address": .string(
+                                description:
+                                    "Street address with a town or postal code. Geocoded strictly: an ambiguous, imprecise, or unconfirmed match is refused. Use reminders_resolve_location to preview the match."
+                            ),
+                            "locationTitle": .string(
+                                description: "Title for the alarm; defaults to the match's name"
+                            ),
+                            "radius": .number(
+                                description: "Radius in meters, 1 to 100000; default 100",
+                                minimum: 1,
+                                maximum: 100_000
+                            ),
+                            "sound": .string(
+                                description: "Sound name to play when alarm triggers",
+                                enum: Sound.allCases.map { .string($0.rawValue) }
+                            ),
+                            "emailAddress": .string(
+                                description: "Email address to send notification to"
+                            ),
+                        ],
+                        required: ["type", "address"],
                         additionalProperties: false
                     ),
                 ]),
@@ -298,6 +358,7 @@ final class RemindersService: Service {
                     "title": .string(reminderList.title),
                     "source": .string(reminderList.source.title),
                     "color": .string(reminderList.color.accessibilityName),
+                    "colorHex": Self.hex(of: reminderList).map { .string($0) } ?? .null,
                     "isEditable": .bool(reminderList.allowsContentModifications),
                     "isSubscribed": .bool(reminderList.isSubscribed),
                 ])
@@ -537,10 +598,18 @@ final class RemindersService: Service {
                         // advertising create's priority default would have
                         // clients wipe priorities they never meant to touch,
                         // and create's unmatched-list fallback is an error.
-                        "priority": .string(
-                            description: "Priority; omit to leave unchanged",
-                            enum: EKReminderPriority.allCases.map { .string($0.stringValue) }
-                        ),
+                        "priority": .anyOf([
+                            .string(
+                                description: "Priority name; omit to leave unchanged",
+                                enum: EKReminderPriority.allCases.map { .string($0.stringValue) }
+                            ),
+                            .integer(
+                                description:
+                                    "Apple priority number: 0 none, 1 to 4 high, 5 medium, 6 to 9 low; omit to leave unchanged",
+                                minimum: 0,
+                                maximum: 9
+                            ),
+                        ]),
                         "list": .string(
                             description:
                                 "Reminder list name, or the identifier of one of several lists sharing a name. Must match an existing list."
@@ -740,7 +809,11 @@ final class RemindersService: Service {
             description: "Create a new reminder list",
             inputSchema: .object(
                 properties: [
-                    "title": .string(description: "Title of the new reminder list")
+                    "title": .string(description: "Title of the new reminder list"),
+                    "color": .string(
+                        description:
+                            "red, orange, yellow, green, blue, purple, brown, gray, cyan, teal, or #RRGGBB"
+                    ),
                 ],
                 required: ["title"],
                 additionalProperties: false
@@ -767,7 +840,8 @@ final class RemindersService: Service {
                     userInfo: [NSLocalizedDescriptionKey: "List title is required"]
                 )
             }
-            try Self.rejectUnknownKeys(arguments, allowed: ["title"])
+            try Self.rejectUnknownKeys(arguments, allowed: ["title", "color"])
+            let color = try Self.colorChange(arguments["color"])
 
             // Prefer the source of the default list (usually iCloud), falling back
             // to the local source so the list is always creatable.
@@ -788,6 +862,7 @@ final class RemindersService: Service {
             let list = EKCalendar(for: .reminder, eventStore: self.eventStore)
             list.title = title
             list.source = source
+            if let color { list.cgColor = color }
 
             try self.eventStore.saveCalendar(list, commit: true)
 
@@ -795,6 +870,8 @@ final class RemindersService: Service {
                 "identifier": .string(list.calendarIdentifier),
                 "title": .string(list.title),
                 "source": .string(list.source.title),
+                "color": .string(list.color.accessibilityName),
+                "colorHex": Self.hex(of: list).map { .string($0) } ?? .null,
             ])
         }
 
@@ -933,6 +1010,801 @@ final class RemindersService: Service {
                 "identifier": .string(list.calendarIdentifier),
             ])
         }
+
+        // MARK: Named views, search, and single reads
+        //
+        // The behavior follows viticci/remctl (MIT).
+
+        Tool(
+            name: "reminders_today",
+            description:
+                "Incomplete reminders due today, plus overdue ones unless include_overdue is false. Sorted by due date.",
+            inputSchema: .object(
+                properties: [
+                    "include_overdue": .boolean(
+                        description: "Include reminders due before today (default true)",
+                        default: .bool(true)
+                    )
+                ],
+                additionalProperties: false
+            ),
+            annotations: .init(title: "Reminders Due Today", readOnlyHint: true, openWorldHint: false)
+        ) { arguments in
+            try await self.requireAccess()
+            try Self.rejectUnknownKeys(arguments, allowed: ["include_overdue"])
+            let includeOverdue = try Self.boolArgument(arguments["include_overdue"], default: true)
+            return try await self.view(.today(includeOverdue: includeOverdue))
+        }
+
+        Tool(
+            name: "reminders_upcoming",
+            description:
+                "Incomplete reminders due from the start of today through the end of the day `days` days ahead (days 1 covers today and tomorrow). Sorted by due date.",
+            inputSchema: .object(
+                properties: [
+                    "days": .integer(
+                        description: "Days ahead, 1 to 365 (default 7)",
+                        default: .int(7),
+                        minimum: 1,
+                        maximum: 365
+                    )
+                ],
+                additionalProperties: false
+            ),
+            annotations: .init(
+                title: "Upcoming Reminders",
+                readOnlyHint: true,
+                openWorldHint: false
+            )
+        ) { arguments in
+            try await self.requireAccess()
+            try Self.rejectUnknownKeys(arguments, allowed: ["days"])
+            let days: Int?
+            switch arguments["days"] {
+            case nil: days = nil
+            case .some(let value): days = try Self.integerValue(value, description: "days")
+            }
+            return try await self.view(.upcoming(days: try RemindersQuery.validatedUpcomingDays(days)))
+        }
+
+        Tool(
+            name: "reminders_overdue",
+            description:
+                "Incomplete reminders that are overdue: an all-day reminder due before today, or a timed one whose time has passed. Sorted by due date.",
+            inputSchema: .object(properties: [:], additionalProperties: false),
+            annotations: .init(
+                title: "Overdue Reminders",
+                readOnlyHint: true,
+                openWorldHint: false
+            )
+        ) { arguments in
+            try await self.requireAccess()
+            try Self.rejectUnknownKeys(arguments, allowed: [])
+            return try await self.view(.overdue)
+        }
+
+        Tool(
+            name: "reminders_search",
+            description:
+                "Search reminder titles, notes, and URLs. Ignores case and accents (cafe finds Café); % _ and \\ are ordinary characters. Newest first, with paging: pass nextOffset as offset until hasMore is false.",
+            inputSchema: .object(
+                properties: [
+                    "query": .string(description: "Text to find in titles, notes, or URLs"),
+                    "include_completed": .boolean(
+                        description: "Also search completed reminders (default false)",
+                        default: .bool(false)
+                    ),
+                    "list": .string(description: "Limit to the list with this name"),
+                    "list_id": .string(
+                        description: "Limit to the list with this identifier, as returned by reminders_lists"
+                    ),
+                    "limit": .integer(
+                        description: "Page size, 1 to 500 (default 100)",
+                        default: .int(100),
+                        minimum: 1,
+                        maximum: 500
+                    ),
+                    "offset": .integer(description: "Items to skip (default 0)", minimum: 0),
+                ],
+                required: ["query"],
+                additionalProperties: false
+            ),
+            annotations: .init(
+                title: "Search Reminders",
+                readOnlyHint: true,
+                openWorldHint: false
+            )
+        ) { arguments in
+            try await self.requireAccess()
+            try Self.rejectUnknownKeys(
+                arguments,
+                allowed: ["query", "include_completed", "list", "list_id", "limit", "offset"]
+            )
+            guard case .string(let query) = arguments["query"] else {
+                throw RemindersInputError(code: "invalid_query", message: "query is required.")
+            }
+            let includeCompleted = try Self.boolArgument(
+                arguments["include_completed"],
+                default: false
+            )
+            let paging = try RemindersQuery.validatedPaging(
+                limit: try arguments["limit"].map { try Self.integerValue($0, description: "limit") },
+                offset: try arguments["offset"].map {
+                    try Self.integerValue($0, description: "offset")
+                }
+            )
+            let calendars = try self.listFilter(arguments)
+
+            let reminders = try await self.fetch(
+                self.eventStore.predicateForReminders(in: calendars)
+            )
+            let matches =
+                reminders
+                .filter { includeCompleted || !$0.isCompleted }
+                .filter {
+                    RemindersQuery.matches(
+                        query: query,
+                        fields: [$0.title, $0.notes, $0.url?.absoluteString]
+                    )
+                }
+                .sorted {
+                    let lhs = $0.creationDate ?? .distantPast
+                    let rhs = $1.creationDate ?? .distantPast
+                    return lhs == rhs
+                        ? $0.calendarItemIdentifier < $1.calendarItemIdentifier : lhs > rhs
+                }
+            let page = RemindersQuery.page(matches, limit: paging.limit, offset: paging.offset)
+            return Value.object([
+                "items": .array(page.items.map { self.detail(for: $0) }),
+                "count": .int(page.count),
+                "total": .int(page.total),
+                "offset": .int(page.offset),
+                "limit": .int(page.limit),
+                "hasMore": .bool(page.hasMore),
+                "nextOffset": page.nextOffset.map { .int($0) } ?? .null,
+            ])
+        }
+
+        Tool(
+            name: "reminders_get",
+            description:
+                "Get one reminder by identifier with every field: list, notes, dates, all-day flag, priority, URL, alarms (relative, absolute, location), recurrence, and completion.",
+            inputSchema: .object(
+                properties: [
+                    "identifier": .string(
+                        description: "Reminder identifier, as returned by any reminders tool"
+                    )
+                ],
+                required: ["identifier"],
+                additionalProperties: false
+            ),
+            annotations: .init(title: "Get Reminder", readOnlyHint: true, openWorldHint: false)
+        ) { arguments in
+            try await self.requireAccess()
+            try Self.rejectUnknownKeys(arguments, allowed: ["identifier"])
+            guard case .string(let identifier) = arguments["identifier"],
+                let reminder = self.eventStore.calendarItem(withIdentifier: identifier)
+                    as? EKReminder
+            else {
+                throw RemindersInputError(
+                    code: "reminder_not_found",
+                    message: "No reminder found with that identifier."
+                )
+            }
+            return self.detail(for: reminder)
+        }
+
+        Tool(
+            name: "reminders_lists_get",
+            description:
+                "Get one reminder list by identifier or name with its color and counts of active, completed, and overdue reminders. Either identifier or name is required.",
+            inputSchema: .object(
+                properties: [
+                    "identifier": .string(
+                        description: "Identifier of the list, as returned by reminders_lists (preferred)"
+                    ),
+                    "name": .string(description: "Name of the list, used when identifier is omitted"),
+                ],
+                additionalProperties: false
+            ),
+            annotations: .init(title: "Get Reminder List", readOnlyHint: true, openWorldHint: false)
+        ) { arguments in
+            try await self.requireAccess()
+            try Self.rejectUnknownKeys(arguments, allowed: ["identifier", "name"])
+            let list = try self.list(arguments)
+            let reminders = try await self.fetch(
+                self.eventStore.predicateForReminders(in: [list])
+            )
+            let now = Date()
+            let calendar = Calendar.current
+            let active = reminders.filter { !$0.isCompleted }
+            return Value.object([
+                "identifier": .string(list.calendarIdentifier),
+                "title": .string(list.title),
+                "source": .string(list.source.title),
+                "color": .string(list.color.accessibilityName),
+                "colorHex": Self.hex(of: list).map { .string($0) } ?? .null,
+                "isEditable": .bool(list.allowsContentModifications),
+                "isSubscribed": .bool(list.isSubscribed),
+                "activeCount": .int(active.count),
+                "completedCount": .int(reminders.count - active.count),
+                "overdueCount": .int(
+                    active.filter {
+                        RemindersQuery.Views.isOverdue(
+                            $0.dueDateComponents,
+                            now: now,
+                            calendar: calendar
+                        )
+                    }.count
+                ),
+            ])
+        }
+
+        // MARK: Batch writes
+
+        Tool(
+            name: "reminders_complete",
+            description:
+                "Complete or uncomplete up to 50 reminders. Each reminder is written once and never retried; the result lists succeeded, failed, and uncertain identifiers. An uncertain one may have changed: read it back with reminders_get before trying again. Completing a repeating reminder advances it by one occurrence.",
+            inputSchema: .object(
+                properties: [
+                    "identifiers": .array(
+                        description: "Reminder identifiers, 1 to 50",
+                        items: .string(),
+                        minItems: 1,
+                        maxItems: 50
+                    ),
+                    "completed": .boolean(
+                        description: "true to complete (default), false to uncomplete",
+                        default: .bool(true)
+                    ),
+                    "completion_date": .string(
+                        description:
+                            "When it was completed: YYYY-MM-DD or YYYY-MM-DD HH:MM. Not allowed for repeating reminders or when uncompleting."
+                    ),
+                ],
+                required: ["identifiers"],
+                additionalProperties: false
+            ),
+            annotations: .init(
+                title: "Complete Reminders",
+                readOnlyHint: false,
+                destructiveHint: true,
+                openWorldHint: false
+            )
+        ) { arguments in
+            try await self.requireAccess()
+            try Self.rejectUnknownKeys(
+                arguments,
+                allowed: ["identifiers", "completed", "completion_date"]
+            )
+            let plan = try Self.batchPlan(arguments["identifiers"])
+            let completed = try Self.boolArgument(arguments["completed"], default: true)
+            var completionDate: Date?
+            switch arguments["completion_date"] {
+            case nil, .null: break
+            case .string(let text):
+                guard completed else {
+                    throw RemindersInputError(
+                        code: "completion_date_requires_completed",
+                        message: "completion_date applies only when completing."
+                    )
+                }
+                completionDate = try RemindersQuery.parseCompletionDate(text)
+            default:
+                throw RemindersInputError(
+                    code: "invalid_completion_date",
+                    message: "completion_date must be YYYY-MM-DD or YYYY-MM-DD HH:MM."
+                )
+            }
+            return self.runBatch(
+                operation: completed ? "complete" : "uncomplete",
+                plan: plan,
+                store: self.eventStore
+            ) { store, identifier in
+                guard let reminder = store.calendarItem(withIdentifier: identifier) as? EKReminder
+                else { return .failed("reminder_not_found", "No reminder found with that identifier.") }
+                guard reminder.calendar?.allowsContentModifications != false else {
+                    return .failed(
+                        "list_not_modifiable",
+                        "Reminder list \"\(reminder.calendar?.title ?? "")\" does not allow modifications"
+                    )
+                }
+                let repeating = !(reminder.recurrenceRules ?? []).isEmpty
+                if completionDate != nil, repeating {
+                    return .failed(
+                        "completion_date_not_allowed_for_repeating",
+                        "A repeating reminder cannot take a completion date; completing it advances the series."
+                    )
+                }
+                if reminder.isCompleted == completed, completionDate == nil, !repeating {
+                    return .unchanged
+                }
+                reminder.isCompleted = completed
+                if let completionDate { reminder.completionDate = completionDate }
+                do {
+                    try store.save(reminder, commit: true)
+                    return .changed
+                } catch {
+                    reminder.rollback()
+                    // The write threw. It may still have landed, so look at
+                    // the stored state through a fresh store; never retry.
+                    // A repeating reminder advances instead of flipping, so
+                    // its stored state cannot settle the question.
+                    let stored = EKEventStore().calendarItem(withIdentifier: identifier) as? EKReminder
+                    if repeating || stored?.isCompleted == completed {
+                        return .uncertain(error.localizedDescription)
+                    }
+                    return .failed("write_failed", error.localizedDescription)
+                }
+            }
+        }
+
+        Tool(
+            name: "reminders_delete_batch",
+            description:
+                "Delete up to 50 reminders. Each is deleted once and never retried; the result lists succeeded, failed, and uncertain identifiers. An uncertain one may already be gone: check with reminders_get before trying again.",
+            inputSchema: .object(
+                properties: [
+                    "identifiers": .array(
+                        description: "Reminder identifiers, 1 to 50",
+                        items: .string(),
+                        minItems: 1,
+                        maxItems: 50
+                    )
+                ],
+                required: ["identifiers"],
+                additionalProperties: false
+            ),
+            annotations: .init(
+                title: "Delete Reminders",
+                readOnlyHint: false,
+                destructiveHint: true,
+                idempotentHint: true,
+                openWorldHint: false
+            )
+        ) { arguments in
+            try await self.requireAccess()
+            try Self.rejectUnknownKeys(arguments, allowed: ["identifiers"])
+            let plan = try Self.batchPlan(arguments["identifiers"])
+            // Deletion uses its own store; see reminders_delete.
+            return self.runBatch(operation: "delete", plan: plan, store: EKEventStore()) {
+                store,
+                identifier in
+                guard let reminder = store.calendarItem(withIdentifier: identifier) as? EKReminder
+                else { return .failed("reminder_not_found", "No reminder found with that identifier.") }
+                guard reminder.calendar?.allowsContentModifications != false else {
+                    return .failed(
+                        "list_not_modifiable",
+                        "Reminder list \"\(reminder.calendar?.title ?? "")\" does not allow modifications"
+                    )
+                }
+                do {
+                    try store.remove(reminder, commit: true)
+                    return .changed
+                } catch {
+                    if EKEventStore().calendarItem(withIdentifier: identifier) == nil {
+                        return .uncertain(error.localizedDescription)
+                    }
+                    return .failed("write_failed", error.localizedDescription)
+                }
+            }
+        }
+
+        // MARK: Locations
+
+        Tool(
+            name: "reminders_resolve_location",
+            description:
+                "Geocode a street address without writing anything, so you can review the match before using it in a location alarm. Refuses a match that is ambiguous, covers more than about a kilometer, does not carry the street or place you typed, or has no town or postal code in the query. Apple's geocoder resolves addresses better than business names.",
+            inputSchema: .object(
+                properties: [
+                    "query": .string(
+                        description:
+                            "Street address with a town or postal code, for example 1 Apple Park Way, Cupertino"
+                    )
+                ],
+                required: ["query"],
+                additionalProperties: false
+            ),
+            annotations: .init(
+                title: "Resolve Location",
+                readOnlyHint: true,
+                openWorldHint: true
+            )
+        ) { arguments in
+            try Self.rejectUnknownKeys(arguments, allowed: ["query"])
+            guard case .string(let query) = arguments["query"],
+                !query.trimmingCharacters(in: .whitespaces).isEmpty
+            else {
+                throw RemindersInputError(code: "invalid_query", message: "query is required.")
+            }
+            let match = try await Self.resolveAddress(query)
+            return Value.object([
+                "query": .string(query),
+                "title": match.name.map { .string($0) } ?? .null,
+                "address": .string(match.summary),
+                "latitude": .double(match.latitude),
+                "longitude": .double(match.longitude),
+                "radiusMeters": match.radiusMeters.map { .double($0) } ?? .null,
+            ])
+        }
+
+        // MARK: Lists
+
+        Tool(
+            name: "reminders_lists_update",
+            description:
+                "Change a reminder list's title or color. Either identifier or name selects the list; pass title, color, or both.",
+            inputSchema: .object(
+                properties: [
+                    "identifier": .string(
+                        description: "Identifier of the list, as returned by reminders_lists (preferred)"
+                    ),
+                    "name": .string(description: "Current name of the list, used when identifier is omitted"),
+                    "title": .string(description: "New title"),
+                    "color": .string(
+                        description:
+                            "red, orange, yellow, green, blue, purple, brown, gray, cyan, teal, or #RRGGBB"
+                    ),
+                ],
+                additionalProperties: false
+            ),
+            annotations: .init(
+                title: "Update Reminder List",
+                readOnlyHint: false,
+                destructiveHint: true,
+                openWorldHint: false
+            )
+        ) { arguments in
+            try await self.requireAccess()
+            try Self.rejectUnknownKeys(arguments, allowed: ["identifier", "name", "title", "color"])
+            let list = try self.list(arguments)
+            guard list.allowsContentModifications, !list.isImmutable else {
+                throw RemindersInputError(
+                    code: "list_not_modifiable",
+                    message: "Reminder list \"\(list.title)\" does not allow modifications"
+                )
+            }
+            guard arguments["title"] != nil || arguments["color"] != nil else {
+                throw RemindersInputError(
+                    code: "nothing_to_update",
+                    message: "Pass title, color, or both."
+                )
+            }
+            var newTitle: String?
+            switch arguments["title"] {
+            case nil: break
+            case .string(let title) where !title.isEmpty: newTitle = title
+            default:
+                throw RemindersInputError(
+                    code: "invalid_title",
+                    message: "title must be a non-empty string."
+                )
+            }
+            let newColor = try Self.colorChange(arguments["color"])
+            if let newTitle { list.title = newTitle }
+            if let newColor { list.cgColor = newColor }
+            do {
+                try self.eventStore.saveCalendar(list, commit: true)
+            } catch {
+                list.rollback()
+                throw error
+            }
+            return Value.object([
+                "identifier": .string(list.calendarIdentifier),
+                "title": .string(list.title),
+                "source": .string(list.source.title),
+                "color": .string(list.color.accessibilityName),
+                "colorHex": Self.hex(of: list).map { .string($0) } ?? .null,
+            ])
+        }
+    }
+
+    // MARK: - Shared helpers for the views, search, and batch tools
+
+    private func requireAccess() async throws {
+        guard try await eventStore.requestFullAccessToReminders() else {
+            log.error("Reminders access not authorized")
+            throw NSError(
+                domain: "RemindersError",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Reminders access not authorized"]
+            )
+        }
+    }
+
+    private func fetch(_ predicate: NSPredicate) async throws -> [EKReminder] {
+        await withCheckedContinuation { continuation in
+            eventStore.fetchReminders(matching: predicate) { reminders in
+                continuation.resume(returning: reminders ?? [])
+            }
+        }
+    }
+
+    /// The lists named by `list` or `list_id`, or nil for every list.
+    private func listFilter(_ arguments: [String: Value]) throws -> [EKCalendar]? {
+        switch (arguments["list"], arguments["list_id"]) {
+        case (nil, nil): return nil
+        case (.some, .some):
+            throw RemindersInputError(
+                code: "list_conflict",
+                message: "Pass list or list_id, not both."
+            )
+        case (.some(.string(let name)), nil): return [try list(named: name)]
+        case (nil, .some(.string(let identifier))):
+            return [try list(["identifier": .string(identifier)])]
+        default:
+            throw RemindersInputError(
+                code: "invalid_list",
+                message: "list and list_id must be strings."
+            )
+        }
+    }
+
+    private static func boolArgument(_ value: Value?, default defaultValue: Bool) throws -> Bool {
+        switch value {
+        case nil: return defaultValue
+        case .bool(let bool): return bool
+        default:
+            throw RemindersInputError(code: "invalid_argument", message: "Expected a boolean.")
+        }
+    }
+
+    private static func batchPlan(_ value: Value?) throws -> (unique: [String], duplicatesIgnored: [String]) {
+        guard case .array(let values) = value else {
+            throw RemindersInputError(
+                code: "invalid_identifiers",
+                message: "identifiers must be an array of 1 to 50 strings."
+            )
+        }
+        let identifiers = try values.map { value -> String in
+            guard case .string(let identifier) = value else {
+                throw RemindersInputError(
+                    code: "invalid_identifiers",
+                    message: "identifiers must be an array of 1 to 50 strings."
+                )
+            }
+            return identifier
+        }
+        let plan = try RemindersQuery.batchPlan(identifiers)
+        return (plan.unique, plan.duplicatesIgnored)
+    }
+
+    private enum ViewKind {
+        case today(includeOverdue: Bool)
+        case upcoming(days: Int)
+        case overdue
+    }
+
+    private func view(_ kind: ViewKind) async throws -> Value {
+        let calendar = Calendar.current
+        let now = Date()
+        let startOfToday = calendar.startOfDay(for: now)
+        let upperBound: Int
+        switch kind {
+        case .today, .overdue: upperBound = 1
+        case .upcoming(let days): upperBound = days + 1
+        }
+        guard let end = calendar.date(byAdding: .day, value: upperBound, to: startOfToday) else {
+            return .array([])
+        }
+        // Over-fetch to the end of the window and decide each reminder's
+        // view locally, so all-day and timed reminders follow the same rules.
+        let reminders = try await fetch(
+            eventStore.predicateForIncompleteReminders(
+                withDueDateStarting: nil,
+                ending: end,
+                calendars: nil
+            )
+        )
+        let selected = reminders.filter { reminder in
+            let due = reminder.dueDateComponents
+            switch kind {
+            case .today(let includeOverdue):
+                return RemindersQuery.Views.isDueToday(due, now: now, calendar: calendar)
+                    || (includeOverdue
+                        && RemindersQuery.Views.isOverdue(due, now: now, calendar: calendar))
+            case .upcoming(let days):
+                return RemindersQuery.Views.isUpcoming(due, days: days, now: now, calendar: calendar)
+            case .overdue:
+                return RemindersQuery.Views.isOverdue(due, now: now, calendar: calendar)
+            }
+        }
+        .sorted {
+            let lhs = RemindersQuery.Views.dueDate(of: $0.dueDateComponents ?? DateComponents(), calendar: calendar)
+            let rhs = RemindersQuery.Views.dueDate(of: $1.dueDateComponents ?? DateComponents(), calendar: calendar)
+            return (lhs ?? .distantFuture, $0.calendarItemIdentifier)
+                < (rhs ?? .distantFuture, $1.calendarItemIdentifier)
+        }
+        return Value.object([
+            "items": .array(selected.map { detail(for: $0) }),
+            "count": .int(selected.count),
+        ])
+    }
+
+    /// Local wall-clock text for a due date: a bare date for an all-day
+    /// reminder, date and time for a timed one.
+    private static func dueString(_ components: DateComponents) -> String? {
+        guard let year = components.year, let month = components.month, let day = components.day
+        else { return nil }
+        let date = String(format: "%04d-%02d-%02d", year, month, day)
+        guard let hour = components.hour else { return date }
+        return date + String(format: "T%02d:%02d:00", hour, components.minute ?? 0)
+    }
+
+    /// Every field the reminder tools expose, as plain JSON.
+    private func detail(for reminder: EKReminder) -> Value {
+        var fields: [String: Value] = [
+            "identifier": .string(reminder.calendarItemIdentifier),
+            "title": .string(reminder.title ?? ""),
+            "completed": .bool(reminder.isCompleted),
+            "priority": .string(RemindersQuery.priorityName(for: reminder.priority)),
+            "priorityValue": .int(reminder.priority),
+        ]
+        if let list = reminder.calendar {
+            fields["list"] = .string(list.title)
+            fields["listIdentifier"] = .string(list.calendarIdentifier)
+        }
+        if let notes = reminder.notes { fields["notes"] = .string(notes) }
+        if let url = reminder.url { fields["url"] = .string(url.absoluteString) }
+        if let due = reminder.dueDateComponents, let text = Self.dueString(due) {
+            fields["dueDate"] = .string(text)
+            fields["allDay"] = .bool(due.hour == nil)
+        }
+        if let start = reminder.startDateComponents, let text = Self.dueString(start) {
+            fields["startDate"] = .string(text)
+        }
+        if let completionDate = reminder.completionDate {
+            fields["completedAt"] = .string(Self.iso8601String(completionDate))
+        }
+        if let created = reminder.creationDate {
+            fields["createdAt"] = .string(Self.iso8601String(created))
+        }
+        if let modified = reminder.lastModifiedDate {
+            fields["modifiedAt"] = .string(Self.iso8601String(modified))
+        }
+        if let rule = reminder.recurrenceRules?.first {
+            fields["recurrence"] = Self.value(for: rule)
+        }
+        let alarms = (reminder.alarms ?? []).map { Self.value(for: $0) }
+        if !alarms.isEmpty { fields["alarms"] = .array(alarms) }
+        return .object(fields)
+    }
+
+    private static func value(for alarm: EKAlarm) -> Value {
+        if let location = alarm.structuredLocation {
+            var fields: [String: Value] = [
+                "type": .string("location"),
+                "proximity": .string(alarm.proximity == .leave ? "leave" : "enter"),
+                "title": .string(location.title ?? ""),
+                "radius": .double(location.radius),
+            ]
+            if let geo = location.geoLocation {
+                fields["latitude"] = .double(geo.coordinate.latitude)
+                fields["longitude"] = .double(geo.coordinate.longitude)
+            }
+            return .object(fields)
+        }
+        if let date = alarm.absoluteDate {
+            return .object([
+                "type": .string("absolute"),
+                "datetime": .string(iso8601String(date)),
+            ])
+        }
+        let minutes = Int((-alarm.relativeOffset / 60).rounded())
+        return .object([
+            "type": .string("relative"),
+            "minutes": .int(minutes),
+            "label": .string(
+                minutes >= 0
+                    ? "\(minutes) minutes before due date" : "\(-minutes) minutes after due date"
+            ),
+        ])
+    }
+
+    /// What one write in a batch did.
+    private enum BatchOutcome {
+        case changed
+        case unchanged
+        case failed(String, String)
+        case uncertain(String)
+    }
+
+    /// Runs one write per identifier, in order, never retrying. After an
+    /// uncertain write the rest are skipped, because they would likely stall
+    /// the same way and the first one needs checking.
+    private func runBatch(
+        operation: String,
+        plan: (unique: [String], duplicatesIgnored: [String]),
+        store: EKEventStore,
+        _ write: (EKEventStore, String) -> BatchOutcome
+    ) -> Value {
+        var results: [Value] = []
+        var statuses: [RemindersQuery.BatchStatus] = []
+        var succeeded: [Value] = []
+        var failed: [Value] = []
+        var uncertain: [Value] = []
+        var stop = false
+
+        for identifier in plan.unique {
+            var fields: [String: Value] = ["identifier": .string(identifier)]
+            let status: RemindersQuery.BatchStatus
+            if stop {
+                status = .skipped
+                fields["status"] = .string("skipped")
+                fields["code"] = .string("skipped_after_uncertain")
+                fields["message"] = .string("Not attempted: an earlier write in this batch was uncertain.")
+            } else {
+                let existing = store.calendarItem(withIdentifier: identifier) as? EKReminder
+                if let existing {
+                    fields["title"] = .string(existing.title ?? "")
+                    if let list = existing.calendar?.title { fields["list"] = .string(list) }
+                }
+                switch write(store, identifier) {
+                case .changed:
+                    status = .succeeded
+                    fields["status"] = .string("succeeded")
+                case .unchanged:
+                    status = .succeeded
+                    fields["status"] = .string("unchanged")
+                case .failed(let code, let message):
+                    status = .failed
+                    fields["status"] = .string("failed")
+                    fields["code"] = .string(code)
+                    fields["message"] = .string(message)
+                case .uncertain(let message):
+                    status = .uncertain
+                    stop = true
+                    fields["status"] = .string("uncertain")
+                    fields["code"] = .string("write_uncertain")
+                    fields["message"] = .string(
+                        "The write reported an error and may still have landed (\(message)). Check with reminders_get before trying again."
+                    )
+                }
+            }
+            statuses.append(status)
+            switch status {
+            case .succeeded: succeeded.append(.string(identifier))
+            case .failed, .skipped: failed.append(.string(identifier))
+            case .uncertain: uncertain.append(.string(identifier))
+            }
+            results.append(.object(fields))
+        }
+
+        return Value.object([
+            "status": .string(RemindersQuery.batchOverallStatus(statuses)),
+            "operation": .string(operation),
+            "succeeded": .array(succeeded),
+            "failed": .array(failed),
+            "uncertain": .array(uncertain),
+            "duplicatesIgnored": .array(plan.duplicatesIgnored.map { .string($0) }),
+            "results": .array(results),
+        ])
+    }
+
+    /// The color a `color` argument names, or nil when it is absent.
+    private static func colorChange(_ value: Value?) throws -> CGColor? {
+        switch value {
+        case nil: return nil
+        case .string(let text):
+            let rgb = try RemindersQuery.parseListColor(text)
+            return CGColor(srgbRed: rgb.red, green: rgb.green, blue: rgb.blue, alpha: 1)
+        default:
+            throw RemindersInputError(code: "invalid_color", message: "color must be a string.")
+        }
+    }
+
+    private static func hex(of list: EKCalendar) -> String? {
+        guard let cgColor = list.cgColor,
+            let srgb = cgColor.converted(
+                to: CGColorSpace(name: CGColorSpace.sRGB)!,
+                intent: .defaultIntent,
+                options: nil
+            ),
+            let c = srgb.components, c.count >= 3
+        else { return nil }
+        return RemindersQuery.RGB(red: Double(c[0]), green: Double(c[1]), blue: Double(c[2])).hex
     }
 
     /// Applies optional properties from tool arguments to a reminder.
@@ -956,7 +1828,7 @@ final class RemindersService: Service {
         let newNotes = try Self.stringChange(arguments["notes"], description: "notes")
         let newURL = try Self.urlChange(arguments["url"])
         let newStart = try Self.dateComponentsChange(arguments["start"], description: "start")
-        let newDue = try Self.dateComponentsChange(arguments["due"], description: "due")
+        let newDue = try Self.dueChange(arguments["due"])
         let newPriority = try Self.priorityChange(arguments["priority"])
         let newCompleted = try Self.boolChange(arguments["completed"], description: "completed")
         let newRecurrence: PropertyChange<EKRecurrenceRule>
@@ -965,6 +1837,11 @@ final class RemindersService: Service {
             newRecurrence = .absent
         case .object(let recurrence):
             newRecurrence = .set(try Self.recurrenceRule(from: recurrence))
+        case .string(let spec):
+            switch try RemindersQuery.parseRecurrence(spec) {
+            case .clear: newRecurrence = .clear
+            case .rule(let rule): newRecurrence = .set(Self.recurrenceRule(from: rule))
+            }
         case .null:
             newRecurrence = .clear
         default:
@@ -976,14 +1853,14 @@ final class RemindersService: Service {
                 code: 2,
                 userInfo: [
                     NSLocalizedDescriptionKey:
-                        "Recurrence must be an object or null."
+                        "Recurrence must be a spec string, an object, or null."
                 ]
             )
         }
 
         // inputSchema is advertised, not enforced: a present value with the
         // wrong shape is an error, not a silent no-op.
-        let newAlarms: PropertyChange<[EKAlarm]>
+        var newAlarms: PropertyChange<[EKAlarm]>
         switch arguments["alarms"] {
         case .array(let alarmConfigs):
             // Parse every alarm before building any,
@@ -1008,6 +1885,73 @@ final class RemindersService: Service {
                         "Alarms must be an array of alarm configurations or null."
                 ]
             )
+        }
+
+        let completionDate: Date?
+        switch arguments["completion_date"] {
+        case nil, .null: completionDate = nil
+        case .string(let text): completionDate = try RemindersQuery.parseCompletionDate(text)
+        default:
+            throw RemindersInputError(
+                code: "invalid_completion_date",
+                message: "completion_date must be YYYY-MM-DD or YYYY-MM-DD HH:MM."
+            )
+        }
+
+        // The final state must be one Reminders can hold: a repeating
+        // reminder keeps its due date, and a relative alarm counts back from
+        // one. Checked before the reminder is touched.
+        let finalDue: DateComponents?
+        switch newDue {
+        case .set(let components): finalDue = components
+        case .clear: finalDue = nil
+        case .absent: finalDue = reminder.dueDateComponents
+        }
+        let finalHasRecurrence: Bool
+        switch newRecurrence {
+        case .set: finalHasRecurrence = true
+        case .clear: finalHasRecurrence = false
+        case .absent: finalHasRecurrence = !(reminder.recurrenceRules ?? []).isEmpty
+        }
+        if finalHasRecurrence, finalDue == nil {
+            throw RemindersInputError(
+                code: "repeating_reminder_requires_due_date",
+                message: "A repeating reminder needs a due date. Nothing was changed."
+            )
+        }
+        if case .set(let alarms) = newAlarms, finalDue == nil,
+            alarms.contains(where: Self.isRelative)
+        {
+            throw RemindersInputError(
+                code: "relative_alarm_requires_due_date",
+                message:
+                    "A relative alarm counts back from the due date, so the reminder needs one. Use an absolute alarm or set a due date."
+            )
+        }
+        if case .absent = newAlarms, finalDue == nil, case .clear = newDue {
+            // Clearing the due date leaves no anchor for relative alarms.
+            newAlarms = .set((reminder.alarms ?? []).filter { !Self.isRelative($0) })
+        }
+        if completionDate != nil {
+            let willBeCompleted: Bool
+            if case .set(let completed) = newCompleted {
+                willBeCompleted = completed
+            } else {
+                willBeCompleted = reminder.isCompleted
+            }
+            guard willBeCompleted else {
+                throw RemindersInputError(
+                    code: "completion_date_requires_completed",
+                    message: "completion_date applies to a completed reminder."
+                )
+            }
+            guard !finalHasRecurrence else {
+                throw RemindersInputError(
+                    code: "completion_date_not_allowed_for_repeating",
+                    message:
+                        "A repeating reminder cannot take a completion date; completing it advances the series."
+                )
+            }
         }
 
         if case .set(let title) = newTitle { reminder.title = title }
@@ -1037,7 +1981,7 @@ final class RemindersService: Service {
         }
 
         if case .set(let priority) = newPriority {
-            reminder.priority = Int(priority.rawValue)
+            reminder.priority = priority
         }
 
         if case .set(let alarms) = newAlarms {
@@ -1053,6 +1997,53 @@ final class RemindersService: Service {
         if case .set(let completed) = newCompleted {
             reminder.isCompleted = completed
         }
+        if let completionDate {
+            reminder.completionDate = completionDate
+        }
+    }
+
+    /// An alarm anchored to the due date rather than a time or place.
+    private static func isRelative(_ alarm: EKAlarm) -> Bool {
+        alarm.absoluteDate == nil && alarm.structuredLocation == nil
+    }
+
+    private static func dueChange(_ value: Value?) throws -> PropertyChange<DateComponents> {
+        switch value {
+        case nil: return .absent
+        case .null: return .clear
+        case .string(let text): return .set(try RemindersQuery.parseDue(text).components)
+        default:
+            throw RemindersInputError(
+                code: "invalid_due_date",
+                message: "Due must be a date string or null."
+            )
+        }
+    }
+
+    /// Builds an EventKit rule from a parsed recurrence string.
+    private static func recurrenceRule(from spec: RemindersQuery.RecurrenceSpec) -> EKRecurrenceRule {
+        let frequency: EKRecurrenceFrequency
+        switch spec.frequency {
+        case .daily: frequency = .daily
+        case .weekly: frequency = .weekly
+        case .monthly: frequency = .monthly
+        case .yearly: frequency = .yearly
+        }
+        let days = spec.weekdays.compactMap { day -> EKRecurrenceDayOfWeek? in
+            guard let weekday = EKWeekday(rawValue: day.weekday) else { return nil }
+            return EKRecurrenceDayOfWeek(weekday, weekNumber: day.ordinal)
+        }
+        return EKRecurrenceRule(
+            recurrenceWith: frequency,
+            interval: spec.interval,
+            daysOfTheWeek: days.isEmpty ? nil : days,
+            daysOfTheMonth: spec.monthDays.isEmpty ? nil : spec.monthDays.map { NSNumber(value: $0) },
+            monthsOfTheYear: nil,
+            weeksOfTheYear: nil,
+            daysOfTheYear: nil,
+            setPositions: nil,
+            end: nil
+        )
     }
 
     /// A property as the update tools see it: untouched, changed, or cleared.
@@ -1150,28 +2141,32 @@ final class RemindersService: Service {
         }
     }
 
-    /// The lenient `from(string:)` folds unknowns into `.none`; an update
-    /// needs a typo to report an error rather than silently clear priority.
-    private static func priorityChange(_ value: Value?) throws -> PropertyChange<EKReminderPriority> {
+    /// A priority by name (high, medium, low, none) or Apple number (0 to 9).
+    /// A typo is an error, not a silently cleared priority.
+    private static func priorityChange(_ value: Value?) throws -> PropertyChange<Int> {
         switch value {
         case nil: return .absent
         case .string(let string):
-            guard let priority = EKReminderPriority.from(exactString: string) else {
-                throw NSError(
-                    domain: "RemindersError",
-                    code: 2,
-                    userInfo: [
-                        NSLocalizedDescriptionKey:
-                            "Priority must be one of \(EKReminderPriority.allCases.map(\.stringValue).joined(separator: ", "))."
-                    ]
+            guard let priority = RemindersQuery.priorityNumber(name: string) else {
+                throw RemindersInputError(
+                    code: "invalid_priority",
+                    message:
+                        "Priority must be high, medium, low, none, or an Apple number from 0 to 9."
+                )
+            }
+            return .set(priority)
+        case .int(let number):
+            guard let priority = RemindersQuery.priorityNumber(apple: number) else {
+                throw RemindersInputError(
+                    code: "invalid_priority",
+                    message: "Priority numbers run 0 to 9."
                 )
             }
             return .set(priority)
         default:
-            throw NSError(
-                domain: "RemindersError",
-                code: 2,
-                userInfo: [NSLocalizedDescriptionKey: "Priority must be a string."]
+            throw RemindersInputError(
+                code: "invalid_priority",
+                message: "Priority must be a name or an Apple number from 0 to 9."
             )
         }
     }
@@ -1623,6 +2618,8 @@ final class RemindersService: Service {
         enum Place {
             case query(String)
             case coordinate(title: String, CLLocationCoordinate2D)
+            /// A street address resolved with the strict geocoder.
+            case address(String, title: String?)
         }
 
         var trigger: Trigger
@@ -1652,6 +2649,18 @@ final class RemindersService: Service {
                 )
             }
             return ParsedAlarm(trigger: .relative(minutes: minutes))
+        case .string(let text):
+            switch try RemindersQuery.parseAlarm(text) {
+            case .relative(let minutes):
+                return ParsedAlarm(trigger: .relative(minutes: minutes))
+            case .absolute(let date):
+                return ParsedAlarm(trigger: .absolute(date))
+            case .clear:
+                throw RemindersInputError(
+                    code: "invalid_alarm",
+                    message: "To remove alarms, pass null for alarms instead of an alarm string."
+                )
+            }
         default: break
         }
         guard case .object(let config) = value else {
@@ -1692,7 +2701,7 @@ final class RemindersService: Service {
             allowedKeys = ["type", "datetime", "sound", "emailAddress"]
         case "proximity":
             allowedKeys = [
-                "type", "proximity", "location", "locationTitle", "latitude",
+                "type", "proximity", "location", "address", "locationTitle", "latitude",
                 "longitude", "radius", "sound", "emailAddress",
             ]
         default:
@@ -1784,6 +2793,43 @@ final class RemindersService: Service {
 
         case "proximity":
             let place: ParsedAlarm.Place
+            if let addressValue = config["address"] {
+                guard case .string(let address) = addressValue, !address.isEmpty,
+                    config["location"] == nil, config["latitude"] == nil,
+                    config["longitude"] == nil
+                else {
+                    throw RemindersInputError(
+                        code: "location_address_conflict",
+                        message:
+                            "A proximity alarm takes address alone (with an optional locationTitle), not together with location or coordinates."
+                    )
+                }
+                var title: String?
+                switch config["locationTitle"] {
+                case nil: break
+                case .string(let text): title = text
+                default:
+                    throw RemindersInputError(
+                        code: "invalid_location_title",
+                        message: "locationTitle must be a string."
+                    )
+                }
+                let radius = try RemindersQuery.validatedGeofenceRadius(
+                    Self.number(config["radius"])
+                )
+                if config["radius"] != nil, Self.number(config["radius"]) == nil {
+                    throw RemindersInputError(
+                        code: "invalid_location_radius",
+                        message: "Proximity alarm radius must be a number of meters."
+                    )
+                }
+                trigger = .proximity(
+                    .address(address, title: title),
+                    try Self.proximity(config["proximity"]),
+                    radius: radius
+                )
+                return try Self.finishAlarm(ParsedAlarm(trigger: trigger), config: config)
+            }
             switch config["location"] {
             case .some(.string(let query)):
                 // The two advertised object shapes are alternatives: a
@@ -1889,32 +2935,7 @@ final class RemindersService: Service {
                 )
             }
 
-            // An unsupported proximity string must not fold into .enter;
-            // the geofence would trigger on the wrong side.
-            let alarmProximity: EKAlarmProximity
-            switch config["proximity"] {
-            case nil: alarmProximity = .enter
-            case .string("enter"): alarmProximity = .enter
-            case .string("leave"): alarmProximity = .leave
-            case .string(let proximity):
-                throw NSError(
-                    domain: "RemindersError",
-                    code: 4,
-                    userInfo: [
-                        NSLocalizedDescriptionKey:
-                            "Unknown proximity \"\(proximity)\". Expected enter or leave."
-                    ]
-                )
-            default:
-                throw NSError(
-                    domain: "RemindersError",
-                    code: 4,
-                    userInfo: [
-                        NSLocalizedDescriptionKey:
-                            "Proximity alarm proximity must be a string: enter or leave."
-                    ]
-                )
-            }
+            let alarmProximity = try Self.proximity(config["proximity"])
             trigger = .proximity(place, alarmProximity, radius: radius)
 
         default:
@@ -1928,7 +2949,43 @@ final class RemindersService: Service {
             )
         }
 
-        var parsedAlarm = ParsedAlarm(trigger: trigger)
+        return try Self.finishAlarm(ParsedAlarm(trigger: trigger), config: config)
+    }
+
+    /// An unsupported proximity string must not fold into .enter;
+    /// the geofence would trigger on the wrong side.
+    private static func proximity(_ value: Value?) throws -> EKAlarmProximity {
+        switch value {
+        case nil: return .enter
+        case .string("enter"), .string("arriving"): return .enter
+        case .string("leave"), .string("leaving"): return .leave
+        case .string(let proximity):
+            throw NSError(
+                domain: "RemindersError",
+                code: 4,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Unknown proximity \"\(proximity)\". Expected enter, leave, arriving, or leaving."
+                ]
+            )
+        default:
+            throw NSError(
+                domain: "RemindersError",
+                code: 4,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Proximity alarm proximity must be a string: enter or leave."
+                ]
+            )
+        }
+    }
+
+    /// Applies the sound and email options every alarm type shares.
+    private static func finishAlarm(
+        _ alarm: ParsedAlarm,
+        config: [String: Value]
+    ) throws -> ParsedAlarm {
+        var parsedAlarm = alarm
 
         switch config["sound"] {
         case nil: break
@@ -2005,6 +3062,13 @@ final class RemindersService: Service {
             case .coordinate(let locationTitle, let locationCoordinate):
                 title = locationTitle
                 coordinate = locationCoordinate
+            case .address(let address, let customTitle):
+                let match = try await Self.resolveAddress(address)
+                title = customTitle ?? match.name ?? match.summary
+                coordinate = CLLocationCoordinate2D(
+                    latitude: match.latitude,
+                    longitude: match.longitude
+                )
             }
             let structuredLocation = EKStructuredLocation(title: title)
             structuredLocation.geoLocation = CLLocation(
@@ -2027,6 +3091,79 @@ final class RemindersService: Service {
         }
 
         return alarm
+    }
+
+    /// Geocodes a street address and accepts the result only when it is
+    /// unambiguous, precise, and tied to what was typed.
+    static func resolveAddress(_ address: String) async throws -> RemindersQuery.GeocodeCandidate {
+        let candidates = try await geocode(address)
+        do {
+            return try RemindersQuery.judgeAddress(query: address, candidates: candidates)
+        } catch let rejection as RemindersQuery.GeocodeRejection {
+            var message = "\(rejection.message) (\(rejection.code))"
+            if rejection.candidates.count > 1 {
+                message +=
+                    " Candidates: "
+                    + rejection.candidates.map { "\($0.summary) [\($0.latitude), \($0.longitude)]" }
+                    .joined(separator: "; ")
+            }
+            throw RemindersInputError(code: rejection.code, message: message)
+        }
+    }
+
+    /// Apple's geocoder, with a 10-second limit.
+    private static func geocode(
+        _ address: String
+    ) async throws -> [RemindersQuery.GeocodeCandidate] {
+        let geocoder = CLGeocoder()
+        return try await withThrowingTaskGroup(of: [RemindersQuery.GeocodeCandidate].self) { group in
+            group.addTask {
+                do {
+                    let placemarks = try await geocoder.geocodeAddressString(address)
+                    return placemarks.compactMap { placemark in
+                        guard let location = placemark.location else { return nil }
+                        return RemindersQuery.GeocodeCandidate(
+                            name: placemark.name,
+                            thoroughfare: placemark.thoroughfare,
+                            subThoroughfare: placemark.subThoroughfare,
+                            locality: placemark.locality,
+                            postalCode: placemark.postalCode,
+                            administrativeArea: placemark.administrativeArea,
+                            country: placemark.country,
+                            latitude: location.coordinate.latitude,
+                            longitude: location.coordinate.longitude,
+                            radiusMeters: (placemark.region as? CLCircularRegion)?.radius
+                        )
+                    }
+                } catch let error as CLError {
+                    switch error.code {
+                    case .geocodeFoundNoResult: return []
+                    case .denied:
+                        throw RemindersInputError(
+                            code: "location_lookup_denied",
+                            message: "The geocoder refused the lookup (location_lookup_denied)."
+                        )
+                    default:
+                        throw RemindersInputError(
+                            code: "location_lookup_failed",
+                            message:
+                                "The geocoder failed: \(error.localizedDescription) (location_lookup_failed)."
+                        )
+                    }
+                }
+            }
+            group.addTask {
+                try await Task.sleep(for: .seconds(10))
+                geocoder.cancelGeocode()
+                throw RemindersInputError(
+                    code: "location_lookup_timeout",
+                    message: "The geocoder did not answer within 10 seconds (location_lookup_timeout)."
+                )
+            }
+            defer { group.cancelAll() }
+            guard let result = try await group.next() else { return [] }
+            return result
+        }
     }
 
     /// Resolves a free-text location query to a place, the way the Maps
