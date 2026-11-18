@@ -773,6 +773,33 @@ iMCP passes a note's title, text, and folder to a fixed script as parameters
 and never builds a script from them,
 so nothing in a title or a note can change what the script does.
 
+**Private Notes features** is a second switch in iMCP's Notes settings,
+off by default, for what scripting can't do.
+It adds eight tools that go through Apple's unsupported NotesShared framework
+(the code Notes itself uses),
+so they can store what scripting drops:
+`notes_tags` (native tags: list, add, remove, replace),
+`notes_checklist` (real checklist items: get, add, mark done),
+`notes_table` (native tables: get, create),
+`notes_link` (the `notes://` link of a note, links between notes),
+`notes_pin`, `notes_append_rich` (append without rewriting the note,
+so tags, tables, links, and checklists stay),
+`notes_create_markdown` (Notes' own Markdown importer),
+and `notes_structure` (pinned state, paragraph styles, checklist state, tables, links).
+Changing a note also needs **Allow iMCP to change notes and folders**.
+Every change is read back through a second Core Data context
+and the result says `verified: true` or `false`.
+They use the Notes folder access that the Notes service already asks for,
+and the writes need a Group Containers exception in `App.entitlements`
+(`com.apple.security.temporary-exception.files.home-relative-path.read-write`
+for `/Library/Group Containers/group.com.apple.notes/`).
+Apple can change NotesShared in any macOS update,
+so every private call is checked before it is made,
+and a change names the part that moved instead of crashing iMCP.
+A private framework and a temporary exception can't ship through the Mac App Store,
+so this is for builds of this fork, not upstream.
+Removing a tag leaves the empty line Notes put it on.
+
 ### JSON-LD for Tool Results
 
 The tools provided by iMCP return results as

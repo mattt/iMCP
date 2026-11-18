@@ -36,6 +36,8 @@ struct ServiceSettingsView: View {
             if config.service is NotesService {
                 NotesWritesSection(serverController: serverController)
                     .disabled(!isOn)
+                PrivateNotesSection(serverController: serverController)
+                    .disabled(!isOn)
             }
 
             Section {
@@ -152,6 +154,26 @@ private struct NotesWritesSection: View {
         } footer: {
             Text(
                 "Clients can then create, edit, move, and delete notes and folders in Notes. Deleted notes go to Recently Deleted. An edit replaces a note's text and is refused if the note changed since the client read it. The first time, macOS asks whether iMCP may control Notes."
+            )
+        }
+    }
+}
+
+/// The switch for the Notes tools that use Apple's private NotesShared framework:
+/// native tags, checklists, tables, pinning, note links, rich append, and Markdown notes.
+private struct PrivateNotesSection: View {
+    @ObservedObject var serverController: ServerController
+    @AppStorage(NotesPrivate.settingKey) private var isEnabled = false
+
+    var body: some View {
+        Section {
+            Toggle("Private Notes features", isOn: $isEnabled)
+                .onChange(of: isEnabled) {
+                    serverController.toolListChanged()
+                }
+        } footer: {
+            Text(
+                "Lets clients read and change native tags, checklists, tables, pins, links between notes, and Markdown notes. These use Apple's unsupported NotesShared framework, which can change in any macOS update, and need the Notes folder access above. Changes also need \"Allow iMCP to change notes and folders\". Saved through Notes' own code, never by editing its database. Off by default."
             )
         }
     }

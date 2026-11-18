@@ -21,6 +21,13 @@ struct App: SwiftUI.App {
         userDriverDelegate: nil
     )
 
+    init() {
+        #if DEBUG
+            // Live check of the private Notes tools; exits before any service starts.
+            NotesPrivateSelfTest.runAndExitIfRequested()
+        #endif
+    }
+
     var body: some Scene {
         @Bindable var appDelegate = appDelegate
 
