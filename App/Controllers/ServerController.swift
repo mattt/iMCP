@@ -241,6 +241,32 @@ enum ServiceRegistry {
         #endif
         return configs
     }
+
+    static func displayName(for service: any Service) -> String {
+        switch service {
+        case is CalendarService: return "Calendar"
+        case is CaptureService: return "Capture"
+        case is ContactsService: return "Contacts"
+        case is HomeService: return "Home"
+        case is LocationService: return "Location"
+        case is MapsService: return "Maps"
+        case is MailService: return "Mail"
+        case is MessageService: return "Messages"
+        case is MusicService: return "Music"
+        case is NotesService: return "Notes"
+        case is PhoneService: return "Phone"
+        case is RemindersService: return "Reminders"
+        case is ShortcutsService: return "Shortcuts"
+        case is UtilitiesService: return "Utilities"
+        case is VoiceMemosService: return "Voice Memos"
+        case is VoicemailService: return "Voicemail"
+        default:
+            #if WEATHERKIT_AVAILABLE
+                if service is WeatherService { return "Weather" }
+            #endif
+            return service.serviceID
+        }
+    }
 }
 
 @MainActor
@@ -283,9 +309,20 @@ final class ServerController: ObservableObject {
     /// so that revoking a credential closes them.
     private var credentialSessions = CredentialSessions()
 
-    // MARK: - AppStorage for Disabled Tools
+    // MARK: - AppStorage for Disabled Tools & Approval Mode
     @AppStorage("disabledTools") private var disabledToolsData = Data()
     private var disabledToolsGeneration = 0
+    @AppStorage(ApprovalMode.defaultsKey) private var approvalModeRawValue = ApprovalMode.defaultMode.rawValue
+
+    var approvalMode: ApprovalMode {
+        get { ApprovalMode(rawValue: approvalModeRawValue) ?? .defaultMode }
+        set {
+            guard approvalMode != newValue else { return }
+            objectWillChange.send()
+            approvalModeRawValue = newValue.rawValue
+            toolListChanged()
+        }
+    }
 
     // MARK: - Remote Access
     @AppStorage("remoteAccessEnabled") private var remoteAccessEnabled = false
@@ -433,6 +470,12 @@ final class ServerController: ObservableObject {
             tools.insert(name)
         }
         disabledTools = tools
+    }
+
+    /// Tells clients to list the tools again after a service's "Allow writes" setting
+    /// changed which of its tools it offers.
+    func toolListChanged() {
+        Task { await networkManager.updateServiceBindings(self.currentServiceBindings) }
     }
 
     func setService(_ config: ServiceConfig, enabled: Bool) {
@@ -1092,7 +1135,7 @@ extension RemoteAccessServer {
             let gate = ConnectionApprovalGate()
             try? await gate.approve { true }
             // Read current permissions so changes apply to open sessions.
-            await networkManager.registerHandlers(for: server, connectionID: UUID(), gate: gate) { tool in
+            await networkManager.registerHandlers(for: server, connectionID: UUID(), gate: gate, clientName: nil) { tool in
                 // A session belongs to an access token or to an OAuth grant.
                 // Read current permissions so that revoking or editing applies at once.
                 (tokenStore.token(id: tokenID)?.permissions ?? OAuthAuthority.shared.grant(id: tokenID)?.permissions)?
@@ -1133,6 +1176,8 @@ actor MCPConnectionManager {
     private let parentManager: ServerNetworkManager
     private let approvalGate = ConnectionApprovalGate()
     private var isStopping = false
+    /// The name that the client gave in its initialize request.
+    private var clientName: String?
 
     /// Creates a manager for a socket whose client passed the code-signing check.
     /// The manager owns `descriptor` and closes it when it stops.
@@ -1156,6 +1201,7 @@ actor MCPConnectionManager {
                     guard let self = self else { return false }
 
                     log.info("Received initialize request from client: \(clientInfo.name)")
+                    await self.setClientName(clientInfo.name)
 
                     // Request user approval for the connection.
                     let approved = await approvalHandler(clientInfo)
@@ -1188,11 +1234,16 @@ actor MCPConnectionManager {
         }
     }
 
+    private func setClientName(_ name: String) {
+        clientName = name
+    }
+
     private func registerHandlers() async {
         await parentManager.registerHandlers(
             for: server,
             connectionID: connectionID,
-            gate: approvalGate
+            gate: approvalGate,
+            clientName: clientName
         )
     }
 
@@ -1333,6 +1384,8 @@ actor ServerNetworkManager {
     private var serviceBindings: [String: Binding<Bool>] = [:]
     private var disabledTools: Set<String> = []
     private var disabledToolsLastGeneration = -1
+    private let confirmer: any OutboundConfirming = MacOutboundConfirmer()
+    private let confirmationQueue = ToolConfirmationQueue.shared
 
     private var remoteAccessIfStarted: RemoteAccessServer?
     /// The HTTP server for clients on other devices, created when first needed.
@@ -1641,6 +1694,7 @@ actor ServerNetworkManager {
         for server: MCP.Server,
         connectionID: UUID,
         gate: ConnectionApprovalGate,
+        clientName: String?,
         isToolAllowed: (@Sendable (Tool) async -> Bool)? = nil
     ) async {
         await server.withApprovedMethodHandler(ListPrompts.self, gate: gate) { _ in
@@ -1669,7 +1723,7 @@ actor ServerNetworkManager {
                     if let isServiceEnabled = await self.serviceBindings[serviceId]?.wrappedValue,
                         isServiceEnabled
                     {
-                        for tool in service.tools {
+                        for tool in service.listedTools() {
                             if await self.disabledTools.contains(tool.name) {
                                 log.debug("Skipping disabled tool: \(tool.name)")
                                 continue
@@ -1733,6 +1787,9 @@ actor ServerNetworkManager {
                 )
             }
 
+            let confirmer = self.confirmer
+            let confirmationQueue = self.confirmationQueue
+
             if let isToolAllowed {
                 let tool = await self.services.lazy.flatMap(\.tools).first { $0.name == params.name }
                 guard let tool, await isToolAllowed(tool) else {
@@ -1757,15 +1814,20 @@ actor ServerNetworkManager {
                 if let isServiceEnabled = await self.serviceBindings[serviceId]?.wrappedValue,
                     isServiceEnabled
                 {
+                    guard let tool = service.tools.first(where: { $0.name == params.name }) else {
+                        continue
+                    }
+
                     do {
-                        guard
-                            let value = try await service.call(
-                                tool: params.name,
-                                with: params.arguments ?? [:]
-                            )
-                        else {
-                            continue
-                        }
+                        let value = try await ToolCallApproval.execute(
+                            tool: tool,
+                            in: service,
+                            serviceName: ServiceRegistry.displayName(for: service),
+                            arguments: params.arguments ?? [:],
+                            clientName: clientName,
+                            confirmer: confirmer,
+                            queue: confirmationQueue
+                        )
 
                         log.notice("Tool \(params.name) executed successfully for \(connectionID)")
                         switch value {

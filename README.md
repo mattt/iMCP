@@ -202,6 +202,49 @@ click <img style="display: inline" width="20" height="16" src="/Assets/icon.svg"
 
 <br clear="all">
 
+### Allow writes
+
+Each service that has tools that change things
+has an **Allow writes** switch on its Settings page.
+While it is off, clients don't see that service's write tools
+and a call to one is refused, so nothing changes.
+Tools that only read are never affected.
+Deleting counts as a write,
+so the same switch covers it.
+A tool's own switch in the same list still turns that one tool off
+when **Allow writes** is on.
+
+Services that already had write tools
+(Calendar, Contacts, Home, Mail, Music, Phone, Reminders and Shortcuts)
+start with **Allow writes** on,
+so an update changes nothing for them.
+A service whose write tools are new
+can start with it off until you turn it on.
+
+Sending something to another person needs one more step.
+Even with **Allow writes** on,
+a tool that sends a message or an email
+(none does yet; they arrive with their services)
+shows a window with the client's name, the recipient, and the full text,
+and sends only after you click its button.
+The window waits 50 seconds and then cancels,
+shows one request at a time,
+and has no "always allow",
+so each send needs its own click.
+Starting a call is the same:
+the Phone app asks you to confirm before dialing.
+
+### Approval modes
+
+**General** settings has an **Approval Mode** that applies to every tool call from every client:
+
+- **Ask for Everything** asks in iMCP before each read and each write.
+- **Ask for Writes Only** asks before tools that change things and runs read-only tools right away.
+- **Ask in Agent (Full Access in iMCP)** shows no iMCP prompts and shows how to make Claude Desktop, Claude Code, claude.ai, Duet and Muse ask instead.
+- **Allow Everything** shows no prompts, and shows how to permit all iMCP tools in those clients.
+
+The last two modes also ignore each service's **Allow writes** switch while they are selected, without changing what you set there.
+
 ### Approve connections
 
 <img align="right" width="372" src="/Assets/imcp-screenshot-approve-connection.png" alt="Screenshot of the iMCP Connection Request dialog with Deny and Allow buttons" />

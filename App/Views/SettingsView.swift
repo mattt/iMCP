@@ -48,7 +48,10 @@ struct SettingsView: View {
             Group {
                 switch selection {
                 case .general:
-                    GeneralSettingsView(isMenuBarExtraInserted: isMenuBarExtraInserted)
+                    GeneralSettingsView(
+                        serverController: serverController,
+                        isMenuBarExtraInserted: isMenuBarExtraInserted
+                    )
                 case .clients:
                     ClientsSettingsView(serverController: serverController)
                 case .remoteAccess:
@@ -151,6 +154,7 @@ enum SettingsPane: Hashable, RawRepresentable {
 }
 
 struct GeneralSettingsView: View {
+    @ObservedObject var serverController: ServerController
     @AppStorage("showMenuBarExtra") private var showMenuBarExtra = true
     var isMenuBarExtraInserted: Bool
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
@@ -186,12 +190,123 @@ struct GeneralSettingsView: View {
                     }
                 }
             }
+
+            ApprovalModeSection(serverController: serverController)
         }
         .formStyle(.grouped)
         .navigationTitle("General")
         .onAppear {
             launchAtLogin = SMAppService.mainApp.status == .enabled
         }
+    }
+}
+
+private struct ApprovalModeSection: View {
+    @ObservedObject var serverController: ServerController
+    @State private var expandedAgents: Set<String> = ["claude-desktop", "claude-code"]
+
+    private var selectedMode: ApprovalMode {
+        serverController.approvalMode
+    }
+
+    var body: some View {
+        Section {
+            ForEach(ApprovalMode.allCases) { mode in
+                Button {
+                    serverController.approvalMode = mode
+                } label: {
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: selectedMode == mode ? "largecircle.fill.circle" : "circle")
+                            .foregroundStyle(selectedMode == mode ? Color.accentColor : .secondary)
+                            .padding(.top, 2)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(mode.title)
+                                .foregroundStyle(.primary)
+                            Text(mode.summary)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(selectedMode == mode ? [.isSelected] : [])
+            }
+        } header: {
+            Text("Approval Mode")
+        } footer: {
+            Text(
+                "Applies to tool calls across all enabled services. Changing between iMCP-managed and full-access modes updates the tools offered to connected clients."
+            )
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+
+        if selectedMode.showsAgentConfigurationHelp {
+            Section {
+                ForEach(selectedMode.agentInstructions) { instruction in
+                    DisclosureGroup(isExpanded: binding(for: instruction.id)) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(instruction.instructions)
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            if let snippet = instruction.codeSnippet {
+                                HStack(alignment: .top, spacing: 8) {
+                                    Text(snippet)
+                                        .font(.caption.monospaced())
+                                        .textSelection(.enabled)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .padding(8)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 6)
+                                                .fill(Color(NSColor.textBackgroundColor))
+                                        )
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 6)
+                                                .stroke(Color(NSColor.separatorColor))
+                                        )
+
+                                    Button("Copy") {
+                                        let pasteboard = NSPasteboard.general
+                                        pasteboard.clearContents()
+                                        pasteboard.setString(snippet, forType: .string)
+                                        _ = NSSound.play(.pop)
+                                    }
+                                    .controlSize(.small)
+                                }
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    } label: {
+                        Text(instruction.agentName)
+                            .fontWeight(.medium)
+                    }
+                }
+            } header: {
+                Text("Agent Setup Instructions")
+            } footer: {
+                if let heading = selectedMode.agentInstructionsHeading {
+                    Text(heading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+    }
+
+    private func binding(for agentID: String) -> Binding<Bool> {
+        Binding(
+            get: { expandedAgents.contains(agentID) },
+            set: { isExpanded in
+                if isExpanded {
+                    expandedAgents.insert(agentID)
+                } else {
+                    expandedAgents.remove(agentID)
+                }
+            }
+        )
     }
 }
 
