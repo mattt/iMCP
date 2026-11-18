@@ -88,6 +88,19 @@ actor PhoneBackend: MobileBackend {
     nonisolated var tools: [Tool] {
         MobileTools.all(backend: self) + [
             Tool(
+                name: MobileActivityLink.syncTool,
+                description: "Receive activity history events from the Mac.",
+                inputSchema: .object(properties: [:], additionalProperties: true),
+                annotations: .init(readOnlyHint: false, openWorldHint: false)
+            ) { input in
+                let request = try MobileCoding.decoder.decode(
+                    MobileActivitySyncRequest.self,
+                    from: JSONEncoder().encode(input)
+                )
+                let response = await PhoneActivityStore.shared.sync(request)
+                return try JSONDecoder().decode(Value.self, from: MobileCoding.encoder.encode(response))
+            },
+            Tool(
                 name: MobileLink.pullTool,
                 description: "Return the oldest queued batch of changes for the Mac's cache.",
                 inputSchema: .object(

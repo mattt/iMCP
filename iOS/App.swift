@@ -8,10 +8,11 @@ struct MobileApp: App {
     @UIApplicationDelegateAdaptor(MobileAppDelegate.self) private var delegate
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var connection = PhoneConnection.shared
+    @StateObject private var activity = PhoneActivityStore.shared
 
     var body: some Scene {
         WindowGroup {
-            StatusView(connection: connection)
+            StatusView(connection: connection, activity: activity)
                 .onOpenURL { url in
                     // A pairing link opened from the Mac, for example through AirDrop.
                     guard let code = MobilePairingCode(url: url) else { return }
@@ -75,6 +76,7 @@ final class MobileAppDelegate: NSObject, UIApplicationDelegate {
 
 struct StatusView: View {
     @ObservedObject var connection: PhoneConnection
+    @ObservedObject var activity: PhoneActivityStore
     @State private var showingPairing = false
     @State private var confirmingUnpair = false
 
@@ -100,6 +102,8 @@ struct StatusView: View {
                         "iMCP sends data only to the Mac you pair, over your local network with encryption. Nothing goes to iCloud or another server."
                     )
                 }
+
+                ActivitySection(activity: activity)
 
                 ForEach(MobileDomain.allCases, id: \.self) { domain in
                     ServiceSection(domain: domain)

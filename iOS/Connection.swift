@@ -352,6 +352,7 @@ final class PhoneConnection: ObservableObject {
         PhoneCredentials.delete()
         try? await PhoneBackend.shared.openOutbox().deleteAll()
         self.credentials = nil
+        PhoneActivityStore.shared.reset()
         phase = .unpaired
         await refreshQueue()
     }
