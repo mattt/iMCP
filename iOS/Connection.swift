@@ -254,18 +254,6 @@ final class PhoneConnection: ObservableObject {
         return flushed
     }
 
-    /// Flushes while iOS lets the app finish the work after a background wake.
-    func flushInBackground() async {
-        let application = UIApplication.shared
-        var identifier = UIBackgroundTaskIdentifier.invalid
-        identifier = application.beginBackgroundTask(withName: "Send changes to the Mac") {
-            application.endBackgroundTask(identifier)
-            identifier = .invalid
-        }
-        await flush()
-        if identifier != .invalid { application.endBackgroundTask(identifier) }
-    }
-
     private func performFlush(timeout: Duration) async -> Bool {
         guard credentials != nil else { return false }
         if await PhoneBackend.shared.pendingBatches == 0 { return true }

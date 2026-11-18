@@ -312,8 +312,10 @@ actor AlarmObserver {
         guard task == nil else { return }
         task = Task {
             for await _ in AlarmManager.shared.alarmUpdates {
-                await PhoneBackend.shared.sync(.alarms)
-                await PhoneConnection.shared.flush(timeout: .seconds(5))
+                await BackgroundWork.run("Alarm sync") {
+                    await PhoneBackend.shared.sync(.alarms)
+                    await PhoneConnection.shared.flush(timeout: .seconds(5))
+                }
             }
         }
     }

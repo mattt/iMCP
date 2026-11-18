@@ -118,6 +118,8 @@ actor MobileOutbox {
         }
         if chunks.isEmpty, !dates.isEmpty || !replacing.isEmpty { chunks = [[]] }
         try database.transaction {
+            // An expired background task cancels the sync; roll back instead of writing.
+            try Task.checkCancellation()
             if let generation, generation != self.generation { throw Superseded() }
             for (index, chunk) in chunks.enumerated() {
                 let last = index == chunks.count - 1

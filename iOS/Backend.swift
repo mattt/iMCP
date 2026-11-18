@@ -143,7 +143,10 @@ actor PhoneBackend: MobileBackend {
     // MARK: - Sync
 
     private func pull(cacheID: String) async throws -> Value {
-        let pull = try await openOutbox().pull(cacheID: cacheID)
+        let outbox = try openOutbox()
+        let pull = try await BackgroundWork.attempt("Queue changes for the Mac") {
+            try await outbox.pull(cacheID: cacheID)
+        }
         if pull.reset {
             log.notice("The Mac's cache changed; sending all data again")
             Task { await self.syncAll() }
@@ -152,7 +155,8 @@ actor PhoneBackend: MobileBackend {
     }
 
     private func ack(_ sequence: Int64) async throws -> Value {
-        try await openOutbox().ack(sequence)
+        let outbox = try openOutbox()
+        try await BackgroundWork.attempt("Acknowledge changes") { try await outbox.ack(sequence) }
         return ["ok": true]
     }
 
@@ -187,7 +191,11 @@ actor PhoneBackend: MobileBackend {
     private func run(_ service: any PhoneService) async {
         guard let outbox = try? openOutbox() else { return }
         do {
-            try await service.sync(into: outbox, generation: await outbox.generation)
+            let generation = await outbox.generation
+            // Every sync path (foreground, HealthKit wake, background refresh) passes through here.
+            try await BackgroundWork.attempt("Sync \(service.domain.title)") {
+                try await service.sync(into: outbox, generation: generation)
+            }
             PhoneSettings.setLastSync(service.domain, Date())
         } catch is MobileOutbox.Superseded {
             // The Mac's cache was reset during this sync; start over from no anchors.

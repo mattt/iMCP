@@ -145,6 +145,27 @@ final class MobileOutboxTests: XCTestCase {
         let left = try FileManager.default.contentsOfDirectory(atPath: group.path).filter { $0.hasPrefix("outbox") }
         XCTAssertEqual(left, [], "Nothing stays in the group container.")
     }
+
+    /// When the background-task assertion expires, the work is cancelled.
+    /// A cancelled write must roll back and leave no lock behind.
+    func testCancelledEnqueueQueuesNothingAndHoldsNoLock() async throws {
+        let task = Task {
+            while !Task.isCancelled { await Task.yield() }
+            try await outbox.enqueue([record("a")], syncedAt: [.health: Date()], state: ["anchor": Data([1])])
+        }
+        task.cancel()
+        do {
+            try await task.value
+            XCTFail("A cancelled enqueue must not commit.")
+        } catch is CancellationError {}
+        let pending = await outbox.pendingCount
+        XCTAssertEqual(pending, 0)
+        let anchor = await outbox.state("anchor")
+        XCTAssertNil(anchor)
+        // Another connection can take the write lock at once.
+        let other = try MobileDatabase(path: directory.appendingPathComponent("outbox.sqlite").path)
+        try other.transaction { try other.run("INSERT INTO state (name, value) VALUES ('x', x'00')") }
+    }
 }
 
 final class MobileAlarmRequestTests: XCTestCase {
