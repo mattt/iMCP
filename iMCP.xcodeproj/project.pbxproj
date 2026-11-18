@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B2C4D6E80000000000000012 /* ../../Shared/Mobile/MobileConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C4D6E80000000000000011 /* ../../Shared/Mobile/MobileConfiguration.swift */; };
+		B2C4D6E80000000000000014 /* MobileConfigurationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C4D6E80000000000000013 /* MobileConfigurationTests.swift */; };
 		B2C4D6E80000000000000006 /* MobileActivityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C4D6E80000000000000005 /* MobileActivityTests.swift */; };
 		B2C4D6E80000000000000008 /* MobileTransportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C4D6E80000000000000007 /* MobileTransportTests.swift */; };
 		B2C4D6E80000000000000004 /* ../../App/Services/MobileActivityStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C4D6E80000000000000003 /* ../../App/Services/MobileActivityStore.swift */; };
@@ -144,6 +146,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		B2C4D6E80000000000000011 /* ../../Shared/Mobile/MobileConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../Shared/Mobile/MobileConfiguration.swift; sourceTree = "<group>"; };
+		B2C4D6E80000000000000013 /* MobileConfigurationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileConfigurationTests.swift; sourceTree = "<group>"; };
 		B2C4D6E80000000000000005 /* MobileActivityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileActivityTests.swift; sourceTree = "<group>"; };
 		B2C4D6E80000000000000007 /* MobileTransportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileTransportTests.swift; sourceTree = "<group>"; };
 		B2C4D6E80000000000000003 /* ../../App/Services/MobileActivityStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/MobileActivityStore.swift; sourceTree = "<group>"; };
@@ -227,6 +231,7 @@
 			membershipExceptions = (
 				Mobile/MobileActivity.swift,
 				Mobile/MobileAlarmRequest.swift,
+				Mobile/MobileConfiguration.swift,
 				Mobile/MobileDatabase.swift,
 				Mobile/MobileOutbox.swift,
 				Mobile/MobileSync.swift,
@@ -411,6 +416,8 @@
 				B2C4D6E80000000000000007 /* MobileTransportTests.swift */,
 				B2C4D6E80000000000000003 /* ../../App/Services/MobileActivityStore.swift */,
 				B2C4D6E80000000000000001 /* ../../Shared/Mobile/MobileActivity.swift */,
+				B2C4D6E80000000000000011 /* ../../Shared/Mobile/MobileConfiguration.swift */,
+				B2C4D6E80000000000000013 /* MobileConfigurationTests.swift */,
 				7BC3F2481A2BC3DA6FCD135F /* ../../App/Services/MobileCache.swift */,
 				DE3608360482D8D430F9A6FD /* ../../App/Services/Mobile.swift */,
 				528763F26319BDDB15541474 /* ../../Shared/Mobile/MobileDatabase.swift */,
@@ -824,6 +831,8 @@
 				B2C4D6E80000000000000008 /* MobileTransportTests.swift in Sources */,
 				B2C4D6E80000000000000004 /* ../../App/Services/MobileActivityStore.swift in Sources */,
 				B2C4D6E80000000000000002 /* ../../Shared/Mobile/MobileActivity.swift in Sources */,
+				B2C4D6E80000000000000012 /* ../../Shared/Mobile/MobileConfiguration.swift in Sources */,
+				B2C4D6E80000000000000014 /* MobileConfigurationTests.swift in Sources */,
 				1A4EBB7CECB525CCC26EE438 /* ../../App/Services/MobileCache.swift in Sources */,
 				A1BA6CCAD87FD4F9DABADE3F /* ../../App/Services/Mobile.swift in Sources */,
 				0EBDDCD81AB193D1DCDA3616 /* ../../Shared/Mobile/MobileDatabase.swift in Sources */,
