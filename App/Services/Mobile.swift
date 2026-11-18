@@ -5,6 +5,14 @@ import Network
 import OSLog
 import Security
 
+/// Transport endpoints that the Mac advertises to a paired iPhone or iPad.
+struct MobileRemoteEndpoints: Equatable, Sendable {
+    var tailnetHost: String?
+    var tailnetPort: UInt16?
+    var funnelURL: String?
+    var cloudflareURL: String?
+}
+
 /// Serves the Health and Alarms tools from iMCP on a paired iPhone or iPad.
 ///
 /// HealthKit and AlarmKit data stays on the phone,
@@ -15,6 +23,16 @@ import Security
 /// and every answer says when that was.
 actor MobileService: MobileBackend {
     static let shared = MobileService(isEnabled: { MobileService.isAnyServiceEnabled() })
+
+    static let transportModeKey = "mobileTransportMode"
+    static let tailscaleVPNEnabledKey = "mobileTailscaleVPNEnabled"
+    static let tailscaleHostOverrideKey = "mobileTailscaleHost"
+    static let cloudflareEnabledKey = "mobileCloudflareEnabled"
+    static let cloudflareURLKey = "mobileCloudflareURL"
+    static let cloudflareLocalPortKey = "mobileCloudflareLocalPort"
+    /// The port that the TLS listener last bound, tried first on the next launch
+    /// so that a paired phone's saved Tailscale address stays valid.
+    static let listenerPortKey = "mobileListenerPort"
 
     private let log = Logger.service("mobile")
     private var cache: MobileCache?
@@ -28,6 +46,8 @@ actor MobileService: MobileBackend {
     private let codeLifetime: TimeInterval
     private let isEnabled: @Sendable () -> Bool
     private var listener: NWListener?
+    private var webSocketListener: NWListener?
+    private var webSocketListeningPort: UInt16?
     private var listenerUpdate: Task<Void, Error>?
     private var port: NWEndpoint.Port = .any
     private var pendingPairing: (code: MobilePairingCode, expires: Date)?
@@ -38,6 +58,8 @@ actor MobileService: MobileBackend {
     private var syncingActivity = false
     private var needsActivitySync = false
     private var lastPairingError: String?
+    private var advertisedTailnetHost: String?
+    private var advertisedFunnelURL: String?
 
     /// How long a pairing code works after iMCP shows it.
     static let pairingLifetime: TimeInterval = 600
@@ -102,9 +124,55 @@ actor MobileService: MobileBackend {
         }
     }
 
+    /// The port of the loopback WebSocket listener that a tunnel forwards to, or nil when it isn't running.
+    var webSocketPort: UInt16? { webSocketListener == nil ? nil : webSocketListeningPort }
+
+    /// Re-applies the transport settings after they change.
+    func applyTransportSettings() async {
+        do {
+            try await updateListener()
+        } catch {
+            log.error("Couldn't update the transport listeners: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Sets the Tailscale host and Funnel WebSocket URL that remote access advertises.
+    /// Without a caller, the Mac advertises the address of its own Tailscale interface and no Funnel URL.
+    func updateRemoteEndpoints(tailnetHost: String?, funnelURL: String?) {
+        let trimmedHost = tailnetHost?.trimmingCharacters(in: .whitespacesAndNewlines)
+        advertisedTailnetHost = (trimmedHost?.isEmpty == false) ? trimmedHost : nil
+        advertisedFunnelURL = MobileLink.normalizedWebSocketURL(funnelURL)
+    }
+
+    /// What the Mac offers a phone besides the local network, from its settings.
+    var currentEndpoints: MobileRemoteEndpoints {
+        let defaults = UserDefaults.standard
+        let mode =
+            defaults.string(forKey: Self.transportModeKey).flatMap(MobileTransportMode.init(rawValue:)) ?? .automatic
+        guard mode != .localOnly else { return MobileRemoteEndpoints() }
+        var host: String?
+        if defaults.object(forKey: Self.tailscaleVPNEnabledKey) as? Bool ?? true {
+            let override = defaults.string(forKey: Self.tailscaleHostOverrideKey)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            host = (override?.isEmpty == false) ? override : (advertisedTailnetHost ?? MobileTailnet.localAddress())
+        }
+        let cloudflareURL =
+            defaults.bool(forKey: Self.cloudflareEnabledKey)
+            ? MobileLink.normalizedWebSocketURL(defaults.string(forKey: Self.cloudflareURLKey))
+            : nil
+        return MobileRemoteEndpoints(
+            tailnetHost: host,
+            tailnetPort: host != nil ? listeningPort : nil,
+            funnelURL: advertisedFunnelURL,
+            cloudflareURL: cloudflareURL
+        )
+    }
+
     var isConnected: Bool { link != nil }
 
     var connectedDevice: MobileDevice? { link?.device }
+
+    var connectedTransport: MobileTransportMode? { link?.transportMode }
 
     var devices: [MobileDevice] { pairings.devices() }
 
@@ -138,6 +206,7 @@ actor MobileService: MobileBackend {
         expiryTask = nil
         _ = await listenerUpdate?.result
         await stopListener()
+        await stopWebSocketListener()
         syncTask?.cancel()
         syncTask = nil
         let current = link
@@ -192,15 +261,40 @@ actor MobileService: MobileBackend {
             )
         }
         await stopListener()
-        if keys.isEmpty { return }
+        if keys.isEmpty {
+            await stopWebSocketListener()
+            return
+        }
         try await startListening(keys: keys)
+        if advertise {
+            await stopWebSocketListener()
+            if UserDefaults.standard.bool(forKey: Self.cloudflareEnabledKey) {
+                let stored = UserDefaults.standard.integer(forKey: Self.cloudflareLocalPortKey)
+                let webSocketPort =
+                    (stored > 0 && stored <= Int(UInt16.max)) ? UInt16(stored) : MobileLink.defaultWebSocketPort
+                do {
+                    try await startWebSocketListener(port: webSocketPort)
+                } catch {
+                    log.error("\(error.localizedDescription, privacy: .public)")
+                }
+            }
+        }
     }
 
     /// Starts the TLS listener with `keys`.
     private func startListening(keys: [(identity: Data, key: SymmetricKey)]) async throws {
         let parameters = MobileTLS.parameters(keys: keys)
         parameters.allowLocalEndpointReuse = true
-        let listener = try NWListener(using: parameters, on: port)
+        let listener: NWListener
+        if port == .any, advertise,
+            let saved = UserDefaults.standard.object(forKey: Self.listenerPortKey) as? Int,
+            let preferred = NWEndpoint.Port(rawValue: UInt16(clamping: saved)), saved > 0,
+            let reused = try? NWListener(using: parameters, on: preferred)
+        {
+            listener = reused
+        } else {
+            listener = try NWListener(using: parameters, on: port)
+        }
         if advertise {
             listener.service = NWListener.Service(name: Self.serviceName, type: MobileLink.serviceType)
         }
@@ -227,6 +321,56 @@ actor MobileService: MobileBackend {
         }
         // Keep the same port when the listener restarts after pairing changes.
         port = NWEndpoint.Port(rawValue: ready) ?? .any
+        if advertise, ready > 0 { UserDefaults.standard.set(Int(ready), forKey: Self.listenerPortKey) }
+    }
+
+    /// Starts the loopback WebSocket listener that a tunnel forwards to (`127.0.0.1:<port>`).
+    /// Phones reach it over `wss://` through the tunnel, with the same pairing and encryption as any other route.
+    func startWebSocketListener(port wsPort: UInt16 = 0) async throws {
+        await stopWebSocketListener()
+        let parameters = NWParameters.tcp
+        parameters.acceptLocalOnly = true
+        let endpointPort: NWEndpoint.Port = wsPort == 0 ? .any : (NWEndpoint.Port(rawValue: wsPort) ?? .any)
+        let listener = try NWListener(using: parameters, on: endpointPort)
+        listener.newConnectionHandler = { [weak self] connection in
+            Task { await self?.acceptLoopbackWebSocket(connection) }
+        }
+        webSocketListener = listener
+        let ready: UInt16 = try await withCheckedThrowingContinuation { continuation in
+            let gate = ResumeOnce(continuation)
+            listener.stateUpdateHandler = { [weak listener] state in
+                switch state {
+                case .ready:
+                    gate.resume(returning: listener?.port?.rawValue ?? 0)
+                case .failed(let error):
+                    gate.resume(
+                        throwing: MobileError("iMCP can't listen for tunnel connections: \(error.localizedDescription)")
+                    )
+                case .cancelled:
+                    gate.resume(throwing: MobileError("The tunnel listener stopped."))
+                default: break
+                }
+            }
+            listener.start(queue: .global())
+        }
+        webSocketListeningPort = ready
+    }
+
+    private func stopWebSocketListener() async {
+        guard let listener = webSocketListener else { return }
+        webSocketListener = nil
+        webSocketListeningPort = nil
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            let gate = ResumeOnce(continuation)
+            listener.stateUpdateHandler = { state in
+                if case .cancelled = state { gate.resume(returning: ()) }
+            }
+            listener.cancel()
+            Task {
+                try? await Task.sleep(for: .seconds(2))
+                gate.resume(returning: ())
+            }
+        }
     }
 
     /// Cancels the listener and waits until it releases its port.
@@ -257,7 +401,7 @@ actor MobileService: MobileBackend {
                 == errSecSuccess,
             id.withUnsafeMutableBytes({ SecRandomCopyBytes(kSecRandomDefault, 9, $0.baseAddress!) }) == errSecSuccess
         else { throw MobileError("iMCP couldn't create a pairing code.") }
-        let code = MobilePairingCode(
+        var code = MobilePairingCode(
             service: Self.serviceName,
             pairingID: id.base64URLEncodedString(),
             secret: secret
@@ -266,8 +410,15 @@ actor MobileService: MobileBackend {
         pendingPairing = (code, expires)
         lastPairingError = nil
         _ = try openCache()
-        scheduleExpiry(of: code, at: expires)
+        // The listener has to be up to know its port, so the code carries the right Tailscale address.
         try await updateListener()
+        let endpoints = currentEndpoints
+        code.tailnetHost = endpoints.tailnetHost
+        code.tailnetPort = endpoints.tailnetPort
+        code.funnelURL = endpoints.funnelURL
+        code.cloudflareURL = endpoints.cloudflareURL
+        pendingPairing = (code, expires)
+        scheduleExpiry(of: code, at: expires)
         return code
     }
 
@@ -331,9 +482,36 @@ actor MobileService: MobileBackend {
         init(_ message: String) { self.message = message }
     }
 
+    private func makeWelcome(
+        ok: Bool,
+        error: String? = nil,
+        exchange: Data? = nil,
+        proof: String? = nil
+    ) -> MobileWelcome {
+        let endpoints = ok ? currentEndpoints : MobileRemoteEndpoints()
+        return MobileWelcome(
+            ok: ok,
+            error: error,
+            mac: ok ? Self.serviceName : nil,
+            exchange: exchange,
+            proof: proof,
+            tailnetHost: endpoints.tailnetHost,
+            tailnetPort: endpoints.tailnetPort,
+            funnelURL: endpoints.funnelURL,
+            cloudflareURL: endpoints.cloudflareURL
+        )
+    }
+
     /// Checks a hello against the pairing code or the device's key.
     /// Returns nil for a device that asked to be forgotten.
-    private func authenticate(_ hello: MobileHello) async throws -> (MobileDevice?, MobileWelcome) {
+    private func authenticate(
+        _ hello: MobileHello,
+        requiresExchange: Bool = false
+    ) async throws -> (
+        device: MobileDevice?,
+        welcome: MobileWelcome,
+        sessionKeys: (send: SymmetricKey, receive: SymmetricKey)?
+    ) {
         guard hello.version == MobileLink.protocolVersion else {
             throw Refusal(
                 "iMCP on the Mac and on the iPhone or iPad use different versions. Update both, then try again."
@@ -359,6 +537,7 @@ actor MobileService: MobileBackend {
             let exchange = Curve25519.KeyAgreement.PrivateKey()
             let mac = exchange.publicKey.rawRepresentation
             let deviceKey: SymmetricKey
+            let sessionKeys: (send: SymmetricKey, receive: SymmetricKey)?
             do {
                 deviceKey = try MobileKeyExchange.deviceKey(
                     privateKey: exchange,
@@ -368,6 +547,18 @@ actor MobileService: MobileBackend {
                     phone: phone,
                     mac: mac
                 )
+                sessionKeys =
+                    requiresExchange
+                    ? try MobileKeyExchange.sessionKeys(
+                        privateKey: exchange,
+                        peer: phone,
+                        psk: key,
+                        device: hello.device,
+                        phone: phone,
+                        mac: mac,
+                        role: .mac
+                    )
+                    : nil
             } catch {
                 throw Refusal("The device sent an invalid pairing key. Scan the code in iMCP Settings again.")
             }
@@ -375,64 +566,88 @@ actor MobileService: MobileBackend {
             try pairings.save(device, key: deviceKey)
             await endPairing()
             log.notice("Paired \(hello.name, privacy: .public)")
-            return (
-                device,
-                MobileWelcome(
-                    ok: true,
-                    mac: Self.serviceName,
-                    exchange: mac,
-                    proof: MobileKeyExchange.welcomeProof(
-                        pairingKey: key,
-                        pairingID: pairing,
-                        device: hello.device,
-                        phone: phone,
-                        mac: mac
-                    )
+            let welcome = makeWelcome(
+                ok: true,
+                exchange: mac,
+                proof: MobileKeyExchange.welcomeProof(
+                    pairingKey: key,
+                    pairingID: pairing,
+                    device: hello.device,
+                    phone: phone,
+                    mac: mac
                 )
             )
+            return (device, welcome, sessionKeys)
         }
+
         let purpose = hello.revoke == true ? "revoke" : "connect"
+        let context: Data
+        if requiresExchange {
+            guard let phone = hello.exchange else {
+                throw Refusal("The device didn't send an encryption key for this connection.")
+            }
+            context = phone
+        } else {
+            context = Data()
+        }
         guard let key = pairings.key(for: hello.device),
             let device = pairings.devices().first(where: { $0.id == hello.device }),
-            MobileLink.verify(hello.proof, key: key, device: hello.device, purpose: purpose)
+            MobileLink.verify(hello.proof, key: key, device: hello.device, purpose: purpose, context: context)
         else {
             throw Refusal("This device isn't paired with this Mac. Pair it again from iMCP Settings.")
         }
+
+        var macExchange: Data?
+        var welcomeProof: String?
+        var sessionKeys: (send: SymmetricKey, receive: SymmetricKey)?
+        if requiresExchange, let phone = hello.exchange {
+            let exchange = Curve25519.KeyAgreement.PrivateKey()
+            let mac = exchange.publicKey.rawRepresentation
+            do {
+                sessionKeys = try MobileKeyExchange.sessionKeys(
+                    privateKey: exchange,
+                    peer: phone,
+                    psk: key,
+                    device: hello.device,
+                    phone: phone,
+                    mac: mac,
+                    role: .mac
+                )
+            } catch {
+                throw Refusal("The device sent an invalid connection key.")
+            }
+            macExchange = mac
+            welcomeProof = MobileLink.proof(
+                key: key,
+                device: hello.device,
+                purpose: "welcome:\(purpose)",
+                context: phone + mac
+            )
+        }
+
         if hello.revoke == true {
             await unpair(hello.device)
             log.notice("\(hello.name, privacy: .public) removed its pairing")
-            return (nil, MobileWelcome(ok: true, mac: Self.serviceName))
+            return (nil, makeWelcome(ok: true, exchange: macExchange, proof: welcomeProof), sessionKeys)
         }
-        return (device, MobileWelcome(ok: true, mac: Self.serviceName))
+        return (device, makeWelcome(ok: true, exchange: macExchange, proof: welcomeProof), sessionKeys)
     }
 
     private func accept(_ connection: NWConnection) async {
         let channel = MobileChannel(connection: connection)
         do {
             try await channel.open()
+            // A phone on the tailnet reaches this listener through the Tailscale interface.
+            let transportMode: MobileTransportMode =
+                MobileTailnet.contains(connection.currentPath?.localEndpoint) ? .tailscaleVPN : .localOnly
             let hello = try await channel.read(MobileHello.self)
-            let (device, welcome) = try await authenticate(hello)
+            let (device, welcome, _) = try await authenticate(hello)
             try await channel.write(welcome)
             guard let device else {
                 await channel.disconnect()
                 return
             }
-            let client = MCP.Client(name: "iMCP", version: Bundle.main.shortVersionString ?? "unknown")
-            let result = try await client.connect(transport: channel)
-            guard result.serverInfo.name == MobileLink.serverName else {
-                throw MobileError("The connected app isn't iMCP for iOS.")
-            }
-            let link = MobileRemoteLink(device: device, client: client, channel: channel)
-            await channel.setCloseHandler { [weak self] in
-                await self?.detach(link)
-                // Disconnecting the client fails its pending requests and stops its receive loop.
-                await link.close()
-            }
-            if await attach(link) {
-                log.notice("\(device.name, privacy: .public) connected")
-            } else {
-                log.notice("\(device.name, privacy: .public) opened a second connection; kept the live one")
-            }
+            try await connectPeer(device: device, channel: channel, transportMode: transportMode)
         } catch let refusal as Refusal {
             lastPairingError = refusal.message
             log.error("Refused a mobile connection: \(refusal.message, privacy: .public)")
@@ -441,6 +656,99 @@ actor MobileService: MobileBackend {
         } catch {
             log.error("A mobile connection failed: \(error.localizedDescription, privacy: .public)")
             await channel.disconnect()
+        }
+    }
+
+    private func acceptLoopbackWebSocket(_ connection: NWConnection) async {
+        let stream = MobileNWByteStream(connection: connection)
+        do {
+            try await stream.open(timeout: .seconds(15))
+            let leftover = try await MobileWebSocketHandshake.accept(from: stream)
+            let wire = MobileServerWebSocketWire(stream: stream, initialBuffer: leftover)
+            await acceptWebSocket(wire, transportMode: .cloudflare)
+        } catch {
+            log.error("A tunnel WebSocket upgrade failed: \(error.localizedDescription, privacy: .public)")
+            await stream.close()
+        }
+    }
+
+    /// Accepts an upgraded WebSocket wire (from Tailscale Funnel or Cloudflare Tunnel).
+    func acceptWebSocket(_ wire: any MobileFrameWire, transportMode: MobileTransportMode) async {
+        do {
+            let helloFrame = try await withThrowingTaskGroup(of: Data.self) { group in
+                group.addTask {
+                    guard let frame = try await wire.receiveFrame() else {
+                        throw MobileError("The WebSocket closed before sending hello.")
+                    }
+                    return frame
+                }
+                group.addTask {
+                    try await Task.sleep(for: .seconds(15))
+                    await wire.close()
+                    throw MobileError("The phone didn't send its hello in time.")
+                }
+                defer { group.cancelAll() }
+                return try await group.next()!
+            }
+            let hello = try MobileCoding.decoder.decode(MobileHello.self, from: helloFrame)
+            let (device, welcome, keys) = try await authenticate(hello, requiresExchange: true)
+            try await wire.sendFrame(try MobileCoding.encoder.encode(welcome))
+            guard let device, let keys else {
+                await wire.close()
+                return
+            }
+            let channel = MobileEncryptedChannel(
+                wire: wire,
+                sendKey: keys.send,
+                receiveKey: keys.receive,
+                role: .mac
+            )
+            try await connectPeer(device: device, channel: channel, transportMode: transportMode)
+        } catch let refusal as Refusal {
+            lastPairingError = refusal.message
+            log.error("Refused a WebSocket mobile connection: \(refusal.message, privacy: .public)")
+            if let data = try? MobileCoding.encoder.encode(MobileWelcome(ok: false, error: refusal.message)) {
+                try? await wire.sendFrame(data)
+            }
+            await wire.close()
+        } catch {
+            log.error("A WebSocket mobile connection failed: \(error.localizedDescription, privacy: .public)")
+            await wire.close()
+        }
+    }
+
+    private func connectPeer(
+        device: MobileDevice,
+        channel: any MobileTransportChannel,
+        transportMode: MobileTransportMode
+    ) async throws {
+        do {
+            let client = MCP.Client(name: "iMCP", version: Bundle.main.shortVersionString ?? "unknown")
+            let result = try await client.connect(transport: channel)
+            guard result.serverInfo.name == MobileLink.serverName else {
+                throw MobileError("The connected app isn't iMCP for iOS.")
+            }
+            let link = MobileRemoteLink(
+                device: device,
+                client: client,
+                channel: channel,
+                transportMode: transportMode
+            )
+            await channel.setCloseHandler { [weak self] in
+                await self?.detach(link)
+                // Disconnecting the client fails its pending requests and stops its receive loop.
+                await link.close()
+            }
+            if await attach(link) {
+                log.notice(
+                    "\(device.name, privacy: .public) connected via \(transportMode.shortLabel, privacy: .public)"
+                )
+            } else {
+                log.notice("\(device.name, privacy: .public) opened a second connection; kept the live one")
+            }
+        } catch {
+            await channel.disconnect()
+            throw error
         }
     }
 
@@ -861,6 +1169,7 @@ final class MobileKeychainPairings: MobilePairingStore, @unchecked Sendable {
 /// A connection to iMCP on an iPhone or iPad that the Mac can call tools on.
 protocol MobilePeerLink: AnyObject, Sendable {
     var device: MobileDevice { get }
+    var transportMode: MobileTransportMode { get }
     /// Calls a tool on the phone and returns its JSON text.
     /// Throws `MobileLinkLost` if the connection ends before the answer arrives.
     func call(_ tool: String, _ input: [String: Value]) async throws -> String
@@ -868,6 +1177,8 @@ protocol MobilePeerLink: AnyObject, Sendable {
 }
 
 extension MobilePeerLink {
+    var transportMode: MobileTransportMode { .localOnly }
+
     /// Whether the phone answers a status call within `timeout`.
     /// Any reply, even an error from the phone, means the connection is alive.
     func answers(within timeout: Duration) async -> Bool {
@@ -901,15 +1212,22 @@ struct MobileLinkLost: Error, CustomStringConvertible {
 /// The MCP client side of a connection that the phone opened.
 final class MobileRemoteLink: MobilePeerLink, @unchecked Sendable {
     let device: MobileDevice
+    let transportMode: MobileTransportMode
     private let client: MCP.Client
-    private let channel: MobileChannel
+    private let channel: any MobileTransportChannel
     /// Live HealthKit queries can take a while on a large store.
     private static let timeout: Duration = .seconds(90)
 
-    init(device: MobileDevice, client: MCP.Client, channel: MobileChannel) {
+    init(
+        device: MobileDevice,
+        client: MCP.Client,
+        channel: any MobileTransportChannel,
+        transportMode: MobileTransportMode = .localOnly
+    ) {
         self.device = device
         self.client = client
         self.channel = channel
+        self.transportMode = transportMode
     }
 
     func call(_ tool: String, _ input: [String: Value]) async throws -> String {
@@ -999,4 +1317,33 @@ struct AlarmsService: Service {
 
 extension String {
     fileprivate var nilIfEmpty: String? { isEmpty ? nil : self }
+}
+
+/// The Mac's own Tailscale address, which a phone on the same tailnet can dial.
+enum MobileTailnet {
+    /// Whether an IPv4 address is in Tailscale's 100.64.0.0/10 range.
+    static func isTailnetAddress(_ address: [UInt8]) -> Bool {
+        address.count == 4 && address[0] == 100 && (address[1] & 0xC0) == 64
+    }
+
+    static func contains(_ endpoint: NWEndpoint?) -> Bool {
+        guard case .hostPort(let host, _) = endpoint, case .ipv4(let address) = host else { return false }
+        return isTailnetAddress(Array(address.rawValue))
+    }
+
+    /// The first Tailscale IPv4 address on this Mac, or nil when Tailscale isn't connected.
+    static func localAddress() -> String? {
+        var list: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&list) == 0, let first = list else { return nil }
+        defer { freeifaddrs(list) }
+        for pointer in sequence(first: first, next: { $0.pointee.ifa_next }) {
+            let entry = pointer.pointee
+            guard let socket = entry.ifa_addr, socket.pointee.sa_family == sa_family_t(AF_INET) else { continue }
+            let bytes = socket.withMemoryRebound(to: sockaddr_in.self, capacity: 1) {
+                withUnsafeBytes(of: $0.pointee.sin_addr) { Array($0) }
+            }
+            if isTailnetAddress(bytes) { return bytes.map(String.init).joined(separator: ".") }
+        }
+        return nil
+    }
 }
