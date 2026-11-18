@@ -676,6 +676,55 @@ the access token takes its place.
 
 </details>
 
+### Connect cloud apps such as claude.ai
+
+Cloud apps can't join your tailnet,
+so iMCP can also serve a public HTTPS address.
+Cloud apps connect to it with OAuth 2.1;
+you approve each app once in a window on your Mac,
+and there is no token to copy.
+
+Choose one of two routes in Settings, under Remote Access:
+
+- **Cloudflare Tunnel** serves iMCP on a hostname in your own Cloudflare zone.
+  Install `cloudflared` (`brew install cloudflared`),
+  turn on Public Access (Cloudflare Tunnel),
+  and sign in with the browser, a `cert.pem`, or an API token.
+  iMCP finds the zone, creates a tunnel for your Mac,
+  sets its DNS record, and keeps `cloudflared` running.
+  It restarts the tunnel with backoff if it exits,
+  and again after your Mac wakes or the network comes back.
+- **Tailscale Funnel** serves iMCP at `https://<node>.<tailnet>.ts.net/mcp`.
+  Turn on Public Access (Tailscale Funnel).
+  Your tailnet policy must grant the `funnel` attribute to the node;
+  Settings shows the `nodeAttrs` entry to add when it is missing.
+
+Then add the address that Settings shows as a custom connector in the app,
+for example in claude.ai under Settings, Connectors.
+The app opens iMCP's consent window on your Mac;
+check the 6-character code against the one in your browser and approve.
+Approved apps are listed in Settings,
+where you can revoke them.
+
+<details>
+<summary>How public access works</summary>
+
+Both routes forward to the same loopback HTTP server,
+which only accepts the `Host` names of the active routes.
+Requests from the internet are held to smaller size limits
+than requests from your tailnet.
+iMCP serves the metadata from
+[RFC 9728][rfc-9728] and [RFC 8414][rfc-8414],
+and supports dynamic client registration ([RFC 7591][rfc-7591]),
+Client ID Metadata Documents,
+PKCE with S256, and refresh token rotation.
+The approval is bound to the browser that started it
+with a code and an HttpOnly cookie,
+and the fetch of a client's metadata pins the resolved address.
+Grants keep only a hash of the refresh token, in the Keychain.
+
+</details>
+
 ## Technical Details
 
 ### App & CLI
@@ -1144,3 +1193,6 @@ This project is not affiliated with, endorsed, or sponsored by Apple Inc.
 [topotext]: https://github.com/mattt/TopoText
 [tsrp]: https://github.com/mattt/TSRP
 [typedstream-blog-post]: https://chrissardegna.com/blog/reverse-engineering-apples-typedstream-format/
+[rfc-7591]: https://www.rfc-editor.org/rfc/rfc7591
+[rfc-8414]: https://www.rfc-editor.org/rfc/rfc8414
+[rfc-9728]: https://www.rfc-editor.org/rfc/rfc9728
