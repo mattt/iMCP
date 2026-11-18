@@ -644,6 +644,83 @@ final class FilesTests: XCTestCase {
         XCTAssertEqual(listing.objectValue?["total"], .int(1))
     }
 
+    // MARK: - Reading and writing through the tools
+
+    /// Shares a folder through the bookmark store, then reads and changes it only through the tools,
+    /// as a client does: every result is read back from the disk or through another tool.
+    func testToolsReadWriteAndMoveThroughTheBookmarkStore() async throws {
+        let suite = "imcp-files-tests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = FilesRootStore(defaults: defaults)
+        let grant = try store.add(shared)
+        XCTAssertEqual(grant.name, "Shared")
+
+        let tools = FilesTools.tools(provider: store, isEnabled: { true })
+        func call(_ name: String, _ arguments: [String: Value]) async throws -> [String: Value] {
+            let tool = try XCTUnwrap(tools.first { $0.name == name }, name)
+            return try await tool(arguments).objectValue ?? [:]
+        }
+
+        let roots = try await call("files_roots", [:])
+        XCTAssertTrue("\(roots)".contains("available"), "\(roots)")
+
+        // Write, then read the same text back, and check it on the disk.
+        let text = "Hello, café.\nSecond line.\n"
+        do {
+            _ = try await call("files_write", ["path": "Shared/notes/a.txt", "content": .string(text)])
+            XCTFail("A write doesn't create the folder it goes in")
+        } catch {}
+        _ = try await call("files_mkdir", ["path": "Shared/notes"])
+        let created = try await call("files_write", ["path": "Shared/notes/a.txt", "content": .string(text)])
+        XCTAssertEqual(created["created"], true)
+        XCTAssertEqual(try self.text(at: shared.appendingPathComponent("notes/a.txt")), text)
+        let read = try await call("files_read", ["path": "Shared/notes/a.txt"])
+        XCTAssertEqual(read["content"]?.stringValue, text)
+        XCTAssertEqual(read["truncated"], false)
+
+        // A second write is refused unless it names what it replaces.
+        do {
+            _ = try await call("files_write", ["path": "Shared/notes/a.txt", "content": "other"])
+            XCTFail("Replacing a file needs overwrite or a precondition")
+        } catch {}
+        XCTAssertEqual(try self.text(at: shared.appendingPathComponent("notes/a.txt")), text)
+        let stat = try await call("files_stat", ["path": "Shared/notes/a.txt", "includeHash": true])
+        let hash = try XCTUnwrap(stat["sha256"]?.stringValue)
+        _ = try await call(
+            "files_write",
+            ["path": "Shared/notes/a.txt", "content": "Replaced.\n", "expectedSha256": .string(hash)]
+        )
+        XCTAssertEqual(try self.text(at: shared.appendingPathComponent("notes/a.txt")), "Replaced.\n")
+
+        // Append keeps what is there.
+        _ = try await call("files_append", ["path": "Shared/notes/a.txt", "content": "More.\n"])
+        let appended = try await call("files_read", ["path": "Shared/notes/a.txt"])
+        XCTAssertEqual(appended["content"]?.stringValue, "Replaced.\nMore.\n")
+
+        // Search finds the file by name and by content.
+        let byName = try await call("files_search", ["path": "Shared", "name": "a.txt"])
+        XCTAssertEqual(byName["matches"]?.arrayValue?.count, 1, "\(byName)")
+        let byContent = try await call("files_search", ["path": "Shared", "content": "More."])
+        XCTAssertEqual(byContent["matches"]?.arrayValue?.count, 1, "\(byContent)")
+
+        // Move, list, and trash.
+        _ = try await call("files_move", ["from": "Shared/notes/a.txt", "to": "Shared/notes/b.txt"])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: shared.appendingPathComponent("notes/a.txt").path))
+        let listing = try await call("files_list", ["path": "Shared/notes"])
+        XCTAssertEqual(listing["total"], .int(1))
+        XCTAssertTrue("\(listing)".contains("b.txt"))
+        let trashed = try await call("files_trash", ["path": "Shared/notes/b.txt"])
+        XCTAssertEqual(trashed["trashed"], true)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: shared.appendingPathComponent("notes/b.txt").path))
+
+        // A path outside the shared folder is refused through the store as well.
+        do {
+            _ = try await call("files_read", ["path": "Shared/../Shared-private/x.txt"])
+            XCTFail("A parent component must be refused")
+        } catch {}
+    }
+
     // MARK: - Links swapped in after the check
 
     /// Replaces a folder with a link to `target`, as another process could between the check and the use.
