@@ -152,6 +152,7 @@ private struct WritesSection: View {
     let service: any Service
     let name: String
     @AppStorage private var isWriteEnabled: Bool
+    @AppStorage(ApprovalMode.defaultsKey) private var approvalModeRawValue = ApprovalMode.defaultMode.rawValue
 
     init(serverController: ServerController, service: any Service, name: String) {
         self.serverController = serverController
@@ -163,9 +164,14 @@ private struct WritesSection: View {
         )
     }
 
+    private var approvalMode: ApprovalMode {
+        ApprovalMode(rawValue: approvalModeRawValue) ?? .defaultMode
+    }
+
     var body: some View {
         Section {
             Toggle("Allow writes", isOn: $isWriteEnabled)
+                .disabled(approvalMode.bypassesServiceWriteToggles)
                 .onChange(of: isWriteEnabled) {
                     // Redraw the tool list's "Writes off" labels, and tell clients to list the tools again.
                     serverController.objectWillChange.send()
@@ -177,7 +183,11 @@ private struct WritesSection: View {
     }
 
     private var footer: String {
-        "Lets clients create, change, and delete things in \(name). Tools that only read are always available."
+        if approvalMode.bypassesServiceWriteToggles {
+            return
+                "Writes are allowed across all services while Approval Mode is set to \"\(approvalMode.title)\" in General settings."
+        }
+        return "Lets clients create, change, and delete things in \(name). Tools that only read are always available."
     }
 }
 

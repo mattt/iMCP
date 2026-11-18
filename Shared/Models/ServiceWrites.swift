@@ -20,7 +20,10 @@ enum ServiceWrites {
         defaultValue: Bool,
         defaults: UserDefaults = .standard
     ) -> Bool {
-        defaults.object(forKey: settingKey(forService: serviceID)) as? Bool ?? defaultValue
+        if ApprovalMode.current(defaults: defaults).bypassesServiceWriteToggles {
+            return true
+        }
+        return defaults.object(forKey: settingKey(forService: serviceID)) as? Bool ?? defaultValue
     }
 
     static func setEnabled(

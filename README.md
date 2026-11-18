@@ -234,6 +234,17 @@ so each send needs its own click.
 Starting a call is the same:
 the Phone app asks you to confirm before dialing.
 
+### Approval modes
+
+**General** settings has an **Approval Mode** that applies to every tool call from every client:
+
+- **Ask for Everything** asks in iMCP before each read and each write.
+- **Ask for Writes Only** asks before tools that change things and runs read-only tools right away.
+- **Ask in Agent (Full Access in iMCP)** shows no iMCP prompts and shows how to make Claude Desktop, Claude Code, claude.ai, Duet and Muse ask instead.
+- **Allow Everything** shows no prompts, and shows how to permit all iMCP tools in those clients.
+
+The last two modes also ignore each service's **Allow writes** switch while they are selected, without changing what you set there.
+
 ### Approve connections
 
 <img align="right" width="372" src="/Assets/imcp-screenshot-approve-connection.png" alt="Screenshot of the iMCP Connection Request dialog with Deny and Allow buttons" />

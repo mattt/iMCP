@@ -165,8 +165,18 @@ final class OutboundConfirmationWindowController: NSObject, NSWindowDelegate {
 
 /// Asks in a window on the Mac.
 struct MacOutboundConfirmer: OutboundConfirming {
+    private let defaultsSuiteName: String?
+
+    init(defaultsSuiteName: String? = nil) {
+        self.defaultsSuiteName = defaultsSuiteName
+    }
+
     func confirm(_ request: OutboundConfirmationRequest) async -> OutboundConfirmationAnswer {
-        await OutboundConfirmation.ask { onAnswer in
+        let defaults = defaultsSuiteName.flatMap(UserDefaults.init(suiteName:)) ?? .standard
+        if ApprovalMode.current(defaults: defaults).skipsConfirmationPopups {
+            return .approved
+        }
+        return await OutboundConfirmation.ask { onAnswer in
             OutboundConfirmationWindowController.shared.show(request, onAnswer: onAnswer)
         }
     }
