@@ -73,6 +73,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         UserDefaults.standard.object(forKey: "showMenuBarExtra") as? Bool ?? true
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        #if DEBUG
+            // Live check of the private Reminders tools; see App/Debug/RemindersPrivateSelfTest.swift.
+            if ProcessInfo.processInfo.arguments.contains("--reminders-private-selftest") {
+                Task.detached {
+                    let report = await RemindersPrivateSelfTest.run()
+                    print("RPSELFTEST-BEGIN\n\(report)\nRPSELFTEST-END")
+                    fflush(stdout)
+                    exit(0)
+                }
+                return
+            }
+        #endif
         // An unset preference defaults to showing the menu bar item.
         if UserDefaults.standard.object(forKey: "showMenuBarExtra") as? Bool == false {
             shouldOpenSettings = true

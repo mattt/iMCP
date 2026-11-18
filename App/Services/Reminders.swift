@@ -1499,6 +1499,20 @@ final class RemindersService: Service {
                 "colorHex": Self.hex(of: list).map { .string($0) } ?? .null,
             ])
         }
+
+        // MARK: Private metadata (ReminderKit, off until "Private Reminders features" is on)
+
+        RemindersPrivateTools.tags
+        RemindersPrivateTools.addLink
+        RemindersPrivateTools.flag
+        RemindersPrivateTools.getPrivate
+        RemindersPrivateTools.sections
+        RemindersPrivateTools.subtasks
+        RemindersPrivateTools.listAppearance
+        RemindersPrivateTools.groups
+        RemindersPrivateTools.smartLists
+        RemindersPrivateTools.templates
+        RemindersPrivateTools.restore
     }
 
     // MARK: - Shared helpers for the views, search, and batch tools

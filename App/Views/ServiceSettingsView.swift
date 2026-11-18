@@ -33,6 +33,10 @@ struct ServiceSettingsView: View {
                 HomeHelperSection(isHomeOn: isOn)
             }
 
+            if config.service is RemindersService {
+                PrivateRemindersSection()
+            }
+
             Section {
                 ForEach(config.service.tools, id: \.name) { tool in
                     Toggle(isOn: toolBinding(tool.name)) {
@@ -109,6 +113,22 @@ struct ServiceSettingsView: View {
             stop = true
         }
         return sentence
+    }
+}
+
+/// The switch for the Reminders tools that use Apple's private ReminderKit framework:
+/// tags, rich links, sections, subtasks, flags, list icons, groups, smart lists, and templates.
+private struct PrivateRemindersSection: View {
+    @AppStorage(RemindersPrivate.settingKey) private var isEnabled = false
+
+    var body: some View {
+        Section {
+            Toggle("Private Reminders features", isOn: $isEnabled)
+        } footer: {
+            Text(
+                "Lets clients change tags, rich links, sections, subtasks, flags, list icons, groups, smart lists, and templates. These use Apple's unsupported ReminderKit framework, which can change in any macOS update. Changes are saved through Reminders, never by editing its database. Off by default."
+            )
+        }
     }
 }
 

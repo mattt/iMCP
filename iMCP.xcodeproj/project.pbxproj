@@ -40,6 +40,8 @@
 		A40000000000000000000024 /* ../../Shared/Models/Service.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000014 /* ../../Shared/Models/Service.swift */; };
 		D2E1A00000000000000000A2 /* RemindersQueryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2E1A00000000000000000A1 /* RemindersQueryTests.swift */; };
 		D2E1A00000000000000000A4 /* ../../App/Services/RemindersQuery.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2E1A00000000000000000A3 /* ../../App/Services/RemindersQuery.swift */; };
+		D2E1A00000000000000000B2 /* RemindersPrivateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2E1A00000000000000000B1 /* RemindersPrivateTests.swift */; };
+		D2E1A00000000000000000B4 /* ../../App/Services/RemindersPrivate.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2E1A00000000000000000B3 /* ../../App/Services/RemindersPrivate.swift */; };
 		A50000000000000000000020 /* MailTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000010 /* MailTests.swift */; };
 		A50000000000000000000021 /* ../../App/Services/Mail.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000011 /* ../../App/Services/Mail.swift */; };
 		A50000000000000000000022 /* ../../App/Extensions/Foundation+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000012 /* ../../App/Extensions/Foundation+Extensions.swift */; };
@@ -126,6 +128,8 @@
 		A40000000000000000000014 /* ../../Shared/Models/Service.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../Shared/Models/Service.swift; sourceTree = "<group>"; };
 		D2E1A00000000000000000A1 /* RemindersQueryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemindersQueryTests.swift; sourceTree = "<group>"; };
 		D2E1A00000000000000000A3 /* ../../App/Services/RemindersQuery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/RemindersQuery.swift; sourceTree = "<group>"; };
+		D2E1A00000000000000000B1 /* RemindersPrivateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemindersPrivateTests.swift; sourceTree = "<group>"; };
+		D2E1A00000000000000000B3 /* ../../App/Services/RemindersPrivate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/RemindersPrivate.swift; sourceTree = "<group>"; };
 		A50000000000000000000010 /* MailTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MailTests.swift; sourceTree = "<group>"; };
 		A50000000000000000000011 /* ../../App/Services/Mail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/Mail.swift; sourceTree = "<group>"; };
 		A50000000000000000000012 /* ../../App/Extensions/Foundation+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../../App/Extensions/Foundation+Extensions.swift"; sourceTree = "<group>"; };
@@ -276,6 +280,8 @@
 				A40000000000000000000014 /* ../../Shared/Models/Service.swift */,
 				D2E1A00000000000000000A1 /* RemindersQueryTests.swift */,
 				D2E1A00000000000000000A3 /* ../../App/Services/RemindersQuery.swift */,
+				D2E1A00000000000000000B1 /* RemindersPrivateTests.swift */,
+				D2E1A00000000000000000B3 /* ../../App/Services/RemindersPrivate.swift */,
 				A50000000000000000000010 /* MailTests.swift */,
 				A50000000000000000000011 /* ../../App/Services/Mail.swift */,
 				A50000000000000000000012 /* ../../App/Extensions/Foundation+Extensions.swift */,
@@ -598,6 +604,8 @@
 				A40000000000000000000024 /* ../../Shared/Models/Service.swift in Sources */,
 				D2E1A00000000000000000A2 /* RemindersQueryTests.swift in Sources */,
 				D2E1A00000000000000000A4 /* ../../App/Services/RemindersQuery.swift in Sources */,
+				D2E1A00000000000000000B2 /* RemindersPrivateTests.swift in Sources */,
+				D2E1A00000000000000000B4 /* ../../App/Services/RemindersPrivate.swift in Sources */,
 				A50000000000000000000020 /* MailTests.swift in Sources */,
 				A50000000000000000000021 /* ../../App/Services/Mail.swift in Sources */,
 				A50000000000000000000022 /* ../../App/Extensions/Foundation+Extensions.swift in Sources */,
