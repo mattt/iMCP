@@ -778,7 +778,7 @@ off by default, for what scripting can't do.
 It adds eight tools that go through Apple's unsupported NotesShared framework
 (the code Notes itself uses),
 so they can store what scripting drops:
-`notes_tags` (native tags: list, add, remove, replace),
+`notes_native_tags` (native tags: list, add, remove, replace),
 `notes_checklist` (real checklist items: get, add, mark done),
 `notes_table` (native tables: get, create),
 `notes_link` (the `notes://` link of a note, links between notes),

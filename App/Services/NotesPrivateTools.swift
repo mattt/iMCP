@@ -68,7 +68,7 @@ enum NotesPrivateTools {
 
     static var tags: Tool {
         make(
-            name: "notes_tags",
+            name: "notes_native_tags",
             title: "Native Note Tags",
             description:
                 "Read or change a note's real native tags (the tag chips Notes keeps, not plain #text). Actions: list (the tags of one note with id, the tags used in a folder with folder, or the account-wide inventory with neither), add, remove (only that note's tags; tag definitions stay), and replace (ids or id, old, new: adds the new tag, reads it back, then removes the old one). Tags are single words with or without a leading #. Changes are verified by reading the tags back. Changes need Allow iMCP to change notes and folders.",

@@ -166,32 +166,32 @@
                 // Tags.
                 await call(
                     "tags add",
-                    tool: "notes_tags",
+                    tool: "notes_native_tags",
                     ["action": "add", "id": aID, "tags": ["iMCPtestOne", "#iMCPtestTwo"]]
                 )
                 await call(
                     "tags add again (no change)",
-                    tool: "notes_tags",
+                    tool: "notes_native_tags",
                     ["action": "add", "id": aID, "tags": ["imcptestone"]]
                 )
-                await call("tags list note", tool: "notes_tags", ["action": "list", "id": aID])
-                await call("tags list folder", tool: "notes_tags", ["action": "list", "folder": folderName])
-                await call("tags inventory", tool: "notes_tags", ["action": "list"])
-                await call("tags add on B", tool: "notes_tags", ["action": "add", "id": bID, "tags": ["iMCPtestOne"]])
+                await call("tags list note", tool: "notes_native_tags", ["action": "list", "id": aID])
+                await call("tags list folder", tool: "notes_native_tags", ["action": "list", "folder": folderName])
+                await call("tags inventory", tool: "notes_native_tags", ["action": "list"])
+                await call("tags add on B", tool: "notes_native_tags", ["action": "add", "id": bID, "tags": ["iMCPtestOne"]])
                 await call(
                     "tags replace",
-                    tool: "notes_tags",
+                    tool: "notes_native_tags",
                     ["action": "replace", "ids": [aID, bID], "old": "iMCPtestOne", "new": "iMCPtestThree"]
                 )
                 await call(
                     "tags remove",
-                    tool: "notes_tags",
+                    tool: "notes_native_tags",
                     ["action": "remove", "id": aID, "tags": ["iMCPtestTwo", "iMCPtestThree"]]
                 )
-                await call("tags list note after remove", tool: "notes_tags", ["action": "list", "id": aID])
+                await call("tags list note after remove", tool: "notes_native_tags", ["action": "list", "id": aID])
                 await call(
                     "tags remove B",
-                    tool: "notes_tags",
+                    tool: "notes_native_tags",
                     ["action": "remove", "id": bID, "tags": ["iMCPtestThree"]]
                 )
 

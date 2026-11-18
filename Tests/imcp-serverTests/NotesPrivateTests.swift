@@ -84,8 +84,8 @@ final class NotesPrivateTests: XCTestCase {
 
     func testWhichCallsWrite() {
         XCTAssertFalse(NotesPrivate.isWrite(tool: "notes_structure", arguments: [:]))
-        XCTAssertFalse(NotesPrivate.isWrite(tool: "notes_tags", arguments: ["action": "list"]))
-        XCTAssertTrue(NotesPrivate.isWrite(tool: "notes_tags", arguments: ["action": "add"]))
+        XCTAssertFalse(NotesPrivate.isWrite(tool: "notes_native_tags", arguments: ["action": "list"]))
+        XCTAssertTrue(NotesPrivate.isWrite(tool: "notes_native_tags", arguments: ["action": "add"]))
         XCTAssertFalse(NotesPrivate.isWrite(tool: "notes_checklist", arguments: ["action": "get"]))
         XCTAssertTrue(NotesPrivate.isWrite(tool: "notes_checklist", arguments: ["action": "set"]))
         XCTAssertFalse(NotesPrivate.isWrite(tool: "notes_table", arguments: ["action": "get"]))
@@ -147,50 +147,50 @@ final class NotesPrivateTests: XCTestCase {
     }
 
     func testTagAddDeduplicatesIgnoringCase() throws {
-        let r = try request("notes_tags", ["action": "add", "id": id, "tags": ["#A", "a", "b"]])
+        let r = try request("notes_native_tags", ["action": "add", "id": id, "tags": ["#A", "a", "b"]])
         XCTAssertEqual(r.action, "tags.change")
         XCTAssertEqual(r.args["mode"] as? String, "add")
         XCTAssertEqual(r.args["tags"] as? [String], ["A", "b"])
     }
 
     func testTagListScopes() throws {
-        XCTAssertEqual(try request("notes_tags", ["action": "list"]).args.count, 0)
-        XCTAssertEqual(try request("notes_tags", ["action": "list", "id": id]).args["id"] as? String, id)
-        let folder = try request("notes_tags", ["action": "list", "folder": "Work/Clients", "account": "iCloud"])
+        XCTAssertEqual(try request("notes_native_tags", ["action": "list"]).args.count, 0)
+        XCTAssertEqual(try request("notes_native_tags", ["action": "list", "id": id]).args["id"] as? String, id)
+        let folder = try request("notes_native_tags", ["action": "list", "folder": "Work/Clients", "account": "iCloud"])
         XCTAssertEqual(folder.args["folder"] as? String, "Work/Clients")
         XCTAssertEqual(folder.args["account"] as? String, "iCloud")
-        XCTAssertEqual(failure("notes_tags", ["action": "list", "id": id, "folder": "x"])?.code, "conflicting_scope")
-        XCTAssertEqual(failure("notes_tags", ["action": "list", "account": "iCloud"])?.code, "invalid_arguments")
-        XCTAssertEqual(failure("notes_tags", ["action": "list", "tags": ["a"]])?.code, "invalid_arguments")
+        XCTAssertEqual(failure("notes_native_tags", ["action": "list", "id": id, "folder": "x"])?.code, "conflicting_scope")
+        XCTAssertEqual(failure("notes_native_tags", ["action": "list", "account": "iCloud"])?.code, "invalid_arguments")
+        XCTAssertEqual(failure("notes_native_tags", ["action": "list", "tags": ["a"]])?.code, "invalid_arguments")
     }
 
     func testTagAddNeedsTagsAndOneNote() {
-        XCTAssertEqual(failure("notes_tags", ["action": "add", "id": id])?.code, "missing_tags")
-        XCTAssertEqual(failure("notes_tags", ["action": "add", "id": id, "tags": []])?.code, "invalid_tags")
-        XCTAssertEqual(failure("notes_tags", ["action": "remove", "tags": ["a"]])?.code, "missing_id")
+        XCTAssertEqual(failure("notes_native_tags", ["action": "add", "id": id])?.code, "missing_tags")
+        XCTAssertEqual(failure("notes_native_tags", ["action": "add", "id": id, "tags": []])?.code, "invalid_tags")
+        XCTAssertEqual(failure("notes_native_tags", ["action": "remove", "tags": ["a"]])?.code, "missing_id")
         XCTAssertEqual(
-            failure("notes_tags", ["action": "add", "id": id, "tags": ["a"], "ids": [other]])?.code,
+            failure("notes_native_tags", ["action": "add", "id": id, "tags": ["a"], "ids": [other]])?.code,
             "invalid_arguments"
         )
-        XCTAssertEqual(failure("notes_tags", ["action": "clear", "id": id])?.code, "invalid_action")
+        XCTAssertEqual(failure("notes_native_tags", ["action": "clear", "id": id])?.code, "invalid_action")
     }
 
     func testTagReplaceRequest() throws {
-        let r = try request("notes_tags", ["action": "replace", "ids": [id, other], "old": "#old", "new": "new"])
+        let r = try request("notes_native_tags", ["action": "replace", "ids": [id, other], "old": "#old", "new": "new"])
         XCTAssertEqual(r.args["mode"] as? String, "replace")
         XCTAssertEqual(r.args["ids"] as? [String], [id, other])
         XCTAssertEqual(r.args["old"] as? String, "old")
         XCTAssertEqual(r.args["new"] as? String, "new")
-        let single = try request("notes_tags", ["action": "replace", "id": id, "old": "a", "new": "b"])
+        let single = try request("notes_native_tags", ["action": "replace", "id": id, "old": "a", "new": "b"])
         XCTAssertEqual(single.args["ids"] as? [String], [id])
-        XCTAssertEqual(failure("notes_tags", ["action": "replace", "ids": [id]])?.code, "missing_tags")
-        XCTAssertEqual(failure("notes_tags", ["action": "replace", "old": "a", "new": "b"])?.code, "missing_id")
+        XCTAssertEqual(failure("notes_native_tags", ["action": "replace", "ids": [id]])?.code, "missing_tags")
+        XCTAssertEqual(failure("notes_native_tags", ["action": "replace", "old": "a", "new": "b"])?.code, "missing_id")
         XCTAssertEqual(
-            failure("notes_tags", ["action": "replace", "ids": [], "old": "a", "new": "b"])?.code,
+            failure("notes_native_tags", ["action": "replace", "ids": [], "old": "a", "new": "b"])?.code,
             "invalid_ids"
         )
         XCTAssertEqual(
-            failure("notes_tags", ["action": "replace", "ids": [id], "old": "a b", "new": "c"])?.code,
+            failure("notes_native_tags", ["action": "replace", "ids": [id], "old": "a b", "new": "c"])?.code,
             "invalid_tags"
         )
     }

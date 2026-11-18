@@ -231,7 +231,7 @@ enum NotesPrivate {
                 action: "structure",
                 args: ["id": try noteID(args), "blocks": try bool(args, "blocks") ?? false]
             )
-        case "notes_tags": return try tags(args)
+        case "notes_native_tags": return try tags(args)
         case "notes_pin":
             try reject(args, allowed: ["id", "pinned", "expected_pinned"])
             guard let pinned = try bool(args, "pinned") else { throw fail("missing_pinned", "pinned is required.") }
@@ -440,7 +440,7 @@ enum NotesPrivate {
     static func isWrite(tool: String, arguments args: [String: Any]) -> Bool {
         switch tool {
         case "notes_structure": return false
-        case "notes_tags": return (args["action"] as? String)?.lowercased() != "list"
+        case "notes_native_tags": return (args["action"] as? String)?.lowercased() != "list"
         case "notes_checklist":
             return (args["action"] as? String)?.lowercased() == "add"
                 || (args["action"] as? String)?.lowercased() == "set"
