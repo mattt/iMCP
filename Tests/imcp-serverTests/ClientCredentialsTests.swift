@@ -162,22 +162,51 @@ final class ClientCredentialsTests: XCTestCase {
 
     // MARK: - Always trust
 
-    func testAlwaysTrustWithoutCredentialIssuesOne() throws {
+    func testAlwaysTrustStoresAndTrustsPresentedCredential() throws {
+        let store = makeStore()
+        let credential = ClientCredential.generate()
+        guard case .ask(let request) = store.evaluate(credential: credential, claimedName: "Cursor") else {
+            return XCTFail("An untrusted credential must ask")
+        }
+        XCTAssertEqual(request.offer, .credential)
+
+        let stored = try XCTUnwrap(try store.alwaysTrust(request))
+        XCTAssertTrue(stored.isTrusted)
+        XCTAssertEqual(stored.name, "Cursor")
+        XCTAssertNotNil(stored.lastConnectedAt)
+
+        guard case .approve(let record) = store.evaluate(credential: credential, claimedName: "Cursor") else {
+            return XCTFail("The trusted credential must approve")
+        }
+        XCTAssertEqual(record.id, stored.id)
+
+        // The approval applies to the credential, not to the name.
+        guard case .ask(let withoutCredential) = store.evaluate(credential: nil, claimedName: "Cursor") else {
+            return XCTFail("Another connection with the same name must ask")
+        }
+        XCTAssertNil(withoutCredential.offer)
+    }
+
+    func testAlwaysTrustWithoutCredentialDoesNotIssueOrStoreRecord() throws {
         let store = makeStore()
         guard case .ask(let request) = store.evaluate(credential: nil, claimedName: "Cursor") else {
             return XCTFail("A connection without a credential must ask")
         }
+        XCTAssertNil(request.offer)
+        XCTAssertNil(try store.alwaysTrust(request))
+        XCTAssertTrue(store.records.isEmpty)
+    }
 
-        let credential = try XCTUnwrap(try store.alwaysTrust(request))
-        guard case .approve(let record) = store.evaluate(credential: credential, claimedName: "Cursor") else {
-            return XCTFail("The issued credential must approve")
-        }
-        XCTAssertEqual(record.name, "Cursor")
+    func testNoteConnectionUpdatesLastConnectedAtForCredentialsAndApps() throws {
+        var now = Date(timeIntervalSince1970: 1_800_000_000)
+        let store = ClientCredentialStore(storage: storage, defaults: defaults, now: { now })
+        let credential = ClientCredential.generate()
+        let record = try XCTUnwrap(try store.trustCredential(credential, clientName: "Claude Code"))
+        XCTAssertEqual(record.lastConnectedAt, now)
 
-        // The approval applies to the credential, not to the name.
-        guard case .ask = store.evaluate(credential: nil, claimedName: "Cursor") else {
-            return XCTFail("Another connection with the same name must ask")
-        }
+        now = Date(timeIntervalSince1970: 1_800_001_000)
+        store.noteConnection(id: record.id)
+        XCTAssertEqual(store.records[record.id]?.lastConnectedAt, now)
     }
 
     func testSettingsCredentialIsTrustedOnlyAfterApproval() throws {
@@ -187,10 +216,12 @@ final class ClientCredentialsTests: XCTestCase {
         guard case .ask(let request) = store.evaluate(credential: credential, claimedName: "Claude") else {
             return XCTFail("A credential from settings must ask until it's approved")
         }
+        XCTAssertEqual(request.offer, .credential)
         XCTAssertEqual(request.record?.name, "Claude Desktop")
         XCTAssertTrue(store.trustedRecords.isEmpty)
 
-        XCTAssertNil(try store.alwaysTrust(request))
+        let approvedRecord = try XCTUnwrap(try store.alwaysTrust(request))
+        XCTAssertEqual(approvedRecord.name, "Claude Desktop")
         guard case .approve(let record) = store.evaluate(credential: credential, claimedName: "Claude") else {
             return XCTFail("An approved credential must approve")
         }
@@ -212,16 +243,25 @@ final class ClientCredentialsTests: XCTestCase {
     func testApprovalKeyFollowsCredentialNotName() throws {
         let store = makeStore()
         let credential = try store.credentialForSettings(name: "Client", existing: nil)
+        let unknownValidCredential = ClientCredential.generate()
         let first = UUID()
         let second = UUID()
 
         guard case .ask(let withCredential) = store.evaluate(credential: credential, claimedName: "Client"),
+            case .ask(let withUnknownValid) = store.evaluate(
+                credential: unknownValidCredential,
+                claimedName: "Client"
+            ),
             case .ask(let withoutCredential) = store.evaluate(credential: nil, claimedName: "Client")
-        else { return XCTFail("Both connections must ask") }
+        else { return XCTFail("All connections must ask") }
 
         XCTAssertEqual(
             withCredential.approvalKey(connectionID: first),
             withCredential.approvalKey(connectionID: second)
+        )
+        XCTAssertEqual(
+            withUnknownValid.approvalKey(connectionID: first),
+            withUnknownValid.approvalKey(connectionID: second)
         )
         XCTAssertNotEqual(
             withoutCredential.approvalKey(connectionID: first),
@@ -311,12 +351,13 @@ final class ClientCredentialsTests: XCTestCase {
         let store = makeStore()
         XCTAssertEqual(store.legacyTrustedNames, ["Claude", "Cursor"])
 
-        guard case .ask(let request) = store.evaluate(credential: nil, claimedName: "Claude") else {
+        let credential = ClientCredential.generate()
+        guard case .ask(let request) = store.evaluate(credential: credential, claimedName: "Claude") else {
             return XCTFail("A name trusted by an earlier version must not approve")
         }
         XCTAssertTrue(request.wasTrustedByName)
 
-        let credential = try XCTUnwrap(try store.alwaysTrust(request))
+        XCTAssertNotNil(try store.alwaysTrust(request))
         XCTAssertEqual(store.legacyTrustedNames, ["Cursor"])
         guard case .approve = store.evaluate(credential: credential, claimedName: "Claude") else {
             return XCTFail("The re-enrolled client's credential must approve")

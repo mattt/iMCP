@@ -228,8 +228,8 @@ struct ClientsSettingsView: View {
             Section {
                 if trustedClients.isEmpty {
                     VStack(spacing: 4) {
-                        Text("No Trusted Clients")
-                        Text("To trust a client, select \"Always trust this client\" when you approve its connection.")
+                        Text("No Trusted Apps")
+                        Text("To trust an app, choose Always Allow when you approve its connection.")
                             .font(.caption)
                     }
                     .foregroundStyle(.secondary)
@@ -238,22 +238,17 @@ struct ClientsSettingsView: View {
                     .padding(.vertical, 8)
                 } else {
                     ForEach(trustedClients) { client in
-                        LabeledContent {
-                            Button("Remove") {
-                                serverController.removeTrustedClient(client)
-                            }
-                        } label: {
-                            Text(client.name)
-                            Text("Trusted since \(client.issuedAt.formatted(date: .abbreviated, time: .omitted))")
+                        TrustedAppRow(client: client) {
+                            serverController.removeTrustedClient(client)
                         }
                     }
                 }
             } header: {
-                Text("Trusted Clients")
+                Text("Trusted Apps")
             } footer: {
                 VStack(alignment: .trailing) {
                     Text(
-                        "Trusted clients connect without an approval dialog, and iMCP shows a notification whenever one connects. Each trusted client presents a credential that iMCP created for it, in the \(ClientCredential.environmentVariable) environment variable of its MCP settings. Removing a client revokes its credential."
+                        "Trusted apps connect without an approval dialog, and iMCP shows a notification whenever one connects. iMCP identifies an app by its code signature. Claude Code and other clients that run in a terminal use a local credential instead. Removing an app revokes its trust."
                     )
                     .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -278,7 +273,7 @@ struct ClientsSettingsView: View {
                     Text("Approve Again")
                 } footer: {
                     Text(
-                        "Earlier versions of iMCP trusted these clients by the name they reported, which any app can claim. They need your approval the next time they connect. Select \"Always trust this client\" to give one a credential."
+                        "Earlier versions of iMCP trusted these clients by the name they reported, which any app can claim. They need your approval the next time they connect."
                     )
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -286,13 +281,13 @@ struct ClientsSettingsView: View {
         }
         .formStyle(.grouped)
         .navigationTitle("Clients")
-        .alert("Remove All Trusted Clients?", isPresented: $isConfirmingRemoveAll) {
+        .alert("Remove All Trusted Apps?", isPresented: $isConfirmingRemoveAll) {
             Button("Remove All", role: .destructive) {
                 serverController.resetTrustedClients()
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Each client needs your approval again the next time it connects.")
+            Text("Each app needs your approval again the next time it connects.")
         }
     }
 }

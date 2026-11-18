@@ -1,129 +1,113 @@
 import AppKit
 import SwiftUI
 
+/// Asks the person to approve a client, laid out like a system alert:
+/// the app's icon, a bold message, explanatory text, and the buttons below.
 struct ConnectionApprovalView: View {
     let request: ClientCredentialStore.Request
     let enabledServiceNames: [String]
     let onApprove: (Bool) -> Void  // Bool parameter is for "always trust"
     let onDeny: () -> Void
 
-    /// How long "Allow" stays off after the dialog appears.
+    /// How long the Allow buttons stay off after the dialog appears.
     ///
     /// The dialog takes focus when it opens,
     /// so a click or a key press meant for another window could land on it.
     static let allowDelay: Duration = .seconds(1)
 
-    @State private var alwaysTrust = false
     @State private var canAllow = false
 
-    private var clientName: String { request.claimedName }
+    private var app: ResponsibleApp? { request.app }
 
-    /// What selecting "Always trust this client" does.
-    private var alwaysTrustNote: String {
-        if request.record != nil {
-            return "This client connects without asking while it keeps its credential."
+    /// The name to ask about.
+    /// An app that iMCP can trust by signature is named by its signature,
+    /// and any other client by the name it reported, which anyone can claim.
+    private var displayName: String {
+        request.offer == .signature ? (app?.name ?? request.claimedName) : request.claimedName
+    }
+
+    private var icon: NSImage {
+        if let path = app?.bundlePath { return NSWorkspace.shared.icon(forFile: path) }
+        return NSApp.applicationIconImage
+    }
+
+    /// What iMCP verified, or didn't, about who is asking.
+    private var identityText: String {
+        if request.offer == .signature, let signer = app?.verifiedSigner {
+            return "Verified: \(signer)."
         }
-        return "iMCP creates a credential for you to add to the client's MCP settings."
+        if let app {
+            return "Unverified name. It was started from \(app.name), which can run any program, "
+                + "so iMCP can't tell this client from the others there."
+        }
+        return request.identityNote
+    }
+
+    private var servicesText: String {
+        enabledServiceNames.isEmpty
+            ? "No services are currently enabled."
+            : "This gives the client access to \(enabledServiceNames.joined(separator: ", "))."
+    }
+
+    /// The title of the button that trusts the client, and what it does,
+    /// or `nil` if the client can only be allowed once.
+    private var trustButton: (title: String, note: String)? {
+        switch request.offer {
+        case .signature:
+            ("Always Allow", "iMCP won't ask again for \(displayName), and it shows a notification when it connects.")
+        case .credential:
+            ("Always Allow", "This client connects without asking while it keeps its credential.")
+        case nil:
+            nil
+        }
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            // Icon
-            Image(.menuIconOn)
-                .resizable()
-                .foregroundColor(.accentColor)
-                .aspectRatio(contentMode: .fit)
-                .frame(width: 64, height: 64)
+        VStack(alignment: .trailing, spacing: 20) {
+            HStack(alignment: .top, spacing: 16) {
+                Image(nsImage: icon)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 64, height: 64)
+                    .accessibilityHidden(true)
 
-            // Title
-            Text("Client Connection Request")
-                .font(.title2)
-                .fontWeight(.semibold)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Allow “\(displayName)” to connect to iMCP?")
+                        .font(.headline)
 
-            // Message
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Allow \"\(clientName)\" to connect to iMCP?")
-
-                Text(request.identityNote)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                if enabledServiceNames.isEmpty {
-                    Text("No services are currently enabled.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.leading)
-                } else {
-                    Text("This will give the client access to: \(enabledServiceNames.joined(separator: ", ")).")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
+                    Text(identityText)
+                    Text(servicesText)
+                    if let note = trustButton?.note {
+                        Text(note)
+                    }
                 }
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
             }
 
-            // Always trust checkbox
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .firstTextBaseline) {
-                    Toggle("Always trust this client", isOn: $alwaysTrust)
-                        .toggleStyle(CheckboxToggleStyle())
-                    Spacer()
-                }
-                Text(alwaysTrustNote)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(.bottom, 20)
-
-            // Buttons
             HStack(spacing: 12) {
-                Button("Deny") {
-                    onDeny()
-                }
-                .buttonStyle(.bordered)
-                .keyboardShortcut(.cancelAction)
+                Button("Deny") { onDeny() }
+                    .keyboardShortcut(.cancelAction)
 
-                // "Allow" has no keyboard shortcut, so that Return doesn't approve a connection.
-                Button("Allow") {
-                    onApprove(alwaysTrust)
+                // The Allow buttons have no keyboard shortcut, so that Return doesn't approve a connection.
+                Button("Allow Once") { onApprove(false) }
+                    .disabled(!canAllow)
+
+                if let trustButton {
+                    Button(trustButton.title) { onApprove(true) }
+                        .disabled(!canAllow)
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(!canAllow)
             }
         }
         .task {
             guard (try? await Task.sleep(for: Self.allowDelay)) != nil else { return }
             canAllow = true
         }
-        .padding(24)
-        .frame(width: 400, alignment: .leading)
+        .padding(20)
+        .frame(width: 440, alignment: .leading)
         .fixedSize(horizontal: false, vertical: true)
-        .background(Color(NSColor.windowBackgroundColor))
-        .cornerRadius(12)
-        .shadow(radius: 10)
-    }
-}
-
-struct CheckboxToggleStyle: ToggleStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        HStack {
-            Image(systemName: configuration.isOn ? "checkmark.square.fill" : "square")
-                .foregroundColor(configuration.isOn ? .accentColor : .secondary)
-                .accessibilityLabel(
-                    configuration.isOn ? "Always trust this client, checked" : "Always trust this client, unchecked"
-                )
-                .onTapGesture {
-                    configuration.isOn.toggle()
-                }
-
-            configuration.label
-                .onTapGesture {
-                    configuration.isOn.toggle()
-                }
-        }
     }
 }
 
@@ -175,11 +159,12 @@ class ConnectionApprovalWindowController: NSObject, NSWindowDelegate {
         )
 
         window.title = "Connection Request"
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
         window.contentViewController = hostingController
         window.isReleasedWhenClosed = false
         window.level = .floating
-        window.isMovableByWindowBackground = false
-        window.titlebarAppearsTransparent = false
+        window.isMovableByWindowBackground = true
         window.delegate = self
 
         // Initial centering
@@ -236,7 +221,18 @@ class ConnectionApprovalWindowController: NSObject, NSWindowDelegate {
             claimedName: "Claude Desktop",
             record: nil,
             hasUnrecognizedCredential: false,
-            wasTrustedByName: true
+            wasTrustedByName: false,
+            app: ResponsibleApp(
+                name: "Claude",
+                bundleIdentifier: "com.anthropic.claudefordesktop",
+                bundlePath: "/Applications/Claude.app",
+                teamIdentifier: "Q6L2SF6YDW",
+                teamName: "Anthropic, PBC",
+                requirement: "identifier \"com.anthropic.claudefordesktop\"",
+                isAppleSigned: false,
+                isAdHocSigned: false,
+                code: nil
+            )
         ),
         enabledServiceNames: ["Calendar", "Contacts", "Location"],
         onApprove: { alwaysTrust in
@@ -246,5 +242,4 @@ class ConnectionApprovalWindowController: NSObject, NSWindowDelegate {
             print("Denied")
         }
     )
-    .frame(width: 500, height: 400)
 }
