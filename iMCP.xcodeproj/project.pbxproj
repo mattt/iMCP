@@ -92,6 +92,12 @@
 		D1E000000000000000000020 /* NotesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1E000000000000000000010 /* NotesTests.swift */; };
 		D1E000000000000000000021 /* ../../App/Services/NotesQuery.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1E000000000000000000011 /* ../../App/Services/NotesQuery.swift */; };
 		D1E000000000000000000030 /* TopoText in Frameworks */ = {isa = PBXBuildFile; productRef = D1E000000000000000000040 /* TopoText */; };
+		B13800000000000000000020 /* FilesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13800000000000000000010 /* FilesTests.swift */; };
+		B13800000000000000000025 /* ../../App/Services/Files.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13800000000000000000015 /* ../../App/Services/Files.swift */; };
+		B13800000000000000000024 /* ../../App/Services/FilesRootStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13800000000000000000014 /* ../../App/Services/FilesRootStore.swift */; };
+		B13800000000000000000021 /* ../../App/Services/FilesAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13800000000000000000011 /* ../../App/Services/FilesAccess.swift */; };
+		B13800000000000000000022 /* ../../App/Services/FilesOperations.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13800000000000000000012 /* ../../App/Services/FilesOperations.swift */; };
+		B13800000000000000000023 /* ../../App/Services/FilesTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13800000000000000000013 /* ../../App/Services/FilesTools.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -176,6 +182,12 @@
 		B13600000000000000000040 /* ../../Shared/Models/OutboundConfirmation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../Shared/Models/OutboundConfirmation.swift; sourceTree = "<group>"; };
 		D1E000000000000000000010 /* NotesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesTests.swift; sourceTree = "<group>"; };
 		D1E000000000000000000011 /* ../../App/Services/NotesQuery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/NotesQuery.swift; sourceTree = "<group>"; };
+		B13800000000000000000010 /* FilesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilesTests.swift; sourceTree = "<group>"; };
+		B13800000000000000000015 /* ../../App/Services/Files.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/Files.swift; sourceTree = "<group>"; };
+		B13800000000000000000014 /* ../../App/Services/FilesRootStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/FilesRootStore.swift; sourceTree = "<group>"; };
+		B13800000000000000000011 /* ../../App/Services/FilesAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/FilesAccess.swift; sourceTree = "<group>"; };
+		B13800000000000000000012 /* ../../App/Services/FilesOperations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/FilesOperations.swift; sourceTree = "<group>"; };
+		B13800000000000000000013 /* ../../App/Services/FilesTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/FilesTools.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -306,6 +318,12 @@
 				B13500000000000000000010 /* NotesWriteTests.swift */,
 				B13500000000000000000011 /* ../../App/Services/NotesWriting.swift */,
 				B13500000000000000000012 /* ../../App/Services/NotesWriteTools.swift */,
+				B13800000000000000000010 /* FilesTests.swift */,
+				B13800000000000000000015 /* ../../App/Services/Files.swift */,
+				B13800000000000000000014 /* ../../App/Services/FilesRootStore.swift */,
+				B13800000000000000000011 /* ../../App/Services/FilesAccess.swift */,
+				B13800000000000000000012 /* ../../App/Services/FilesOperations.swift */,
+				B13800000000000000000013 /* ../../App/Services/FilesTools.swift */,
 				B13300000000000000000010 /* MusicTests.swift */,
 				B13300000000000000000011 /* ../../App/Services/Music.swift */,
 				A40000000000000000000012 /* ../../Shared/Extensions/Logger+Extensions.swift */,
@@ -643,6 +661,12 @@
 				B13500000000000000000020 /* NotesWriteTests.swift in Sources */,
 				B13500000000000000000021 /* ../../App/Services/NotesWriting.swift in Sources */,
 				B13500000000000000000022 /* ../../App/Services/NotesWriteTools.swift in Sources */,
+				B13800000000000000000020 /* FilesTests.swift in Sources */,
+				B13800000000000000000025 /* ../../App/Services/Files.swift in Sources */,
+				B13800000000000000000024 /* ../../App/Services/FilesRootStore.swift in Sources */,
+				B13800000000000000000021 /* ../../App/Services/FilesAccess.swift in Sources */,
+				B13800000000000000000022 /* ../../App/Services/FilesOperations.swift in Sources */,
+				B13800000000000000000023 /* ../../App/Services/FilesTools.swift in Sources */,
 				B13300000000000000000020 /* MusicTests.swift in Sources */,
 				B13300000000000000000021 /* ../../App/Services/Music.swift in Sources */,
 				A40000000000000000000022 /* ../../Shared/Extensions/Logger+Extensions.swift in Sources */,
