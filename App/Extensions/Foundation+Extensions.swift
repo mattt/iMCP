@@ -162,6 +162,59 @@ extension NSAppleScript {
     /// Tests hold this queue to keep a script waiting.
     static let executionQueue = DispatchQueue(label: "me.mattt.iMCP.AppleScript")
 
+    /// A call to a handler that a script defines, with its arguments.
+    ///
+    /// Values passed this way reach the script as Apple event descriptors,
+    /// never as source text,
+    /// so no value can change what the script does,
+    /// whatever characters it contains.
+    /// Prefer this to building a script from a template that interpolates a value.
+    struct Subroutine: Equatable, Sendable {
+        /// An argument of a handler.
+        enum Parameter: Equatable, Sendable {
+            case string(String)
+            case boolean(Bool)
+            /// A list of strings, as an AppleScript list.
+            case strings([String])
+            /// An enumerator of a scripting dictionary, by its four-character code.
+            case enumCode(FourCharCode)
+        }
+
+        /// The handler's name, as the script declares it.
+        let name: String
+        let parameters: [Parameter]
+
+        init(_ name: String, _ parameters: [Parameter]) {
+            self.name = name
+            self.parameters = parameters
+        }
+
+        /// The Apple event that makes a script run the handler,
+        /// as `osascript` sends one for a script's `on <name>` handler.
+        func event() -> NSAppleEventDescriptor {
+            // The four-character codes of the AppleScript suite:
+            // `kASAppleScriptSuite`, `kASSubroutineEvent`, `keyASSubroutineName`.
+            let event = NSAppleEventDescriptor(
+                eventClass: 0x6173_6372,  // 'ascr'
+                eventID: 0x7073_6272,  // 'psbr'
+                targetDescriptor: .currentProcess(),
+                returnID: AEReturnID(kAutoGenerateReturnID),
+                transactionID: AETransactionID(kAnyTransactionID)
+            )
+            // AppleScript looks up handlers by their lowercased names.
+            event.setParam(
+                NSAppleEventDescriptor(string: name.lowercased()),
+                forKeyword: 0x736E_616D  // 'snam'
+            )
+            let arguments = NSAppleEventDescriptor.list()
+            for (index, parameter) in parameters.enumerated() {
+                arguments.insert(parameter.descriptor, at: index + 1)
+            }
+            event.setParam(arguments, forKeyword: AEKeyword(keyDirectObject))
+            return event
+        }
+    }
+
     /// Compiles `source` and runs it on a serial queue, off the main thread.
     ///
     /// A task cancelled before its script starts runs nothing:
@@ -169,11 +222,26 @@ extension NSAppleScript {
     /// and again on the queue, after compiling and before any Apple event is sent.
     /// A script that has started runs to the end.
     ///
+    /// `beforeSending` runs on the queue after that last check,
+    /// immediately before the script runs;
+    /// when it throws, the script doesn't run and its error is rethrown.
+    ///
+    /// - Parameters:
+    ///   - source: The script's source. Pass a fixed script, not one built from untrusted text.
+    ///   - subroutine: A handler of the script to run in place of the script's own `run` handler.
+    ///   - beforeSending: A check that runs right before the script, on the queue.
     /// - Returns: The result of the script.
     /// - Throws: ``ExecutionError`` when the script does not compile or fails,
-    ///   or `CancellationError` when the task is cancelled before the script starts.
-    static func execute(_ source: String) async throws -> NSAppleEventDescriptor {
+    ///   `CancellationError` when the task is cancelled before the script starts,
+    ///   or the error from `beforeSending`.
+    static func execute(
+        _ source: String,
+        calling subroutine: Subroutine? = nil,
+        beforeSending: @escaping () throws -> Void = {}
+    ) async throws -> NSAppleEventDescriptor {
         try Task.checkCancellation()
+        // Callers must not access the closure after passing it to this queue.
+        nonisolated(unsafe) let beforeSending = beforeSending
         let isCancelled = OSAllocatedUnfairLock(initialState: false)
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
@@ -195,7 +263,18 @@ extension NSAppleScript {
                         continuation.resume(throwing: CancellationError())
                         return
                     }
-                    let result = script.executeAndReturnError(&errorInfo)
+                    do {
+                        try beforeSending()
+                    } catch {
+                        continuation.resume(throwing: error)
+                        return
+                    }
+                    let result =
+                        if let subroutine {
+                            script.executeAppleEvent(subroutine.event(), error: &errorInfo)
+                        } else {
+                            script.executeAndReturnError(&errorInfo)
+                        }
                     if errorInfo != nil {
                         continuation.resume(throwing: ExecutionError(errorInfo: errorInfo))
                     } else {
@@ -205,6 +284,25 @@ extension NSAppleScript {
             }
         } onCancel: {
             isCancelled.withLock { $0 = true }
+        }
+    }
+}
+
+extension NSAppleScript.Subroutine.Parameter {
+    fileprivate var descriptor: NSAppleEventDescriptor {
+        switch self {
+        case .string(let value):
+            return NSAppleEventDescriptor(string: value)
+        case .boolean(let value):
+            return NSAppleEventDescriptor(boolean: value)
+        case .strings(let values):
+            let list = NSAppleEventDescriptor.list()
+            for (index, value) in values.enumerated() {
+                list.insert(NSAppleEventDescriptor(string: value), at: index + 1)
+            }
+            return list
+        case .enumCode(let code):
+            return NSAppleEventDescriptor(enumCode: code)
         }
     }
 }
