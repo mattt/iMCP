@@ -38,7 +38,14 @@ final class NotesInlineTests: XCTestCase {
         // A caller that didn't look up the target can't say it is missing.
         let unchecked = linkValue(link, direction: .outgoing, otherTitle: nil, wasLookedUp: false).objectValue
         XCTAssertNil(unchecked?["isMissing"])
-        XCTAssertNil(linkValue(Note.Link(sourceID: source, targetID: target), direction: .outgoing, otherTitle: nil, wasLookedUp: false).objectValue?["name"])
+        XCTAssertNil(
+            linkValue(
+                Note.Link(sourceID: source, targetID: target),
+                direction: .outgoing,
+                otherTitle: nil,
+                wasLookedUp: false
+            ).objectValue?["name"]
+        )
     }
 
     func testSmartFolderQueryStripsTheDeletedClause() {

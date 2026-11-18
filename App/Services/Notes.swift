@@ -179,7 +179,9 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
                 "@type": "ItemList",
                 "name": "Notes",
                 "numberOfItems": .int(result.notes.count),
-                "itemListElement": .array(result.notes.map { .object($0.properties(in: folders, tags: tags, links: links)) }),
+                "itemListElement": .array(
+                    result.notes.map { .object($0.properties(in: folders, tags: tags, links: links)) }
+                ),
             ]
             if let nextCursor = result.nextCursor {
                 list["nextCursor"] = .string(nextCursor.description)
@@ -772,7 +774,12 @@ extension TopoText.Note {
         if !links.isEmpty {
             object["linkedNotes"] = .array(
                 links.map {
-                    linkValue($0, direction: .outgoing, otherTitle: titles?[$0.targetID]?.title, wasLookedUp: titles != nil)
+                    linkValue(
+                        $0,
+                        direction: .outgoing,
+                        otherTitle: titles?[$0.targetID]?.title,
+                        wasLookedUp: titles != nil
+                    )
                 }
             )
         }
