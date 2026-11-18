@@ -269,10 +269,14 @@ struct ClientsSettingsView: View {
 
                     if let primaryURL = publicURLs.first?.url {
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("• **claude.ai**: Settings -> Connectors -> Add custom connector -> paste `\(primaryURL)` -> Connect.")
-                                .font(.caption)
-                            Text("• **Claude Duet**: Add custom MCP connector -> paste `\(primaryURL)` -> approve once in iMCP.")
-                                .font(.caption)
+                            Text(
+                                "• **claude.ai**: Settings -> Connectors -> Add custom connector -> paste `\(primaryURL)` -> Connect."
+                            )
+                            .font(.caption)
+                            Text(
+                                "• **Claude Duet**: Add custom MCP connector -> paste `\(primaryURL)` -> approve once in iMCP."
+                            )
+                            .font(.caption)
                             Text("• **Muse**: Add MCP server URL `\(primaryURL)` (supports OAuth 2.1).")
                                 .font(.caption)
                         }
@@ -283,7 +287,9 @@ struct ClientsSettingsView: View {
             } header: {
                 Text("Cloud Connectors (claude.ai, Claude Duet, Muse)")
             } footer: {
-                Text("Cloud agents authenticate with OAuth 2.1 and refresh their access automatically after you approve them once.")
+                Text(
+                    "Cloud agents authenticate with OAuth 2.1 and refresh their access automatically after you approve them once."
+                )
             }
 
             Section {

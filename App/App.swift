@@ -51,7 +51,8 @@ struct App: SwiftUI.App {
             appDelegate.shouldCheckOnboarding = false
             let defaults = UserDefaults.standard
             let hasSeen = defaults.bool(forKey: OnboardingGate.seenDefaultsKey)
-            let hasTrusted = !serverController.trustedClients.isEmpty || !serverController.oauthConnections.grants.isEmpty
+            let hasTrusted =
+                !serverController.trustedClients.isEmpty || !serverController.oauthConnections.grants.isEmpty
             let hasConnected = !serverController.activePublicURLs.isEmpty
             let hasServiceBeyondDefaults = serverController.computedServiceConfigs.contains {
                 $0.name != "Maps" && $0.name != "Utilities" && $0.binding.wrappedValue

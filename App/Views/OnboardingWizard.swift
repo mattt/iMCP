@@ -197,9 +197,11 @@ struct OnboardingWizardView: View {
                     .font(.subheadline.weight(.semibold))
 
                 if publicURLs.isEmpty {
-                    Text("Turn on Cloudflare Tunnel or Tailscale Funnel in Step 2 to get your public HTTPS connector URL.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Text(
+                        "Turn on Cloudflare Tunnel or Tailscale Funnel in Step 2 to get your public HTTPS connector URL."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 } else {
                     ForEach(publicURLs, id: \.url) { item in
                         HStack {
@@ -219,10 +221,14 @@ struct OnboardingWizardView: View {
                     Divider()
 
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("• **claude.ai**: Open Settings -> Connectors -> Add custom connector, paste the URL, and click Connect.")
-                            .font(.caption)
-                        Text("• **Claude Duet**: Add a custom MCP connector with the URL above and approve once in iMCP.")
-                            .font(.caption)
+                        Text(
+                            "• **claude.ai**: Open Settings -> Connectors -> Add custom connector, paste the URL, and click Connect."
+                        )
+                        .font(.caption)
+                        Text(
+                            "• **Claude Duet**: Add a custom MCP connector with the URL above and approve once in iMCP."
+                        )
+                        .font(.caption)
                         Text("• **Muse**: Add the MCP server URL above (supports OAuth 2.1).")
                             .font(.caption)
                     }
@@ -365,9 +371,12 @@ private struct OnboardingTunnelsStepView: View {
                         }
                     case .running(let endpoint):
                         HStack {
-                            Label("Connected on Tailnet (\(endpoint.ipv4Address))", systemImage: "checkmark.circle.fill")
-                                .foregroundStyle(.green)
-                                .font(.caption)
+                            Label(
+                                "Connected on Tailnet (\(endpoint.ipv4Address))",
+                                systemImage: "checkmark.circle.fill"
+                            )
+                            .foregroundStyle(.green)
+                            .font(.caption)
                             Spacer()
                             Toggle(
                                 "Public Funnel",
