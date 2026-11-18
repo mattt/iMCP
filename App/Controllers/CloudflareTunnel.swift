@@ -2,6 +2,7 @@ import AppKit
 import Combine
 import Darwin
 import Foundation
+import Network
 import OSLog
 import Security
 
@@ -865,6 +866,8 @@ final class CloudflareTunnelController: ObservableObject {
     private var tunnelStartedAt: Date?
     private var consecutiveRestarts = 0
     private var wakeObserver: (any NSObjectProtocol)?
+    private var pathMonitor: NWPathMonitor?
+    private var wasOnline = true
 
     init(
         secretStorage: any CloudflareSecretStorage = KeychainCloudflareSecretStorage(),
@@ -898,17 +901,69 @@ final class CloudflareTunnelController: ObservableObject {
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.reconnectAfterWake() }
         }
+        // A tunnel that failed while the network was down starts again when it comes back.
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { [weak self] path in
+            let online = path.status == .satisfied
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let cameBack = online && !self.wasOnline
+                self.wasOnline = online
+                if cameBack { self.reconnectAfterNetworkReturns() }
+            }
+        }
+        monitor.start(queue: DispatchQueue(label: "imcp.cloudflare.path"))
+        pathMonitor = monitor
+    }
+
+    /// Whether the tunnel is meant to be up but isn't, and isn't already starting.
+    private var needsReconnect: Bool {
+        guard isEnabled, account != nil, processHandle == nil else { return false }
+        if case .failed = state { return true }
+        return false
+    }
+
+    private func reconnectAfterNetworkReturns() {
+        guard needsReconnect else { return }
+        log.notice("Network is back, reconnecting Cloudflare Tunnel")
+        consecutiveRestarts = 0
+        reconnectNow()
+    }
+
+    /// Zone discovery comes first when it never finished, since `connect` waits for it.
+    private func reconnectNow() {
+        connectTask?.cancel()
+        connectTask = Task { [weak self] in
+            guard let self else { return }
+            if self.zones.isEmpty {
+                await self.refreshZones()
+            } else if let port = self.currentLoopbackPort {
+                await self.connect(localPort: port)
+            }
+        }
+    }
+
+    /// After discovery or provisioning failed (offline at launch, a dropped connection),
+    /// tries again with the same growing delays as a tunnel that exited.
+    private func retryAfterFailure() {
+        guard isEnabled, account != nil, processHandle == nil else { return }
+        let delay = Self.restartDelays[min(consecutiveRestarts, Self.restartDelays.count - 1)]
+        consecutiveRestarts += 1
+        log.notice("Retrying Cloudflare Tunnel in \(delay, privacy: .public) seconds")
+        connectTask?.cancel()
+        connectTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard let self, !Task.isCancelled, self.needsReconnect else { return }
+            self.reconnectNow()
+        }
     }
 
     /// After the Mac wakes, a tunnel that failed while it slept shouldn't wait out its delay.
     private func reconnectAfterWake() {
-        guard isEnabled, processHandle == nil, let port = currentLoopbackPort else { return }
+        guard isEnabled, processHandle == nil, currentLoopbackPort != nil else { return }
         log.notice("Reconnecting Cloudflare Tunnel after wake")
         consecutiveRestarts = 0
-        connectTask?.cancel()
-        connectTask = Task { [weak self] in
-            await self?.connect(localPort: port)
-        }
+        reconnectNow()
     }
 
     // MARK: Naming Helpers
@@ -1100,6 +1155,7 @@ final class CloudflareTunnelController: ObservableObject {
         } catch {
             log.error("Cloudflare zone discovery failed: \(error.localizedDescription, privacy: .public)")
             state = .failed(error.localizedDescription)
+            retryAfterFailure()
         }
     }
 
@@ -1281,6 +1337,7 @@ final class CloudflareTunnelController: ObservableObject {
             guard current == generation else { return }
             log.error("Cloudflare Tunnel provisioning failed: \(error.localizedDescription, privacy: .public)")
             state = .failed(error.localizedDescription)
+            retryAfterFailure()
         }
     }
 
