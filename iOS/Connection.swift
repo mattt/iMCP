@@ -16,6 +16,8 @@ struct PhoneCredentials: Codable, Equatable, Sendable {
     var tailnetPort: UInt16?
     var funnelURL: String?
     var cloudflareURL: String?
+    /// What the Mac last told this phone to use. Once present, it decides the routes and their order.
+    var configuration: MobileConfiguration?
 
     private static let account = "pairing"
     private static let keychainService = "co.dododo.iMCP.iOS"
@@ -60,18 +62,34 @@ struct PhoneCredentials: Codable, Equatable, Sendable {
     }
 
     var macName: String {
-        service.hasPrefix("iMCP on ") ? String(service.dropFirst("iMCP on ".count)) : service
+        if let name = configuration?.macName, !name.isEmpty { return name }
+        return service.hasPrefix("iMCP on ") ? String(service.dropFirst("iMCP on ".count)) : service
+    }
+
+    private var routes: MobilePhoneRoutes {
+        get {
+            MobilePhoneRoutes(
+                service: service,
+                tailnetHost: tailnetHost,
+                tailnetPort: tailnetPort,
+                funnelURL: funnelURL,
+                cloudflareURL: cloudflareURL,
+                configuration: configuration
+            )
+        }
+        set {
+            service = newValue.service
+            tailnetHost = newValue.tailnetHost
+            tailnetPort = newValue.tailnetPort
+            funnelURL = newValue.funnelURL
+            cloudflareURL = newValue.cloudflareURL
+            configuration = newValue.configuration
+        }
     }
 
     /// The endpoints to try for `mode`, in order.
     func candidates(for mode: MobileTransportMode) -> [MobileTransportCandidate] {
-        mode.candidates(
-            service: service,
-            tailnetHost: tailnetHost,
-            tailnetPort: tailnetPort,
-            funnelURL: funnelURL,
-            cloudflareURL: cloudflareURL
-        )
+        routes.candidates(for: mode)
     }
 
     /// Why `mode` can't be used with this Mac, or nil when it can.
@@ -79,15 +97,18 @@ struct PhoneCredentials: Codable, Equatable, Sendable {
         mode.unavailableReason(hasCandidates: !candidates(for: mode).isEmpty)
     }
 
-    /// Takes the routes that the Mac advertises in its welcome, keeping the saved ones it doesn't mention.
+    /// Follows `configuration` if it is newer than the one this phone holds, or returns nil.
+    func applying(_ configuration: MobileConfiguration) -> PhoneCredentials? {
+        guard let updated = routes.applying(configuration) else { return nil }
+        var copy = self
+        copy.routes = updated
+        return copy
+    }
+
+    /// Takes what the Mac says in its welcome.
     func updating(from welcome: MobileWelcome) -> PhoneCredentials {
         var copy = self
-        if let host = welcome.tailnetHost, !host.isEmpty { copy.tailnetHost = host }
-        if let port = welcome.tailnetPort, port > 0 { copy.tailnetPort = port }
-        if let funnel = MobileLink.normalizedWebSocketURL(welcome.funnelURL) { copy.funnelURL = funnel }
-        if let cloudflare = MobileLink.normalizedWebSocketURL(welcome.cloudflareURL) {
-            copy.cloudflareURL = cloudflare
-        }
+        copy.routes = routes.updating(from: welcome)
         return copy
     }
 }
@@ -251,6 +272,42 @@ final class PhoneConnection: ObservableObject {
         guard loop != nil else { return }
         stop()
         start()
+    }
+
+    // MARK: - Configuration
+
+    /// Applies a configuration that the Mac pushed with `config_apply`.
+    /// Returns the revision this phone holds afterwards, which the Mac shows.
+    func applyConfiguration(_ configuration: MobileConfiguration) -> MobileConfigApplyResponse {
+        guard let current = credentials else {
+            return MobileConfigApplyResponse(revision: 0, applied: false)
+        }
+        guard let updated = current.applying(configuration) else {
+            return MobileConfigApplyResponse(revision: current.configuration?.revision ?? 0, applied: false)
+        }
+        do {
+            try updated.save()
+        } catch {
+            log.error("Couldn't save the Mac's configuration: \(error.localizedDescription, privacy: .public)")
+            return MobileConfigApplyResponse(revision: current.configuration?.revision ?? 0, applied: false)
+        }
+        credentials = updated
+        return MobileConfigApplyResponse(revision: configuration.revision, applied: true)
+    }
+
+    /// Reconnects so the Mac sends its configuration again, and waits for the result.
+    /// Returns an error message, or nil when the phone connected.
+    func refreshConfiguration(limit: Duration = .seconds(10)) async -> String? {
+        guard credentials != nil else { return "This device isn't paired with a Mac." }
+        stop()
+        start()
+        let deadline = ContinuousClock.now.advanced(by: limit)
+        while ContinuousClock.now < deadline {
+            if phase == .connected { return nil }
+            try? await Task.sleep(for: .milliseconds(250))
+        }
+        if case .failed(let message) = phase { return message }
+        return "The Mac didn't answer. The phone keeps the configuration it has."
     }
 
     // MARK: - Foreground
@@ -480,7 +537,8 @@ final class PhoneConnection: ObservableObject {
             tailnetHost: code.tailnetHost,
             tailnetPort: code.tailnetPort,
             funnelURL: code.funnelURL,
-            cloudflareURL: code.cloudflareURL
+            cloudflareURL: code.cloudflareURL,
+            configuration: nil
         ).updating(from: session.welcome)
         try credentials.save()
         // A new Mac has a new cache, which resets the outbox on its first pull.

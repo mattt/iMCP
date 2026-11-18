@@ -10,6 +10,8 @@ struct TransportSettingsView: View {
     @State private var funnelURL: String
     @State private var cloudflareURL: String
     @State private var error: String?
+    @State private var isRefreshing = false
+    @State private var refreshMessage: String?
 
     init(connection: PhoneConnection) {
         self.connection = connection
@@ -22,6 +24,8 @@ struct TransportSettingsView: View {
 
     var body: some View {
         Form {
+            configurationSection
+
             Section {
                 ForEach(MobileTransportMode.allCases, id: \.self) { mode in
                     let reason = connection.credentials?.unavailableReason(for: mode)
@@ -48,11 +52,13 @@ struct TransportSettingsView: View {
                 Text("Connection Mode")
             } footer: {
                 Text(
-                    "Automatic tries the local network first, then each other route the Mac has offered. A route is unavailable until the Mac offers an address for it."
+                    connection.credentials?.configuration == nil
+                        ? "Automatic tries the local network first, then each other route the Mac has offered. A route is unavailable until the Mac offers an address for it."
+                        : "Automatic follows the Mac: it tries the routes in the order the Mac lists them above. Choose another mode to use one route only."
                 )
             }
 
-            if connection.credentials != nil {
+            if connection.credentials != nil, connection.credentials?.configuration == nil {
                 Section {
                     TextField("Host or IP", text: $tailnetHost)
                         .textInputAutocapitalization(.never)
@@ -63,7 +69,9 @@ struct TransportSettingsView: View {
                 } header: {
                     Text("Tailscale VPN")
                 } footer: {
-                    Text("The Mac fills these in when it connects. Change them only if the Mac's address changed.")
+                    Text(
+                        "This Mac hasn't sent a configuration, so these addresses are from pairing. Change them only if the Mac's address changed."
+                    )
                 }
 
                 Section("Tailscale Funnel") {
@@ -87,12 +95,73 @@ struct TransportSettingsView: View {
         }
         .navigationTitle("Connection Mode")
         .toolbar {
-            if connection.credentials != nil {
+            if connection.credentials != nil, connection.credentials?.configuration == nil {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private var configurationSection: some View {
+        if let configuration = connection.credentials?.configuration {
+            Section {
+                LabeledContent("Configured by", value: "\(configuration.macName) (revision \(configuration.revision))")
+                ForEach(Array(configuration.routes.enumerated()), id: \.element.id) { index, route in
+                    LabeledContent("\(index + 1). \(route.label)", value: status(of: route))
+                }
+                Button {
+                    Task { await refreshConfiguration() }
+                } label: {
+                    HStack {
+                        Text("Refresh Configuration")
+                        if isRefreshing {
+                            Spacer()
+                            ProgressView()
+                        }
+                    }
+                }
+                .disabled(isRefreshing)
+                if let refreshMessage {
+                    Text(refreshMessage).font(.caption).foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("Routes From Your Mac")
+            } footer: {
+                Text(
+                    "Your Mac decides which routes to offer and in what order. Change them in iMCP on the Mac, in the iPhone & iPad settings. This phone updates when it connects."
+                )
+            }
+        } else if connection.credentials != nil {
+            Section {
+                Button {
+                    Task { await refreshConfiguration() }
+                } label: {
+                    Text("Refresh Configuration")
+                }
+                .disabled(isRefreshing)
+                if let refreshMessage {
+                    Text(refreshMessage).font(.caption).foregroundStyle(.secondary)
+                }
+            } footer: {
+                Text("This phone hasn't received a configuration from the Mac yet. It uses the addresses from pairing.")
+            }
+        }
+    }
+
+    private func status(of route: MobileRoute) -> String {
+        if connection.phase == .connected, connection.activeTransport == route.kind.mode { return "Connected" }
+        let mode = connection.transportMode
+        if mode != .automatic, mode != route.kind.mode { return "Not used in this mode" }
+        return "Ready"
+    }
+
+    private func refreshConfiguration() async {
+        isRefreshing = true
+        refreshMessage = nil
+        refreshMessage = await connection.refreshConfiguration()
+        isRefreshing = false
     }
 
     private func save() {

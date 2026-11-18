@@ -88,6 +88,19 @@ actor PhoneBackend: MobileBackend {
     nonisolated var tools: [Tool] {
         MobileTools.all(backend: self) + [
             Tool(
+                name: MobileConfigLink.applyTool,
+                description: "Receive the Mac's connection configuration.",
+                inputSchema: .object(properties: [:], additionalProperties: true),
+                annotations: .init(readOnlyHint: false, openWorldHint: false)
+            ) { input in
+                let request = try MobileCoding.decoder.decode(
+                    MobileConfigApplyRequest.self,
+                    from: JSONEncoder().encode(input)
+                )
+                let response = await MainActor.run { PhoneConnection.shared.applyConfiguration(request.configuration) }
+                return try JSONDecoder().decode(Value.self, from: MobileCoding.encoder.encode(response))
+            },
+            Tool(
                 name: MobileActivityLink.syncTool,
                 description: "Receive activity history events from the Mac.",
                 inputSchema: .object(properties: [:], additionalProperties: true),
