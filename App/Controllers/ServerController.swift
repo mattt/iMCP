@@ -938,6 +938,29 @@ final class ServerController: ObservableObject {
                 guard let self else { return .denied }
                 return await self.requestOAuthApproval(request)
             }
+            // One consumer applies the updates in the order that they happen.
+            let endpointUpdates = AsyncStream.makeStream(of: RemoteAccessServer.MobileEndpoints.self)
+            Task {
+                for await endpoints in endpointUpdates.stream {
+                    await MobileService.shared.updateRemoteEndpoints(
+                        tailnetHost: nil,
+                        funnelURL: endpoints.funnelURL,
+                        cloudflareURL: endpoints.cloudflareURL
+                    )
+                }
+            }
+            // The public hosts carry the iPhone and iPad link too: tell it their addresses,
+            // and hand it the WebSockets that phones upgrade at /mobile.
+            await self.networkManager.remoteAccess.setMobileHandlers(
+                endpoints: { endpoints in endpointUpdates.continuation.yield(endpoints) },
+                upgrade: { wire, mode in
+                    guard MobileService.isAnyServiceEnabled() else {
+                        await wire.close()
+                        return
+                    }
+                    await MobileService.shared.acceptWebSocket(wire, transportMode: mode)
+                }
+            )
             self.oauthConnections.didRevoke = { [weak self] id in
                 guard let self else { return }
                 Task { await self.networkManager.remoteAccess.closeSessions(forToken: id) }

@@ -265,6 +265,12 @@ actor RemoteAccessServer {
         var cloudflareHostname: String? = nil
     }
 
+    /// The public WebSocket addresses for the iPhone and iPad link.
+    struct MobileEndpoints: Equatable, Sendable {
+        var funnelURL: String?
+        var cloudflareURL: String?
+    }
+
     static let defaultPort: UInt16 = 4627
     static let maximumConnections = 32
     static let maximumSessions = 16
@@ -322,10 +328,15 @@ actor RemoteAccessServer {
     private var funnelConnections: [UUID: Task<Void, Never>] = [:]
     private var funnelListener: (any LocalForwardListener)?
     /// The node's public name, while Tailscale Funnel is on.
-    private var tailscaleFunnelHost: String?
+    private var tailscaleFunnelHost: String? { didSet { publishMobileEndpoints() } }
     /// The public hostname served through Cloudflare Tunnel, while Cloudflare Tunnel is on.
-    private var cloudflareHost: String?
+    private var cloudflareHost: String? { didSet { publishMobileEndpoints() } }
     private var funnelState: Funnel = .off
+    /// Tells the mobile link the public WebSocket addresses, when they appear, change, or go away.
+    private var mobileEndpointsHandler: (@Sendable (MobileEndpoints) -> Void)?
+    /// Takes over a WebSocket that a paired iPhone or iPad upgraded through a public host.
+    private var mobileUpgradeHandler: (@Sendable (any MobileFrameWire, MobileTransportMode) async -> Void)?
+    private var lastPublishedMobileEndpoints: MobileEndpoints?
     /// Whether this node start already turned Funnel on or decided not to.
     private var funnelConfigured = false
     /// Whether this node start already cleared the Funnel configuration that an earlier run left.
@@ -378,6 +389,32 @@ actor RemoteAccessServer {
         if let port = funnelListener?.port, cloudflareHost != nil {
             handler?(.listening(port: port))
         }
+    }
+
+    /// Connects the public hosts to the iPhone and iPad link.
+    ///
+    /// `endpoints` runs now and whenever a public host starts, changes, or stops.
+    /// `upgrade` receives each WebSocket that a phone opened at `/mobile` on a public host,
+    /// after the HTTP upgrade and before any authentication, which the link performs itself.
+    /// Without `upgrade`, `/mobile` answers `404`.
+    func setMobileHandlers(
+        endpoints: (@Sendable (MobileEndpoints) -> Void)?,
+        upgrade: (@Sendable (any MobileFrameWire, MobileTransportMode) async -> Void)?
+    ) {
+        mobileEndpointsHandler = endpoints
+        mobileUpgradeHandler = upgrade
+        lastPublishedMobileEndpoints = nil
+        publishMobileEndpoints()
+    }
+
+    private func publishMobileEndpoints() {
+        let endpoints = MobileEndpoints(
+            funnelURL: tailscaleFunnelHost.flatMap { MobileLink.normalizedWebSocketURL($0) },
+            cloudflareURL: cloudflareHost.flatMap { MobileLink.normalizedWebSocketURL($0) }
+        )
+        guard endpoints != lastPublishedMobileEndpoints else { return }
+        lastPublishedMobileEndpoints = endpoints
+        mobileEndpointsHandler?(endpoints)
     }
 
     /// Sets how iMCP asks its owner to approve an app that wants public access through OAuth.
@@ -755,10 +792,63 @@ actor RemoteAccessServer {
                     Self.logPublicRequest(request, statusCode: response.statusCode)
                     return (response, keepAlive: !FunnelPolicy.closesConnection(afterStatus: response.statusCode))
                 },
+                upgrade: { request, buffered, connection in
+                    await self.upgradeMobile(request, buffered: buffered, connection: connection)
+                },
                 streamEnded: { sessionID in await self.streamEnded(sessionID: sessionID) }
             )
             self.funnelConnectionClosed(id)
         }
+    }
+
+    /// Answers a request for the iPhone and iPad link on a public host.
+    ///
+    /// Only a WebSocket upgrade from a client that isn't a browser, on an active public host, gets through.
+    /// It never meets the token or OAuth checks, so a bearer token neither opens it nor changes how it's treated.
+    /// The link then asks the phone to prove it holds the key of a paired device,
+    /// and closes the connection if it doesn't within `MobileService.helloTimeout`.
+    /// This call returns once that handshake ends, so the connection counts toward the public limit until then.
+    private func upgradeMobile(
+        _ message: HTTPRequestMessage,
+        buffered: Data,
+        connection: any TailnetConnection
+    ) async -> HTTPServerConnection.UpgradeOutcome {
+        func refuse(_ status: Int, _ reason: String) -> HTTPServerConnection.UpgradeOutcome {
+            .reply(.mcp(.error(statusCode: status, .invalidRequest(reason))))
+        }
+        guard let upgrade = mobileUpgradeHandler else { return refuse(404, "Not Found") }
+        guard let host = FunnelPolicy.matchedHost(in: message.header("Host"), allowedHosts: publicHosts) else {
+            return refuse(421, "Misdirected Request")
+        }
+        let mode: MobileTransportMode
+        if host == cloudflareHost {
+            mode = .cloudflare
+        } else if host == tailscaleFunnelHost {
+            mode = .tailscaleFunnel
+        } else {
+            return refuse(421, "Misdirected Request")
+        }
+        // A web page can open a WebSocket to any address, and it always sends an Origin.
+        guard message.header("Origin") == nil else { return refuse(403, "Forbidden") }
+        guard MobileWebSocketHandshake.isUpgradeRequest(method: message.method, headers: message.headers),
+            let clientKey = MobileWebSocketHandshake.header("Sec-WebSocket-Key", in: message.headers)
+        else {
+            return refuse(404, "Not Found")
+        }
+        do {
+            try await connection.send(
+                MobileWebSocketHandshake.responseData(clientKey: clientKey),
+                timeout: HTTPServerConnection.sendTimeout
+            )
+        } catch {
+            return .handedOff
+        }
+        let wire = MobileServerWebSocketWire(
+            stream: TailnetByteStream(connection),
+            initialBuffer: buffered
+        )
+        await upgrade(wire, mode)
+        return .handedOff
     }
 
     private func funnelConnectionClosed(_ id: UUID) {
@@ -987,6 +1077,12 @@ actor RemoteAccessServer {
             isInitializationRequest: false,
             supportedProtocolVersions: MCP.Version.supported
         )
+
+        // The iPhone and iPad link is a WebSocket that `upgradeMobile` answers.
+        // Any other request for it ends here, before the token and OAuth checks.
+        if message.path == MobileLink.mobileWebSocketPath {
+            return .mcp(.error(statusCode: 404, .invalidRequest("Not Found")))
+        }
 
         if OAuthEndpoints.handles(path: message.path) {
             // A browser's top-level navigation and a server-side client send no `Origin`,
@@ -1307,6 +1403,18 @@ actor RemoteAccessServer {
 final class HTTPServerConnection: @unchecked Sendable {
     typealias Handler = @Sendable (HTTPRequestMessage) async -> (ServedResponse, keepAlive: Bool)
 
+    /// What happened to a request for the WebSocket path.
+    enum UpgradeOutcome: Sendable {
+        /// The upgrade took over the connection, and it's no longer this server's to close.
+        case handedOff
+        /// The upgrade refused the request. The server writes this and closes the connection.
+        case reply(ServedResponse)
+    }
+
+    /// Answers a request for ``MobileLink/mobileWebSocketPath``, with the bytes that arrived after it.
+    typealias UpgradeHandler =
+        @Sendable (HTTPRequestMessage, Data, any TailnetConnection) async -> UpgradeOutcome
+
     /// How long a connection can wait for a request.
     static let idleTimeout: Duration = .seconds(120)
     /// How long the peer has to accept each write.
@@ -1322,6 +1430,7 @@ final class HTTPServerConnection: @unchecked Sendable {
     private let requestDeadline: Duration?
     // Only `serve(_:streamEnded:)` reads and writes the buffer, one request at a time.
     private var buffer = Data()
+    private var handedOff = false
 
     init(
         _ connection: any TailnetConnection,
@@ -1336,18 +1445,39 @@ final class HTTPServerConnection: @unchecked Sendable {
     }
 
     /// Serves requests until the client or the handler ends the connection, then closes it.
-    func serve(_ handler: Handler, streamEnded: @Sendable (String?) async -> Void) async {
-        await serveRequests(handler, streamEnded: streamEnded)
+    ///
+    /// With `upgrade`, a request for the WebSocket path goes to it instead of `handler`,
+    /// and a connection it hands off stays open.
+    func serve(
+        _ handler: Handler,
+        upgrade: UpgradeHandler? = nil,
+        streamEnded: @Sendable (String?) async -> Void
+    ) async {
+        await serveRequests(handler, upgrade: upgrade, streamEnded: streamEnded)
         // No read is in progress here, so closing can't affect a reused descriptor.
-        await connection.close()
+        if !handedOff { await connection.close() }
     }
 
-    private func serveRequests(_ handler: Handler, streamEnded: @Sendable (String?) async -> Void) async {
+    private func serveRequests(
+        _ handler: Handler,
+        upgrade: UpgradeHandler?,
+        streamEnded: @Sendable (String?) async -> Void
+    ) async {
         while let result = await readRequest() {
             // The server cancels the connection when it stops.
             guard !Task.isCancelled else { return }
             switch result {
             case .request(let message, _):
+                if let upgrade, message.path == MobileLink.mobileWebSocketPath {
+                    switch await upgrade(message, buffer, connection) {
+                    case .handedOff:
+                        buffer = Data()
+                        handedOff = true
+                    case .reply(let response):
+                        _ = await write(response, keepAlive: false, streamEnded: streamEnded)
+                    }
+                    return
+                }
                 let (response, keepAlive) = await handler(message)
                 let shouldKeepAlive = keepAlive && message.keepAlive
                 let sent = await write(response, keepAlive: shouldKeepAlive, streamEnded: streamEnded)
@@ -1485,5 +1615,26 @@ final class HTTPServerConnection: @unchecked Sendable {
             group.cancelAll()
             return result ?? false
         }
+    }
+}
+
+/// Adapts a tailnet or loopback connection to the byte stream that the WebSocket wire reads and writes.
+struct TailnetByteStream: MobileByteStream {
+    private let connection: any TailnetConnection
+
+    init(_ connection: any TailnetConnection) {
+        self.connection = connection
+    }
+
+    func receive(timeout: Duration) async throws -> Data {
+        try await connection.receive(timeout: timeout)
+    }
+
+    func send(_ data: Data, timeout: Duration) async throws {
+        try await connection.send(data, timeout: timeout)
+    }
+
+    func close() async {
+        await connection.close()
     }
 }
