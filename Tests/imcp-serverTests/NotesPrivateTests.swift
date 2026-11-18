@@ -156,11 +156,20 @@ final class NotesPrivateTests: XCTestCase {
     func testTagListScopes() throws {
         XCTAssertEqual(try request("notes_native_tags", ["action": "list"]).args.count, 0)
         XCTAssertEqual(try request("notes_native_tags", ["action": "list", "id": id]).args["id"] as? String, id)
-        let folder = try request("notes_native_tags", ["action": "list", "folder": "Work/Clients", "account": "iCloud"])
+        let folder = try request(
+            "notes_native_tags",
+            ["action": "list", "folder": "Work/Clients", "account": "iCloud"]
+        )
         XCTAssertEqual(folder.args["folder"] as? String, "Work/Clients")
         XCTAssertEqual(folder.args["account"] as? String, "iCloud")
-        XCTAssertEqual(failure("notes_native_tags", ["action": "list", "id": id, "folder": "x"])?.code, "conflicting_scope")
-        XCTAssertEqual(failure("notes_native_tags", ["action": "list", "account": "iCloud"])?.code, "invalid_arguments")
+        XCTAssertEqual(
+            failure("notes_native_tags", ["action": "list", "id": id, "folder": "x"])?.code,
+            "conflicting_scope"
+        )
+        XCTAssertEqual(
+            failure("notes_native_tags", ["action": "list", "account": "iCloud"])?.code,
+            "invalid_arguments"
+        )
         XCTAssertEqual(failure("notes_native_tags", ["action": "list", "tags": ["a"]])?.code, "invalid_arguments")
     }
 
@@ -176,7 +185,10 @@ final class NotesPrivateTests: XCTestCase {
     }
 
     func testTagReplaceRequest() throws {
-        let r = try request("notes_native_tags", ["action": "replace", "ids": [id, other], "old": "#old", "new": "new"])
+        let r = try request(
+            "notes_native_tags",
+            ["action": "replace", "ids": [id, other], "old": "#old", "new": "new"]
+        )
         XCTAssertEqual(r.args["mode"] as? String, "replace")
         XCTAssertEqual(r.args["ids"] as? [String], [id, other])
         XCTAssertEqual(r.args["old"] as? String, "old")

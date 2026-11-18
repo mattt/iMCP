@@ -177,7 +177,11 @@
                 await call("tags list note", tool: "notes_native_tags", ["action": "list", "id": aID])
                 await call("tags list folder", tool: "notes_native_tags", ["action": "list", "folder": folderName])
                 await call("tags inventory", tool: "notes_native_tags", ["action": "list"])
-                await call("tags add on B", tool: "notes_native_tags", ["action": "add", "id": bID, "tags": ["iMCPtestOne"]])
+                await call(
+                    "tags add on B",
+                    tool: "notes_native_tags",
+                    ["action": "add", "id": bID, "tags": ["iMCPtestOne"]]
+                )
                 await call(
                     "tags replace",
                     tool: "notes_native_tags",
