@@ -84,6 +84,9 @@ struct StatusView: View {
                 Section {
                     LabeledContent("Mac", value: connection.credentials?.macName ?? "Not paired")
                     LabeledContent("Status", value: statusText)
+                    if connection.phase != .connected, let last = connection.lastConnected {
+                        LabeledContent("Last connected", value: last.formatted(date: .omitted, time: .shortened))
+                    }
                     if connection.queuedBatches > 0 {
                         LabeledContent("Waiting to send", value: "\(connection.queuedBatches) batches")
                     }
@@ -104,8 +107,7 @@ struct StatusView: View {
             }
             .navigationTitle("iMCP")
             .refreshable {
-                await PhoneBackend.shared.syncAll()
-                await connection.refreshQueue()
+                await connection.refresh()
             }
             .sheet(isPresented: $showingPairing) {
                 PairingView(connection: connection) { showingPairing = false }
