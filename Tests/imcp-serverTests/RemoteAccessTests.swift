@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import JSONSchema
 import MCP
@@ -2092,6 +2093,512 @@ private final class FakeCloudflareProcessRunner: CloudflareProcessRunner, @unche
 }
 
 /// Waits for a condition that another task makes true.
+// MARK: - iPhone and iPad link on the public hosts
+
+/// The Funnel and Cloudflare Tunnel hosts also carry the phone's WebSocket link at `/mobile`.
+/// These tests cover the routing with fake connections, and the authentication with real local sockets.
+final class MobilePublicRoutingTests: XCTestCase {
+    private let me = TailnetSelf(
+        stableID: "nSelf",
+        userID: 1,
+        ipv4Address: "100.64.0.1",
+        dnsName: "mac-imcp.example.ts.net",
+        isTagged: false
+    )
+    private let funnelHost = "mac-imcp.example.ts.net"
+    private let cloudflareHost = "imcp.amesvt.com"
+
+    private func makeStore() throws -> (AccessTokenStore, String) {
+        let suite = "MobilePublicRoutingTests.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+        let store = AccessTokenStore(storage: InMemoryAccessTokenStorage(), defaults: defaults)
+        let (token, secret) = AccessToken.make(name: "Remote", permissions: .readOnly)
+        try store.add(token)
+        return (store, secret)
+    }
+
+    private func makeServer(
+        store: AccessTokenStore,
+        node: FakeTailnetNode = FakeTailnetNode(
+            state: .running(
+                TailnetSelf(
+                    stableID: "nSelf",
+                    userID: 1,
+                    ipv4Address: "100.64.0.1",
+                    dnsName: "mac-imcp.example.ts.net",
+                    isTagged: false
+                )
+            ),
+            peers: [:]
+        ),
+        local: FakeLocalListener? = nil,
+        sessions: LockedList<Int>? = nil
+    ) -> RemoteAccessServer {
+        RemoteAccessServer(
+            tokenStore: store,
+            stateDirectory: URL(filePath: "/nonexistent/Tailscale"),
+            makeNode: { _ in node },
+            makeSessionServer: { _ in
+                sessions?.append(1)
+                return MCP.Server(name: "test", version: "1")
+            },
+            makeLocalListener: {
+                if let local { return local }
+                return try await LoopbackListener.start()
+            },
+            oauth: OAuthAuthority(storage: InMemoryOAuthGrantStorage())
+        )
+    }
+
+    private func upgradeRequest(
+        host: String,
+        path: String = "/mobile",
+        extra: [String] = []
+    ) -> Data {
+        let head =
+            [
+                "GET \(path) HTTP/1.1",
+                "Host: \(host)",
+                "Upgrade: websocket",
+                "Connection: Upgrade",
+                "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+                "Sec-WebSocket-Version: 13",
+            ] + extra
+        return Data((head.joined(separator: "\r\n") + "\r\n\r\n").utf8)
+    }
+
+    /// Records where the server hands WebSockets, and closes them.
+    private func closingHandler(_ log: LockedList<MobileTransportMode>)
+        -> @Sendable (
+            any MobileFrameWire, MobileTransportMode
+        ) async -> Void
+    {
+        { wire, mode in
+            log.append(mode)
+            await wire.close()
+        }
+    }
+
+    // MARK: Endpoints
+
+    func testPublicAddressesReachTheMobileLinkAndGoAwayWhenRemoteAccessStops() async throws {
+        let (store, _) = try makeStore()
+        let server = makeServer(store: store, local: FakeLocalListener())
+        let updates = LockedList<RemoteAccessServer.MobileEndpoints>()
+        await server.setMobileHandlers(endpoints: { updates.append($0) }, upgrade: nil)
+        // The first call tells the link there's nothing yet.
+        XCTAssertEqual(updates.all, [.init(funnelURL: nil, cloudflareURL: nil)])
+
+        await server.configure(
+            .init(
+                isEnabled: true,
+                port: 4627,
+                hostname: "mac-imcp",
+                funnelEnabled: true,
+                cloudflareHostname: "imcp.amesvt.com"
+            )
+        )
+        try await waitUntil { updates.last?.funnelURL != nil }
+        XCTAssertEqual(
+            updates.last,
+            .init(
+                funnelURL: "wss://mac-imcp.example.ts.net/mobile",
+                cloudflareURL: "wss://imcp.amesvt.com/mobile"
+            )
+        )
+
+        // Changing the Cloudflare hostname updates the address, and a repeat sends nothing.
+        let count = updates.all.count
+        await server.configure(
+            .init(
+                isEnabled: true,
+                port: 4627,
+                hostname: "mac-imcp",
+                funnelEnabled: true,
+                cloudflareHostname: "imcp.ames.consulting"
+            )
+        )
+        XCTAssertEqual(updates.last?.cloudflareURL, "wss://imcp.ames.consulting/mobile")
+        XCTAssertEqual(updates.all.count, count + 1)
+
+        await server.stop()
+        XCTAssertEqual(updates.last, .init(funnelURL: nil, cloudflareURL: nil))
+    }
+
+    func testMobileServiceAdvertisesThePublicAddressesAndForgetsThem() async throws {
+        let defaults = UserDefaults.standard
+        let saved = defaults.string(forKey: MobileService.transportModeKey)
+        defaults.removeObject(forKey: MobileService.transportModeKey)
+        defaults.set(false, forKey: MobileService.cloudflareEnabledKey)
+        defer {
+            defaults.removeObject(forKey: MobileService.cloudflareEnabledKey)
+            if let saved { defaults.set(saved, forKey: MobileService.transportModeKey) }
+        }
+        let service = MobileService(
+            cache: try MobileCache(
+                url: FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID()).sqlite"),
+                key: SymmetricKey(size: .bits256)
+            ),
+            pairings: MobileMemoryPairings(),
+            advertise: false,
+            pollInterval: .seconds(60)
+        )
+        await service.updateRemoteEndpoints(
+            tailnetHost: nil,
+            funnelURL: "wss://mac-imcp.example.ts.net/mobile",
+            cloudflareURL: "wss://imcp.amesvt.com/mobile"
+        )
+        var endpoints = await service.currentEndpoints
+        XCTAssertEqual(endpoints.funnelURL, "wss://mac-imcp.example.ts.net/mobile")
+        XCTAssertEqual(endpoints.cloudflareURL, "wss://imcp.amesvt.com/mobile")
+        let code = try await service.beginPairing()
+        XCTAssertEqual(code.funnelURL, "wss://mac-imcp.example.ts.net/mobile")
+        XCTAssertEqual(code.cloudflareURL, "wss://imcp.amesvt.com/mobile")
+
+        await service.updateRemoteEndpoints(tailnetHost: nil, funnelURL: nil, cloudflareURL: nil)
+        endpoints = await service.currentEndpoints
+        XCTAssertNil(endpoints.funnelURL)
+        XCTAssertNil(endpoints.cloudflareURL)
+        await service.stop()
+    }
+
+    // MARK: Routing
+
+    func testUpgradeReachesTheMobileLinkWithTheModeOfItsHost() async throws {
+        let (store, _) = try makeStore()
+        let local = FakeLocalListener()
+        let sessions = LockedList<Int>()
+        let server = makeServer(store: store, local: local, sessions: sessions)
+        let accepted = LockedList<MobileTransportMode>()
+        await server.setMobileHandlers(endpoints: nil, upgrade: closingHandler(accepted))
+        await server.configure(
+            .init(
+                isEnabled: true,
+                port: 4627,
+                hostname: "mac-imcp",
+                funnelEnabled: true,
+                cloudflareHostname: cloudflareHost
+            )
+        )
+        try await waitUntil { await server.publicHosts == [funnelHost, cloudflareHost] }
+
+        let viaFunnel = await local.connect(sending: upgradeRequest(host: funnelHost))
+        XCTAssertTrue(viaFunnel.hasPrefix("HTTP/1.1 101 Switching Protocols\r\n"), viaFunnel)
+        XCTAssertTrue(viaFunnel.contains("Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo="), viaFunnel)
+        let viaCloudflare = await local.connect(sending: upgradeRequest(host: cloudflareHost + ":443"))
+        XCTAssertTrue(viaCloudflare.hasPrefix("HTTP/1.1 101 "), viaCloudflare)
+        XCTAssertEqual(accepted.all, [.tailscaleFunnel, .cloudflare])
+        // It was never an MCP session.
+        XCTAssertTrue(sessions.all.isEmpty)
+        await server.stop()
+    }
+
+    func testOnlyAnUpgradeFromAnActivePublicHostIsAccepted() async throws {
+        let (store, secret) = try makeStore()
+        let local = FakeLocalListener()
+        let sessions = LockedList<Int>()
+        let server = makeServer(store: store, local: local, sessions: sessions)
+        let accepted = LockedList<MobileTransportMode>()
+        await server.setMobileHandlers(endpoints: nil, upgrade: closingHandler(accepted))
+        await server.configure(
+            .init(isEnabled: false, port: 4627, hostname: "mac-imcp", cloudflareHostname: cloudflareHost)
+        )
+        try await waitUntil { await server.publicLoopbackPort != nil }
+
+        let refusals: [(String, Data, String)] = [
+            ("another host", upgradeRequest(host: "evil.example"), "HTTP/1.1 421 "),
+            ("loopback host", upgradeRequest(host: "127.0.0.1"), "HTTP/1.1 421 "),
+            (
+                "a web page",
+                upgradeRequest(host: cloudflareHost, extra: ["Origin: https://evil.example"]),
+                "HTTP/1.1 403 "
+            ),
+            (
+                "no upgrade",
+                Data("GET /mobile HTTP/1.1\r\nHost: \(cloudflareHost)\r\n\r\n".utf8),
+                "HTTP/1.1 404 "
+            ),
+            (
+                "an MCP bearer token on a plain request",
+                Data(
+                    "GET /mobile HTTP/1.1\r\nHost: \(cloudflareHost)\r\nAuthorization: Bearer \(secret)\r\n\r\n"
+                        .utf8
+                ),
+                "HTTP/1.1 404 "
+            ),
+            (
+                "a POST",
+                Data(
+                    "POST /mobile HTTP/1.1\r\nHost: \(cloudflareHost)\r\nContent-Length: 0\r\n\r\n".utf8
+                ),
+                "HTTP/1.1 404 "
+            ),
+        ]
+        for (name, request, expected) in refusals {
+            let response = await local.connect(sending: request)
+            XCTAssertTrue(response.hasPrefix(expected), "\(name): \(response)")
+            XCTAssertFalse(response.contains("101 Switching"), name)
+        }
+        XCTAssertTrue(accepted.all.isEmpty)
+        XCTAssertTrue(sessions.all.isEmpty)
+
+        // The path is distinct from the MCP and OAuth paths: those still answer as before.
+        let metadata = await local.connect(
+            sending: Data(
+                "GET /.well-known/oauth-protected-resource HTTP/1.1\r\nHost: \(cloudflareHost)\r\n\r\n".utf8
+            )
+        )
+        XCTAssertTrue(metadata.hasPrefix("HTTP/1.1 200 OK\r\n"), metadata)
+        let unauthenticatedMCP = await local.connect(
+            sending: Data("POST /mcp HTTP/1.1\r\nHost: \(cloudflareHost)\r\nContent-Length: 0\r\n\r\n".utf8)
+        )
+        XCTAssertTrue(unauthenticatedMCP.hasPrefix("HTTP/1.1 401 "), unauthenticatedMCP)
+        await server.stop()
+    }
+
+    func testMobilePathAnswersNotFoundUntilTheLinkIsConnected() async throws {
+        let (store, _) = try makeStore()
+        let local = FakeLocalListener()
+        let server = makeServer(store: store, local: local)
+        await server.configure(
+            .init(isEnabled: false, port: 4627, hostname: "mac-imcp", cloudflareHostname: cloudflareHost)
+        )
+        try await waitUntil { await server.publicLoopbackPort != nil }
+        let response = await local.connect(sending: upgradeRequest(host: cloudflareHost))
+        XCTAssertTrue(response.hasPrefix("HTTP/1.1 404 "), response)
+        await server.stop()
+    }
+
+    // MARK: Authentication over real sockets
+
+    /// Starts a server on a real loopback socket with a real link that has the given paired devices.
+    private func startLiveServer(
+        pairings: MobileMemoryPairings,
+        helloTimeout: Duration = .seconds(15)
+    ) async throws -> (RemoteAccessServer, MobileService, UInt16) {
+        let (store, _) = try makeStore()
+        let server = makeServer(store: store)
+        let service = MobileService(
+            cache: try MobileCache(
+                url: FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID()).sqlite"),
+                key: SymmetricKey(size: .bits256)
+            ),
+            pairings: pairings,
+            reconnectGrace: .milliseconds(200),
+            advertise: false,
+            pollInterval: .seconds(60)
+        )
+        await server.setMobileHandlers(
+            endpoints: nil,
+            upgrade: { wire, mode in
+                await service.acceptWebSocket(wire, transportMode: mode, helloTimeout: helloTimeout)
+            }
+        )
+        await server.configure(
+            .init(isEnabled: false, port: 4627, hostname: "mac-imcp", cloudflareHostname: cloudflareHost)
+        )
+        try await waitUntil { await server.publicLoopbackPort != nil }
+        let maybePort = await server.publicLoopbackPort
+        let port = try XCTUnwrap(maybePort)
+        return (server, service, port)
+    }
+
+    func testUnpairedPhoneIsRefusedAndDisconnected() async throws {
+        let (server, service, port) = try await startLiveServer(pairings: MobileMemoryPairings())
+        let client = try await RawWebSocketClient.connect(port: port)
+        let response = try await client.upgrade(host: cloudflareHost)
+        XCTAssertTrue(response.hasPrefix("HTTP/1.1 101 "), response)
+
+        let stranger = MobileWebSocketDialer.paired(
+            device: "stranger",
+            name: "Stranger",
+            key: SymmetricKey(size: .bits256)
+        )
+        try await client.sendFrame(MobileCoding.encoder.encode(stranger.hello))
+        let reply = try await client.receiveFrame(timeout: .seconds(5))
+        let welcome = try MobileCoding.decoder.decode(MobileWelcome.self, from: XCTUnwrap(reply))
+        XCTAssertFalse(welcome.ok)
+        XCTAssertNil(welcome.exchange)
+        XCTAssertTrue(welcome.error?.contains("isn't paired") == true, welcome.error ?? "")
+        // The Mac then closes the connection.
+        let closed = try await client.receiveFrame(timeout: .seconds(5))
+        XCTAssertNil(closed)
+        let connected = await service.isConnected
+        XCTAssertFalse(connected)
+        await client.close()
+        await service.stop()
+        await server.stop()
+    }
+
+    func testPairedDeviceWithTheWrongKeyIsRefused() async throws {
+        let pairings = MobileMemoryPairings()
+        try pairings.save(
+            MobileDevice(id: "phone-1", name: "iPhone", pairedAt: Date()),
+            key: SymmetricKey(size: .bits256)
+        )
+        let (server, service, port) = try await startLiveServer(pairings: pairings)
+        let client = try await RawWebSocketClient.connect(port: port)
+        _ = try await client.upgrade(host: cloudflareHost)
+        let forged = MobileWebSocketDialer.paired(
+            device: "phone-1",
+            name: "iPhone",
+            key: SymmetricKey(size: .bits256)
+        )
+        try await client.sendFrame(MobileCoding.encoder.encode(forged.hello))
+        let reply = try await client.receiveFrame(timeout: .seconds(5))
+        let welcome = try MobileCoding.decoder.decode(MobileWelcome.self, from: XCTUnwrap(reply))
+        XCTAssertFalse(welcome.ok)
+        let connected = await service.isConnected
+        XCTAssertFalse(connected)
+        await client.close()
+        await service.stop()
+        await server.stop()
+    }
+
+    func testPairedDeviceIsWelcomedThroughThePublicHost() async throws {
+        let key = SymmetricKey(size: .bits256)
+        let pairings = MobileMemoryPairings()
+        try pairings.save(MobileDevice(id: "phone-1", name: "iPhone", pairedAt: Date()), key: key)
+        let (server, service, port) = try await startLiveServer(pairings: pairings)
+        let client = try await RawWebSocketClient.connect(port: port)
+        _ = try await client.upgrade(host: cloudflareHost)
+        let credentials = MobileWebSocketDialer.paired(device: "phone-1", name: "iPhone", key: key)
+        try await client.sendFrame(MobileCoding.encoder.encode(credentials.hello))
+        let reply = try await client.receiveFrame(timeout: .seconds(5))
+        let welcome = try MobileCoding.decoder.decode(MobileWelcome.self, from: XCTUnwrap(reply))
+        XCTAssertTrue(welcome.ok, welcome.error ?? "")
+        XCTAssertNotNil(welcome.exchange)
+        await client.close()
+        await service.stop()
+        await server.stop()
+    }
+
+    func testPhoneThatSaysNothingIsDroppedAndFreesItsPlace() async throws {
+        let (server, service, port) = try await startLiveServer(
+            pairings: MobileMemoryPairings(),
+            helloTimeout: .milliseconds(300)
+        )
+        let client = try await RawWebSocketClient.connect(port: port)
+        _ = try await client.upgrade(host: cloudflareHost)
+        let started = ContinuousClock.now
+        let frame = try await client.receiveFrame(timeout: .seconds(5))
+        XCTAssertNil(frame)
+        XCTAssertLessThan(ContinuousClock.now - started, .seconds(3))
+        await client.close()
+        await service.stop()
+        await server.stop()
+    }
+}
+
+/// A minimal WebSocket client over a real TCP socket,
+/// so that a test can choose the `Host` header that a tunnel would set.
+private final class RawWebSocketClient: @unchecked Sendable {
+    private let stream: MobileNWByteStream
+    private var buffer = Data()
+
+    private init(stream: MobileNWByteStream) {
+        self.stream = stream
+    }
+
+    static func connect(port: UInt16) async throws -> RawWebSocketClient {
+        let connection = NWConnection(
+            host: "127.0.0.1",
+            port: try XCTUnwrap(NWEndpoint.Port(rawValue: port)),
+            using: .tcp
+        )
+        let stream = MobileNWByteStream(connection: connection)
+        try await stream.open(timeout: .seconds(5))
+        return RawWebSocketClient(stream: stream)
+    }
+
+    func sendRaw(_ data: Data) async throws {
+        try await stream.send(data, timeout: .seconds(5))
+    }
+
+    /// The bytes that arrive, or empty data when the server closes the connection.
+    func receiveRaw(timeout: Duration) async throws -> Data {
+        if !buffer.isEmpty {
+            defer { buffer = Data() }
+            return buffer
+        }
+        return try await stream.receive(timeout: timeout)
+    }
+
+    /// Sends the upgrade request and returns the response head.
+    func upgrade(host: String, path: String = "/mobile") async throws -> String {
+        let request = [
+            "GET \(path) HTTP/1.1", "Host: \(host)", "Upgrade: websocket", "Connection: Upgrade",
+            "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==", "Sec-WebSocket-Version: 13", "", "",
+        ].joined(separator: "\r\n")
+        try await sendRaw(Data(request.utf8))
+        let terminator = Data("\r\n\r\n".utf8)
+        while buffer.range(of: terminator) == nil {
+            let chunk = try await stream.receive(timeout: .seconds(5))
+            guard !chunk.isEmpty else { break }
+            buffer.append(chunk)
+        }
+        guard let end = buffer.range(of: terminator) else {
+            defer { buffer = Data() }
+            return String(decoding: buffer, as: UTF8.self)
+        }
+        let head = String(decoding: buffer[buffer.startIndex ..< end.upperBound], as: UTF8.self)
+        buffer = Data(buffer[end.upperBound...])
+        return head
+    }
+
+    /// Sends one masked binary frame.
+    func sendFrame(_ payload: Data) async throws {
+        var frame = Data([0x82])
+        let mask: [UInt8] = [0x11, 0x22, 0x33, 0x44]
+        if payload.count < 126 {
+            frame.append(0x80 | UInt8(payload.count))
+        } else {
+            frame.append(0x80 | 126)
+            frame.append(UInt8(payload.count >> 8))
+            frame.append(UInt8(payload.count & 0xFF))
+        }
+        frame.append(contentsOf: mask)
+        for (index, byte) in payload.enumerated() { frame.append(byte ^ mask[index % 4]) }
+        try await sendRaw(frame)
+    }
+
+    /// The payload of the next frame, or nil when the server closes the connection or sends a close frame.
+    func receiveFrame(timeout: Duration) async throws -> Data? {
+        while true {
+            if buffer.count >= 2 {
+                let bytes = [UInt8](buffer)
+                let opcode = bytes[0] & 0x0F
+                var length = Int(bytes[1] & 0x7F)
+                var offset = 2
+                if length == 126 {
+                    guard bytes.count >= 4 else { try await fill(timeout); continue }
+                    length = Int(bytes[2]) << 8 | Int(bytes[3])
+                    offset = 4
+                }
+                guard bytes.count >= offset + length else { try await fill(timeout); continue }
+                let payload = Data(bytes[offset ..< offset + length])
+                buffer = Data(bytes[(offset + length)...])
+                if opcode == 0x08 { return nil }
+                return payload
+            }
+            guard try await fill(timeout) else { return nil }
+        }
+    }
+
+    @discardableResult
+    private func fill(_ timeout: Duration) async throws -> Bool {
+        let chunk = try await stream.receive(timeout: timeout)
+        guard !chunk.isEmpty else { return false }
+        buffer.append(chunk)
+        return true
+    }
+
+    func close() async {
+        await stream.close()
+    }
+}
+
 private func waitUntil(
     timeout: Duration = .seconds(5),
     file: StaticString = #filePath,
