@@ -35,6 +35,8 @@ enum MenuSection: Equatable {
     case server(isOn: Bool)
     /// The services, under a "Services" header. Not shown while the server is off.
     case services(items: [MenuServiceItem])
+    /// One row that opens the recent tool calls in a flyout beside the menu while the pointer is over it.
+    case activity
     case actions([MenuAction])
 }
 
@@ -46,6 +48,7 @@ enum MenuStructure {
         var sections: [MenuSection] = [.server(isOn: isServerEnabled)]
         if isServerEnabled { sections.append(.services(items: services)) }
         return sections + [
+            .activity,
             .actions([.configureClaudeDesktop, .copyServerCommand]),
             .actions([.settings, .checkForUpdates, .about]),
             .actions([.quit]),

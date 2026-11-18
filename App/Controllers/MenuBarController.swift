@@ -68,6 +68,7 @@ final class MenuBarController: NSObject {
     }
 
     func close() {
+        ActivityFlyout.shared.hide()
         panel?.orderOut(nil)
         statusItem?.button?.isHighlighted = false
     }

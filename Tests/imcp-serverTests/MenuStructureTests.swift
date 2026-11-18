@@ -7,20 +7,22 @@ final class MenuStructureTests: XCTestCase {
         MenuServiceItem(id: "B", name: "Mail", symbol: "envelope.fill", isOn: false),
     ]
 
-    func testGroupsAreServerServicesClientsAppAndQuit() {
+    func testGroupsAreServerServicesActivityClientsAppAndQuit() {
         let sections = MenuStructure.make(isServerEnabled: true, services: services)
-        XCTAssertEqual(sections.count, 5)
+        XCTAssertEqual(sections.count, 6)
         XCTAssertEqual(sections[0], .server(isOn: true))
         XCTAssertEqual(sections[1], .services(items: services))
-        XCTAssertEqual(sections[2], .actions([.configureClaudeDesktop, .copyServerCommand]))
-        XCTAssertEqual(sections[3], .actions([.settings, .checkForUpdates, .about]))
-        XCTAssertEqual(sections[4], .actions([.quit]))
+        XCTAssertEqual(sections[2], .activity)
+        XCTAssertEqual(sections[3], .actions([.configureClaudeDesktop, .copyServerCommand]))
+        XCTAssertEqual(sections[4], .actions([.settings, .checkForUpdates, .about]))
+        XCTAssertEqual(sections[5], .actions([.quit]))
     }
 
     func testServicesAreHiddenWhileServerIsOff() {
         let sections = MenuStructure.make(isServerEnabled: false, services: services)
-        XCTAssertEqual(sections.count, 4)
+        XCTAssertEqual(sections.count, 5)
         XCTAssertEqual(sections[0], .server(isOn: false))
+        XCTAssertEqual(sections[1], .activity, "activity stays reachable while the server is off")
         XCTAssertFalse(sections.contains { if case .services = $0 { true } else { false } })
     }
 
