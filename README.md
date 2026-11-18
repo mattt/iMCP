@@ -284,6 +284,21 @@ remove the client in "Settings" > "Clients" and trust it again.
 
 </details>
 
+### Choose which calendars clients can see
+
+By default, iMCP shares all of your calendars.
+To share only some,
+click <img style="display: inline" width="20" height="16" src="/Assets/icon.svg" />
+\> "Settings", click Calendar in the sidebar,
+and then turn off the calendars to keep private.
+Calendars are grouped by account.
+
+Clients can't list, search, or create events in a calendar that you turn off,
+and they can't change or delete its events.
+A request that names such a calendar returns an error that says so.
+"Show new calendars automatically" controls what happens to calendars you add later:
+when it's off, iMCP keeps new calendars private until you turn them on.
+
 ### Mail access and search
 
 Mail store access uses [Envelope](https://github.com/mattt/Envelope),
