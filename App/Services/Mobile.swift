@@ -619,6 +619,42 @@ actor MobileService: MobileBackend {
         }
     }
 
+    // MARK: - Approvals
+
+    /// Whether `device` is paired with this Mac.
+    nonisolated func isPaired(_ device: String) -> Bool {
+        pairings.devices().contains { $0.id == device }
+    }
+
+    /// Whether any iPhone or iPad is paired with this Mac.
+    nonisolated var hasPairedDevice: Bool { !pairings.devices().isEmpty }
+
+    /// Sends the Mac's open approvals to the connected phone and returns the answers it holds.
+    /// The device ID comes from the phone's authenticated connection.
+    /// Returns nil when no phone is connected or it doesn't answer.
+    func syncApprovals(
+        pending: [RemoteApprovalRequest],
+        ack: [String]
+    ) async -> (device: String, answers: [RemoteApprovalAnswer])? {
+        guard let link else { return nil }
+        do {
+            let request = RemoteApprovalSyncRequest(pending: pending, ack: ack)
+            let arguments = try JSONDecoder().decode(
+                [String: Value].self,
+                from: MobileCoding.encoder.encode(request)
+            )
+            let text = try await link.call(RemoteApprovalLink.syncTool, arguments)
+            let response = try MobileCoding.decoder.decode(RemoteApprovalSyncResponse.self, from: Data(text.utf8))
+            return (link.device.id, response.answers)
+        } catch is MobileLinkLost {
+            detach(link)
+            return nil
+        } catch {
+            log.error("Approval sync failed: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+    }
+
     // MARK: - MobileBackend
 
     func call(_ tool: String, _ input: [String: Value]) async throws -> Value {
