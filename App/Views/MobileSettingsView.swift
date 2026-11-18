@@ -22,6 +22,10 @@ struct MobileSettingsView: View {
         MobileLink.defaultWebSocketPort
     )
     @State private var isAdvancedExpanded = false
+    @State private var routes: [MobileConfigurationBuilder.Entry] = []
+    @State private var configurationRevision = 0
+    @State private var appliedRevisions: [String: Int] = [:]
+    @AppStorage(MobileService.activityHistoryKey) private var activityHistoryEnabled = true
 
     private var transportMode: Binding<MobileTransportMode> {
         Binding(
@@ -49,6 +53,9 @@ struct MobileSettingsView: View {
                             Text(connected?.id == device.id ? connectionSummary : "Not connected")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                            Text(configurationSummary(for: device))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
                         Spacer()
                         Button("Remove…") { removing = device }
@@ -69,6 +76,37 @@ struct MobileSettingsView: View {
                     "Build and install iMCP for iOS with Scripts/install-ios.sh from the iMCP repository. Connections are encrypted with your device key, and nothing goes through iCloud."
                 )
             }
+
+            Section {
+                ForEach(routes) { entry in
+                    Toggle(isOn: routeBinding(entry.kind)) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(entry.kind.label)
+                            Text(routeDetail(entry))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .contextMenu {
+                        Button("Move Up") { moveRoute(entry.kind, by: -1) }
+                        Button("Move Down") { moveRoute(entry.kind, by: 1) }
+                    }
+                }
+                .onMove { source, destination in
+                    var order = routes.map(\.kind)
+                    order.move(fromOffsets: source, toOffset: destination)
+                    saveRouteOrder(order)
+                }
+                LabeledContent("Configuration Revision", value: String(configurationRevision))
+                Toggle("Show activity history on iPhone and iPad", isOn: $activityHistoryEnabled)
+            } header: {
+                Text("Routes Offered to Your Devices")
+            } footer: {
+                Text(
+                    "Your iPhone and iPad learn these routes from this Mac each time they connect, and when you change them here. Automatic tries them from the top. Drag to reorder, or use the context menu. A route also needs an address, which it gets from the settings below."
+                )
+            }
+            .onChange(of: activityHistoryEnabled) { _, _ in applyTransportSettings() }
 
             Section {
                 Picker("Connection Route", selection: transportMode) {
@@ -234,6 +272,11 @@ struct MobileSettingsView: View {
         devices = await service.devices
         connected = await service.connectedDevice
         connectedTransport = await service.connectedTransport
+        routes = MobileConfigurationBuilder.entries(await service.currentState)
+        configurationRevision = await service.currentConfiguration.revision
+        for device in devices {
+            appliedRevisions[device.id] = await service.appliedConfigurationRevision(for: device.id)
+        }
         for domain in MobileDomain.allCases {
             syncedAt[domain] = await service.syncedAt(domain)
         }
@@ -248,7 +291,47 @@ struct MobileSettingsView: View {
     }
 
     private func applyTransportSettings() {
-        Task { await MobileService.shared.applyTransportSettings() }
+        Task {
+            await MobileService.shared.applyTransportSettings()
+            await refresh()
+        }
+    }
+
+    private func routeBinding(_ kind: MobileRouteKind) -> Binding<Bool> {
+        Binding(
+            get: { routes.first { $0.kind == kind }?.enabled ?? true },
+            set: { enabled in
+                MobileService.setRoute(kind, enabled: enabled)
+                if let index = routes.firstIndex(where: { $0.kind == kind }) { routes[index].enabled = enabled }
+                applyTransportSettings()
+            }
+        )
+    }
+
+    private func moveRoute(_ kind: MobileRouteKind, by offset: Int) {
+        var order = routes.map(\.kind)
+        guard let index = order.firstIndex(of: kind), order.indices.contains(index + offset) else { return }
+        order.swapAt(index, index + offset)
+        saveRouteOrder(order)
+    }
+
+    private func saveRouteOrder(_ order: [MobileRouteKind]) {
+        MobileService.setRouteOrder(order)
+        routes = order.compactMap { kind in routes.first { $0.kind == kind } }
+        applyTransportSettings()
+    }
+
+    private func routeDetail(_ entry: MobileConfigurationBuilder.Entry) -> String {
+        if !entry.enabled { return "Off" }
+        guard let address = entry.address else { return "Not offered: no address yet" }
+        return entry.isOffered ? address : "Not offered while this Mac is set to local only"
+    }
+
+    private func configurationSummary(for device: MobileDevice) -> String {
+        guard let applied = appliedRevisions[device.id] else { return "Hasn't confirmed a configuration" }
+        return applied == configurationRevision
+            ? "Using configuration revision \(applied)"
+            : "Using revision \(applied); this Mac is on \(configurationRevision)"
     }
 
     private func syncText(_ domain: MobileDomain) -> String {

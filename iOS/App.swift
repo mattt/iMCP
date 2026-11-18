@@ -113,7 +113,9 @@ struct StatusView: View {
                     )
                 }
 
-                ActivitySection(activity: activity)
+                if connection.credentials?.configuration?.features.activityHistory ?? true {
+                    ActivitySection(activity: activity)
+                }
 
                 ForEach(MobileDomain.allCases, id: \.self) { domain in
                     ServiceSection(domain: domain)

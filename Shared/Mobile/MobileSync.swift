@@ -400,6 +400,9 @@ struct MobileWelcome: Codable, Equatable, Sendable {
     var tailnetPort: UInt16? = nil
     var funnelURL: String? = nil
     var cloudflareURL: String? = nil
+    /// The Mac's full configuration. A phone that has it ignores the individual endpoint fields above,
+    /// which stay for phones from before configurations existed.
+    var configuration: MobileConfiguration? = nil
 }
 
 /// What the QR code on the Mac carries.
