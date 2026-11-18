@@ -277,7 +277,7 @@ final class NotesWriteTests: XCTestCase {
                 XCTFail("\(name) ran while changes were off")
             } catch {
                 XCTAssertEqual(error as? NotesWriteError, .writesDisabled)
-                XCTAssertTrue("\(error)".contains("Allow iMCP to create notes and folders"))
+                XCTAssertTrue("\(error)".contains("Allow iMCP to change notes and folders"))
             }
         }
         XCTAssertTrue(runner.recorded.isEmpty)

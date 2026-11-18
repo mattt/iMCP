@@ -733,18 +733,29 @@ It builds on the reverse engineering in Jon Baumann's
 and Steve Dunham's [notesutils][notesutils].
 The Notes service reads notes with TopoText and returns them as Markdown.
 
-The Notes service can also create notes and folders,
-but only after you turn on **Allow iMCP to create notes and folders**
+The Notes service can also change notes and folders,
+but only after you turn on **Allow iMCP to change notes and folders**
 in iMCP's Notes settings, where it is off by default.
-These tools (`notes_create` and `notes_create_folder`)
-ask the Notes app to make the note or folder with its own scripting interface,
-so Notes stores it as it stores anything else that it makes.
+These tools ask the Notes app to do the work with its own scripting interface,
+so Notes stores the result as it stores anything else that it makes.
 They need Automation permission for Notes,
 which macOS asks you for the first time.
-iMCP never edits, moves, or deletes a note that exists:
-scripting rewrites a note's whole body,
-and doing that to a note with attachments, checklists, links, or tags
-silently drops them.
+They create notes and folders (`notes_create`, `notes_create_folder`),
+edit notes (`notes_update`, `notes_append`),
+and move, rename, and delete them
+(`notes_move`, `notes_delete`, `notes_batch_move`, `notes_batch_delete`,
+`notes_rename_folder`, `notes_delete_folder`).
+A deleted note goes to Recently Deleted and is never erased for good,
+and a folder that holds anything is deleted only when the client says so.
+`notes_update` replaces a note's text, and scripting rewrites the whole body,
+so it takes the `contentHash` that `notes_get` returned
+and refuses the write if the note changed since;
+a note with attachments or a password is refused,
+and checklist state, tags, and tables aren't carried through the rewrite.
+Without the setting, `notes_get`, `notes_list_recent`, `notes_selected`,
+`notes_folder_tree`, `notes_default_location`, `notes_show`, `notes_show_folder`,
+`notes_list_attachments`, `notes_markdown`, and `notes_export`
+read through the Notes app, and export to JSON, Markdown, or HTML.
 Even a new note keeps less than you might write,
 because Notes drops what it can't store:
 

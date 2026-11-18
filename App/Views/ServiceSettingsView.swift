@@ -138,20 +138,20 @@ struct ServiceIcon: View {
     }
 }
 
-/// The switch that lets clients create notes and folders, which is off until the person turns it on.
+/// The switch that lets clients create, edit, move, and delete notes and folders, which is off until the person turns it on.
 private struct NotesWritesSection: View {
     @ObservedObject var serverController: ServerController
     @AppStorage(NotesWriteTools.settingKey) private var isWriteEnabled = false
 
     var body: some View {
         Section {
-            Toggle("Allow iMCP to create notes and folders", isOn: $isWriteEnabled)
+            Toggle("Allow iMCP to change notes and folders", isOn: $isWriteEnabled)
                 .onChange(of: isWriteEnabled) {
                     serverController.toolListChanged()
                 }
         } footer: {
             Text(
-                "Clients can then create notes and folders in Notes. They can't change or delete the notes that you have. The first time, macOS asks whether iMCP may control Notes."
+                "Clients can then create, edit, move, and delete notes and folders in Notes. Deleted notes go to Recently Deleted. An edit replaces a note's text and is refused if the note changed since the client read it. The first time, macOS asks whether iMCP may control Notes."
             )
         }
     }

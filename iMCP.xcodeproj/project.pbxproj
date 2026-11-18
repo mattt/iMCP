@@ -78,6 +78,10 @@
 		F9E9902DC72D90F6C423EFE2 /* Logging in Frameworks */ = {isa = PBXBuildFile; productRef = 48ABEE9E6903427DD79096A1 /* Logging */; };
 		AA0011000000000000000001 /* Envelope in Frameworks */ = {isa = PBXBuildFile; productRef = AA0011000000000000000002 /* Envelope */; };
 		AB0055000000000000000001 /* TSRP in Frameworks */ = {isa = PBXBuildFile; productRef = AB0055000000000000000002 /* TSRP */; };
+		B13500000000000000000040 /* NotesOrganizeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13500000000000000000030 /* NotesOrganizeTests.swift */; };
+		B13500000000000000000041 /* ../../App/Services/NotesOrganize.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13500000000000000000031 /* ../../App/Services/NotesOrganize.swift */; };
+		B13500000000000000000042 /* ../../App/Services/NotesExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13500000000000000000032 /* ../../App/Services/NotesExport.swift */; };
+		B13500000000000000000043 /* ../../App/Services/NotesOrganizeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13500000000000000000033 /* ../../App/Services/NotesOrganizeTools.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -149,6 +153,10 @@
 		E0E66768348853754D32208C /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/System/Library/Frameworks/Cocoa.framework; sourceTree = DEVELOPER_DIR; };
 		F8F44E6D2D59038D0075D79C /* iMCP.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = iMCP.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F8F44EB62D5908D00075D79C /* imcp-server */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "imcp-server"; sourceTree = BUILT_PRODUCTS_DIR; };
+		B13500000000000000000030 /* NotesOrganizeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesOrganizeTests.swift; sourceTree = "<group>"; };
+		B13500000000000000000031 /* ../../App/Services/NotesOrganize.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/NotesOrganize.swift; sourceTree = "<group>"; };
+		B13500000000000000000032 /* ../../App/Services/NotesExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/NotesExport.swift; sourceTree = "<group>"; };
+		B13500000000000000000033 /* ../../App/Services/NotesOrganizeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/NotesOrganizeTools.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -274,6 +282,10 @@
 				B13500000000000000000010 /* NotesWriteTests.swift */,
 				B13500000000000000000011 /* ../../App/Services/NotesWriting.swift */,
 				B13500000000000000000012 /* ../../App/Services/NotesWriteTools.swift */,
+				B13500000000000000000033 /* ../../App/Services/NotesOrganizeTools.swift */,
+				B13500000000000000000032 /* ../../App/Services/NotesExport.swift */,
+				B13500000000000000000031 /* ../../App/Services/NotesOrganize.swift */,
+				B13500000000000000000030 /* NotesOrganizeTests.swift */,
 				B13300000000000000000010 /* MusicTests.swift */,
 				B13300000000000000000011 /* ../../App/Services/Music.swift */,
 				A40000000000000000000012 /* ../../Shared/Extensions/Logger+Extensions.swift */,
@@ -597,6 +609,10 @@
 				B13500000000000000000020 /* NotesWriteTests.swift in Sources */,
 				B13500000000000000000021 /* ../../App/Services/NotesWriting.swift in Sources */,
 				B13500000000000000000022 /* ../../App/Services/NotesWriteTools.swift in Sources */,
+				B13500000000000000000043 /* ../../App/Services/NotesOrganizeTools.swift in Sources */,
+				B13500000000000000000042 /* ../../App/Services/NotesExport.swift in Sources */,
+				B13500000000000000000041 /* ../../App/Services/NotesOrganize.swift in Sources */,
+				B13500000000000000000040 /* NotesOrganizeTests.swift in Sources */,
 				B13300000000000000000020 /* MusicTests.swift in Sources */,
 				B13300000000000000000021 /* ../../App/Services/Music.swift in Sources */,
 				A40000000000000000000022 /* ../../Shared/Extensions/Logger+Extensions.swift in Sources */,

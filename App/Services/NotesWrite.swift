@@ -16,11 +16,16 @@ extension NotesService {
                 isEnabled: { NotesWriteTools.isEnabledInSettings },
                 runner: AppleNotesScriptRunner()
             )
+            + NotesOrganizeTools.tools(
+                isEnabled: { NotesWriteTools.isEnabledInSettings },
+                runner: AppleNotesScriptRunner()
+            )
     }
 
     /// The tools that change notes are listed only while the person allows changes.
     /// Until then a client that calls one still gets the reason it can't.
     func isToolListed(_ name: String) -> Bool {
-        !NotesWriteTools.toolNames.contains(name) || NotesWriteTools.isEnabledInSettings
+        !(NotesWriteTools.toolNames.union(NotesOrganizeTools.writeToolNames)).contains(name)
+            || NotesWriteTools.isEnabledInSettings
     }
 }
