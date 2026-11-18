@@ -57,6 +57,11 @@ final class MapsService: NSObject, Service {
                         required: ["latitude", "longitude"],
                         additionalProperties: false
                     ),
+                    "limit": .integer(
+                        description: "Maximum results to return",
+                        default: .int(defaultSearchLimit),
+                        minimum: 1
+                    ),
                 ],
                 required: ["query"],
                 additionalProperties: false
@@ -74,6 +79,8 @@ final class MapsService: NSObject, Service {
                     userInfo: [NSLocalizedDescriptionKey: "Search query is required"]
                 )
             }
+
+            let limit = arguments["limit"]?.intValue ?? defaultSearchLimit
 
             // Set up search request
             let searchRequest = MKLocalSearch.Request()
@@ -116,7 +123,7 @@ final class MapsService: NSObject, Service {
                     }
 
                     // Convert MKMapItems to Ontology Place objects
-                    let places = response.mapItems.map { item -> Place in
+                    let places = response.mapItems.prefix(max(limit, 1)).map { item -> Place in
                         return Place(item)
                     }
 

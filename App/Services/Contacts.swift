@@ -168,6 +168,10 @@ final class ContactsService: Service {
                     "email": .string(
                         description: "Email address to search for"
                     ),
+                    "limit": .integer(
+                        description: "Maximum number of contacts to return. Returns every match by default.",
+                        minimum: 1
+                    ),
                 ],
                 additionalProperties: false
             ),
@@ -222,7 +226,8 @@ final class ContactsService: Service {
                 )
             }
 
-            return JSONLDGraph(contacts.compactMap { listedPerson(from: $0) })
+            let limit = arguments["limit"]?.intValue.map { max($0, 1) } ?? Int.max
+            return JSONLDGraph(contacts.prefix(limit).compactMap { listedPerson(from: $0) })
         }
 
         Tool(
