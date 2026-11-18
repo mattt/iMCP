@@ -1168,6 +1168,32 @@ xcodebuild -scheme "iMCP iOS" -destination "generic/platform=iOS" \
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
 ```
 
+#### Away from home through Funnel or Cloudflare Tunnel
+
+With public access on in Settings > Remote Access,
+the iPhone and iPad link also uses the Tailscale Funnel and Cloudflare Tunnel addresses.
+iMCP puts both in the pairing code,
+for example `wss://<your Funnel host>/mobile`,
+and takes them out again when remote access stops,
+so there's nothing to type.
+Choose Tailscale Funnel or Cloudflare Tunnel under Connection Mode on the phone,
+or leave it on Automatic to try them after the local network.
+A phone that paired before you turned public access on picks the addresses up the next time it connects.
+
+The link uses the path `/mobile`, which is separate from `/mcp` and the OAuth paths.
+Only a WebSocket upgrade for an active public host and from a client that isn't a browser is accepted,
+and it ends there:
+a bearer token or OAuth token never opens it and is never read on it.
+The phone then proves it holds the key of a device paired with this Mac,
+and the Mac closes the connection if it doesn't send its hello within 15 seconds
+or isn't paired.
+Every other request for `/mobile` answers `404`.
+The connection counts toward the same limit as other public connections,
+and the same request deadline applies to the upgrade.
+Your MCP clients can't use the link, and the phone can't call `/mcp`.
+The Tailscale VPN route still dials the Mac's own Tailscale address,
+because iMCP's built-in Tailscale node has no listener for the link.
+
 </details>
 
 ## Debugging
