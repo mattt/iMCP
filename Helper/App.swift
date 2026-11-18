@@ -374,7 +374,7 @@ final class HelperRuntime: ObservableObject {
             } else {
                 shared.perform(
                     NSSelectorFromString("yieldActivationToApplicationWithBundleIdentifier:"),
-                    with: HomeHelperPairing.appBundleIdentifier
+                    with: Self.appBundleIdentifier
                 )
             }
         }
@@ -408,13 +408,18 @@ final class HelperRuntime: ObservableObject {
             (NSClassFromString("NSRunningApplication") as AnyObject?)?
             .perform(
                 NSSelectorFromString("runningApplicationsWithBundleIdentifier:"),
-                with: HomeHelperPairing.appBundleIdentifier
+                with: Self.appBundleIdentifier
             )?
             .takeUnretainedValue() as? [NSObject]
         return applications?.first
     }
 
     private static let log = Logger.service("helper.open-imcp")
+
+    /// The iMCP that goes with this helper.
+    private static let appBundleIdentifier = HomeHelperPairing.appBundleIdentifier(
+        helperBundleIdentifier: Bundle.main.bundleIdentifier
+    )
 
     /// The copy of iMCP to open: the running one, or else the one that LaunchServices finds,
     /// if it declares the pairing URL's scheme.
@@ -441,7 +446,7 @@ final class HelperRuntime: ObservableObject {
         guard
             let installed = workspace.perform(
                 NSSelectorFromString("URLForApplicationWithBundleIdentifier:"),
-                with: HomeHelperPairing.appBundleIdentifier
+                with: Self.appBundleIdentifier
             )?
             .takeUnretainedValue() as? URL
         else {

@@ -12,6 +12,13 @@ enum HomeHelperLocator {
     static let markerKey = "iMCPHelper"
     static let defaultBundleIdentifier = "co.dododo.iMCP.Helper"
 
+    /// The bundle identifier of the helper that goes with an app, named after the app as the project's builds do.
+    /// Falls back to the upstream helper's identifier when the app has none.
+    static func helperBundleIdentifier(appBundleIdentifier: String?) -> String {
+        guard let appBundleIdentifier, !appBundleIdentifier.isEmpty else { return defaultBundleIdentifier }
+        return appBundleIdentifier + ".Helper"
+    }
+
     /// Where iMCP looks for the helper without asking.
     /// `Scripts/install-helper.sh` installs it in `/Applications` by default.
     /// The sandbox can't read other folders, such as `~/Applications`,

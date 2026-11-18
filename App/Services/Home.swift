@@ -584,7 +584,9 @@ actor HomeService: Service, HomeBackend {
             chosen: chosen,
             installed: HomeHelperLocator.installLocations,
             registered: NSWorkspace.shared.urlForApplication(
-                withBundleIdentifier: HomeHelperLocator.defaultBundleIdentifier
+                withBundleIdentifier: HomeHelperLocator.helperBundleIdentifier(
+                    appBundleIdentifier: Bundle.main.bundleIdentifier
+                )
             ),
             embedded: Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/iMCP Helper.app"),
             isHelper: HomeHelperLocator.isHelper(at:)

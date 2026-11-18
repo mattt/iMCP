@@ -73,6 +73,40 @@ final class HomeHelperPairingTests: XCTestCase {
         XCTAssertEqual(HomeHelperPairing.format("abcdefgh"), "ABCD-EFGH")
     }
 
+    func testTheHelperFindsTheAppThatItsOwnIdentifierNames() {
+        XCTAssertEqual(
+            HomeHelperPairing.appBundleIdentifier(helperBundleIdentifier: "co.dododo.iMCP.Helper"),
+            "co.dododo.iMCP"
+        )
+        XCTAssertEqual(
+            HomeHelperPairing.appBundleIdentifier(helperBundleIdentifier: "com.amesconsulting.imcp.mac.helper"),
+            "com.amesconsulting.imcp.mac"
+        )
+        // Anything that isn't an app's helper falls back to the upstream app.
+        for other in [nil, "", ".helper", "co.dododo.iMCP", "com.example.NotAHelperX"] {
+            XCTAssertEqual(
+                HomeHelperPairing.appBundleIdentifier(helperBundleIdentifier: other),
+                HomeHelperPairing.appBundleIdentifier,
+                other ?? "nil"
+            )
+        }
+    }
+
+    func testTheAppFindsTheHelperThatItsOwnIdentifierNames() {
+        XCTAssertEqual(
+            HomeHelperLocator.helperBundleIdentifier(appBundleIdentifier: "com.amesconsulting.imcp.mac"),
+            "com.amesconsulting.imcp.mac.Helper"
+        )
+        XCTAssertEqual(
+            HomeHelperLocator.helperBundleIdentifier(appBundleIdentifier: "co.dododo.iMCP"),
+            HomeHelperLocator.defaultBundleIdentifier
+        )
+        XCTAssertEqual(
+            HomeHelperLocator.helperBundleIdentifier(appBundleIdentifier: nil),
+            HomeHelperLocator.defaultBundleIdentifier
+        )
+    }
+
     func testRecognizesOnlyThePairingURLAndIgnoresItsOtherParts() throws {
         for text in ["imcp://pair", "IMCP://PAIR", "imcp://pair/extra?code=0123-ABCD#fragment"] {
             XCTAssertTrue(HomeHelperPairing.isPairingURL(try XCTUnwrap(URL(string: text))), text)

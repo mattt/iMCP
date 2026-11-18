@@ -30,8 +30,22 @@ enum HomeHelperPairing {
     static let pairingTXTKey = "pairing"
     static let serviceType = "_imcp-helper._tcp"
 
-    /// iMCP's bundle identifier, which the helper uses to find iMCP and open its pairing window.
+    /// The bundle identifier of the upstream iMCP, which the helper uses when it can't tell otherwise.
     static let appBundleIdentifier = "co.dododo.iMCP"
+
+    /// The bundle identifier of the iMCP that goes with a helper, which the helper uses to find iMCP
+    /// and open its pairing window.
+    /// Each build names its helper after its app (`co.dododo.iMCP` and `co.dododo.iMCP.Helper`,
+    /// or `com.example.imcp` and `com.example.imcp.helper`), so a build with its own identifiers
+    /// finds its own iMCP, not the upstream one.
+    static func appBundleIdentifier(helperBundleIdentifier: String?) -> String {
+        guard let helperBundleIdentifier else { return appBundleIdentifier }
+        let suffix = ".helper"
+        guard helperBundleIdentifier.count > suffix.count,
+            helperBundleIdentifier.lowercased().hasSuffix(suffix)
+        else { return appBundleIdentifier }
+        return String(helperBundleIdentifier.dropLast(suffix.count))
+    }
     /// The URL that opens iMCP's pairing window.
     /// It carries no data: iMCP reads only its scheme and host.
     static let appPairingURL = URL(string: "imcp://pair")!
