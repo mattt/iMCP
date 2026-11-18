@@ -87,6 +87,9 @@
 		485454500000000000000053 /* ../../App/Controllers/ClientMetadataFetcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 485454500000000000000033 /* ../../App/Controllers/ClientMetadataFetcher.swift */; };
 		485454500000000000000054 /* OAuthTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 485454500000000000000034 /* OAuthTests.swift */; };
 		485454500000000000000055 /* ../../App/Controllers/CloudflareTunnel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 485454500000000000000035 /* ../../App/Controllers/CloudflareTunnel.swift */; };
+		5EC5A1E70000000000000021 /* ResponsibleApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EC5A1E70000000000000020 /* ResponsibleApp.swift */; };
+		5EC5A1E70000000000000023 /* MCPClientConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EC5A1E70000000000000022 /* MCPClientConfig.swift */; };
+		5EC5A1E70000000000000025 /* TrustedAppTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EC5A1E70000000000000024 /* TrustedAppTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -166,6 +169,9 @@
 		485454500000000000000033 /* ../../App/Controllers/ClientMetadataFetcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Controllers/ClientMetadataFetcher.swift; sourceTree = "<group>"; };
 		485454500000000000000034 /* OAuthTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OAuthTests.swift; sourceTree = "<group>"; };
 		485454500000000000000035 /* ../../App/Controllers/CloudflareTunnel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Controllers/CloudflareTunnel.swift; sourceTree = "<group>"; };
+		5EC5A1E70000000000000020 /* ResponsibleApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ResponsibleApp.swift; path = ../../App/Controllers/ResponsibleApp.swift; sourceTree = "<group>"; };
+		5EC5A1E70000000000000022 /* MCPClientConfig.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MCPClientConfig.swift; path = ../../App/Integrations/MCPClientConfig.swift; sourceTree = "<group>"; };
+		5EC5A1E70000000000000024 /* TrustedAppTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TrustedAppTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -334,6 +340,9 @@
 				5EC5A1E7000000000000000C /* ClientCredentialsTests.swift */,
 				5EC5A1E7000000000000000E /* ConnectionApprovals.swift */,
 				5EC5A1E70000000000000010 /* ConnectionApprovalsTests.swift */,
+				5EC5A1E70000000000000024 /* TrustedAppTests.swift */,
+				5EC5A1E70000000000000022 /* MCPClientConfig.swift */,
+				5EC5A1E70000000000000020 /* ResponsibleApp.swift */,
 			);
 			path = "imcp-serverTests";
 			sourceTree = "<group>";
@@ -667,6 +676,9 @@
 				5EC5A1E7000000000000000D /* ClientCredentialsTests.swift in Sources */,
 				5EC5A1E7000000000000000F /* ConnectionApprovals.swift in Sources */,
 				5EC5A1E70000000000000011 /* ConnectionApprovalsTests.swift in Sources */,
+				5EC5A1E70000000000000025 /* TrustedAppTests.swift in Sources */,
+				5EC5A1E70000000000000023 /* MCPClientConfig.swift in Sources */,
+				5EC5A1E70000000000000021 /* ResponsibleApp.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

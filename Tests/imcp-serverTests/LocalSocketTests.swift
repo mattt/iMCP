@@ -429,6 +429,52 @@ final class LocalSocketTests: XCTestCase {
         XCTAssertEqual(data.last, UInt8(ascii: "\n"))
         XCTAssertEqual(try LocalSocketHello.decode(data.dropLast()), hello)
         XCTAssertLessThanOrEqual(data.count - 1, LocalSocketHello.maximumLength)
+
+        let automatic = LocalSocketHello(credential: "imcp_abc", isAutomaticCredential: true)
+        let automaticData = try automatic.encoded()
+        XCTAssertEqual(try LocalSocketHello.decode(automaticData.dropLast()), automatic)
+    }
+
+    func testLoadOrCreateCredentialPersistsWithPrivatePermissions() throws {
+        let credentialPath = directory + "/nested/client-credential"
+
+        let first = try LocalSocket.loadOrCreateCredential(at: credentialPath)
+        XCTAssertTrue(LocalSocket.isValidCredentialFormat(first))
+
+        let attributes = try FileManager.default.attributesOfItem(atPath: credentialPath)
+        XCTAssertEqual((attributes[.posixPermissions] as? NSNumber)?.intValue, 0o600)
+
+        let second = try LocalSocket.loadOrCreateCredential(at: credentialPath)
+        XCTAssertEqual(second, first)
+    }
+
+    func testLoadOrCreateCredentialReplacesMalformedFile() throws {
+        let credentialPath = directory + "/client-credential"
+        FileManager.default.createFile(atPath: credentialPath, contents: Data("not-a-credential\n".utf8))
+
+        let credential = try LocalSocket.loadOrCreateCredential(at: credentialPath)
+        XCTAssertTrue(LocalSocket.isValidCredentialFormat(credential))
+        XCTAssertEqual(try LocalSocket.loadOrCreateCredential(at: credentialPath), credential)
+    }
+
+    func testHelloResolvedUsesEnvironmentBeforeFallbackFile() throws {
+        let credentialPath = directory + "/client-credential"
+
+        let fromEnv = try LocalSocketHello.resolved(
+            environment: ["IMCP_CLIENT_CREDENTIAL": " imcp_env_override\n"],
+            credentialPath: credentialPath
+        )
+        XCTAssertEqual(fromEnv.credential, "imcp_env_override")
+        XCTAssertNil(fromEnv.isAutomaticCredential)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: credentialPath))
+
+        let firstFallback = try LocalSocketHello.resolved(environment: [:], credentialPath: credentialPath)
+        XCTAssertEqual(firstFallback.isAutomaticCredential, true)
+        let fallbackCredential = try XCTUnwrap(firstFallback.credential)
+        XCTAssertTrue(LocalSocket.isValidCredentialFormat(fallbackCredential))
+
+        let secondFallback = try LocalSocketHello.resolved(environment: [:], credentialPath: credentialPath)
+        XCTAssertEqual(secondFallback, firstFallback)
     }
 
     /// Accepts one connection on a background thread.
