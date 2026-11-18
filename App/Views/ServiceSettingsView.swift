@@ -1,3 +1,4 @@
+import ServiceManagement
 import SwiftUI
 
 /// The Settings pane for one service:
@@ -133,74 +134,87 @@ struct ServiceIcon: View {
     }
 }
 
-/// Where iMCP finds iMCP Helper, which Home needs, and whether the two apps are paired.
+/// Whether iMCP Helper's launch agent is registered, which Home needs.
 private struct HomeHelperSection: View {
     var isHomeOn: Bool
 
-    @State private var helperPath: String?
-    @State private var isPaired = false
-    @State private var isPairing = false
+    @State private var state = HomeService.shared.state()
+    @State private var isWorking = false
+    @State private var isConfirmingUnregister = false
     @State private var errorMessage: String?
 
     var body: some View {
         Section {
             LabeledContent {
-                Button("Choose…") {
-                    do {
-                        guard let url = try HomeService.shared.chooseHelper() else { return }
-                        helperPath = url.path
-                        errorMessage = nil
-                        // Tool calls go to the running helper until Home reconnects.
-                        Task {
-                            do {
-                                try await HomeService.shared.useChosenHelper()
-                            } catch {
-                                errorMessage = error.localizedDescription
-                            }
-                        }
-                    } catch {
-                        errorMessage = error.localizedDescription
-                    }
+                switch state {
+                case .notBundled:
+                    EmptyView()
+                case .notRegistered:
+                    Button("Register") { register() }
+                        .disabled(isWorking)
+                case .needsApproval:
+                    Button("Open Login Items…") { SMAppService.openSystemSettingsLoginItems() }
+                case .registered:
+                    Button("Unregister…") { isConfirmingUnregister = true }
+                        .disabled(isWorking)
                 }
             } label: {
                 Text("iMCP Helper")
-                Text(helperPath ?? "Not installed")
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-
-            LabeledContent {
-                Button("Pair…") {
-                    isPairing = true
-                    Task {
-                        defer { isPairing = false }
-                        let message = "Enter the code shown in iMCP Helper's window."
-                        guard await HomeService.shared.pairAskingUser(message: message) else { return }
-                        isPaired = true
-                        errorMessage = nil
-                        do {
-                            if isHomeOn { try await HomeService.shared.reconnect() }
-                        } catch {
-                            errorMessage = error.localizedDescription
-                        }
-                    }
-                }
-                .disabled(isPairing)
-            } label: {
-                Text("Pairing")
-                Text(isPaired ? "Paired" : "Not paired")
+                Text(description)
             }
         } footer: {
             if let errorMessage {
                 Text(errorMessage)
                     .foregroundStyle(.red)
-            } else if helperPath == nil {
-                Text("To install iMCP Helper, run Scripts/install-helper.sh from the iMCP repository.")
+            } else if state == .notBundled {
+                Text("This build of iMCP doesn't include iMCP Helper, which Home needs to reach HomeKit.")
             }
         }
+        .confirmationDialog("Unregister iMCP Helper?", isPresented: $isConfirmingUnregister) {
+            Button("Unregister", role: .destructive) {
+                Task {
+                    isWorking = true
+                    defer { isWorking = false }
+                    do {
+                        try await HomeService.shared.unregister()
+                        errorMessage = nil
+                    } catch {
+                        errorMessage = error.localizedDescription
+                    }
+                    state = HomeService.shared.state()
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("iMCP Helper stops, and Home tools stop working until you register it again or turn Home on.")
+        }
         .task {
-            helperPath = HomeService.shared.helperLocation()?.path
-            isPaired = HomeService.shared.hasPairingKey()
+            state = HomeService.shared.state()
+            errorMessage = await HomeService.shared.lastFailure
+        }
+    }
+
+    private var description: String {
+        switch state {
+        case .notBundled: "Not included in this build"
+        case .notRegistered: "Not registered"
+        case .needsApproval: "Waiting for your approval in Login Items"
+        case .registered: "Registered. macOS starts it when iMCP needs HomeKit."
+        }
+    }
+
+    private func register() {
+        Task {
+            isWorking = true
+            defer { isWorking = false }
+            do {
+                try await HomeService.shared.register()
+                errorMessage = nil
+                if isHomeOn { try await HomeService.shared.activate() }
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+            state = HomeService.shared.state()
         }
     }
 }

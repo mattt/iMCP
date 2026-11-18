@@ -96,6 +96,10 @@ enum HomeTools {
                 withHome([
                     "room": identifier, "category": .string(), "reachable": .boolean(),
                     "bridged": .boolean(), "in_default_room": .boolean(), "name_contains": .string(),
+                    "limit": .integer(
+                        description: "Maximum accessories to return. Returns every match by default.",
+                        minimum: 1
+                    ),
                 ]),
                 read: true
             ),

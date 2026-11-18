@@ -138,7 +138,8 @@ final class HomeKitBackend: HomeBackend {
                     || (accessory.room?.uniqueIdentifier == home.roomForEntireHome().uniqueIdentifier) == inDefault)
                 && (name == nil || accessory.name.localizedCaseInsensitiveContains(name!))
         }
-        return try Value(accessories.map(accessorySummary))
+        let limit = try args.positiveInt("limit") ?? Int.max
+        return try Value(accessories.prefix(limit).map(accessorySummary))
     }
 
     private func assignRoom(_ args: HomeArguments) async throws -> Value {
@@ -612,6 +613,11 @@ private struct HomeArguments {
     }
     func name() throws -> String {
         guard let name = try optionalName() else { throw HomeError("name is required.") }; return name
+    }
+    func positiveInt(_ key: String) throws -> Int? {
+        guard let value = input[key], !value.isNull else { return nil }
+        guard let int = value.intValue, int >= 1 else { throw HomeError("\(key) must be a positive integer.") }
+        return int
     }
     func bool(_ key: String) throws -> Bool? {
         guard let value = input[key] else { return nil }

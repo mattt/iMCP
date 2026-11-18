@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Template for iMCP's Home launch agent. Scripts/build-helper.sh replaces
+  __APP_BUNDLE_IDENTIFIER__ with iMCP's bundle identifier and writes the result to
+  Contents/Library/LaunchAgents/__APP_BUNDLE_IDENTIFIER__.home-helper.plist,
+  which iMCP registers with SMAppService.agent(plistName:).
+  The names must match HomeHelperIdentity in Shared/Home/HomeHelperXPC.swift.
+-->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>__APP_BUNDLE_IDENTIFIER__.home-helper</string>
+
+	<key>BundleProgram</key>
+	<string>Contents/Helpers/iMCP Helper.app/Contents/MacOS/iMCP Helper</string>
+
+	<key>AssociatedBundleIdentifiers</key>
+	<array>
+		<string>__APP_BUNDLE_IDENTIFIER__</string>
+	</array>
+
+	<!-- launchd starts the helper when iMCP looks this name up. -->
+	<key>MachServices</key>
+	<dict>
+		<key>__APP_BUNDLE_IDENTIFIER__.home-xpc</key>
+		<true/>
+	</dict>
+
+	<key>RunAtLoad</key>
+	<false/>
+
+	<!-- The helper has a window, so it runs only in a graphical login session. -->
+	<key>LimitLoadToSessionType</key>
+	<string>Aqua</string>
+
+	<key>ProcessType</key>
+	<string>Interactive</string>
+</dict>
+</plist>

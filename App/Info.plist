@@ -2,27 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleURLName</key>
-			<string>co.dododo.iMCP.pairing</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>imcp</string>
-			</array>
-		</dict>
-	</array>
 	<key>LSMultipleInstancesProhibited</key>
 	<true/>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>iMCP uses Apple Events to control and read now playing data from Music.</string>
 	<key>NSAppleMusicUsageDescription</key>
 	<string>iMCP uses Apple Music access to search the Apple Music catalog.</string>
-	<key>NSBonjourServices</key>
-	<array>
-		<string>_imcp-helper._tcp</string>
-	</array>
 	<key>SUEnableInstallerLauncherService</key>
 	<true/>
 	<key>SUFeedURL</key>

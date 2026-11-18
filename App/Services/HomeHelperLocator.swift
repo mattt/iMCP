@@ -1,78 +1,73 @@
 import Foundation
+import ServiceManagement
 
-/// Chooses the iMCP Helper app that serves the Home tools.
+/// Finds the iMCP Helper that goes with this iMCP and says what state its launch agent is in.
 ///
 /// Apple doesn't allow the HomeKit entitlement in Developer ID builds,
-/// so release builds of iMCP don't include the helper;
-/// developers build and sign it with `Scripts/install-helper.sh`.
-/// Self-built helpers have their own bundle IDs,
-/// so an app counts as the helper only if its Info.plist
-/// sets `iMCPHelper` to true.
+/// so release builds of iMCP without a HomeKit-capable signature don't embed the helper.
+/// A build that embeds it carries the helper in `Contents/Helpers`
+/// and a launch agent plist in `Contents/Library/LaunchAgents`,
+/// which iMCP registers with `SMAppService`.
 enum HomeHelperLocator {
-    static let markerKey = "iMCPHelper"
-    static let defaultBundleIdentifier = "co.dododo.iMCP.Helper"
-
-    /// Where iMCP looks for the helper without asking.
-    /// `Scripts/install-helper.sh` installs it in `/Applications` by default.
-    /// The sandbox can't read other folders, such as `~/Applications`,
-    /// until the user chooses the helper in an open panel.
-    static let installLocations = [URL(fileURLWithPath: "/Applications/iMCP Helper.app")]
-
-    /// Whether the app at `url` declares itself as iMCP Helper.
-    static func isHelper(at url: URL) -> Bool {
-        info(at: url)?[markerKey] as? Bool == true
+    /// Where the agent stands, as Settings shows it.
+    enum State: Equatable, Sendable {
+        /// This build of iMCP has no helper, or no agent plist for it.
+        case notBundled
+        /// The helper is there, and iMCP hasn't registered it.
+        case notRegistered
+        /// macOS wants the user to allow the helper in System Settings > General > Login Items & Extensions.
+        case needsApproval
+        /// The agent is registered. launchd starts the helper when iMCP connects.
+        case registered
     }
 
-    /// The protocol version that the helper at `url` declares,
-    /// or nil for a helper from before pairing.
-    /// Throws if its Info.plist can't be read,
-    /// which the sandbox can cause outside `/Applications`.
-    static func protocolVersion(at url: URL) throws -> Int? {
-        guard let info = info(at: url) else {
-            throw HomeError(
-                "iMCP can't read the Info.plist of iMCP Helper at \(url.path). Choose the helper again in Settings > Home, then retry."
-            )
-        }
-        return info[HomeHelperPairing.protocolVersionInfoKey] as? Int
+    /// The embedded helper's location inside `bundleURL`.
+    static func embeddedHelperURL(in bundleURL: URL) -> URL {
+        bundleURL.appendingPathComponent(HomeHelperIdentity.embeddedHelperRelativePath, isDirectory: true)
     }
 
+    /// The agent plist's location inside `bundleURL`.
+    static func agentPlistURL(in bundleURL: URL, appBundleIdentifier: String) -> URL {
+        bundleURL.appendingPathComponent("Contents/Library/LaunchAgents", isDirectory: true)
+            .appendingPathComponent(HomeHelperIdentity.agentPlistName(appBundleIdentifier: appBundleIdentifier))
+    }
+
+    /// The Info.plist of the app at `url`.
     private static func info(at url: URL) -> [String: Any]? {
         let plist = url.appendingPathComponent("Contents/Info.plist")
         guard let data = try? Data(contentsOf: plist) else { return nil }
         return try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
     }
 
-    /// Whether a running app is the helper that iMCP should use.
-    /// When a helper is resolved, only an app at its path matches,
-    /// without reading its Info.plist, which the sandbox may deny outside `/Applications`;
-    /// another build that is running elsewhere doesn't stand in for it.
-    /// With no resolved helper, an app named iMCP Helper matches if it has the marker,
-    /// so other running apps' Info.plist files aren't read.
-    static func isRunningHelper(
-        bundleURL: URL?,
-        localizedName: String?,
-        helper: URL?,
-        isHelper: (URL) -> Bool
-    ) -> Bool {
-        guard let bundleURL else { return false }
-        if let helper {
-            return bundleURL.standardizedFileURL.path == helper.standardizedFileURL.path
-        }
-        return localizedName == "iMCP Helper" && isHelper(bundleURL)
+    /// Whether the app at `url` declares itself as iMCP Helper.
+    static func isHelper(at url: URL) -> Bool {
+        info(at: url)?[HomeHelperIdentity.markerKey] as? Bool == true
     }
 
-    /// The first candidate that is a helper:
-    /// the user's choice, then the install locations,
-    /// then the app registered for the default bundle ID,
-    /// then the copy embedded in a development build.
-    static func resolve(
-        chosen: URL?,
-        installed: [URL],
-        registered: URL?,
-        embedded: URL?,
-        isHelper: (URL) -> Bool
-    ) -> URL? {
-        let candidates = [chosen] + installed.map(Optional.some) + [registered, embedded]
-        return candidates.compactMap { $0 }.first(where: isHelper)
+    /// The signing identifier that iMCP requires of the helper: the identifier its Info.plist declares.
+    static func helperBundleIdentifier(at url: URL) -> String? {
+        info(at: url)?["CFBundleIdentifier"] as? String
+    }
+
+    /// Maps what is bundled and what `SMAppService` reports to a state.
+    /// An agent that was never registered reports `.notFound` even though its plist is in the bundle
+    /// (seen on macOS 27), so whether the build carries the plist decides between the two.
+    static func state(isBundled: Bool, status: SMAppService.Status) -> State {
+        guard isBundled else { return .notBundled }
+        switch status {
+        case .enabled: return .registered
+        case .requiresApproval: return .needsApproval
+        case .notRegistered, .notFound: return .notRegistered
+        @unknown default: return .notRegistered
+        }
+    }
+
+    /// Whether the build carries the helper and its agent plist.
+    static func isBundled(in bundleURL: URL, appBundleIdentifier: String) -> Bool {
+        let fileManager = FileManager.default
+        return isHelper(at: embeddedHelperURL(in: bundleURL))
+            && fileManager.fileExists(
+                atPath: agentPlistURL(in: bundleURL, appBundleIdentifier: appBundleIdentifier).path
+            )
     }
 }
