@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import MCP
 import OSLog
 import Ontology
@@ -47,12 +48,20 @@ struct ServiceConfig: Identifiable {
     }
 }
 
+/// A service's name and tools, for lists of tools in Settings.
+struct ToolGroup {
+    let name: String
+    let tools: [Tool]
+}
+
 enum ServiceRegistry {
     static let services: [any Service] = {
         var services: [any Service] = [
+            AlarmsService.shared,
             CalendarService.shared,
             CaptureService.shared,
             ContactsService.shared,
+            HealthService.shared,
             HomeService.shared,
             LocationService.shared,
             MapsService.shared,
@@ -76,9 +85,11 @@ enum ServiceRegistry {
     }()
 
     static func configureServices(
+        alarmsEnabled: Binding<Bool>,
         calendarEnabled: Binding<Bool>,
         captureEnabled: Binding<Bool>,
         contactsEnabled: Binding<Bool>,
+        healthEnabled: Binding<Bool>,
         homeEnabled: Binding<Bool>,
         locationEnabled: Binding<Bool>,
         mapsEnabled: Binding<Bool>,
@@ -95,6 +106,14 @@ enum ServiceRegistry {
         weatherEnabled: Binding<Bool>
     ) -> [ServiceConfig] {
         var configs: [ServiceConfig] = [
+            ServiceConfig(
+                name: "Alarms",
+                summary: "List and cancel alarms, and schedule alarms and timers on your iPhone or iPad.",
+                iconName: "alarm.fill",
+                color: .orange,
+                service: AlarmsService.shared,
+                binding: alarmsEnabled
+            ),
             ServiceConfig(
                 name: "Calendar",
                 summary: "View, create, update, and delete calendar events.",
@@ -118,6 +137,14 @@ enum ServiceRegistry {
                 color: .brown,
                 service: ContactsService.shared,
                 binding: contactsEnabled
+            ),
+            ServiceConfig(
+                name: "Health",
+                summary: "Read health samples, statistics, workouts, and clinical records from your iPhone or iPad.",
+                iconName: "heart.fill",
+                color: .pink,
+                service: HealthService.shared,
+                binding: healthEnabled
             ),
             ServiceConfig(
                 name: "Home",
@@ -234,6 +261,32 @@ enum ServiceRegistry {
         #endif
         return configs
     }
+
+    static func displayName(for service: any Service) -> String {
+        switch service {
+        case is CalendarService: return "Calendar"
+        case is CaptureService: return "Capture"
+        case is ContactsService: return "Contacts"
+        case is HomeService: return "Home"
+        case is LocationService: return "Location"
+        case is MapsService: return "Maps"
+        case is MailService: return "Mail"
+        case is MessageService: return "Messages"
+        case is MusicService: return "Music"
+        case is NotesService: return "Notes"
+        case is PhoneService: return "Phone"
+        case is RemindersService: return "Reminders"
+        case is ShortcutsService: return "Shortcuts"
+        case is UtilitiesService: return "Utilities"
+        case is VoiceMemosService: return "Voice Memos"
+        case is VoicemailService: return "Voicemail"
+        default:
+            #if WEATHERKIT_AVAILABLE
+                if service is WeatherService { return "Weather" }
+            #endif
+            return service.serviceID
+        }
+    }
 }
 
 @MainActor
@@ -246,13 +299,17 @@ final class ServerController: ObservableObject {
     /// and each connection without one gets its own.
     private var approvals = ApprovalQueue<ClientCredentialStore.Request, ApprovalWaiter>()
     private let approvalWindowController = ConnectionApprovalWindowController()
+    /// Apps that wait for the owner to approve public access through OAuth, keyed by request ID.
+    private var oauthApprovals = ApprovalQueue<OAuthApprovalRequest, OAuthApprovalWaiter>()
 
     private let networkManager = ServerNetworkManager()
 
     // MARK: - AppStorage for Service Enablement States
+    @AppStorage("alarmsEnabled") private var alarmsEnabled = false
     @AppStorage("calendarEnabled") private var calendarEnabled = false
     @AppStorage("captureEnabled") private var captureEnabled = false
     @AppStorage("contactsEnabled") private var contactsEnabled = false
+    @AppStorage("healthEnabled") private var healthEnabled = false
     @AppStorage("homeEnabled") private var homeEnabled = false
     @AppStorage("locationEnabled") private var locationEnabled = false
     @AppStorage("mapsEnabled") private var mapsEnabled = true  // Default enabled
@@ -274,16 +331,46 @@ final class ServerController: ObservableObject {
     /// so that revoking a credential closes them.
     private var credentialSessions = CredentialSessions()
 
-    // MARK: - AppStorage for Disabled Tools
+    // MARK: - AppStorage for Disabled Tools & Approval Mode
     @AppStorage("disabledTools") private var disabledToolsData = Data()
     private var disabledToolsGeneration = 0
+    @AppStorage(ApprovalMode.defaultsKey) private var approvalModeRawValue = ApprovalMode.defaultMode.rawValue
+
+    var approvalMode: ApprovalMode {
+        get { ApprovalMode(rawValue: approvalModeRawValue) ?? .defaultMode }
+        set {
+            guard approvalMode != newValue else { return }
+            objectWillChange.send()
+            approvalModeRawValue = newValue.rawValue
+            toolListChanged()
+        }
+    }
+
+    // MARK: - Remote Access
+    @AppStorage("remoteAccessEnabled") private var remoteAccessEnabled = false
+    @AppStorage("remoteAccessPort") private var remoteAccessPortValue = Int(RemoteAccessServer.defaultPort)
+    /// The host name for iMCP's node, or empty for one made from the Mac's name.
+    @AppStorage("remoteAccessHostname") private var remoteAccessHostnameValue = ""
+    /// Whether the server is also open to the internet through Tailscale Funnel. Off by default.
+    @AppStorage("remoteAccessFunnelEnabled") private var remoteAccessFunnelEnabled = false
+    @Published private(set) var remoteAccessState: RemoteAccessServer.State = .off
+    private let tokenStore = AccessTokenStore.shared
+    /// The apps that the owner approved through OAuth, for Settings.
+    let oauthConnections = OAuthConnectionsModel()
+    /// Manages Cloudflare Tunnel login, API provisioning, and `cloudflared` process lifecycle.
+    let cloudflareTunnel = CloudflareTunnelController()
+    private var cloudflareCancellables: Set<AnyCancellable> = []
+    /// Applies remote access settings in the order that they change.
+    private var remoteAccessConfigurationTask: Task<Void, Never>?
 
     // MARK: - Computed Properties for Service Configurations and Bindings
     var computedServiceConfigs: [ServiceConfig] {
         ServiceRegistry.configureServices(
+            alarmsEnabled: $alarmsEnabled,
             calendarEnabled: $calendarEnabled,
             captureEnabled: $captureEnabled,
             contactsEnabled: $contactsEnabled,
+            healthEnabled: $healthEnabled,
             homeEnabled: $homeEnabled,
             locationEnabled: $locationEnabled,
             mapsEnabled: $mapsEnabled,
@@ -370,8 +457,9 @@ final class ServerController: ObservableObject {
     ///   - name: The client's name, which the approval dialog shows.
     ///   - existing: The credential that the settings already have, if any.
     ///     It's kept if iMCP issued it.
-    func credentialForClientSettings(name: String, existing: String?) throws -> String {
-        try credentials.credentialForSettings(name: name, existing: existing)
+    func credentialForClientSettings(name: String, existing: String?, trusted: Bool = false) throws -> String {
+        objectWillChange.send()
+        return try credentials.credentialForSettings(name: name, existing: existing, trusted: trusted)
     }
 
     /// Revokes a credential that iMCP issued for settings it then failed to write.
@@ -408,6 +496,12 @@ final class ServerController: ObservableObject {
         disabledTools = tools
     }
 
+    /// Tells clients to list the tools again after a service's "Allow writes" setting
+    /// changed which of its tools it offers.
+    func toolListChanged() {
+        Task { await networkManager.updateServiceBindings(self.currentServiceBindings) }
+    }
+
     func setService(_ config: ServiceConfig, enabled: Bool) {
         objectWillChange.send()
         config.binding.wrappedValue = enabled
@@ -431,7 +525,262 @@ final class ServerController: ObservableObject {
                 // so bring iMCP back to the front.
                 NSApp.activate(ignoringOtherApps: true)
             }
+            if MobileService.serves(config.service) {
+                // The Mac listens for paired devices only while a mobile service is on.
+                await MobileService.shared.servicesChanged()
+            }
             await networkManager.updateServiceBindings(self.currentServiceBindings)
+        }
+    }
+
+    // MARK: - Remote Access Management
+    var isRemoteAccessEnabled: Bool {
+        get { remoteAccessEnabled }
+        set {
+            objectWillChange.send()
+            remoteAccessEnabled = newValue
+            applyRemoteAccessConfiguration()
+        }
+    }
+
+    var isRemoteAccessFunnelEnabled: Bool {
+        get { remoteAccessFunnelEnabled }
+        set {
+            guard newValue != remoteAccessFunnelEnabled else { return }
+            objectWillChange.send()
+            remoteAccessFunnelEnabled = newValue
+            applyRemoteAccessConfiguration()
+        }
+    }
+
+    var remoteAccessPort: Int {
+        get { remoteAccessPortValue }
+        set {
+            let port = min(max(newValue, 1), Int(UInt16.max))
+            guard port != remoteAccessPortValue else { return }
+            objectWillChange.send()
+            remoteAccessPortValue = port
+            applyRemoteAccessConfiguration()
+        }
+    }
+
+    /// The host name that iMCP's node asks for on the tailnet.
+    /// Setting an empty name goes back to one made from the Mac's name.
+    var remoteAccessHostname: String {
+        get { remoteAccessHostnameValue.isEmpty ? defaultRemoteAccessHostname : remoteAccessHostnameValue }
+        set {
+            let name = RemoteAccessServer.sanitizedHostname(newValue) ?? ""
+            let value = name == defaultRemoteAccessHostname ? "" : name
+            guard value != remoteAccessHostnameValue else { return }
+            objectWillChange.send()
+            remoteAccessHostnameValue = value
+            applyRemoteAccessConfiguration()
+        }
+    }
+
+    /// A host name made from the Mac's name when iMCP starts.
+    private(set) lazy var defaultRemoteAccessHostname = RemoteAccessServer.defaultHostname(
+        computerName: Host.current().localizedName
+    )
+
+    /// Starts iMCP's node again with an auth key, which logs it in without a browser.
+    func logInToRemoteAccess(authKey: String) {
+        let key = authKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else { return }
+        afterRemoteAccessConfiguration { await $0.logIn(authKey: key) }
+    }
+
+    /// Starts iMCP's node again, such as to get a new login URL.
+    func restartRemoteAccessNode() {
+        afterRemoteAccessConfiguration { await $0.restartNode() }
+    }
+
+    /// Logs iMCP's node out of the tailnet.
+    func logOutOfRemoteAccess() {
+        afterRemoteAccessConfiguration { await $0.logOut() }
+    }
+
+    var accessTokens: [AccessToken] {
+        tokenStore.all.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    /// Every tool that iMCP has, whether or not its service is on.
+    var allTools: [Tool] {
+        ServiceRegistry.services.flatMap(\.tools)
+    }
+
+    /// Each service's tools, in Settings order, with Utilities last.
+    var toolGroups: [ToolGroup] {
+        var groups = computedServiceConfigs.map { ToolGroup(name: $0.name, tools: $0.service.tools) }
+        groups.append(ToolGroup(name: "Utilities", tools: UtilitiesService.shared.tools))
+        return groups
+    }
+
+    /// The tools that iMCP's own settings let clients use:
+    /// their services are on and the tools aren't turned off.
+    var availableToolNames: Set<String> {
+        let disabled = disabledTools
+        let bindings = currentServiceBindings
+        var names: Set<String> = []
+        for service in ServiceRegistry.services
+        where bindings[String(describing: type(of: service))]?.wrappedValue == true {
+            for tool in service.tools where !disabled.contains(tool.name) {
+                names.insert(tool.name)
+            }
+        }
+        return names
+    }
+
+    /// Why iMCP can't read its access tokens, or `nil` if it can.
+    var accessTokenStorageError: String? {
+        tokenStore.storageError?.localizedDescription
+    }
+
+    /// Creates an access token and returns its secret, which iMCP can't show again.
+    /// Throws if iMCP can't save the token.
+    func createAccessToken(name: String, permissions: ToolPermissions) throws -> String {
+        let (token, secret) = AccessToken.make(name: name, permissions: permissions)
+        objectWillChange.send()
+        try tokenStore.add(token)
+        return secret
+    }
+
+    /// Changes a token's name and permissions.
+    /// If iMCP can't save the change, the token stops working until a change saves.
+    func updateAccessToken(id: UUID, name: String, permissions: ToolPermissions) throws {
+        objectWillChange.send()
+        do {
+            try tokenStore.modify(id: id) {
+                $0.name = name
+                $0.permissions = permissions
+            }
+        } catch {
+            Task { await networkManager.remoteAccess.closeSessions(forToken: id) }
+            throw error
+        }
+        Task { await networkManager.remoteAccess.notifyToolListChanged(forToken: id) }
+    }
+
+    /// Gives a token a new secret and returns it.
+    /// Clients that use the old secret lose access,
+    /// even if iMCP can't save the new secret.
+    func rerollAccessToken(id: UUID) throws -> String? {
+        objectWillChange.send()
+        defer { Task { await networkManager.remoteAccess.closeSessions(forToken: id) } }
+        return try tokenStore.modify(id: id) { $0.reroll() }
+    }
+
+    /// Deletes a token.
+    /// Clients that use it lose access, even if iMCP can't save the deletion.
+    func deleteAccessToken(id: UUID) throws {
+        objectWillChange.send()
+        defer { Task { await networkManager.remoteAccess.closeSessions(forToken: id) } }
+        try tokenStore.remove(id: id)
+    }
+
+    /// All currently active public MCP endpoints (`https://<host>/mcp`) from Cloudflare Tunnel and Tailscale Funnel.
+    var activePublicURLs: [(provider: String, url: String)] {
+        var urls: [(provider: String, url: String)] = []
+        if let cfURL = cloudflareTunnel.state.activeURL {
+            urls.append(("Cloudflare Tunnel", cfURL))
+        }
+        if case .running(let endpoint) = remoteAccessState,
+            case .active(let funnelURL) = endpoint.funnel
+        {
+            urls.append(("Tailscale Funnel", funnelURL))
+        }
+        return urls
+    }
+
+    /// Preferred URL shown in token setup instructions.
+    var preferredClientEndpoint: String? {
+        activePublicURLs.first?.url ?? remoteAccessState.endpoint
+    }
+
+    /// Applies the remote access settings again, for example after Tailscale allows public addresses.
+    func refreshRemoteAccess() {
+        applyRemoteAccessConfiguration()
+    }
+
+    private func applyRemoteAccessConfiguration() {
+        let configuration = RemoteAccessServer.Configuration(
+            isEnabled: remoteAccessEnabled,
+            port: UInt16(clamping: remoteAccessPortValue),
+            hostname: remoteAccessHostname,
+            funnelEnabled: remoteAccessFunnelEnabled,
+            cloudflareHostname: cloudflareTunnel.activeHostname
+        )
+        afterRemoteAccessConfiguration { await $0.configure(configuration) }
+    }
+
+    /// Runs remote access changes one at a time, in the order that they're made.
+    private func afterRemoteAccessConfiguration(_ body: @escaping @Sendable (RemoteAccessServer) async -> Void) {
+        let previous = remoteAccessConfigurationTask
+        let networkManager = self.networkManager
+        remoteAccessConfigurationTask = Task {
+            await previous?.value
+            await body(await networkManager.remoteAccess)
+        }
+    }
+
+    // MARK: - OAuth Approval
+
+    /// Asks the owner to approve an app that wants public access, and waits for the answer.
+    /// A denial, an expiry, and a refusal for too many requests all answer `.denied`.
+    func requestOAuthApproval(_ request: OAuthApprovalRequest) async -> OAuthDecision {
+        await withCheckedContinuation { continuation in
+            let admission = oauthApprovals.enqueue(
+                key: request.id,
+                cooldownKey: nil,
+                request: request,
+                id: request.id,
+                waiter: OAuthApprovalWaiter(resume: { continuation.resume(returning: $0) }),
+                now: .now
+            )
+            switch admission {
+            case .show(let deadline):
+                scheduleOAuthExpiry(at: deadline)
+                if let entry = oauthApprovals.entries.last { presentOAuthApproval(entry) }
+            case .queued(let deadline):
+                scheduleOAuthExpiry(at: deadline)
+            case .coalesced, .rejected:
+                continuation.resume(returning: .denied)
+            }
+        }
+    }
+
+    private func presentOAuthApproval(_ entry: ApprovalQueue<OAuthApprovalRequest, OAuthApprovalWaiter>.Entry) {
+        let key = entry.key
+        approvalWindowController.showOAuthApprovalWindow(
+            id: key,
+            request: entry.request,
+            enabledServiceNames: computedServiceConfigs.filter { $0.binding.wrappedValue }.map { $0.name },
+            onApprove: { readOnly in self.finishOAuthApproval(key: key, decision: .approved(readOnly: readOnly)) },
+            onDeny: { self.finishOAuthApproval(key: key, decision: .denied) }
+        )
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func finishOAuthApproval(key: String, decision: OAuthDecision) {
+        let resolution = oauthApprovals.resolve(key: key, approved: decision != .denied, now: .now)
+        guard let entry = resolution.removed.first else { return }
+        log.notice(
+            "\(decision == .denied ? "Denying" : "Approving") public access for app: \(entry.request.clientName, privacy: .public)"
+        )
+        for (_, waiter) in entry.waiters { waiter.resume(decision) }
+        resolution.promoted.forEach(presentOAuthApproval)
+    }
+
+    private func scheduleOAuthExpiry(at deadline: ContinuousClock.Instant) {
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(until: deadline, clock: .continuous)
+            guard let self else { return }
+            let resolution = self.oauthApprovals.expire(now: .now)
+            for entry in resolution.removed {
+                self.approvalWindowController.closeWindow(for: entry.key)
+                for (_, waiter) in entry.waiters { waiter.resume(.denied) }
+            }
+            resolution.promoted.forEach(self.presentOAuthApproval)
         }
     }
 
@@ -454,26 +803,82 @@ final class ServerController: ObservableObject {
                 self.finishApproval(key: key, approved: false, alwaysTrust: false)
             }
         )
+        offerOnPhone(
+            key: key,
+            kind: .connection,
+            title: "Allow \(entry.request.claimedName) to connect?",
+            details: ["Client: \(entry.request.claimedName)", entry.request.identityNote],
+            lifetime: approvals.policy.expiry
+        ) { [weak self] outcome in
+            // Approving from the phone allows this connection once; it never trusts the client.
+            self?.finishApproval(key: key, approved: outcome.isApproved, alwaysTrust: false)
+        }
 
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    // MARK: Approve on iPhone
+
+    /// Approvals that are also on the paired phone, by approval key.
+    /// The phone sees a random ID, never the key, which can derive from a credential.
+    private var phoneApprovalIDs: [String: String] = [:]
+
+    private func offerOnPhone(
+        key: String,
+        kind: RemoteApprovalKind,
+        title: String,
+        details: [String],
+        lifetime: Duration,
+        onResolved: @escaping @MainActor (RemoteApprovalOutcome) -> Void
+    ) {
+        withdrawFromPhone(key: key)
+        let id = UUID().uuidString
+        let seconds = Double(lifetime.components.seconds)
+        phoneApprovalIDs[key] = id
+        RemoteApprovals.shared.offer(
+            RemoteApprovalRequest(
+                id: id,
+                kind: kind,
+                title: title,
+                details: details,
+                expiresAt: Date().addingTimeInterval(seconds)
+            ),
+            onResolved: onResolved
+        )
+    }
+
+    /// Removes an approval from the phone once the Mac has decided it.
+    private func withdrawFromPhone(key: String) {
+        guard let id = phoneApprovalIDs.removeValue(forKey: key) else { return }
+        RemoteApprovals.shared.withdraw(id)
+    }
+
     /// Applies a person's decision to every connection waiting on the dialog for `key`.
     private func finishApproval(key: String, approved: Bool, alwaysTrust: Bool) {
+        withdrawFromPhone(key: key)
+        // An answer from the phone leaves the Mac's dialog open, so close it.
+        approvalWindowController.closeWindow(for: key)
         let resolution = approvals.resolve(key: key, approved: approved, now: .now)
         // The request expired or its connections closed while the dialog was open.
         guard let entry = resolution.removed.first else { return }
         let request = entry.request
 
-        var newCredential: String?
         if approved && alwaysTrust {
             objectWillChange.send()
             do {
-                newCredential = try credentials.alwaysTrust(request)
-                // Revoking the new credential closes the connections that it was issued for.
-                if let newCredential, let id = ClientCredential.identifier(for: newCredential) {
+                let trustedRecord: ClientRecord?
+                switch request.offer {
+                case .signature:
+                    trustedRecord = try request.app.map { try credentials.trustApp($0) }
+                case .credential:
+                    trustedRecord = try credentials.alwaysTrust(request)
+                case nil:
+                    trustedRecord = nil
+                }
+                // Revoking the credential closes the connections that it approved.
+                if let trustedRecord {
                     for case let (connectionID as UUID, _) in entry.waiters {
-                        credentialSessions.add(connectionID, credentialID: id)
+                        credentialSessions.add(connectionID, credentialID: trustedRecord.id)
                     }
                 }
             } catch {
@@ -502,12 +907,6 @@ final class ServerController: ObservableObject {
             approved ? waiter.approve() : waiter.deny()
         }
         resolution.promoted.forEach(presentApproval)
-
-        if let newCredential {
-            Task { @MainActor in
-                self.showNewCredential(newCredential, clientName: request.claimedName)
-            }
-        }
     }
 
     /// Denies requests that waited too long, and closes their dialogs.
@@ -515,6 +914,7 @@ final class ServerController: ObservableObject {
         let resolution = approvals.expire(now: .now)
         for entry in resolution.removed {
             log.notice("Approval request for client \(entry.request.claimedName) expired")
+            withdrawFromPhone(key: entry.key)
             approvalWindowController.closeWindow(for: entry.key)
             for (_, waiter) in entry.waiters {
                 waiter.deny()
@@ -534,6 +934,7 @@ final class ServerController: ObservableObject {
         let (waiter, resolution) = approvals.cancel(id: connectionID)
         waiter?.deny()
         for entry in resolution.removed {
+            withdrawFromPhone(key: entry.key)
             approvalWindowController.closeWindow(for: entry.key)
         }
         resolution.promoted.forEach(presentApproval)
@@ -547,6 +948,20 @@ final class ServerController: ObservableObject {
     }
 
     init() {
+        cloudflareTunnel.onActiveHostnameChanged = { [weak self] _ in
+            self?.applyRemoteAccessConfiguration()
+        }
+        cloudflareTunnel.objectWillChange
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }
+            .store(in: &cloudflareCancellables)
+        NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)
+            .sink { [weak self] _ in
+                self?.cloudflareTunnel.stopRunningProcess()
+            }
+            .store(in: &cloudflareCancellables)
+
         Task { [self] in
             // Initialize bindings from AppStorage before the server starts.
             // The menu sends the enabled state only when its content first appears,
@@ -562,7 +977,7 @@ final class ServerController: ObservableObject {
                 await self?.connectionClosed(connectionID)
             }
             await networkManager.setConnectionApprovalHandler {
-                [weak self] connectionID, clientInfo, credential in
+                [weak self] connectionID, clientInfo, hello, app in
                 guard let self = self else {
                     return false
                 }
@@ -581,7 +996,8 @@ final class ServerController: ObservableObject {
                         self.showConnectionApprovalAlert(
                             connectionID: connectionID,
                             clientName: clientInfo.name,
-                            credential: credential,
+                            hello: hello,
+                            app: app,
                             approve: {
                                 Task { await resumeOnce(true) }
                             },
@@ -595,6 +1011,44 @@ final class ServerController: ObservableObject {
 
             await self.networkManager.start()
             self.updateServerStatus("Running")
+
+            await self.networkManager.remoteAccess.setHandlers(
+                state: { [weak self] state in
+                    Task { @MainActor in self?.remoteAccessState = state }
+                },
+                tokenUsage: { [weak self] in
+                    Task { @MainActor in
+                        self?.objectWillChange.send()
+                        self?.oauthConnections.reload()
+                    }
+                }
+            )
+            await self.networkManager.remoteAccess.setPublicLoopbackHandler { [weak self] loopbackState in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    switch loopbackState {
+                    case .listening(let port):
+                        self.cloudflareTunnel.handleLoopbackPortChange(port)
+                    case .stopped:
+                        self.cloudflareTunnel.handleLoopbackPortChange(nil)
+                    case .failed(let message):
+                        self.cloudflareTunnel.reportLoopbackFailure(message)
+                    }
+                }
+            }
+            await self.networkManager.remoteAccess.setOAuthApprovalHandler { [weak self] request in
+                guard let self else { return .denied }
+                return await self.requestOAuthApproval(request)
+            }
+            self.oauthConnections.didRevoke = { [weak self] id in
+                guard let self else { return }
+                Task { await self.networkManager.remoteAccess.closeSessions(forToken: id) }
+            }
+            self.applyRemoteAccessConfiguration()
+            // Listen for a paired iPhone or iPad so it can sync before the first tool call.
+            if self.alarmsEnabled || self.healthEnabled {
+                try? await MobileService.shared.start()
+            }
         }
     }
 
@@ -607,9 +1061,12 @@ final class ServerController: ObservableObject {
     func startServer() async {
         await networkManager.start()
         updateServerStatus("Running")
+        // Stopping the server turns off remote access until the settings are applied again.
+        applyRemoteAccessConfiguration()
     }
 
     func stopServer() async {
+        cloudflareTunnel.stopRunningProcess()
         await networkManager.stop()
         updateServerStatus("Stopped")
     }
@@ -648,18 +1105,28 @@ final class ServerController: ObservableObject {
     private func showConnectionApprovalAlert(
         connectionID: UUID,
         clientName: String,
-        credential: String?,
+        hello: LocalSocketHello,
+        app: ResponsibleApp?,
         approve: @escaping () -> Void,
         deny: @escaping () -> Void
     ) {
         log.notice("Connection approval requested for client: \(clientName)")
 
-        // Only a trusted credential skips the dialog; the reported name never does.
+        // Only a trusted credential or code signature skips the dialog; the reported name never does.
         let request: ClientCredentialStore.Request
-        switch credentials.evaluate(credential: credential, claimedName: clientName) {
+        switch credentials.evaluate(
+            credential: hello.credential,
+            claimedName: clientName,
+            app: app,
+            isAutomaticCredential: hello.isAutomaticCredential ?? false
+        ) {
         case .approve(let record):
-            log.notice("Client \(clientName) presented a trusted credential, auto-approving")
+            log.notice(
+                "Client \(clientName) is trusted by \(record.isApp ? "signature" : "credential"), auto-approving"
+            )
             credentialSessions.add(connectionID, credentialID: record.id)
+            objectWillChange.send()
+            credentials.noteConnection(id: record.id)
             approve()
 
             // Notify the user on auto-approved connections.
@@ -708,39 +1175,6 @@ final class ServerController: ObservableObject {
         }
     }
 
-    /// Shows a credential that iMCP just issued, so that the person can add it to the client.
-    /// iMCP stores only the credential's hash, so this is the only time it can be shown.
-    private func showNewCredential(_ credential: String, clientName: String) {
-        let alert = NSAlert()
-        alert.messageText = "Add a Credential to \(clientName)"
-        alert.informativeText = """
-            To connect without approval next time, \
-            add this environment variable to the iMCP server in the client's MCP settings. \
-            iMCP doesn't keep a copy of the value.
-            """
-
-        let field = NSTextField(
-            wrappingLabelWithString: "\(ClientCredential.environmentVariable)=\(credential)"
-        )
-        field.isSelectable = true
-        field.font = .monospacedSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular)
-        field.preferredMaxLayoutWidth = 300
-        field.frame.size = field.fittingSize
-        alert.accessoryView = field
-
-        alert.addButton(withTitle: "Copy Value")
-        alert.addButton(withTitle: "Done")
-
-        NSApp.activate(ignoringOtherApps: true)
-        if alert.runModal() == .alertFirstButtonReturn {
-            // Keep the credential off other devices and out of clipboard history.
-            let pasteboard = NSPasteboard.general
-            pasteboard.prepareForNewContents(with: .currentHostOnly)
-            pasteboard.setString(credential, forType: .string)
-            pasteboard.setString("", forType: NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType"))
-        }
-    }
-
     private func showTrustError(_ error: any Swift.Error, clientName: String) {
         let alert = NSAlert()
         alert.messageText = "iMCP Couldn't Trust \(clientName)"
@@ -755,6 +1189,11 @@ final class ServerController: ObservableObject {
     }
 }
 
+/// Resumes an app that waits for the owner to decide on public access.
+private struct OAuthApprovalWaiter {
+    let resume: (OAuthDecision) -> Void
+}
+
 /// The callbacks that resume a connection waiting for approval.
 private struct ApprovalWaiter {
     let approve: () -> Void
@@ -762,6 +1201,62 @@ private struct ApprovalWaiter {
 }
 
 // MARK: - Connection Management Components
+
+extension RemoteAccessServer {
+    /// Where iMCP's node keeps its keys and state, in the app's container.
+    static var nodeStateDirectory: URL {
+        URL.applicationSupportDirectory
+            .appending(path: Bundle.main.bundleIdentifier ?? "iMCP", directoryHint: .isDirectory)
+            .appending(path: "Tailscale", directoryHint: .isDirectory)
+    }
+
+    init(tokenStore: AccessTokenStore, networkManager: ServerNetworkManager) {
+        self.init(
+            tokenStore: tokenStore,
+            stateDirectory: Self.nodeStateDirectory,
+            makeNode: { try await EmbeddedTailnetNode.start($0) }
+        ) { [weak networkManager] tokenID in
+            guard let networkManager else { return nil }
+            let server = MCP.Server.iMCP()
+            // A valid access token approves a remote session,
+            // so the session doesn't ask the user.
+            let gate = ConnectionApprovalGate()
+            try? await gate.approve { true }
+            // Read current permissions so changes apply to open sessions.
+            await networkManager.registerHandlers(for: server, connectionID: UUID(), gate: gate, clientName: { nil }) {
+                tool in
+                // A session belongs to an access token or to an OAuth grant.
+                // Read current permissions so that revoking or editing applies at once.
+                (tokenStore.token(id: tokenID)?.permissions ?? OAuthAuthority.shared.grant(id: tokenID)?.permissions)?
+                    .allows(tool) ?? false
+            }
+            return server
+        }
+    }
+}
+
+extension MCP.Server {
+    /// A server for one client connection.
+    static func iMCP() -> MCP.Server {
+        // Some clients, such as ChatGPT,
+        // describe the server to the model with only the first line of the instructions,
+        // so keep them on one line.
+        MCP.Server(
+            name: Bundle.main.name ?? "iMCP",
+            version: Bundle.main.shortVersionString ?? "unknown",
+            instructions: """
+                Use iMCP for apps and data on the user's Mac: \
+                Calendar, Contacts, Location, Mail, Maps, Messages, Music, Notes, Phone, Reminders, Shortcuts, Voice Memos, Voicemail, Weather, \
+                and the camera, microphone, and screen; \
+                and, through iMCP on the user's iPhone or iPad, Health and Alarms. \
+                Only the services that the user turns on in iMCP have tools.
+                """,
+            capabilities: MCP.Server.Capabilities(
+                tools: .init(listChanged: true)
+            )
+        )
+    }
+}
 
 // Manages a single MCP connection.
 actor MCPConnectionManager {
@@ -771,6 +1266,8 @@ actor MCPConnectionManager {
     private let parentManager: ServerNetworkManager
     private let approvalGate = ConnectionApprovalGate()
     private var isStopping = false
+    /// The name that the client gave in its initialize request.
+    private var clientName: String?
 
     /// Creates a manager for a socket whose client passed the code-signing check.
     /// The manager owns `descriptor` and closes it when it stops.
@@ -780,22 +1277,7 @@ actor MCPConnectionManager {
         self.transport = SocketTransport(descriptor: descriptor)
 
         // MCP server instance for this connection.
-        // Some clients, such as ChatGPT,
-        // describe the server to the model with only the first line of the instructions,
-        // so keep them on one line.
-        self.server = MCP.Server(
-            name: Bundle.main.name ?? "iMCP",
-            version: Bundle.main.shortVersionString ?? "unknown",
-            instructions: """
-                Use iMCP for apps and data on the user's Mac: \
-                Calendar, Contacts, Location, Mail, Maps, Messages, Music, Notes, Phone, Reminders, Shortcuts, Voice Memos, Voicemail, Weather, \
-                and the camera, microphone, and screen. \
-                Only the services that the user turns on in iMCP have tools.
-                """,
-            capabilities: MCP.Server.Capabilities(
-                tools: .init(listChanged: true)
-            )
-        )
+        self.server = MCP.Server.iMCP()
     }
 
     func start(approvalHandler: @escaping (MCP.Client.Info) async -> Bool) async throws {
@@ -809,9 +1291,11 @@ actor MCPConnectionManager {
                     guard let self = self else { return false }
 
                     log.info("Received initialize request from client: \(clientInfo.name)")
+                    await self.setClientName(clientInfo.name)
 
                     // Request user approval for the connection.
                     let approved = await approvalHandler(clientInfo)
+                    if approved { await self.setClientName(clientInfo.name) }
                     log.info(
                         "Approval result for connection \(self.connectionID): \(approved ? "Approved" : "Denied")"
                     )
@@ -841,11 +1325,16 @@ actor MCPConnectionManager {
         }
     }
 
+    private func setClientName(_ name: String) {
+        clientName = name
+    }
+
     private func registerHandlers() async {
         await parentManager.registerHandlers(
             for: server,
             connectionID: connectionID,
-            gate: approvalGate
+            gate: approvalGate,
+            clientName: { [weak self] in await self?.clientName }
         )
     }
 
@@ -972,8 +1461,9 @@ actor ServerNetworkManager {
     static let approvalTimeout: Duration = ApprovalPolicy.default.expiry + .seconds(5)
 
     /// Decides whether to approve a connection,
-    /// given the client's reported info and the credential it presented, if any.
-    typealias ConnectionApprovalHandler = @Sendable (UUID, MCP.Client.Info, String?) async -> Bool
+    /// given the client's reported info, its hello payload, and the responsible app.
+    typealias ConnectionApprovalHandler =
+        @Sendable (UUID, MCP.Client.Info, LocalSocketHello, ResponsibleApp?) async -> Bool
     private var connectionApprovalHandler: ConnectionApprovalHandler?
 
     /// Called when a connection closes,
@@ -985,6 +1475,17 @@ actor ServerNetworkManager {
     private var serviceBindings: [String: Binding<Bool>] = [:]
     private var disabledTools: Set<String> = []
     private var disabledToolsLastGeneration = -1
+    private let confirmer: any OutboundConfirming = MacOutboundConfirmer()
+    private let confirmationQueue = ToolConfirmationQueue.shared
+
+    private var remoteAccessIfStarted: RemoteAccessServer?
+    /// The HTTP server for clients on other devices, created when first needed.
+    var remoteAccess: RemoteAccessServer {
+        if let remoteAccessIfStarted { return remoteAccessIfStarted }
+        let server = RemoteAccessServer(tokenStore: .shared, networkManager: self)
+        remoteAccessIfStarted = server
+        return server
+    }
 
     func isRunning() -> Bool {
         isRunningState
@@ -1088,6 +1589,8 @@ actor ServerNetworkManager {
         listener?.cancel()
         listener = nil
         listenerFailure = nil
+
+        await remoteAccessIfStarted?.stop()
     }
 
     func removeConnection(_ id: UUID) async {
@@ -1140,8 +1643,9 @@ actor ServerNetworkManager {
 
         // Check the client's code signature before reading anything from it.
         let hello: LocalSocketHello
+        let app: ResponsibleApp?
         do {
-            hello = try await Self.admit(descriptor)
+            (hello, app) = try await Self.admit(descriptor)
         } catch {
             log.error(
                 "Rejected connection \(connectionID): \(String(describing: error), privacy: .public)"
@@ -1186,7 +1690,7 @@ actor ServerNetworkManager {
 
                 try await connectionManager.start { clientInfo in
                     await self.awaitApproval(for: connectionID) {
-                        await approvalHandler(connectionID, clientInfo, hello.credential)
+                        await approvalHandler(connectionID, clientInfo, hello, app)
                     }
                 }
 
@@ -1227,7 +1731,7 @@ actor ServerNetworkManager {
     /// Checks that `imcp-server` is on the other end of `descriptor`, then reads its hello.
     ///
     /// Both steps block, so they run off the actor.
-    private nonisolated static func admit(_ descriptor: Int32) async throws -> LocalSocketHello {
+    private nonisolated static func admit(_ descriptor: Int32) async throws -> (LocalSocketHello, ResponsibleApp?) {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 continuation.resume(
@@ -1243,7 +1747,9 @@ actor ServerNetworkManager {
                             maximumLength: LocalSocketHello.maximumLength,
                             timeout: .seconds(5)
                         )
-                        return try LocalSocketHello.decode(line)
+                        let hello = try LocalSocketHello.decode(line)
+                        let app = ResponsibleApp.resolve(responsibleFor: LocalSocket.processID(of: token))
+                        return (hello, app)
                     }
                 )
             }
@@ -1273,10 +1779,14 @@ actor ServerNetworkManager {
     /// Registers the handlers for an approved connection.
     /// Each handler checks `gate` again,
     /// so that no request reaches a tool before approval.
+    /// `isToolAllowed` narrows the tools that iMCP's settings allow,
+    /// such as for a remote client's access token.
     func registerHandlers(
         for server: MCP.Server,
         connectionID: UUID,
-        gate: ConnectionApprovalGate
+        gate: ConnectionApprovalGate,
+        clientName: @escaping @Sendable () async -> String?,
+        isToolAllowed: (@Sendable (Tool) async -> Bool)? = nil
     ) async {
         await server.withApprovedMethodHandler(ListPrompts.self, gate: gate) { _ in
             log.debug("Handling ListPrompts request for \(connectionID)")
@@ -1296,6 +1806,8 @@ actor ServerNetworkManager {
             log.debug("Handling ListTools request for \(connectionID)")
 
             var tools: [MCP.Tool] = []
+            // Services can share a tool, such as mobile_status; list it once.
+            var names = Set<String>()
             if await self.isEnabledState {
                 for service in await self.services {
                     let serviceId = String(describing: type(of: service))
@@ -1304,11 +1816,15 @@ actor ServerNetworkManager {
                     if let isServiceEnabled = await self.serviceBindings[serviceId]?.wrappedValue,
                         isServiceEnabled
                     {
-                        for tool in service.tools {
+                        for tool in service.listedTools() {
                             if await self.disabledTools.contains(tool.name) {
                                 log.debug("Skipping disabled tool: \(tool.name)")
                                 continue
                             }
+                            if let isToolAllowed, await !isToolAllowed(tool) {
+                                continue
+                            }
+                            guard names.insert(tool.name).inserted else { continue }
                             log.debug("Adding tool: \(tool.name)")
                             tools.append(
                                 .init(
@@ -1335,10 +1851,39 @@ actor ServerNetworkManager {
                 )
             }
 
+            let start = ContinuousClock.now
+            let resolvedClient = await clientName() ?? "Unknown client"
+            let services = await self.services
+            let matchedService = services.first { $0.tools.contains { $0.name == params.name } }
+            let matchedTool = matchedService?.tools.first { $0.name == params.name }
+            let serviceName = matchedService.map(Self.serviceDisplayName) ?? "Unknown"
+            let isWrite = matchedTool.map { $0.annotations.readOnlyHint != true } ?? false
+
+            /// Adds the call to the activity history that paired iPhones and iPads show.
+            func record(_ outcome: MobileActivityEvent.Outcome, detail: String? = nil) async {
+                let elapsed = ContinuousClock.now - start
+                let milliseconds = max(
+                    0,
+                    Int(elapsed.components.seconds) * 1000 + Int(elapsed.components.attoseconds / 1_000_000_000_000_000)
+                )
+                await MobileService.shared.recordActivity(
+                    MobileActivityEvent(
+                        clientName: resolvedClient,
+                        serviceName: serviceName,
+                        toolName: params.name,
+                        isWrite: isWrite,
+                        outcome: outcome,
+                        detail: detail,
+                        durationMs: milliseconds
+                    )
+                )
+            }
+
             log.notice("Tool call received from \(connectionID): \(params.name)")
 
             guard await self.isEnabledState else {
                 log.notice("Tool call rejected: iMCP is disabled")
+                await record(.denied, detail: "iMCP is disabled")
                 return CallTool.Result(
                     content: [
                         .text(
@@ -1353,6 +1898,7 @@ actor ServerNetworkManager {
 
             if await self.disabledTools.contains(params.name) {
                 log.notice("Tool call rejected: \(params.name) is disabled")
+                await record(.denied, detail: "The tool is turned off in iMCP settings")
                 return CallTool.Result(
                     content: [
                         .text(
@@ -1365,6 +1911,26 @@ actor ServerNetworkManager {
                 )
             }
 
+            let confirmer = self.confirmer
+            let confirmationQueue = self.confirmationQueue
+
+            if let isToolAllowed {
+                let tool = await self.services.lazy.flatMap(\.tools).first { $0.name == params.name }
+                guard let tool, await isToolAllowed(tool) else {
+                    log.notice("Tool call rejected: \(params.name) isn't allowed for this access token")
+                    return CallTool.Result(
+                        content: [
+                            .text(
+                                text: "The iMCP access token for this client doesn't allow the tool \(params.name).",
+                                annotations: nil,
+                                _meta: nil
+                            )
+                        ],
+                        isError: true
+                    )
+                }
+            }
+
             for service in await self.services {
                 let serviceId = String(describing: type(of: service))
 
@@ -1372,17 +1938,23 @@ actor ServerNetworkManager {
                 if let isServiceEnabled = await self.serviceBindings[serviceId]?.wrappedValue,
                     isServiceEnabled
                 {
+                    guard let tool = service.tools.first(where: { $0.name == params.name }) else {
+                        continue
+                    }
+
                     do {
-                        guard
-                            let value = try await service.call(
-                                tool: params.name,
-                                with: params.arguments ?? [:]
-                            )
-                        else {
-                            continue
-                        }
+                        let value = try await ToolCallApproval.execute(
+                            tool: tool,
+                            in: service,
+                            serviceName: ServiceRegistry.displayName(for: service),
+                            arguments: params.arguments ?? [:],
+                            clientName: await clientName(),
+                            confirmer: confirmer,
+                            queue: confirmationQueue
+                        )
 
                         log.notice("Tool \(params.name) executed successfully for \(connectionID)")
+                        await record(.succeeded)
                         switch value {
                         case .data(let mimeType?, let data) where mimeType.hasPrefix("audio/"):
                             return CallTool.Result(
@@ -1427,6 +1999,7 @@ actor ServerNetworkManager {
                         log.error(
                             "Error executing tool \(params.name): \(error.localizedDescription)"
                         )
+                        await record(.failed, detail: error.localizedDescription)
                         return CallTool.Result(
                             content: [.text(text: "Error: \(error)", annotations: nil, _meta: nil)],
                             isError: true
@@ -1436,13 +2009,18 @@ actor ServerNetworkManager {
             }
 
             // Say why no service answered, so that an intermittent failure can be traced.
-            if let owner = await self.services.first(where: { $0.tools.contains { $0.name == params.name } }) {
+            if let owner = matchedService {
                 let serviceId = String(describing: type(of: owner))
                 let binding = await self.serviceBindings[serviceId]
                 let state = binding.map { $0.wrappedValue ? "on" : "off" } ?? "missing"
                 log.error(
                     "Tool \(params.name, privacy: .public) belongs to \(serviceId, privacy: .public), whose binding is \(state, privacy: .public)"
                 )
+            }
+            if matchedService == nil {
+                await record(.failed, detail: "Tool not found")
+            } else {
+                await record(.denied, detail: "The \(serviceName) service is turned off")
             }
             log.error("Tool not found or service not enabled: \(params.name)")
             return CallTool.Result(
@@ -1451,6 +2029,31 @@ actor ServerNetworkManager {
                 ],
                 isError: true
             )
+        }
+    }
+
+    private static func serviceDisplayName(_ service: any Service) -> String {
+        switch service {
+        case is AlarmsService: return "Alarms"
+        case is CalendarService: return "Calendar"
+        case is CaptureService: return "Capture"
+        case is ContactsService: return "Contacts"
+        case is HealthService: return "Health"
+        case is HomeService: return "Home"
+        case is LocationService: return "Location"
+        case is MapsService: return "Maps"
+        case is MailService: return "Mail"
+        case is MessageService: return "Messages"
+        case is MusicService: return "Music"
+        case is NotesService: return "Notes"
+        case is PhoneService: return "Phone"
+        case is RemindersService: return "Reminders"
+        case is ShortcutsService: return "Shortcuts"
+        case is UtilitiesService: return "Utilities"
+        case is VoiceMemosService: return "Voice Memos"
+        default:
+            let raw = String(describing: type(of: service))
+            return raw.hasSuffix("Service") ? String(raw.dropLast("Service".count)) : raw
         }
     }
 
@@ -1468,6 +2071,7 @@ actor ServerNetworkManager {
                 await connectionManager.notifyToolListChanged()
             }
         }
+        await remoteAccessIfStarted?.notifyToolListChanged()
     }
 
     // Update service bindings.
@@ -1483,6 +2087,7 @@ actor ServerNetworkManager {
             for (_, connectionManager) in connections {
                 await connectionManager.notifyToolListChanged()
             }
+            await remoteAccessIfStarted?.notifyToolListChanged()
         }
     }
 
@@ -1499,6 +2104,27 @@ actor ServerNetworkManager {
             for (_, connectionManager) in connections {
                 await connectionManager.notifyToolListChanged()
             }
+            await remoteAccessIfStarted?.notifyToolListChanged()
         }
     }
 }
+
+#if DEBUG
+    extension ServerController {
+        /// Screenshots only: shows a Tailscale state without starting the node or joining any network.
+        func debugShowTailscale(_ scenario: String) {
+            switch scenario {
+            case "connected":
+                remoteAccessState = .running(
+                    RemoteAccessServer.Endpoint(
+                        url: "http://imcp-mac.example.ts.net:4627/mcp",
+                        dnsName: "imcp-mac.example.ts.net",
+                        ipv4Address: "100.64.0.2"
+                    )
+                )
+            default:
+                remoteAccessState = .needsLogin(URL(string: "https://login.tailscale.com/a/example"))
+            }
+        }
+    }
+#endif

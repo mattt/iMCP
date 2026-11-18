@@ -538,6 +538,131 @@ enum LocalSocket {
             line.append(byte)
         }
     }
+
+    // MARK: - Client Credential Persistence
+
+    private static let credentialPrefix = "imcp_"
+    private static let credentialSecretByteCount = 32
+
+    /// The path where `imcp-server` stores its persistent client credential
+    /// when `IMCP_CLIENT_CREDENTIAL` isn't set in the environment.
+    static func defaultCredentialPath(homeDirectory: String = userHomeDirectory) -> String {
+        "\(homeDirectory)/Library/Application Support/iMCP/client-credential"
+    }
+
+    /// Loads the persistent client credential from `path`,
+    /// or creates and stores a new one with mode `0600` if none exists.
+    static func loadOrCreateCredential(at path: String = defaultCredentialPath()) throws -> String {
+        if let existing = readValidCredential(at: path) {
+            return existing
+        }
+
+        let directory = (path as NSString).deletingLastPathComponent
+        try FileManager.default.createDirectory(
+            atPath: directory,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+
+        let credential = generateCredential()
+        let payload = Array((credential + "\n").utf8)
+
+        // Create exclusively first so concurrent launches agree on one credential.
+        let descriptor = open(path, O_WRONLY | O_CREAT | O_EXCL, 0o600)
+        if descriptor >= 0 {
+            do {
+                try writeCredential(payload, to: descriptor)
+            } catch {
+                close(descriptor)
+                _ = unlink(path)
+                throw error
+            }
+            close(descriptor)
+            return credential
+        }
+
+        let openError = errno
+        guard openError == EEXIST else {
+            throw Error.posix(call: "open", code: openError)
+        }
+
+        // Another process may have created the file while we raced.
+        if let existing = readValidCredential(at: path) {
+            return existing
+        }
+
+        // Replace an empty or malformed credential file atomically.
+        let tempPath = "\(directory)/.client-credential-\(UUID().uuidString).tmp"
+        let tempDescriptor = open(tempPath, O_WRONLY | O_CREAT | O_EXCL, 0o600)
+        guard tempDescriptor >= 0 else {
+            throw Error.posix(call: "open", code: errno)
+        }
+        do {
+            try writeCredential(payload, to: tempDescriptor)
+        } catch {
+            close(tempDescriptor)
+            _ = unlink(tempPath)
+            throw error
+        }
+        close(tempDescriptor)
+        guard rename(tempPath, path) == 0 else {
+            let code = errno
+            _ = unlink(tempPath)
+            throw Error.posix(call: "rename", code: code)
+        }
+        return credential
+    }
+
+    private static func readValidCredential(at path: String) -> String? {
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+            let raw = String(data: data, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+            isValidCredentialFormat(raw)
+        else { return nil }
+        return raw
+    }
+
+    private static func writeCredential(_ payload: [UInt8], to descriptor: Int32) throws {
+        guard fchmod(descriptor, 0o600) == 0 else {
+            throw Error.posix(call: "fchmod", code: errno)
+        }
+        var written = 0
+        while written < payload.count {
+            let count = payload.withUnsafeBytes { buffer in
+                Darwin.write(descriptor, buffer.baseAddress! + written, payload.count - written)
+            }
+            if count < 0 {
+                if errno == EINTR { continue }
+                throw Error.posix(call: "write", code: errno)
+            }
+            written += count
+        }
+    }
+
+    private static func generateCredential() -> String {
+        var bytes = [UInt8](repeating: 0, count: credentialSecretByteCount)
+        let status = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+        precondition(status == errSecSuccess, "SecRandomCopyBytes failed: \(status)")
+        let encoded = Data(bytes).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        return credentialPrefix + encoded
+    }
+
+    static func isValidCredentialFormat(_ credential: String) -> Bool {
+        guard credential.hasPrefix(credentialPrefix) else { return false }
+        let encoded = String(credential.dropFirst(credentialPrefix.count))
+        guard encoded.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") }) else {
+            return false
+        }
+        var base64 =
+            encoded
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        base64 += String(repeating: "=", count: (4 - base64.count % 4) % 4)
+        return Data(base64Encoded: base64)?.count == credentialSecretByteCount
+    }
 }
 
 /// The first line that `imcp-server` sends after it verifies the app,
@@ -556,14 +681,32 @@ struct LocalSocketHello: Codable, Equatable {
     /// The version of this exchange.
     var version: Int = currentVersion
 
-    /// The credential that iMCP issued to the client, if it has one.
+    /// The credential that the client presents, if any.
     var credential: String?
+
+    /// Whether `credential` came from `imcp-server`'s local fallback store
+    /// rather than an explicit `IMCP_CLIENT_CREDENTIAL` environment variable.
+    var isAutomaticCredential: Bool?
 
     /// Returns a hello with the credential from `environment`.
     static func fromEnvironment(_ environment: [String: String]) -> Self {
         let credential = environment[credentialEnvironmentVariable]?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return Self(credential: credential?.isEmpty == false ? credential : nil)
+    }
+
+    /// Returns a hello using the credential from `environment`, or a persistent
+    /// local credential at `credentialPath` when the environment variable isn't set.
+    static func resolved(
+        environment: [String: String],
+        credentialPath: String = LocalSocket.defaultCredentialPath()
+    ) throws -> Self {
+        let envHello = fromEnvironment(environment)
+        if envHello.credential != nil {
+            return envHello
+        }
+        let credential = try LocalSocket.loadOrCreateCredential(at: credentialPath)
+        return Self(credential: credential, isAutomaticCredential: true)
     }
 
     /// Returns the hello as a line of JSON.
