@@ -7,6 +7,16 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B15000000000000000000092 /* ../../App/Models/KnownClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B15000000000000000000091 /* ../../App/Models/KnownClient.swift */; };
+		B15000000000000000000094 /* KnownClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B15000000000000000000093 /* KnownClientTests.swift */; };
+		B15000000000000000000022 /* ../../App/Models/RemoteAccessChecklist.swift in Sources */ = {isa = PBXBuildFile; fileRef = B15000000000000000000021 /* ../../App/Models/RemoteAccessChecklist.swift */; };
+		B15000000000000000000024 /* RemoteAccessChecklistTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B15000000000000000000023 /* RemoteAccessChecklistTests.swift */; };
+		B15000000000000000000012 /* ../../App/Models/OnboardingFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = B15000000000000000000011 /* ../../App/Models/OnboardingFlow.swift */; };
+		B15000000000000000000014 /* OnboardingFlowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B15000000000000000000013 /* OnboardingFlowTests.swift */; };
+		B16000000000000000000002 /* ../../App/Controllers/CloudflareTokenCheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = B16000000000000000000001 /* ../../App/Controllers/CloudflareTokenCheck.swift */; };
+		B16000000000000000000004 /* ../../App/Controllers/TailscalePolicyAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = B16000000000000000000003 /* ../../App/Controllers/TailscalePolicyAccess.swift */; };
+		B16000000000000000000006 /* CloudflareTokenCheckTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B16000000000000000000005 /* CloudflareTokenCheckTests.swift */; };
+		B16000000000000000000008 /* TailscalePolicyAccessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B16000000000000000000007 /* TailscalePolicyAccessTests.swift */; };
 		485454500000000000000024 /* ../../App/Controllers/FunnelAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 485454500000000000000014 /* ../../App/Controllers/FunnelAccess.swift */; };
 		485454500000000000000023 /* ../../App/Controllers/RemoteAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 485454500000000000000013 /* ../../App/Controllers/RemoteAccess.swift */; };
 		485454500000000000000020 /* RemoteAccessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 485454500000000000000010 /* RemoteAccessTests.swift */; };
@@ -171,6 +181,16 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		B15000000000000000000091 /* ../../App/Models/KnownClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Models/KnownClient.swift; sourceTree = "<group>"; };
+		B15000000000000000000093 /* KnownClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnownClientTests.swift; sourceTree = "<group>"; };
+		B15000000000000000000021 /* ../../App/Models/RemoteAccessChecklist.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Models/RemoteAccessChecklist.swift; sourceTree = "<group>"; };
+		B15000000000000000000023 /* RemoteAccessChecklistTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteAccessChecklistTests.swift; sourceTree = "<group>"; };
+		B15000000000000000000011 /* ../../App/Models/OnboardingFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Models/OnboardingFlow.swift; sourceTree = "<group>"; };
+		B15000000000000000000013 /* OnboardingFlowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingFlowTests.swift; sourceTree = "<group>"; };
+		B16000000000000000000001 /* ../../App/Controllers/CloudflareTokenCheck.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Controllers/CloudflareTokenCheck.swift; sourceTree = "<group>"; };
+		B16000000000000000000003 /* ../../App/Controllers/TailscalePolicyAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Controllers/TailscalePolicyAccess.swift; sourceTree = "<group>"; };
+		B16000000000000000000005 /* CloudflareTokenCheckTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudflareTokenCheckTests.swift; sourceTree = "<group>"; };
+		B16000000000000000000007 /* TailscalePolicyAccessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TailscalePolicyAccessTests.swift; sourceTree = "<group>"; };
 		485454500000000000000014 /* ../../App/Controllers/FunnelAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Controllers/FunnelAccess.swift; sourceTree = "<group>"; };
 		485454500000000000000013 /* ../../App/Controllers/RemoteAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Controllers/RemoteAccess.swift; sourceTree = "<group>"; };
 		485454500000000000000010 /* RemoteAccessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteAccessTests.swift; sourceTree = "<group>"; };
@@ -523,6 +543,16 @@
 				485454500000000000000032 /* ../../App/Controllers/OAuthEndpoints.swift */,
 				485454500000000000000033 /* ../../App/Controllers/ClientMetadataFetcher.swift */,
 				485454500000000000000034 /* OAuthTests.swift */,
+				B15000000000000000000091 /* ../../App/Models/KnownClient.swift */,
+				B15000000000000000000093 /* KnownClientTests.swift */,
+				B15000000000000000000011 /* ../../App/Models/OnboardingFlow.swift */,
+				B15000000000000000000013 /* OnboardingFlowTests.swift */,
+				B15000000000000000000021 /* ../../App/Models/RemoteAccessChecklist.swift */,
+				B16000000000000000000007 /* TailscalePolicyAccessTests.swift */,
+				B16000000000000000000005 /* CloudflareTokenCheckTests.swift */,
+				B16000000000000000000003 /* ../../App/Controllers/TailscalePolicyAccess.swift */,
+				B16000000000000000000001 /* ../../App/Controllers/CloudflareTokenCheck.swift */,
+				B15000000000000000000023 /* RemoteAccessChecklistTests.swift */,
 				485454500000000000000035 /* ../../App/Controllers/CloudflareTunnel.swift */,
 				B0D1DEADBEEF000000000005 /* MCPServiceLoop.swift */,
 				5EC5A1E70000000000000001 /* LocalSocket.swift */,
@@ -965,6 +995,16 @@
 				485454500000000000000052 /* ../../App/Controllers/OAuthEndpoints.swift in Sources */,
 				485454500000000000000053 /* ../../App/Controllers/ClientMetadataFetcher.swift in Sources */,
 				485454500000000000000054 /* OAuthTests.swift in Sources */,
+				B15000000000000000000092 /* ../../App/Models/KnownClient.swift in Sources */,
+				B15000000000000000000094 /* KnownClientTests.swift in Sources */,
+				B15000000000000000000012 /* ../../App/Models/OnboardingFlow.swift in Sources */,
+				B15000000000000000000014 /* OnboardingFlowTests.swift in Sources */,
+				B15000000000000000000022 /* ../../App/Models/RemoteAccessChecklist.swift in Sources */,
+				B16000000000000000000008 /* TailscalePolicyAccessTests.swift in Sources */,
+				B16000000000000000000006 /* CloudflareTokenCheckTests.swift in Sources */,
+				B16000000000000000000004 /* ../../App/Controllers/TailscalePolicyAccess.swift in Sources */,
+				B16000000000000000000002 /* ../../App/Controllers/CloudflareTokenCheck.swift in Sources */,
+				B15000000000000000000024 /* RemoteAccessChecklistTests.swift in Sources */,
 				485454500000000000000055 /* ../../App/Controllers/CloudflareTunnel.swift in Sources */,
 				5EC5A1E70000000000000002 /* LocalSocket.swift in Sources */,
 				5EC5A1E70000000000000005 /* LocalSocketTests.swift in Sources */,

@@ -16,6 +16,11 @@ enum ClaudeCode {
     static let clientName = "Claude Code"
     static let serverName = "iMCP"
 
+    /// Whether the person has let iMCP edit Claude Code's settings file, which setup does.
+    static var isConfigured: Bool {
+        UserDefaults.standard.data(forKey: configBookmarkKey) != nil
+    }
+
     enum Error: LocalizedError {
         case noFileSelected
 

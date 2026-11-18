@@ -697,6 +697,11 @@ final class ServerController: ObservableObject {
         activePublicURLs.first?.url ?? remoteAccessState.endpoint
     }
 
+    /// Applies the remote access settings again, for example after Tailscale allows public addresses.
+    func refreshRemoteAccess() {
+        applyRemoteAccessConfiguration()
+    }
+
     private func applyRemoteAccessConfiguration() {
         let configuration = RemoteAccessServer.Configuration(
             isEnabled: remoteAccessEnabled,
@@ -1218,7 +1223,8 @@ extension RemoteAccessServer {
             let gate = ConnectionApprovalGate()
             try? await gate.approve { true }
             // Read current permissions so changes apply to open sessions.
-            await networkManager.registerHandlers(for: server, connectionID: UUID(), gate: gate, clientName: { nil }) { tool in
+            await networkManager.registerHandlers(for: server, connectionID: UUID(), gate: gate, clientName: { nil }) {
+                tool in
                 // A session belongs to an access token or to an OAuth grant.
                 // Read current permissions so that revoking or editing applies at once.
                 (tokenStore.token(id: tokenID)?.permissions ?? OAuthAuthority.shared.grant(id: tokenID)?.permissions)?
@@ -2102,3 +2108,23 @@ actor ServerNetworkManager {
         }
     }
 }
+
+#if DEBUG
+    extension ServerController {
+        /// Screenshots only: shows a Tailscale state without starting the node or joining any network.
+        func debugShowTailscale(_ scenario: String) {
+            switch scenario {
+            case "connected":
+                remoteAccessState = .running(
+                    RemoteAccessServer.Endpoint(
+                        url: "http://imcp-mac.example.ts.net:4627/mcp",
+                        dnsName: "imcp-mac.example.ts.net",
+                        ipv4Address: "100.64.0.2"
+                    )
+                )
+            default:
+                remoteAccessState = .needsLogin(URL(string: "https://login.tailscale.com/a/example"))
+            }
+        }
+    }
+#endif
