@@ -517,10 +517,10 @@ final class VoiceMemosService: NSObject, Service, NSOpenSavePanelDelegate {
         let alert = NSAlert()
         alert.messageText = "Voice Memos Access Required"
         alert.informativeText = """
-            To read your voice memos, we need access to their Recordings folder: \
+            To read your voice memos, iMCP needs access to their Recordings folder: \
             the database, its write-ahead log, and the audio files next to it.
 
-            In the next screen, please select the `Recordings` folder and click "Grant Access".
+            Next, select the `Recordings` folder and click "Grant Access".
             """
         alert.alertStyle = .informational
         alert.addButton(withTitle: "Continue")
