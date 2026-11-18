@@ -378,7 +378,9 @@ struct TransportSettingsView: View {
             } header: {
                 Text("Connection Mode")
             } footer: {
-                Text("Automatic tries Local Network first, then Tailscale VPN, Tailscale Funnel, and Cloudflare Tunnel.")
+                Text(
+                    "Automatic tries Local Network first, then Tailscale VPN, Tailscale Funnel, and Cloudflare Tunnel."
+                )
             }
 
             if connection.credentials != nil {

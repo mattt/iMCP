@@ -505,7 +505,10 @@ final class MobileNWByteStream: MobileByteStream, @unchecked Sendable {
             group.addTask {
                 try await withCheckedThrowingContinuation { continuation in
                     self.connection.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) {
-                        data, _, isComplete, error in
+                        data,
+                        _,
+                        isComplete,
+                        error in
                         if let error {
                             continuation.resume(throwing: error)
                         } else if let data, !data.isEmpty {
@@ -603,7 +606,10 @@ enum MobileWebSocketHandshake {
 
     /// Reads an HTTP/1.1 WebSocket upgrade request from a fresh byte stream (for local tunnel endpoints),
     /// writes the `101 Switching Protocols` response, and returns any leftover buffered bytes.
-    static func accept(from stream: any MobileByteStream, allowedPaths: Set<String> = [MobileLink.mobileWebSocketPath, "/"])
+    static func accept(
+        from stream: any MobileByteStream,
+        allowedPaths: Set<String> = [MobileLink.mobileWebSocketPath, "/"]
+    )
         async throws -> Data
     {
         var buffer = Data()
@@ -1051,13 +1057,15 @@ enum MobileWebSocketDialer {
                 deviceKey = try credentials.deviceKey(from: welcome)
             } else {
                 let purpose = credentials.hello.revoke == true ? "revoke" : "connect"
-                guard MobileLink.verify(
-                    proof,
-                    key: credentials.key,
-                    device: credentials.hello.device,
-                    purpose: "welcome:\(purpose)",
-                    context: phonePub + macPub
-                ) else {
+                guard
+                    MobileLink.verify(
+                        proof,
+                        key: credentials.key,
+                        device: credentials.hello.device,
+                        purpose: "welcome:\(purpose)",
+                        context: phonePub + macPub
+                    )
+                else {
                     throw MobileError("The Mac's answer couldn't be verified.")
                 }
                 deviceKey = nil

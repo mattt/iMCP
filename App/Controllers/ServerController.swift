@@ -654,7 +654,8 @@ final class ServerController: ObservableObject {
     }
 
     private func applyRemoteAccessConfiguration() {
-        let mobileVPNEnabled = UserDefaults.standard.object(forKey: MobileService.tailscaleVPNEnabledKey) as? Bool ?? true
+        let mobileVPNEnabled =
+            UserDefaults.standard.object(forKey: MobileService.tailscaleVPNEnabledKey) as? Bool ?? true
         let storedMobilePort = UserDefaults.standard.integer(forKey: MobileService.remotePortKey)
         let mobilePort: UInt16? =
             mobileVPNEnabled

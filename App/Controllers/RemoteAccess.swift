@@ -786,7 +786,8 @@ actor RemoteAccessServer {
         isMobileListening = false
     }
 
-    private func acceptMobile(_ connection: any TailnetConnection, node: any TailnetNode, generation current: Int) async {
+    private func acceptMobile(_ connection: any TailnetConnection, node: any TailnetNode, generation current: Int) async
+    {
         guard current == generation,
             identity != nil,
             mobileConnections.count < Self.maximumConnections,
