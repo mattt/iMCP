@@ -162,6 +162,34 @@ actor HomeService: Service, HomeBackend {
         )
     }
 
+    /// Forgets the pairing: asks the connected helper to drop its key and show a new code,
+    /// then deletes iMCP's keys and ends the connection.
+    /// iMCP's keys go even if the helper can't be told, such as when it isn't running.
+    /// Returns whether the helper confirmed. If not, it keeps its key
+    /// until someone chooses Pair Again in its window.
+    @discardableResult
+    func unpair() async throws -> Bool {
+        if let pairing { _ = await pairing.result }
+        var confirmed = false
+        if authorized, let client {
+            do {
+                _ = try await client.send(HomeHelperPairing.Unpair.request(.init())).value
+                confirmed = true
+            } catch {
+                log.info("iMCP Helper didn't confirm the unpair: \(error.localizedDescription)")
+            }
+        }
+        let old = client
+        authorized = false
+        client = nil
+        connection?.cancel()
+        connection = nil
+        await old?.disconnect()
+        try keyStore.delete()
+        try pendingKeyStore.delete()
+        return confirmed
+    }
+
     /// Quits a helper and waits until it has exited,
     /// so a reconnect doesn't find it instead of the chosen one.
     @MainActor

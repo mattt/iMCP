@@ -140,7 +140,9 @@ private struct HomeHelperSection: View {
     @State private var helperPath: String?
     @State private var isPaired = false
     @State private var isPairing = false
+    @State private var isConfirmingUnpair = false
     @State private var errorMessage: String?
+    @State private var notice: String?
 
     var body: some View {
         Section {
@@ -186,6 +188,10 @@ private struct HomeHelperSection: View {
                     }
                 }
                 .disabled(isPairing)
+                if isPaired {
+                    Button("Unpair…") { isConfirmingUnpair = true }
+                        .disabled(isPairing)
+                }
             } label: {
                 Text("Pairing")
                 Text(isPaired ? "Paired" : "Not paired")
@@ -194,9 +200,31 @@ private struct HomeHelperSection: View {
             if let errorMessage {
                 Text(errorMessage)
                     .foregroundStyle(.red)
+            } else if let notice {
+                Text(notice)
             } else if helperPath == nil {
                 Text("To install iMCP Helper, run Scripts/install-helper.sh from the iMCP repository.")
             }
+        }
+        .confirmationDialog("Unpair iMCP Helper?", isPresented: $isConfirmingUnpair) {
+            Button("Unpair", role: .destructive) {
+                Task {
+                    do {
+                        let confirmed = try await HomeService.shared.unpair()
+                        isPaired = false
+                        errorMessage = nil
+                        notice =
+                            confirmed
+                            ? "Unpaired. iMCP Helper shows a new code."
+                            : "Unpaired. iMCP Helper wasn't reachable and still has its key. In its window, choose Pair Again."
+                    } catch {
+                        errorMessage = error.localizedDescription
+                    }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Home tools stop working until you pair again with a code from iMCP Helper.")
         }
         .task {
             helperPath = HomeService.shared.helperLocation()?.path

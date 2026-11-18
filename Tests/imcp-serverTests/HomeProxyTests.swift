@@ -233,6 +233,24 @@ final class HomeHelperPairingTests: XCTestCase {
         withExtendedLifetime(server) {}
     }
 
+    func testUnpairMakesTheHelperForgetItsKeyAndShowANewCode() async throws {
+        let key = HomeHelperPairing.generateKey()
+        let events = EventRecorder()
+        let server = HelperServer(
+            backend: StaticHomeBackend(),
+            credential: .key(key),
+            onEvent: { await events.record($0) }
+        )
+        let port = try await server.start()
+        let client = try await connectClient(port: port, parameters: HomeHelperPairing.parameters(key: key))
+        _ = try await client.send(HomeHelperPairing.Unpair.request(.init())).value
+        // The helper reports after the connection ends, so iMCP receives the response first.
+        await client.disconnect()
+        let event = try await events.next()
+        guard case .unpaired = event else { return XCTFail("\(event)") }
+        withExtendedLifetime(server) {}
+    }
+
     func testNegotiatesOnlyTheECDHEPSKCipherSuite() async throws {
         let key = HomeHelperPairing.generateKey()
         let server = HelperServer(backend: StaticHomeBackend(), credential: .key(key))

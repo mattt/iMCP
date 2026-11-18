@@ -177,6 +177,7 @@ final class HelperRuntime: ObservableObject {
         case pairAgain
         case paired(SymmetricKey, code: String)
         case tooManyFailedPairings(code: String)
+        case unpaired
     }
 
     private let changes: AsyncStream<Change>.Continuation
@@ -236,15 +237,20 @@ final class HelperRuntime: ObservableObject {
             case .tooManyFailedPairings(let code):
                 guard pairing == .code(code) else { return }
                 try await showNewCode()
+            case .unpaired:
+                // Ignore a request that arrives after the window already shows a new code.
+                guard pairing == .paired else { return }
+                try await showNewCode()
             }
         } catch {
             isListening = false
             listenerFailure = .failed(error)
             // A replacement whose code check passed is retried without the check,
             // which fails now that the code is cleared.
-            if case .tooManyFailedPairings = change {
+            switch change {
+            case .tooManyFailedPairings, .unpaired:
                 failedChange = .pairAgain
-            } else {
+            default:
                 failedChange = change
             }
             canRetry = true
@@ -311,6 +317,7 @@ final class HelperRuntime: ObservableObject {
         switch event {
         case .paired(let key, let code): changes.yield(.paired(key, code: code))
         case .tooManyFailedPairings(let code): changes.yield(.tooManyFailedPairings(code: code))
+        case .unpaired: changes.yield(.unpaired)
         }
     }
 

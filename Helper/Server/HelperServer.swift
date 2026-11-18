@@ -23,6 +23,8 @@ actor HelperServer {
         case paired(SymmetricKey, code: String)
         /// Too many pairing handshakes with `code` failed, so the code must be replaced.
         case tooManyFailedPairings(code: String)
+        /// iMCP asked the helper to forget its key, and that connection ended.
+        case unpaired
     }
 
     /// A pairing that a connection started by sending a key.
@@ -48,6 +50,8 @@ actor HelperServer {
     private var failedPairings = 0
     /// Set when a pairing connection sends a key, so the code works only once.
     private var pairing: Pairing?
+    /// The session whose unpair request the helper accepted, until that session ends.
+    private var unpairSession: UUID?
     private let log = Logger.service("helper.server")
 
     /// Creates a server.
@@ -117,6 +121,7 @@ actor HelperServer {
         self.credential = credential
         failedPairings = 0
         pairing = nil
+        unpairSession = nil
         return try await start()
     }
 
@@ -191,6 +196,11 @@ actor HelperServer {
                 configuration: .strict
             )
             await serveTools(on: server)
+            await server.withMethodHandler(HomeHelperPairing.Unpair.self) { [weak self] _ in
+                guard let self else { throw MCPError.internalError("iMCP Helper stopped.") }
+                await self.receiveUnpair(session: id)
+                return Empty()
+            }
         }
         let transport = NetworkTransport(
             connection: connection,
@@ -233,6 +243,25 @@ actor HelperServer {
         sessions.removeValue(forKey: id)
         connection.cancel()
         await reportPairing()
+        await reportUnpair(session: id)
+    }
+
+    /// Remembers an unpair request, which the helper reports once its connection ends,
+    /// so iMCP receives the response before the listener restarts.
+    func receiveUnpair(session: UUID) {
+        guard sessions[session] != nil, case .key = credential else { return }
+        unpairSession = session
+        // iMCP closes the connection after the response; end it if iMCP doesn't.
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            await self?.endSession(session)
+        }
+    }
+
+    private func reportUnpair(session: UUID) async {
+        guard unpairSession == session else { return }
+        unpairSession = nil
+        await onEvent(.unpaired)
     }
 
     /// Reports a pairing once, after the helper stored the key and its connection ended,

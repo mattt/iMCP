@@ -179,6 +179,13 @@ enum HomeHelperPairing {
         }
     }
 
+    /// A request on a paired connection that asks the helper to forget iMCP's key and show a new code,
+    /// so the next pairing starts clean.
+    /// A helper without it answers with an error, and iMCP forgets its own key anyway.
+    enum Unpair: MCP.Method {
+        static let name = "imcp/unpair"
+    }
+
     // MARK: - Keychain
 
     /// Keeps the pairing key as a generic password in this app's keychain.
