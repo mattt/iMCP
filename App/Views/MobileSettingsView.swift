@@ -2,16 +2,38 @@ import CoreImage
 import CoreImage.CIFilterBuiltins
 import SwiftUI
 
-/// Pairing, sync status, and cached data for iMCP on iPhone and iPad.
+/// Pairing, sync status, the routes a phone may use, and cached data for iMCP on iPhone and iPad.
 struct MobileSettingsView: View {
     @State private var devices: [MobileDevice] = []
     @State private var connected: MobileDevice?
+    @State private var connectedTransport: MobileTransportMode?
     @State private var syncedAt: [MobileDomain: Date] = [:]
     @State private var code: MobilePairingCode?
     @State private var expires: Date?
     @State private var error: String?
     @State private var confirmingDelete = false
     @State private var removing: MobileDevice?
+    @AppStorage(MobileService.transportModeKey) private var transportModeRaw = MobileTransportMode.automatic.rawValue
+    @AppStorage(MobileService.tailscaleVPNEnabledKey) private var tailscaleVPNEnabled = true
+    @AppStorage(MobileService.tailscaleHostOverrideKey) private var tailscaleHostOverride = ""
+    @AppStorage(MobileService.cloudflareEnabledKey) private var cloudflareEnabled = false
+    @AppStorage(MobileService.cloudflareURLKey) private var cloudflareURL = ""
+    @AppStorage(MobileService.cloudflareLocalPortKey) private var cloudflareLocalPort = Int(
+        MobileLink.defaultWebSocketPort
+    )
+    @State private var isAdvancedExpanded = false
+
+    private var transportMode: Binding<MobileTransportMode> {
+        Binding(
+            get: { MobileTransportMode(rawValue: transportModeRaw) ?? .automatic },
+            set: { transportModeRaw = $0.rawValue }
+        )
+    }
+
+    private var connectionSummary: String {
+        guard let connectedTransport else { return "Connected" }
+        return "Connected via \(connectedTransport.shortLabel)"
+    }
 
     var body: some View {
         Form {
@@ -24,7 +46,7 @@ struct MobileSettingsView: View {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(device.name)
-                            Text(connected?.id == device.id ? "Connected" : "Not connected")
+                            Text(connected?.id == device.id ? connectionSummary : "Not connected")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -44,9 +66,62 @@ struct MobileSettingsView: View {
                 Text("Paired Devices")
             } footer: {
                 Text(
-                    "Build and install iMCP for iOS with Scripts/install-ios.sh from the iMCP repository. The device connects to this Mac over your local network with encryption, and nothing goes through iCloud or another server."
+                    "Build and install iMCP for iOS with Scripts/install-ios.sh from the iMCP repository. Connections are encrypted with your device key, and nothing goes through iCloud."
                 )
             }
+
+            Section {
+                Picker("Connection Route", selection: transportMode) {
+                    ForEach(MobileTransportMode.allCases, id: \.self) { mode in
+                        Text(mode.label).tag(mode)
+                    }
+                }
+
+                DisclosureGroup("Advanced", isExpanded: $isAdvancedExpanded) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Toggle("Offer Tailscale VPN", isOn: $tailscaleVPNEnabled)
+                        if tailscaleVPNEnabled {
+                            LabeledContent("Tailscale Host") {
+                                TextField(
+                                    "Tailscale Host",
+                                    text: $tailscaleHostOverride,
+                                    prompt: Text(MobileTailnet.localAddress() ?? "Not connected to Tailscale")
+                                )
+                                .labelsHidden()
+                                .multilineTextAlignment(.trailing)
+                                .frame(width: 220)
+                            }
+                        }
+
+                        Toggle("Accept Cloudflare Tunnel connections", isOn: $cloudflareEnabled)
+                        if cloudflareEnabled {
+                            LabeledContent("Public Address") {
+                                TextField("wss://example.com/mobile", text: $cloudflareURL)
+                                    .labelsHidden()
+                                    .multilineTextAlignment(.trailing)
+                                    .frame(width: 240)
+                            }
+                            LabeledContent("Local Port") {
+                                TextField("Port", value: $cloudflareLocalPort, format: .number.grouping(.never))
+                                    .labelsHidden()
+                                    .multilineTextAlignment(.trailing)
+                                    .frame(width: 70)
+                            }
+                        }
+                    }
+                    .padding(.top, 6)
+                }
+            } header: {
+                Text("Connection Route")
+            } footer: {
+                Text(
+                    "Automatic connects over your local network first, then tries the other routes this Mac offers. Tailscale VPN needs Tailscale on this Mac and on the iPhone or iPad. For Cloudflare Tunnel, forward your tunnel to the local port, then enter its public address. Tailscale Funnel appears in the pairing code once this Mac has a public address for it."
+                )
+            }
+            .onChange(of: transportModeRaw) { _, _ in applyTransportSettings() }
+            .onChange(of: tailscaleVPNEnabled) { _, _ in applyTransportSettings() }
+            .onChange(of: cloudflareEnabled) { _, _ in applyTransportSettings() }
+            .onChange(of: cloudflareLocalPort) { _, _ in applyTransportSettings() }
 
             Section {
                 ForEach(MobileDomain.allCases, id: \.self) { domain in
@@ -158,6 +233,7 @@ struct MobileSettingsView: View {
         let before = devices
         devices = await service.devices
         connected = await service.connectedDevice
+        connectedTransport = await service.connectedTransport
         for domain in MobileDomain.allCases {
             syncedAt[domain] = await service.syncedAt(domain)
         }
@@ -169,6 +245,10 @@ struct MobileSettingsView: View {
             expires = nil
         }
         if code == nil, let message = await service.pairingError { error = message }
+    }
+
+    private func applyTransportSettings() {
+        Task { await MobileService.shared.applyTransportSettings() }
     }
 
     private func syncText(_ domain: MobileDomain) -> String {
