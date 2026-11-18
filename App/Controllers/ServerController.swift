@@ -57,9 +57,11 @@ struct ToolGroup {
 enum ServiceRegistry {
     static let services: [any Service] = {
         var services: [any Service] = [
+            AlarmsService.shared,
             CalendarService.shared,
             CaptureService.shared,
             ContactsService.shared,
+            HealthService.shared,
             HomeService.shared,
             LocationService.shared,
             MapsService.shared,
@@ -83,9 +85,11 @@ enum ServiceRegistry {
     }()
 
     static func configureServices(
+        alarmsEnabled: Binding<Bool>,
         calendarEnabled: Binding<Bool>,
         captureEnabled: Binding<Bool>,
         contactsEnabled: Binding<Bool>,
+        healthEnabled: Binding<Bool>,
         homeEnabled: Binding<Bool>,
         locationEnabled: Binding<Bool>,
         mapsEnabled: Binding<Bool>,
@@ -102,6 +106,14 @@ enum ServiceRegistry {
         weatherEnabled: Binding<Bool>
     ) -> [ServiceConfig] {
         var configs: [ServiceConfig] = [
+            ServiceConfig(
+                name: "Alarms",
+                summary: "List and cancel alarms, and schedule alarms and timers on your iPhone or iPad.",
+                iconName: "alarm.fill",
+                color: .orange,
+                service: AlarmsService.shared,
+                binding: alarmsEnabled
+            ),
             ServiceConfig(
                 name: "Calendar",
                 summary: "View, create, update, and delete calendar events.",
@@ -125,6 +137,14 @@ enum ServiceRegistry {
                 color: .brown,
                 service: ContactsService.shared,
                 binding: contactsEnabled
+            ),
+            ServiceConfig(
+                name: "Health",
+                summary: "Read health samples, statistics, workouts, and clinical records from your iPhone or iPad.",
+                iconName: "heart.fill",
+                color: .pink,
+                service: HealthService.shared,
+                binding: healthEnabled
             ),
             ServiceConfig(
                 name: "Home",
@@ -259,9 +279,11 @@ final class ServerController: ObservableObject {
     private let networkManager = ServerNetworkManager()
 
     // MARK: - AppStorage for Service Enablement States
+    @AppStorage("alarmsEnabled") private var alarmsEnabled = false
     @AppStorage("calendarEnabled") private var calendarEnabled = false
     @AppStorage("captureEnabled") private var captureEnabled = false
     @AppStorage("contactsEnabled") private var contactsEnabled = false
+    @AppStorage("healthEnabled") private var healthEnabled = false
     @AppStorage("homeEnabled") private var homeEnabled = false
     @AppStorage("locationEnabled") private var locationEnabled = false
     @AppStorage("mapsEnabled") private var mapsEnabled = true  // Default enabled
@@ -307,9 +329,11 @@ final class ServerController: ObservableObject {
     // MARK: - Computed Properties for Service Configurations and Bindings
     var computedServiceConfigs: [ServiceConfig] {
         ServiceRegistry.configureServices(
+            alarmsEnabled: $alarmsEnabled,
             calendarEnabled: $calendarEnabled,
             captureEnabled: $captureEnabled,
             contactsEnabled: $contactsEnabled,
+            healthEnabled: $healthEnabled,
             homeEnabled: $homeEnabled,
             locationEnabled: $locationEnabled,
             mapsEnabled: $mapsEnabled,
@@ -456,6 +480,10 @@ final class ServerController: ObservableObject {
                 // Settings stays behind other windows after a permission prompt closes,
                 // so bring iMCP back to the front.
                 NSApp.activate(ignoringOtherApps: true)
+            }
+            if MobileService.serves(config.service) {
+                // The Mac listens for paired devices only while a mobile service is on.
+                await MobileService.shared.servicesChanged()
             }
             await networkManager.updateServiceBindings(self.currentServiceBindings)
         }
@@ -726,12 +754,61 @@ final class ServerController: ObservableObject {
                 self.finishApproval(key: key, approved: false, alwaysTrust: false)
             }
         )
+        offerOnPhone(
+            key: key,
+            kind: .connection,
+            title: "Allow \(entry.request.claimedName) to connect?",
+            details: ["Client: \(entry.request.claimedName)", entry.request.identityNote],
+            lifetime: approvals.policy.expiry
+        ) { [weak self] outcome in
+            // Approving from the phone allows this connection once; it never trusts the client.
+            self?.finishApproval(key: key, approved: outcome.isApproved, alwaysTrust: false)
+        }
 
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    // MARK: Approve on iPhone
+
+    /// Approvals that are also on the paired phone, by approval key.
+    /// The phone sees a random ID, never the key, which can derive from a credential.
+    private var phoneApprovalIDs: [String: String] = [:]
+
+    private func offerOnPhone(
+        key: String,
+        kind: RemoteApprovalKind,
+        title: String,
+        details: [String],
+        lifetime: Duration,
+        onResolved: @escaping @MainActor (RemoteApprovalOutcome) -> Void
+    ) {
+        withdrawFromPhone(key: key)
+        let id = UUID().uuidString
+        let seconds = Double(lifetime.components.seconds)
+        phoneApprovalIDs[key] = id
+        RemoteApprovals.shared.offer(
+            RemoteApprovalRequest(
+                id: id,
+                kind: kind,
+                title: title,
+                details: details,
+                expiresAt: Date().addingTimeInterval(seconds)
+            ),
+            onResolved: onResolved
+        )
+    }
+
+    /// Removes an approval from the phone once the Mac has decided it.
+    private func withdrawFromPhone(key: String) {
+        guard let id = phoneApprovalIDs.removeValue(forKey: key) else { return }
+        RemoteApprovals.shared.withdraw(id)
+    }
+
     /// Applies a person's decision to every connection waiting on the dialog for `key`.
     private func finishApproval(key: String, approved: Bool, alwaysTrust: Bool) {
+        withdrawFromPhone(key: key)
+        // An answer from the phone leaves the Mac's dialog open, so close it.
+        approvalWindowController.closeWindow(for: key)
         let resolution = approvals.resolve(key: key, approved: approved, now: .now)
         // The request expired or its connections closed while the dialog was open.
         guard let entry = resolution.removed.first else { return }
@@ -787,6 +864,7 @@ final class ServerController: ObservableObject {
         let resolution = approvals.expire(now: .now)
         for entry in resolution.removed {
             log.notice("Approval request for client \(entry.request.claimedName) expired")
+            withdrawFromPhone(key: entry.key)
             approvalWindowController.closeWindow(for: entry.key)
             for (_, waiter) in entry.waiters {
                 waiter.deny()
@@ -806,6 +884,7 @@ final class ServerController: ObservableObject {
         let (waiter, resolution) = approvals.cancel(id: connectionID)
         waiter?.deny()
         for entry in resolution.removed {
+            withdrawFromPhone(key: entry.key)
             approvalWindowController.closeWindow(for: entry.key)
         }
         resolution.promoted.forEach(presentApproval)
@@ -915,6 +994,10 @@ final class ServerController: ObservableObject {
                 Task { await self.networkManager.remoteAccess.closeSessions(forToken: id) }
             }
             self.applyRemoteAccessConfiguration()
+            // Listen for a paired iPhone or iPad so it can sync before the first tool call.
+            if self.alarmsEnabled || self.healthEnabled {
+                try? await MobileService.shared.start()
+            }
         }
     }
 
@@ -1112,7 +1195,8 @@ extension RemoteAccessServer {
             let gate = ConnectionApprovalGate()
             try? await gate.approve { true }
             // Read current permissions so changes apply to open sessions.
-            await networkManager.registerHandlers(for: server, connectionID: UUID(), gate: gate) { tool in
+            await networkManager.registerHandlers(for: server, connectionID: UUID(), gate: gate, clientName: { nil }) {
+                tool in
                 // A session belongs to an access token or to an OAuth grant.
                 // Read current permissions so that revoking or editing applies at once.
                 (tokenStore.token(id: tokenID)?.permissions ?? OAuthAuthority.shared.grant(id: tokenID)?.permissions)?
@@ -1135,7 +1219,8 @@ extension MCP.Server {
             instructions: """
                 Use iMCP for apps and data on the user's Mac: \
                 Calendar, Contacts, Location, Mail, Maps, Messages, Music, Notes, Phone, Reminders, Shortcuts, Voice Memos, Voicemail, Weather, \
-                and the camera, microphone, and screen. \
+                and the camera, microphone, and screen; \
+                and, through iMCP on the user's iPhone or iPad, Health and Alarms. \
                 Only the services that the user turns on in iMCP have tools.
                 """,
             capabilities: MCP.Server.Capabilities(
@@ -1153,6 +1238,8 @@ actor MCPConnectionManager {
     private let parentManager: ServerNetworkManager
     private let approvalGate = ConnectionApprovalGate()
     private var isStopping = false
+    /// The name the client gave when it connected, for the activity history.
+    private var clientName: String?
 
     /// Creates a manager for a socket whose client passed the code-signing check.
     /// The manager owns `descriptor` and closes it when it stops.
@@ -1179,6 +1266,7 @@ actor MCPConnectionManager {
 
                     // Request user approval for the connection.
                     let approved = await approvalHandler(clientInfo)
+                    if approved { await self.setClientName(clientInfo.name) }
                     log.info(
                         "Approval result for connection \(self.connectionID): \(approved ? "Approved" : "Denied")"
                     )
@@ -1208,11 +1296,16 @@ actor MCPConnectionManager {
         }
     }
 
+    private func setClientName(_ name: String) {
+        clientName = name
+    }
+
     private func registerHandlers() async {
         await parentManager.registerHandlers(
             for: server,
             connectionID: connectionID,
-            gate: approvalGate
+            gate: approvalGate,
+            clientName: { [weak self] in await self?.clientName }
         )
     }
 
@@ -1657,6 +1750,7 @@ actor ServerNetworkManager {
         for server: MCP.Server,
         connectionID: UUID,
         gate: ConnectionApprovalGate,
+        clientName: @escaping @Sendable () async -> String?,
         isToolAllowed: (@Sendable (Tool) async -> Bool)? = nil
     ) async {
         await server.withApprovedMethodHandler(ListPrompts.self, gate: gate) { _ in
@@ -1677,6 +1771,8 @@ actor ServerNetworkManager {
             log.debug("Handling ListTools request for \(connectionID)")
 
             var tools: [MCP.Tool] = []
+            // Services can share a tool, such as mobile_status; list it once.
+            var names = Set<String>()
             if await self.isEnabledState {
                 for service in await self.services {
                     let serviceId = String(describing: type(of: service))
@@ -1693,6 +1789,7 @@ actor ServerNetworkManager {
                             if let isToolAllowed, await !isToolAllowed(tool) {
                                 continue
                             }
+                            guard names.insert(tool.name).inserted else { continue }
                             log.debug("Adding tool: \(tool.name)")
                             tools.append(
                                 .init(
@@ -1719,10 +1816,39 @@ actor ServerNetworkManager {
                 )
             }
 
+            let start = ContinuousClock.now
+            let resolvedClient = await clientName() ?? "Unknown client"
+            let services = await self.services
+            let matchedService = services.first { $0.tools.contains { $0.name == params.name } }
+            let matchedTool = matchedService?.tools.first { $0.name == params.name }
+            let serviceName = matchedService.map(Self.serviceDisplayName) ?? "Unknown"
+            let isWrite = matchedTool.map { $0.annotations.readOnlyHint != true } ?? false
+
+            /// Adds the call to the activity history that paired iPhones and iPads show.
+            func record(_ outcome: MobileActivityEvent.Outcome, detail: String? = nil) async {
+                let elapsed = ContinuousClock.now - start
+                let milliseconds = max(
+                    0,
+                    Int(elapsed.components.seconds) * 1000 + Int(elapsed.components.attoseconds / 1_000_000_000_000_000)
+                )
+                await MobileService.shared.recordActivity(
+                    MobileActivityEvent(
+                        clientName: resolvedClient,
+                        serviceName: serviceName,
+                        toolName: params.name,
+                        isWrite: isWrite,
+                        outcome: outcome,
+                        detail: detail,
+                        durationMs: milliseconds
+                    )
+                )
+            }
+
             log.notice("Tool call received from \(connectionID): \(params.name)")
 
             guard await self.isEnabledState else {
                 log.notice("Tool call rejected: iMCP is disabled")
+                await record(.denied, detail: "iMCP is disabled")
                 return CallTool.Result(
                     content: [
                         .text(
@@ -1737,6 +1863,7 @@ actor ServerNetworkManager {
 
             if await self.disabledTools.contains(params.name) {
                 log.notice("Tool call rejected: \(params.name) is disabled")
+                await record(.denied, detail: "The tool is turned off in iMCP settings")
                 return CallTool.Result(
                     content: [
                         .text(
@@ -1784,6 +1911,7 @@ actor ServerNetworkManager {
                         }
 
                         log.notice("Tool \(params.name) executed successfully for \(connectionID)")
+                        await record(.succeeded)
                         switch value {
                         case .data(let mimeType?, let data) where mimeType.hasPrefix("audio/"):
                             return CallTool.Result(
@@ -1828,6 +1956,7 @@ actor ServerNetworkManager {
                         log.error(
                             "Error executing tool \(params.name): \(error.localizedDescription)"
                         )
+                        await record(.failed, detail: error.localizedDescription)
                         return CallTool.Result(
                             content: [.text(text: "Error: \(error)", annotations: nil, _meta: nil)],
                             isError: true
@@ -1837,13 +1966,18 @@ actor ServerNetworkManager {
             }
 
             // Say why no service answered, so that an intermittent failure can be traced.
-            if let owner = await self.services.first(where: { $0.tools.contains { $0.name == params.name } }) {
+            if let owner = matchedService {
                 let serviceId = String(describing: type(of: owner))
                 let binding = await self.serviceBindings[serviceId]
                 let state = binding.map { $0.wrappedValue ? "on" : "off" } ?? "missing"
                 log.error(
                     "Tool \(params.name, privacy: .public) belongs to \(serviceId, privacy: .public), whose binding is \(state, privacy: .public)"
                 )
+            }
+            if matchedService == nil {
+                await record(.failed, detail: "Tool not found")
+            } else {
+                await record(.denied, detail: "The \(serviceName) service is turned off")
             }
             log.error("Tool not found or service not enabled: \(params.name)")
             return CallTool.Result(
@@ -1852,6 +1986,31 @@ actor ServerNetworkManager {
                 ],
                 isError: true
             )
+        }
+    }
+
+    private static func serviceDisplayName(_ service: any Service) -> String {
+        switch service {
+        case is AlarmsService: return "Alarms"
+        case is CalendarService: return "Calendar"
+        case is CaptureService: return "Capture"
+        case is ContactsService: return "Contacts"
+        case is HealthService: return "Health"
+        case is HomeService: return "Home"
+        case is LocationService: return "Location"
+        case is MapsService: return "Maps"
+        case is MailService: return "Mail"
+        case is MessageService: return "Messages"
+        case is MusicService: return "Music"
+        case is NotesService: return "Notes"
+        case is PhoneService: return "Phone"
+        case is RemindersService: return "Reminders"
+        case is ShortcutsService: return "Shortcuts"
+        case is UtilitiesService: return "Utilities"
+        case is VoiceMemosService: return "Voice Memos"
+        default:
+            let raw = String(describing: type(of: service))
+            return raw.hasSuffix("Service") ? String(raw.dropLast("Service".count)) : raw
         }
     }
 
