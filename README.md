@@ -75,7 +75,7 @@ and a [growing list of clients][mcp-clients] that support the
       <img src="Assets/notes.svg" width="48" height="48" alt="" role="presentation"/>
     </th>
     <td><strong>Notes</strong></td>
-    <td>Search notes by text, tag, folder, date, pinned state, or what they contain (checklists, tables, links, attachments), and read them as Markdown. List accounts, folders, tags, attachments, and counts.</td>
+    <td>Search notes by text, tag, folder, date, pinned state, or what they contain (checklists, tables, links, attachments), and read them as Markdown. List accounts, folders, tags, attachments, and counts. With Allow writes on, create notes and folders.</td>
   </tr>
   <tr>
     <th width="48">
@@ -748,7 +748,7 @@ The Notes app keeps them in a SQLite database at
 Recent edits sit in its write-ahead log,
 so the Notes service asks you to open the `group.com.apple.notes` folder
 rather than the file alone.
-iMCP only reads the database; it never changes your notes.
+iMCP reads notes from the database and never writes to it.
 
 Each note's contents are stored as a gzip-compressed protocol buffer:
 the text, followed by runs that give the formatting of each part of it.
@@ -773,6 +773,34 @@ need to read each candidate note's contents,
 so a call reads at most 500 notes and returns a `nextCursor` to continue.
 Notes can't be created or changed, and smart folders aren't listed yet,
 because TopoText doesn't expose them.
+
+The Notes service can also create notes and folders,
+but only while **Allow writes** is on in iMCP's Notes settings, where it is off by default.
+These tools (`notes_create` and `notes_create_folder`)
+ask the Notes app to make the note or folder with its own scripting interface,
+so Notes stores it as it stores anything else that it makes.
+They need Automation permission for Notes,
+which macOS asks you for the first time.
+iMCP never edits, moves, or deletes a note that exists:
+scripting rewrites a note's whole body,
+and doing that to a note with attachments, checklists, links, or tags
+silently drops them.
+Even a new note keeps less than you might write,
+because Notes drops what it can't store:
+
+- A link keeps its text but not its address,
+  so iMCP writes Markdown links as the text followed by the address.
+- Notes has no checklists to create through scripting,
+  so a Markdown task becomes a bullet that starts with ☐ or ☑.
+- A numbered list would merge into the bullet list before it,
+  so iMCP writes numbered items as lines that start with their numbers.
+- Block quotes and code blocks become plain and monospaced text,
+  and headings become bold text in a larger size,
+  not the Heading styles.
+
+iMCP passes a note's title, text, and folder to a fixed script as parameters
+and never builds a script from them,
+so nothing in a title or a note can change what the script does.
 
 ### JSON-LD for Tool Results
 
