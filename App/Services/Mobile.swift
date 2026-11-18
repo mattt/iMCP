@@ -18,9 +18,11 @@ actor MobileService: MobileBackend {
 
     private let log = Logger.service("mobile")
     private var cache: MobileCache?
+    private var activityStore: MobileActivityStore?
     private let pairings: any MobilePairingStore
     private let reconnectGrace: Duration
     private let livenessTimeout: Duration
+    private let activityStoreOpener: @Sendable () throws -> MobileActivityStore
     private let advertise: Bool
     private let pollInterval: Duration
     private let codeLifetime: TimeInterval
@@ -33,6 +35,8 @@ actor MobileService: MobileBackend {
     private var link: (any MobilePeerLink)?
     private var syncTask: Task<Void, Never>?
     private var draining = false
+    private var syncingActivity = false
+    private var needsActivitySync = false
     private var lastPairingError: String?
 
     /// How long a pairing code works after iMCP shows it.
@@ -44,18 +48,22 @@ actor MobileService: MobileBackend {
     ///     While none is, the Mac listens only for a pairing code.
     init(
         cache: MobileCache? = nil,
+        activityStore: MobileActivityStore? = nil,
         pairings: any MobilePairingStore = MobileKeychainPairings(),
         reconnectGrace: Duration = .seconds(5),
         livenessTimeout: Duration = .seconds(3),
+        activityStoreOpener: @escaping @Sendable () throws -> MobileActivityStore = { try .standard() },
         advertise: Bool = true,
         pollInterval: Duration = .seconds(15),
         codeLifetime: TimeInterval = MobileService.pairingLifetime,
         isEnabled: @escaping @Sendable () -> Bool = { true }
     ) {
         self.cache = cache
+        self.activityStore = activityStore
         self.pairings = pairings
         self.reconnectGrace = reconnectGrace
         self.livenessTimeout = livenessTimeout
+        self.activityStoreOpener = activityStoreOpener
         self.advertise = advertise
         self.pollInterval = pollInterval
         self.codeLifetime = codeLifetime
@@ -302,6 +310,7 @@ actor MobileService: MobileBackend {
     /// also deletes the Mac's copy of mobile data.
     func unpair(_ device: String) async {
         pairings.remove(device)
+        await activityStore?.resetAcknowledgement(for: device)
         if let current = link, current.device.id == device {
             link = nil
             syncTask?.cancel()
@@ -504,9 +513,75 @@ actor MobileService: MobileBackend {
     private func syncLoop(_ link: any MobilePeerLink) async {
         await refreshPhoneStatus(link)
         while !Task.isCancelled, self.link === link {
+            // Activity first: it is small, and a long drain of queued batches
+            // must not keep the phone's history empty if the connection is short.
+            await syncActivity(link)
             await drain(link)
             try? await Task.sleep(for: pollInterval)
         }
+    }
+
+    // MARK: - Activity History
+
+    private func openActivityStore() throws -> MobileActivityStore {
+        if let activityStore { return activityStore }
+        let store = try activityStoreOpener()
+        self.activityStore = store
+        return store
+    }
+
+    /// Records a tool call in the Mac's activity history and pushes it to the connected phone.
+    func recordActivity(_ event: MobileActivityEvent) async {
+        guard let store = try? openActivityStore() else { return }
+        _ = await store.record(event)
+        if let link {
+            await syncActivity(link)
+        }
+    }
+
+    func activityEvents() async -> [MobileActivityEvent] {
+        guard let store = try? openActivityStore() else { return [] }
+        return await store.allEvents()
+    }
+
+    /// Pushes unsent activity events to `link` and records the phone's acknowledgement.
+    func syncActivity(_ link: any MobilePeerLink) async {
+        // Open the store from disk: after a relaunch it holds events that no phone has received yet.
+        guard let store = try? openActivityStore() else { return }
+        if syncingActivity {
+            needsActivitySync = true
+            return
+        }
+        syncingActivity = true
+        defer { syncingActivity = false }
+
+        repeat {
+            needsActivitySync = false
+            while self.link === link {
+                let pending = await store.pendingEvents(for: link.device.id)
+                guard !pending.isEmpty else { break }
+                do {
+                    let request = MobileActivitySyncRequest(events: pending)
+                    let arguments = try JSONDecoder().decode(
+                        [String: Value].self,
+                        from: MobileCoding.encoder.encode(request)
+                    )
+                    let text = try await link.call(MobileActivityLink.syncTool, arguments)
+                    let response = try MobileCoding.decoder.decode(
+                        MobileActivitySyncResponse.self,
+                        from: Data(text.utf8)
+                    )
+                    let acked = response.ackedSequence > 0 ? response.ackedSequence : (pending.last?.sequence ?? 0)
+                    await store.acknowledge(acked, for: link.device.id)
+                } catch is MobileLinkLost {
+                    detach(link)
+                    return
+                } catch {
+                    log.debug("Activity sync skipped or failed: \(error.localizedDescription, privacy: .public)")
+                    return
+                }
+            }
+        } while needsActivitySync && self.link === link
     }
 
     /// Pulls queued batches from the phone, applies each to the cache,
