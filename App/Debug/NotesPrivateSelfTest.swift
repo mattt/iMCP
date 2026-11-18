@@ -25,12 +25,12 @@
         static func run() async -> String {
             let suite = UserDefaults(suiteName: "NotesPrivateSelfTest")!
             suite.set(true, forKey: NotesPrivate.settingKey)
-            suite.set(true, forKey: NotesWriteTools.settingKey)
+            NotesWriteTools.setWritesEnabled(true, in: suite)
             let off = UserDefaults(suiteName: "NotesPrivateSelfTestOff")!
             off.removePersistentDomain(forName: "NotesPrivateSelfTestOff")
             let readOnly = UserDefaults(suiteName: "NotesPrivateSelfTestReadOnly")!
             readOnly.set(true, forKey: NotesPrivate.settingKey)
-            readOnly.set(false, forKey: NotesWriteTools.settingKey)
+            NotesWriteTools.setWritesEnabled(false, in: readOnly)
 
             let stamp: String = {
                 let f = DateFormatter()

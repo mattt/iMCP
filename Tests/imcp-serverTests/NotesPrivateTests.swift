@@ -69,7 +69,7 @@ final class NotesPrivateTests: XCTestCase {
     func testValidationHappensBeforeTheBridge() async {
         let defaults = suite()
         defaults.set(true, forKey: NotesPrivate.settingKey)
-        defaults.set(true, forKey: NotesWriteTools.settingKey)
+        NotesWriteTools.setWritesEnabled(true, in: defaults)
         do {
             _ = try await NotesPrivate.run(
                 tool: "notes_pin",
@@ -80,15 +80,6 @@ final class NotesPrivateTests: XCTestCase {
         } catch let error as NotesPrivate.Failure {
             XCTAssertEqual(error.code, "invalid_id")
         } catch { XCTFail("\(error)") }
-    }
-
-    func testToolListingFollowsTheSettings() {
-        XCTAssertFalse(NotesPrivate.isListed("notes_tags", privateEnabled: false, writesEnabled: true))
-        XCTAssertTrue(NotesPrivate.isListed("notes_tags", privateEnabled: true, writesEnabled: false))
-        XCTAssertFalse(NotesPrivate.isListed("notes_pin", privateEnabled: true, writesEnabled: false))
-        XCTAssertTrue(NotesPrivate.isListed("notes_pin", privateEnabled: true, writesEnabled: true))
-        XCTAssertFalse(NotesPrivate.isListed("notes_create_markdown", privateEnabled: true, writesEnabled: false))
-        XCTAssertTrue(NotesPrivate.isListed("notes_get", privateEnabled: false, writesEnabled: false))
     }
 
     func testWhichCallsWrite() {

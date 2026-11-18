@@ -41,7 +41,17 @@ enum NotesWriteTools {
     static let toolNames: Set<String> = ["notes_create", "notes_create_folder"]
 
     static var isEnabledInSettings: Bool {
-        UserDefaults.standard.bool(forKey: settingKey)
+        writesEnabled(in: .standard)
+    }
+
+    /// Whether changes are on in `defaults`.
+    static func writesEnabled(in defaults: UserDefaults) -> Bool {
+        defaults.bool(forKey: settingKey)
+    }
+
+    /// Turns changes on or off in `defaults`. Used by tests and the DEBUG self-test.
+    static func setWritesEnabled(_ isEnabled: Bool, in defaults: UserDefaults) {
+        defaults.set(isEnabled, forKey: settingKey)
     }
 
     /// Throws unless `isEnabled`, so that a tool changes nothing while the setting is off.

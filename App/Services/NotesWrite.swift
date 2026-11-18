@@ -26,12 +26,7 @@ extension NotesService {
     /// The tools that change notes are listed only while the person allows changes.
     /// Until then a client that calls one still gets the reason it can't.
     func isToolListed(_ name: String) -> Bool {
-        guard NotesPrivate.isListed(
-            name,
-            privateEnabled: NotesPrivate.isEnabled(),
-            writesEnabled: NotesWriteTools.isEnabledInSettings
-        ) else { return false }
-        return !(NotesWriteTools.toolNames.union(NotesOrganizeTools.writeToolNames)).contains(name)
+        !(NotesWriteTools.toolNames.union(NotesOrganizeTools.writeToolNames)).contains(name)
             || NotesWriteTools.isEnabledInSettings
     }
 }

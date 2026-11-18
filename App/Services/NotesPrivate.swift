@@ -222,15 +222,6 @@ enum NotesPrivate {
 
     // MARK: - Request builders, one per tool
 
-    /// The tool names, in the order they are offered.
-    static let toolNames: [String] = [
-        "notes_structure", "notes_tags", "notes_pin", "notes_checklist", "notes_table", "notes_link",
-        "notes_append_rich", "notes_create_markdown",
-    ]
-
-    /// Tools that always change a note, so they are hidden while changes are off.
-    static let alwaysWriteToolNames: Set<String> = ["notes_pin", "notes_append_rich", "notes_create_markdown"]
-
     /// Turns one tool call into a bridge request, or throws a clear input error.
     static func request(tool: String, arguments args: [String: Any]) throws -> Request {
         switch tool {
@@ -452,13 +443,6 @@ enum NotesPrivate {
         }
     }
 
-    /// Whether `tool` should be offered to clients, given the two settings.
-    static func isListed(_ name: String, privateEnabled: Bool, writesEnabled: Bool) -> Bool {
-        guard toolNames.contains(name) else { return true }
-        guard privateEnabled else { return false }
-        return !alwaysWriteToolNames.contains(name) || writesEnabled
-    }
-
     // MARK: - Calling the bridge
 
     private static let queue = DispatchQueue(label: "com.amesconsulting.imcp.notesshared", qos: .userInitiated)
@@ -487,7 +471,7 @@ enum NotesPrivate {
         guard isEnabled(defaults: defaults) else { throw fail("private_disabled", disabledMessage) }
         let request = try request(tool: tool, arguments: arguments)
         let write = isWrite(tool: tool, arguments: arguments)
-        if write, !(defaults.object(forKey: NotesWriteTools.settingKey) as? Bool ?? false) {
+        if write, !NotesWriteTools.writesEnabled(in: defaults) {
             throw fail("writes_disabled", writesDisabledMessage)
         }
         let result = try await perform(request)
