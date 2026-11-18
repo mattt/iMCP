@@ -86,6 +86,16 @@ struct StatusView: View {
                 Section {
                     LabeledContent("Mac", value: connection.credentials?.macName ?? "Not paired")
                     LabeledContent("Status", value: statusText)
+                    if connection.phase == .connected, let route = connection.activeTransport {
+                        LabeledContent("Via", value: route.shortLabel)
+                    }
+                    if connection.credentials != nil {
+                        NavigationLink {
+                            TransportSettingsView(connection: connection)
+                        } label: {
+                            LabeledContent("Connection Mode", value: connection.transportMode.shortLabel)
+                        }
+                    }
                     if connection.phase != .connected, let last = connection.lastConnected {
                         LabeledContent("Last connected", value: last.formatted(date: .omitted, time: .shortened))
                     }
@@ -99,7 +109,7 @@ struct StatusView: View {
                     }
                 } footer: {
                     Text(
-                        "iMCP sends data only to the Mac you pair, over your local network with encryption. Nothing goes to iCloud or another server."
+                        "iMCP sends data only to the Mac you pair, encrypted with a key that only the two devices have. Nothing goes through iCloud or another server."
                     )
                 }
 
@@ -234,7 +244,7 @@ struct PairingView: View {
                     }
                 } footer: {
                     Text(
-                        "In iMCP on your Mac, open Settings > iPhone & iPad and click Pair, then scan the code. Both devices must be on the same network."
+                        "In iMCP on your Mac, open Settings > iPhone & iPad and click Pair, then scan the code. To pair away from home, both devices need a route to each other, such as Tailscale."
                     )
                 }
                 Section("Or Paste the Pairing Link") {

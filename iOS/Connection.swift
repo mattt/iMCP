@@ -231,6 +231,28 @@ final class PhoneConnection: ObservableObject {
         start()
     }
 
+    /// Saves addresses that the person typed for the Mac, and reconnects with them.
+    /// A blank field removes that route.
+    func updateEndpoints(
+        tailnetHost: String?,
+        tailnetPort: UInt16?,
+        funnelURL: String?,
+        cloudflareURL: String?
+    ) throws {
+        guard var current = credentials else { return }
+        let host = tailnetHost?.trimmingCharacters(in: .whitespacesAndNewlines)
+        current.tailnetHost = (host?.isEmpty == false) ? host : nil
+        current.tailnetPort = (tailnetPort ?? 0) > 0 ? tailnetPort : nil
+        current.funnelURL = MobileLink.normalizedWebSocketURL(funnelURL)
+        current.cloudflareURL = MobileLink.normalizedWebSocketURL(cloudflareURL)
+        guard current != credentials else { return }
+        try current.save()
+        credentials = current
+        guard loop != nil else { return }
+        stop()
+        start()
+    }
+
     // MARK: - Foreground
 
     /// The one dial in flight. The foreground loop, a background flush, and a refresh
