@@ -1845,6 +1845,7 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 7A115CA1E000000000000001 /* XCRemoteSwiftPackageReference "libtailscale" */;
 			productName = TailscaleKit;
+		};
 		C60000000000000000000014 /* MCP */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = F8D7C3182DCBD32100A4775F /* XCRemoteSwiftPackageReference "swift-sdk" */;
