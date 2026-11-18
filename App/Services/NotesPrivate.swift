@@ -300,7 +300,10 @@ enum NotesPrivate {
             if args["ids"] != nil || args["old"] != nil || args["new"] != nil || args["folder"] != nil {
                 throw fail("invalid_arguments", "\(action) takes id and tags.")
             }
-            return Request(action: "tags.change", args: ["mode": action, "id": try noteID(args), "tags": try tagList(args)])
+            return Request(
+                action: "tags.change",
+                args: ["mode": action, "id": try noteID(args), "tags": try tagList(args)]
+            )
         default:
             if args["tags"] != nil || args["folder"] != nil {
                 throw fail("invalid_arguments", "replace takes ids (or id), old, and new.")
@@ -350,7 +353,9 @@ enum NotesPrivate {
             let text = try string(args, "text", limit: maxChecklistItemLength)
             if let raw = args["index"], !(raw is NSNull) {
                 guard text == nil else { throw fail("conflicting_item", "Pass index or text, not both.") }
-                guard let number = raw as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(), let n = Int(exactly: number), n >= 0, n < 10_000 else {
+                guard let number = raw as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
+                    let n = Int(exactly: number), n >= 0, n < 10_000
+                else {
                     throw fail("invalid_index", "index must be a whole number, counted from 0.")
                 }
                 out["index"] = n
@@ -436,7 +441,9 @@ enum NotesPrivate {
         switch tool {
         case "notes_structure": return false
         case "notes_tags": return (args["action"] as? String)?.lowercased() != "list"
-        case "notes_checklist": return (args["action"] as? String)?.lowercased() == "add" || (args["action"] as? String)?.lowercased() == "set"
+        case "notes_checklist":
+            return (args["action"] as? String)?.lowercased() == "add"
+                || (args["action"] as? String)?.lowercased() == "set"
         case "notes_table": return (args["action"] as? String)?.lowercased() == "create"
         case "notes_link": return (args["action"] as? String)?.lowercased() == "insert"
         default: return true

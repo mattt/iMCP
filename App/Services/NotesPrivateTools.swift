@@ -95,7 +95,9 @@ enum NotesPrivateTools {
             properties: [
                 "id": .string(description: idHelp),
                 "pinned": .boolean(description: "true to pin, false to unpin"),
-                "expected_pinned": .boolean(description: "The pinned state you last read; the call is refused if it differs"),
+                "expected_pinned": .boolean(
+                    description: "The pinned state you last read; the call is refused if it differs"
+                ),
             ],
             required: ["id", "pinned"]
         )
@@ -111,7 +113,9 @@ enum NotesPrivateTools {
                 "action": actions(["get", "add", "set"]),
                 "id": .string(description: idHelp),
                 "items": .array(description: "One-line item texts, for add", items: .string()),
-                "done": .boolean(description: "For add, whether the new items start done (default false). For set, the state to set"),
+                "done": .boolean(
+                    description: "For add, whether the new items start done (default false). For set, the state to set"
+                ),
                 "index": .integer(description: "Checklist item number counted from 0, for set"),
                 "text": .string(description: "Exact item text, for set, when index is not used"),
             ],
@@ -180,9 +184,14 @@ enum NotesPrivateTools {
                 "Create a note from Markdown with Notes' own native importer: # becomes the note's title and headings, - [ ] becomes a real checklist, bold and italic are kept. title adds a first heading when the Markdown has none. The note goes in the given folder (Parent/Child) or the account's default folder. Verified by reading the new note back. Needs Allow iMCP to change notes and folders.",
             properties: [
                 "markdown": .string(description: "The note's Markdown"),
-                "title": .string(description: "Title, used as a first heading when the Markdown does not start with one"),
+                "title": .string(
+                    description: "Title, used as a first heading when the Markdown does not start with one"
+                ),
                 "folder": .string(description: "Folder, written as Parent/Child. Leave out for the default folder"),
-                "account": .string(description: "Account name, to choose among folders with the same name or the account for the default folder"),
+                "account": .string(
+                    description:
+                        "Account name, to choose among folders with the same name or the account for the default folder"
+                ),
             ],
             required: ["markdown"]
         )
