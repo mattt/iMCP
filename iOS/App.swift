@@ -9,10 +9,11 @@ struct MobileApp: App {
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var connection = PhoneConnection.shared
     @StateObject private var activity = PhoneActivityStore.shared
+    @StateObject private var approvals = PhoneApprovals.shared
 
     var body: some Scene {
         WindowGroup {
-            StatusView(connection: connection, activity: activity)
+            StatusView(connection: connection, activity: activity, approvals: approvals)
                 .onOpenURL { url in
                     // A pairing link opened from the Mac, for example through AirDrop.
                     guard let code = MobilePairingCode(url: url) else { return }
@@ -25,8 +26,15 @@ struct MobileApp: App {
                 connection.start()
                 Task { await PhoneBackend.shared.syncAll() }
             case .background:
-                connection.stop()
                 MobileAppDelegate.scheduleRefresh()
+                // Stay connected for iOS's short grace period, so the Mac can still reach
+                // an approval that arrives as the person leaves the app.
+                Task {
+                    await PhoneApprovals.holdingTheApp("Stay reachable for approvals") {
+                        try? await Task.sleep(for: .seconds(25))
+                    }
+                    if UIApplication.shared.applicationState != .active { connection.stop() }
+                }
             default: break
             }
         }
@@ -41,6 +49,7 @@ final class MobileAppDelegate: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
+        PhoneApprovals.shared.configureNotifications()
         BGTaskScheduler.shared.register(forTaskWithIdentifier: Self.refreshIdentifier, using: nil) { task in
             Self.handleRefresh(task)
         }
@@ -77,12 +86,14 @@ final class MobileAppDelegate: NSObject, UIApplicationDelegate {
 struct StatusView: View {
     @ObservedObject var connection: PhoneConnection
     @ObservedObject var activity: PhoneActivityStore
+    @ObservedObject var approvals: PhoneApprovals
     @State private var showingPairing = false
     @State private var confirmingUnpair = false
 
     var body: some View {
         NavigationStack {
             List {
+                ApprovalsSection(approvals: approvals)
                 Section {
                     LabeledContent("Mac", value: connection.credentials?.macName ?? "Not paired")
                     LabeledContent("Status", value: statusText)
@@ -127,7 +138,15 @@ struct StatusView: View {
                     "This device stops sending data and asks the Mac to forget it. If no other device is paired, the Mac also deletes its copy of the data. If the Mac can't be reached, remove this device in iMCP Settings on the Mac."
                 )
             }
-            .task { await connection.refreshQueue() }
+            .task {
+                await connection.refreshQueue()
+                approvals.requestNotificationPermission()
+                // Expired requests leave the screen on their own.
+                while !Task.isCancelled {
+                    approvals.refresh()
+                    try? await Task.sleep(for: .seconds(1))
+                }
+            }
         }
     }
 
