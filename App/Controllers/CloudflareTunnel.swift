@@ -1,3 +1,4 @@
+import AppKit
 import Combine
 import Darwin
 import Foundation
@@ -863,6 +864,7 @@ final class CloudflareTunnelController: ObservableObject {
     private var generation = 0
     private var tunnelStartedAt: Date?
     private var consecutiveRestarts = 0
+    private var wakeObserver: (any NSObjectProtocol)?
 
     init(
         secretStorage: any CloudflareSecretStorage = KeychainCloudflareSecretStorage(),
@@ -889,6 +891,24 @@ final class CloudflareTunnelController: ObservableObject {
         self.isBinaryAvailable = processRunner.findBinary() != nil
 
         restoreInitialState()
+        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.reconnectAfterWake() }
+        }
+    }
+
+    /// After the Mac wakes, a tunnel that failed while it slept shouldn't wait out its delay.
+    private func reconnectAfterWake() {
+        guard isEnabled, processHandle == nil, let port = currentLoopbackPort else { return }
+        log.notice("Reconnecting Cloudflare Tunnel after wake")
+        consecutiveRestarts = 0
+        connectTask?.cancel()
+        connectTask = Task { [weak self] in
+            await self?.connect(localPort: port)
+        }
     }
 
     // MARK: Naming Helpers
@@ -1332,7 +1352,7 @@ final class CloudflareTunnelController: ObservableObject {
     static let stableSeconds: TimeInterval = 120
 
     /// Starts the tunnel again after `cloudflared` exited without being asked to,
-    /// with growing delays, and shows the failure only while it can't reconnect.
+    /// with growing delays that stop growing at the last one, and shows the failure only while it can't reconnect.
     private func restartAfterExit(status: Int32, detail: String, localPort: UInt16, generation current: Int) {
         if let started = tunnelStartedAt, Date().timeIntervalSince(started) >= Self.stableSeconds {
             consecutiveRestarts = 0
@@ -1340,11 +1360,8 @@ final class CloudflareTunnelController: ObservableObject {
         let attempt = consecutiveRestarts
         consecutiveRestarts += 1
         state = .failed(CloudflareError.processExited(status, detail).localizedDescription)
-        guard attempt < Self.restartDelays.count else {
-            log.error("Cloudflare Tunnel stopped after \(attempt, privacy: .public) restarts")
-            return
-        }
-        let delay = Self.restartDelays[attempt]
+        // Keep trying: the last delay repeats until the tunnel stays up or someone turns it off.
+        let delay = Self.restartDelays[min(attempt, Self.restartDelays.count - 1)]
         log.notice("Restarting Cloudflare Tunnel in \(delay, privacy: .public) seconds")
         connectTask?.cancel()
         connectTask = Task { [weak self] in
