@@ -991,8 +991,10 @@ Health asks for each group of types, such as Activity or Sleep, separately.
 To unpair, remove the device in Settings > iPhone & iPad on the Mac,
 or tap Unpair in iMCP on the device.
 
-The device connects to the Mac only over your local network;
+The device connects to the Mac over your local network by default;
 nothing goes through iCloud or another server.
+Settings > iPhone & iPad on the Mac can also offer a Tailscale address
+or a Cloudflare Tunnel you set up yourself, see [Reaching the Mac away from home](#reaching-the-mac-away-from-home).
 The connection uses TLS 1.2 with a pre-shared key from pairing
 and an ephemeral X25519 key exchange, which gives it forward secrecy.
 The pairing code and its link contain the pairing secret.
@@ -1047,6 +1049,52 @@ and 1 hour for Alarms.
 After a lost connection, a read is retried once when the device reconnects
 and otherwise answers from the cache.
 Alarm changes carry an ID, so retrying one doesn't create a second alarm.
+
+The Mac keeps the live link when the same device connects a second time,
+and the device joins one in-flight connection attempt
+instead of dialing from several places at once.
+Pull to refresh on the device gives up after 8 seconds and tries the Mac again at once.
+Syncs run under a background task assertion,
+and the outbox lives in the app's own container instead of the App Group container,
+because iOS ended the app with `0xdead10cc` for holding a SQLite lock in a shared container while it suspended.
+The first launch after the change moves queued batches and Health anchors across.
+
+The Mac records each tool call
+(client, service, tool, read or write, outcome, and duration)
+in an activity history of the last 500 calls and syncs it to the device,
+which shows it under Activity with filters and search.
+Turn it off with "Show activity history on iPhone and iPad" in Settings > iPhone & iPad.
+
+The Mac also offers each connection request to the paired device,
+and the first answer from either device wins.
+Approving on the device allows that one connection and never trusts the client.
+A request nobody answers is denied.
+Turn this off with "Approve on iPhone" in Settings > iPhone & iPad.
+
+#### Reaching the Mac away from home
+
+Connection Mode on the device and Connection Route on the Mac choose how the device finds the Mac:
+
+- **Local network** (Bonjour), always first in Automatic.
+- **Tailscale VPN**, when the Mac and the device are on the same tailnet.
+  The Mac advertises the address of its own Tailscale interface,
+  or a host you type under Advanced.
+- **Cloudflare Tunnel**, when you forward your own tunnel to a local port
+  and enter its public `wss://` address under Advanced.
+- **Tailscale Funnel**, when something on the Mac supplies a Funnel address.
+  Nothing in this pull request does; see the public access work for that.
+
+Automatic tries the routes in the order set on the Mac and skips routes with no address.
+Each route has its own time budget, and the last one gets what is left.
+Routes other than the local network use an encrypted WebSocket
+keyed from the same device key and an ephemeral X25519 exchange,
+so the tunnel or Funnel host only carries ciphertext.
+
+The Mac decides the device's routes.
+It sends its route list, with a revision number that only goes up,
+when the device connects and again whenever you change the settings while it is connected.
+The device shows which Mac configured it and follows that order;
+Settings > iPhone & iPad on the Mac shows the revision each device has applied.
 
 HealthKit encrypts its store while the device is locked,
 and wakes apps in the background at most hourly for common types,
