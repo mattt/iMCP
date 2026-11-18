@@ -861,6 +861,8 @@ final class CloudflareTunnelController: ObservableObject {
     private var currentLoopbackPort: UInt16?
     private var connectTask: Task<Void, Never>?
     private var generation = 0
+    private var tunnelStartedAt: Date?
+    private var consecutiveRestarts = 0
 
     init(
         secretStorage: any CloudflareSecretStorage = KeychainCloudflareSecretStorage(),
@@ -1140,6 +1142,7 @@ final class CloudflareTunnelController: ObservableObject {
 
     func disconnect() {
         generation += 1
+        consecutiveRestarts = 0
         connectTask?.cancel()
         connectTask = nil
         stopProcess()
@@ -1237,10 +1240,14 @@ final class CloudflareTunnelController: ObservableObject {
                 Task { @MainActor [weak self] in
                     guard let self, current == self.generation, self.isEnabled else { return }
                     self.processHandle = nil
-                    self.state = .failed(CloudflareError.processExited(status, detail).localizedDescription)
+                    log.error(
+                        "cloudflared exited with status \(status, privacy: .public): \(detail, privacy: .public)"
+                    )
+                    self.restartAfterExit(status: status, detail: detail, localPort: localPort, generation: current)
                 }
             }
             processHandle = handle
+            tunnelStartedAt = Date()
             let publicURL = FunnelPolicy.publicURL(host: provisioned.hostname)
             state = .connected(
                 url: publicURL,
@@ -1317,5 +1324,33 @@ final class CloudflareTunnelController: ObservableObject {
     private func stopProcess() {
         processHandle?.terminate()
         processHandle = nil
+    }
+
+    /// Seconds to wait before each restart after `cloudflared` exits on its own.
+    static let restartDelays: [Double] = [2, 5, 15, 30, 60]
+    /// A tunnel that ran this long counts as healthy, so the next exit starts the delays over.
+    static let stableSeconds: TimeInterval = 120
+
+    /// Starts the tunnel again after `cloudflared` exited without being asked to,
+    /// with growing delays, and shows the failure only while it can't reconnect.
+    private func restartAfterExit(status: Int32, detail: String, localPort: UInt16, generation current: Int) {
+        if let started = tunnelStartedAt, Date().timeIntervalSince(started) >= Self.stableSeconds {
+            consecutiveRestarts = 0
+        }
+        let attempt = consecutiveRestarts
+        consecutiveRestarts += 1
+        state = .failed(CloudflareError.processExited(status, detail).localizedDescription)
+        guard attempt < Self.restartDelays.count else {
+            log.error("Cloudflare Tunnel stopped after \(attempt, privacy: .public) restarts")
+            return
+        }
+        let delay = Self.restartDelays[attempt]
+        log.notice("Restarting Cloudflare Tunnel in \(delay, privacy: .public) seconds")
+        connectTask?.cancel()
+        connectTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard let self, !Task.isCancelled, self.isEnabled, current == self.generation else { return }
+            await self.connect(localPort: localPort)
+        }
     }
 }
