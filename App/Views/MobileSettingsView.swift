@@ -38,6 +38,7 @@ struct MobileSettingsView: View {
         guard let connectedTransport else { return "Connected" }
         return "Connected via \(connectedTransport.shortLabel)"
     }
+    @AppStorage(RemoteApprovals.defaultsKey) private var approveOnIPhone = true
 
     var body: some View {
         Form {
@@ -160,6 +161,21 @@ struct MobileSettingsView: View {
             .onChange(of: tailscaleVPNEnabled) { _, _ in applyTransportSettings() }
             .onChange(of: cloudflareEnabled) { _, _ in applyTransportSettings() }
             .onChange(of: cloudflareLocalPort) { _, _ in applyTransportSettings() }
+
+            Section {
+                Toggle(
+                    "Approve on iPhone",
+                    isOn: Binding(
+                        get: { approveOnIPhone && !devices.isEmpty },
+                        set: { approveOnIPhone = $0 }
+                    )
+                )
+                .disabled(devices.isEmpty)
+            } footer: {
+                Text(
+                    "Connection requests also show on your paired iPhone or iPad, and the first answer from either device wins. Approving on the phone allows one connection and never trusts the client. A request that nobody answers is denied."
+                )
+            }
 
             Section {
                 ForEach(MobileDomain.allCases, id: \.self) { domain in

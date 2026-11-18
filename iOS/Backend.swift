@@ -87,6 +87,7 @@ actor PhoneBackend: MobileBackend {
     /// The tools that the Mac can call: the shared tools and the sync tools.
     nonisolated var tools: [Tool] {
         MobileTools.all(backend: self) + [
+            approvalTool,
             Tool(
                 name: MobileConfigLink.applyTool,
                 description: "Receive the Mac's connection configuration.",

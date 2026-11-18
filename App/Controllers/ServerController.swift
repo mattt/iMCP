@@ -482,12 +482,61 @@ final class ServerController: ObservableObject {
                 self.finishApproval(key: key, approved: false, alwaysTrust: false)
             }
         )
+        offerOnPhone(
+            key: key,
+            kind: .connection,
+            title: "Allow \(entry.request.claimedName) to connect?",
+            details: ["Client: \(entry.request.claimedName)", entry.request.identityNote],
+            lifetime: approvals.policy.expiry
+        ) { [weak self] outcome in
+            // Approving from the phone allows this connection once; it never trusts the client.
+            self?.finishApproval(key: key, approved: outcome.isApproved, alwaysTrust: false)
+        }
 
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    // MARK: Approve on iPhone
+
+    /// Approvals that are also on the paired phone, by approval key.
+    /// The phone sees a random ID, never the key, which can derive from a credential.
+    private var phoneApprovalIDs: [String: String] = [:]
+
+    private func offerOnPhone(
+        key: String,
+        kind: RemoteApprovalKind,
+        title: String,
+        details: [String],
+        lifetime: Duration,
+        onResolved: @escaping @MainActor (RemoteApprovalOutcome) -> Void
+    ) {
+        withdrawFromPhone(key: key)
+        let id = UUID().uuidString
+        let seconds = Double(lifetime.components.seconds)
+        phoneApprovalIDs[key] = id
+        RemoteApprovals.shared.offer(
+            RemoteApprovalRequest(
+                id: id,
+                kind: kind,
+                title: title,
+                details: details,
+                expiresAt: Date().addingTimeInterval(seconds)
+            ),
+            onResolved: onResolved
+        )
+    }
+
+    /// Removes an approval from the phone once the Mac has decided it.
+    private func withdrawFromPhone(key: String) {
+        guard let id = phoneApprovalIDs.removeValue(forKey: key) else { return }
+        RemoteApprovals.shared.withdraw(id)
+    }
+
     /// Applies a person's decision to every connection waiting on the dialog for `key`.
     private func finishApproval(key: String, approved: Bool, alwaysTrust: Bool) {
+        withdrawFromPhone(key: key)
+        // An answer from the phone leaves the Mac's dialog open, so close it.
+        approvalWindowController.closeWindow(for: key)
         let resolution = approvals.resolve(key: key, approved: approved, now: .now)
         // The request expired or its connections closed while the dialog was open.
         guard let entry = resolution.removed.first else { return }
@@ -543,6 +592,7 @@ final class ServerController: ObservableObject {
         let resolution = approvals.expire(now: .now)
         for entry in resolution.removed {
             log.notice("Approval request for client \(entry.request.claimedName) expired")
+            withdrawFromPhone(key: entry.key)
             approvalWindowController.closeWindow(for: entry.key)
             for (_, waiter) in entry.waiters {
                 waiter.deny()
@@ -562,6 +612,7 @@ final class ServerController: ObservableObject {
         let (waiter, resolution) = approvals.cancel(id: connectionID)
         waiter?.deny()
         for entry in resolution.removed {
+            withdrawFromPhone(key: entry.key)
             approvalWindowController.closeWindow(for: entry.key)
         }
         resolution.promoted.forEach(presentApproval)
