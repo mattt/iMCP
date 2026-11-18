@@ -56,10 +56,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         let model = OnboardingModel(mode: mode, serverController: serverController, isEnabled: isEnabled)
         model.actions = OnboardingModel.Actions(
             close: { [weak self] in self?.close() },
-            openSettings: {
-                NSApp.activate(ignoringOtherApps: true)
-                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-            }
+            openSettings: { SettingsWindowController.shared.show() }
         )
         show(model)
     }

@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B150000000000000000000A2 /* ../../App/Models/SettingsCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = B150000000000000000000A1 /* ../../App/Models/SettingsCatalog.swift */; };
+		B150000000000000000000A4 /* SettingsCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B150000000000000000000A3 /* SettingsCatalogTests.swift */; };
 		B15000000000000000000092 /* ../../App/Models/KnownClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B15000000000000000000091 /* ../../App/Models/KnownClient.swift */; };
 		B15000000000000000000094 /* KnownClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B15000000000000000000093 /* KnownClientTests.swift */; };
 		B15000000000000000000022 /* ../../App/Models/RemoteAccessChecklist.swift in Sources */ = {isa = PBXBuildFile; fileRef = B15000000000000000000021 /* ../../App/Models/RemoteAccessChecklist.swift */; };
@@ -181,6 +183,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		B150000000000000000000A1 /* ../../App/Models/SettingsCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Models/SettingsCatalog.swift; sourceTree = "<group>"; };
+		B150000000000000000000A3 /* SettingsCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsCatalogTests.swift; sourceTree = "<group>"; };
 		B15000000000000000000091 /* ../../App/Models/KnownClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Models/KnownClient.swift; sourceTree = "<group>"; };
 		B15000000000000000000093 /* KnownClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnownClientTests.swift; sourceTree = "<group>"; };
 		B15000000000000000000021 /* ../../App/Models/RemoteAccessChecklist.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Models/RemoteAccessChecklist.swift; sourceTree = "<group>"; };
@@ -543,6 +547,8 @@
 				485454500000000000000032 /* ../../App/Controllers/OAuthEndpoints.swift */,
 				485454500000000000000033 /* ../../App/Controllers/ClientMetadataFetcher.swift */,
 				485454500000000000000034 /* OAuthTests.swift */,
+				B150000000000000000000A1 /* ../../App/Models/SettingsCatalog.swift */,
+				B150000000000000000000A3 /* SettingsCatalogTests.swift */,
 				B15000000000000000000091 /* ../../App/Models/KnownClient.swift */,
 				B15000000000000000000093 /* KnownClientTests.swift */,
 				B15000000000000000000011 /* ../../App/Models/OnboardingFlow.swift */,
@@ -995,6 +1001,8 @@
 				485454500000000000000052 /* ../../App/Controllers/OAuthEndpoints.swift in Sources */,
 				485454500000000000000053 /* ../../App/Controllers/ClientMetadataFetcher.swift in Sources */,
 				485454500000000000000054 /* OAuthTests.swift in Sources */,
+				B150000000000000000000A2 /* ../../App/Models/SettingsCatalog.swift in Sources */,
+				B150000000000000000000A4 /* SettingsCatalogTests.swift in Sources */,
 				B15000000000000000000092 /* ../../App/Models/KnownClient.swift in Sources */,
 				B15000000000000000000094 /* KnownClientTests.swift in Sources */,
 				B15000000000000000000012 /* ../../App/Models/OnboardingFlow.swift in Sources */,
