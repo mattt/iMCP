@@ -2,12 +2,18 @@ import AppKit
 import Sparkle
 import SwiftUI
 
+/// The menu bar panel.
+///
+/// It is a panel from ``MenuBarController``, not an `NSMenu`, because a menu closes after every click
+/// and the service rows must stay open while people turn several on or off.
+/// Spacing follows a native menu: 22 pt rows, 4 pt around separators, and the system accent color
+/// for the hover highlight, as a native menu draws it. The items come from ``MenuStructure``.
 struct ContentView: View {
     @ObservedObject var serverController: ServerController
     @Binding var isEnabled: Bool
-    @Environment(\.openSettings) private var openSettings
 
     private let updater: SPUUpdater
+    private let openSettings: () -> Void
     @State private var menuPanel = MenuPanelController()
 
     private static let aboutCredits: NSAttributedString = {
@@ -22,131 +28,164 @@ struct ContentView: View {
         return credits
     }()
 
-    private var serviceConfigs: [ServiceConfig] {
-        serverController.computedServiceConfigs
-    }
-
     init(
         serverManager: ServerController,
         isEnabled: Binding<Bool>,
-        updater: SPUUpdater
+        updater: SPUUpdater,
+        openSettings: @escaping () -> Void
     ) {
         self.serverController = serverManager
         self._isEnabled = isEnabled
         self.updater = updater
+        self.openSettings = openSettings
+    }
+
+    private var serviceConfigs: [ServiceConfig] {
+        serverController.computedServiceConfigs
+    }
+
+    private var sections: [MenuSection] {
+        MenuStructure.make(
+            isServerEnabled: isEnabled,
+            services: serviceConfigs.map {
+                MenuServiceItem(
+                    id: $0.id,
+                    name: $0.name,
+                    symbol: $0.iconName,
+                    isOn: $0.binding.wrappedValue
+                )
+            }
+        )
     }
 
     var body: some View {
+        let sections = sections
         VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(sections.enumerated()), id: \.offset) { index, section in
+                if index > 0 { MenuSeparator() }
+                view(for: section)
+            }
+        }
+        .frame(minWidth: MenuMetrics.width, maxWidth: .infinity)
+        .padding(.vertical, MenuMetrics.edge)
+        .onGeometryChange(for: CGSize.self) { proxy in
+            proxy.size
+        } action: { size in
+            menuPanel.contentHeight = size.height
+            menuPanel.resizeToFitContent()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(MenuPanelWindowReader(controller: menuPanel))
+        .onChange(of: serviceConfigs.map { $0.binding.wrappedValue }, initial: true) {
+            Task { await serverController.updateServiceBindings() }
+        }
+    }
+
+    @ViewBuilder
+    private func view(for section: MenuSection) -> some View {
+        switch section {
+        case .server:
             HStack {
                 Text("Enable MCP Server")
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Toggle("Enable MCP Server", isOn: $isEnabled)
                     .toggleStyle(.switch)
+                    .controlSize(.small)
                     .labelsHidden()
             }
-            .padding(.top, 2)
-            .padding(.horizontal, 14)
-            .onChange(of: isEnabled, initial: true) {
-                Task {
-                    await serverController.setEnabled(isEnabled)
+            .frame(minHeight: MenuMetrics.rowHeight)
+            .padding(.horizontal, MenuMetrics.rowInset + MenuMetrics.edge)
+        case .services(let items):
+            Text("Services")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .accessibilityAddTraits(.isHeader)
+                .padding(.horizontal, MenuMetrics.rowInset + MenuMetrics.edge)
+                .frame(minHeight: MenuMetrics.rowHeight, alignment: .leading)
+            servicesList(items)
+        case .actions(let actions):
+            ForEach(actions, id: \.self) { action in
+                MenuRow(title: action.title, isDisabled: isDisabled(action)) {
+                    run(action)
                 }
             }
-
-            if isEnabled {
-                VStack(alignment: .leading, spacing: 8) {
-                    Divider()
-
-                    Text("Services")
-                        .font(.headline)
-                        .foregroundStyle(.secondary)
-                        .accessibilityAddTraits(.isHeader)
-                        .padding(.horizontal, 14)
-
-                    ForEach(serviceConfigs) { config in
-                        ServiceToggleView(config: config)
-                    }
-                }
-                .padding(.top, 8)
-                .padding(.bottom, 4)
-                .padding(.horizontal, 2)
-                .onChange(of: serviceConfigs.map { $0.binding.wrappedValue }, initial: true) {
-                    Task {
-                        await serverController.updateServiceBindings()
-                    }
-                }
-            }
-            // No animation: it desyncs this auto-sizing panel's frame from its content.
-
-            VStack(alignment: .leading, spacing: 2) {
-                Divider()
-
-                MenuButton("Configure Claude Desktop") {
-                    ClaudeDesktop.showConfigurationPanel(serverController: serverController)
-                }
-
-                MenuButton("Copy server command to clipboard") {
-                    let command = Bundle.main.bundleURL
-                        .appendingPathComponent("Contents/MacOS/imcp-server")
-                        .path
-
-                    let pasteboard = NSPasteboard.general
-                    pasteboard.clearContents()
-                    pasteboard.setString(command, forType: .string)
-
-                    _ = NSSound.play(.pop)
-                }
-            }
-            .padding(.top, 8)
-            .padding(.bottom, 2)
-            .padding(.horizontal, 2)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Divider()
-
-                MenuButton("Settings...") {
-                    // openSettings() alone is unreliable for this accessory (LSUIElement) app.
-                    NSApp.activate(ignoringOtherApps: true)
-                    openSettings()
-                }
-
-                MenuButton("Check for Updates...") {
-                    updater.checkForUpdates()
-                }
-                .disabled(!updater.canCheckForUpdates)
-
-                MenuButton("About iMCP") {
-                    NSApp.activate(ignoringOtherApps: true)
-                    NSApp.orderFrontStandardAboutPanel(options: [
-                        .credits: Self.aboutCredits
-                    ])
-                }
-
-                MenuButton("Quit") {
-                    NSApplication.shared.terminate(nil)
-                }
-            }
-            .padding(.bottom, 2)
-            .padding(.horizontal, 2)
         }
-        .padding(.vertical, 6)
-        .onGeometryChange(for: CGFloat.self) { proxy in
-            proxy.size.height
-        } action: { height in
-            menuPanel.contentHeight = height
-            menuPanel.resizeToFitContent()
+    }
+
+    /// The service rows. They scroll only when the screen is too short to show them all.
+    @ViewBuilder
+    private func servicesList(_ items: [MenuServiceItem]) -> some View {
+        let rows = VStack(alignment: .leading, spacing: 0) {
+            ForEach(items) { item in
+                ServiceRow(
+                    item: item,
+                    config: serviceConfigs.first { $0.id == item.id },
+                    serverController: serverController
+                )
+            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(MenuPanelWindowReader(controller: menuPanel))
+        let fullHeight = MenuMetrics.serviceRowHeight * CGFloat(items.count)
+        let available = (NSScreen.main?.visibleFrame.height ?? 900) - 340
+        if fullHeight > available {
+            ScrollView { rows }
+                .frame(height: max(available, MenuMetrics.serviceRowHeight * 4))
+        } else {
+            rows
+        }
+    }
+
+    private func isDisabled(_ action: MenuAction) -> Bool {
+        action == .checkForUpdates && !updater.canCheckForUpdates
+    }
+
+    private func run(_ action: MenuAction) {
+        switch action {
+        case .configureClaudeDesktop:
+            ClaudeDesktop.showConfigurationPanel(serverController: serverController)
+        case .copyServerCommand:
+            let command = Bundle.main.bundleURL
+                .appendingPathComponent("Contents/MacOS/imcp-server")
+                .path
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            pasteboard.setString(command, forType: .string)
+            _ = NSSound.play(.pop)
+        case .settings:
+            openSettings()
+        case .checkForUpdates:
+            updater.checkForUpdates()
+        case .about:
+            NSApp.activate(ignoringOtherApps: true)
+            NSApp.orderFrontStandardAboutPanel(options: [.credits: Self.aboutCredits])
+        case .quit:
+            NSApplication.shared.terminate(nil)
+        }
+        MenuBarController.shared.close()
     }
 }
 
-/// Resizes the `MenuBarExtra` panel that shows ``ContentView`` to fit its content.
+/// The measurements of the panel, in points.
+enum MenuMetrics {
+    static let width: CGFloat = 260
+    /// The gap between the panel's edge and its rows, as in a native menu.
+    static let edge: CGFloat = 5
+    /// Text starts this far inside a row's highlight.
+    static let rowInset: CGFloat = 9
+    static let rowHeight: CGFloat = 22
+    static let iconSize: CGFloat = 22
+    static let serviceRowHeight: CGFloat = 30
+    /// The corner radius of a row's highlight and of the panel, measured from a native menu (Screens)
+    /// on this system: about 6.5 pt and 10 pt.
+    static let highlightRadius: CGFloat = 6
+    static let panelRadius: CGFloat = 12
+}
+
+/// Resizes the panel that shows ``ContentView`` to fit its content, keeping its top edge in place.
 @MainActor
 final class MenuPanelController {
     var contentHeight: CGFloat = 0
 
-    private weak var window: NSWindow?
+    private(set) weak var window: NSWindow?
     private var windowObserver: NSObjectProtocol?
 
     func attach(to newWindow: NSWindow?) {
@@ -172,8 +211,7 @@ final class MenuPanelController {
         resizeToFitContent()
     }
 
-    // MenuBarExtra's window keeps a stale taller frame when its content shrinks,
-    // leaving the content vertically centered in an oversized panel. Resize it to fit.
+    // The panel's height follows its content; its width is fixed.
     func resizeToFitContent() {
         DispatchQueue.main.async { [weak self] in
             guard let self, let window = self.window, self.contentHeight > 0 else { return }
@@ -222,54 +260,90 @@ private struct MenuPanelWindowReader: NSViewRepresentable {
     }
 }
 
-/// A row in the menu panel.
-/// It's a real `Button`, so it works with the keyboard and VoiceOver,
-/// and it highlights under the pointer like a menu item.
-private struct MenuButton: View {
-    private let title: String
-    private let action: () -> Void
-    @Environment(\.dismiss) private var dismiss
-
-    init<S>(
-        _ title: S,
-        action: @escaping () -> Void
-    ) where S: StringProtocol {
-        self.title = String(title)
-        self.action = action
-    }
-
+/// A separator with a 4 pt gap above and below and the standard inset.
+private struct MenuSeparator: View {
     var body: some View {
-        Button {
-            action()
-
-            // Hiding the panel window directly leaves the status item presented,
-            // so the next click on it does nothing.
-            dismiss()
-        } label: {
-            HStack {
-                Text(title)
-                    .multilineTextAlignment(.leading)
-                Spacer()
-            }
-            .padding(.vertical, 8)
-            .padding(.horizontal, 14)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(MenuRowButtonStyle())
+        Divider()
+            .padding(.horizontal, MenuMetrics.edge * 2)
+            .padding(.vertical, 4)
     }
 }
 
+/// A command row. It's a real `Button`, so it works with the keyboard and VoiceOver,
+/// and it highlights under the pointer like a menu item.
+private struct MenuRow: View {
+    let title: String
+    var isDisabled = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .frame(maxWidth: .infinity, minHeight: MenuMetrics.rowHeight, alignment: .leading)
+                .padding(.horizontal, MenuMetrics.rowInset)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(MenuRowButtonStyle())
+        .disabled(isDisabled)
+        .padding(.horizontal, MenuMetrics.edge)
+    }
+}
+
+/// A service as in Settings: its colored icon, then its name.
+/// Clicking turns it on or off and leaves the panel open, so several can change in one visit.
+private struct ServiceRow: View {
+    let item: MenuServiceItem
+    let config: ServiceConfig?
+    @ObservedObject var serverController: ServerController
+
+    var body: some View {
+        Button {
+            guard let config else { return }
+            serverController.setService(config, enabled: !item.isOn)
+        } label: {
+            HStack(spacing: 8) {
+                if let config {
+                    ServiceIcon(config: config, isOn: item.isOn, size: MenuMetrics.iconSize)
+                }
+                Text(item.name)
+                Spacer(minLength: 0)
+            }
+            .frame(minHeight: MenuMetrics.serviceRowHeight)
+            .padding(.horizontal, MenuMetrics.rowInset)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(MenuRowButtonStyle())
+        .padding(.horizontal, MenuMetrics.edge)
+        .accessibilityLabel(item.name)
+        .accessibilityValue(item.isOn ? "On" : "Off")
+        .accessibilityAddTraits(.isToggle)
+        .help("\(item.name) tools: \(toolSummary)")
+    }
+
+    private var toolSummary: String {
+        config?.service.tools
+            .map { $0.annotations.title ?? $0.name }
+            .joined(separator: ", ") ?? ""
+    }
+}
+
+/// The highlight of a menu item: the system's selected-menu-item colors under the pointer.
 private struct MenuRowButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
     @State private var isHovering = false
 
     func makeBody(configuration: Configuration) -> some View {
+        let isHighlighted = isEnabled && (isHovering || configuration.isPressed)
         configuration.label
-            .foregroundStyle(isEnabled ? .primary : .tertiary)
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(.tint.opacity(configuration.isPressed ? 1 : isHovering ? 0.7 : 0))
+            .foregroundStyle(
+                isHighlighted
+                    ? Color.primary
+                    : isEnabled ? Color.primary : Color(nsColor: .disabledControlTextColor)
             )
-            .onHover { isHovering = isEnabled && $0 }
+            .background(
+                RoundedRectangle(cornerRadius: MenuMetrics.highlightRadius)
+                    .fill(isHighlighted ? Color.primary.opacity(0.12) : .clear)
+            )
+            .onHover { isHovering = $0 }
     }
 }

@@ -12,7 +12,8 @@ import SwiftUI
             startingUpdater: false,
             updaterDelegate: nil,
             userDriverDelegate: nil
-        ).updater
+        ).updater,
+        openSettings: {}
     )
     .frame(width: 280)
 }

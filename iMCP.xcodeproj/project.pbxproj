@@ -51,6 +51,8 @@
 		5EC5A1E7000000000000000B /* ClientCredentials.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EC5A1E7000000000000000A /* ClientCredentials.swift */; };
 		5EC5A1E7000000000000000D /* ClientCredentialsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EC5A1E7000000000000000C /* ClientCredentialsTests.swift */; };
 		5EC5A1E7000000000000000F /* ConnectionApprovals.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EC5A1E7000000000000000E /* ConnectionApprovals.swift */; };
+		B15000000000000000000002 /* MenuStructure.swift in Sources */ = {isa = PBXBuildFile; fileRef = B15000000000000000000001 /* MenuStructure.swift */; };
+		B15000000000000000000004 /* MenuStructureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B15000000000000000000003 /* MenuStructureTests.swift */; };
 		5EC5A1E70000000000000011 /* ConnectionApprovalsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EC5A1E70000000000000010 /* ConnectionApprovalsTests.swift */; };
 		B0D1DEADBEEF000000000006 /* MCPServiceLoop.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF000000000005 /* MCPServiceLoop.swift */; };
 		B0D1DEADBEEF000000000008 /* MCPServiceLoopTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D1DEADBEEF000000000007 /* MCPServiceLoopTests.swift */; };
@@ -134,6 +136,8 @@
 		5EC5A1E7000000000000000C /* ClientCredentialsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ClientCredentialsTests.swift; sourceTree = "<group>"; };
 		5EC5A1E7000000000000000E /* ConnectionApprovals.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ConnectionApprovals.swift; path = ../../App/Controllers/ConnectionApprovals.swift; sourceTree = "<group>"; };
 		5EC5A1E70000000000000010 /* ConnectionApprovalsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ConnectionApprovalsTests.swift; sourceTree = "<group>"; };
+		B15000000000000000000001 /* MenuStructure.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MenuStructure.swift; path = ../../App/Models/MenuStructure.swift; sourceTree = "<group>"; };
+		B15000000000000000000003 /* MenuStructureTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MenuStructureTests.swift; sourceTree = "<group>"; };
 		B0D1DEADBEEF000000000005 /* MCPServiceLoop.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MCPServiceLoop.swift; path = ../../CLI/MCPServiceLoop.swift; sourceTree = "<group>"; };
 		B0D1DEADBEEF000000000007 /* MCPServiceLoopTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MCPServiceLoopTests.swift; sourceTree = "<group>"; };
 		B0D1DEADBEEF000000000009 /* MCPInitializeCompatibility.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MCPInitializeCompatibility.swift; path = ../../CLI/MCPInitializeCompatibility.swift; sourceTree = "<group>"; };
@@ -299,6 +303,8 @@
 				5EC5A1E7000000000000000C /* ClientCredentialsTests.swift */,
 				5EC5A1E7000000000000000E /* ConnectionApprovals.swift */,
 				5EC5A1E70000000000000010 /* ConnectionApprovalsTests.swift */,
+				B15000000000000000000001 /* MenuStructure.swift */,
+				B15000000000000000000003 /* MenuStructureTests.swift */,
 			);
 			path = "imcp-serverTests";
 			sourceTree = "<group>";
@@ -619,6 +625,8 @@
 				5EC5A1E7000000000000000D /* ClientCredentialsTests.swift in Sources */,
 				5EC5A1E7000000000000000F /* ConnectionApprovals.swift in Sources */,
 				5EC5A1E70000000000000011 /* ConnectionApprovalsTests.swift in Sources */,
+				B15000000000000000000002 /* MenuStructure.swift in Sources */,
+				B15000000000000000000004 /* MenuStructureTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
