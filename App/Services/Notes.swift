@@ -297,15 +297,15 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
         var tags: [TopoText.Note.Tag]
         var links: [TopoText.Note.Link]
         var backlinks: [TopoText.Note.Link]
-        /// The notes at the other ends of the links, by identifier.
-        var others: [TopoText.Note.ID: TopoText.Note]
+        /// What lookups found of the notes at the other ends of the links, by identifier.
+        var others: [TopoText.Note.ID: LinkedNote]
 
         /// The properties that a note's tags and links add to its object in tool output.
         var inlineProperties: [String: Value] {
-            var object = note.inlineProperties(tags: tags, links: links, titles: others)
+            var object = note.inlineProperties(tags: tags, links: links, others: others)
             if !backlinks.isEmpty {
                 object["linkedFrom"] = .array(
-                    backlinks.map { linkValue($0, direction: .incoming, otherTitle: others[$0.sourceID]?.title) }
+                    backlinks.map { linkValue($0, direction: .incoming, other: others[$0.sourceID] ?? .unknown) }
                 )
             }
             return object
@@ -323,10 +323,10 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
                 let tags = try readIfSupported { try snapshot.tags(for: [id]) }?[id] ?? []
                 let links = try readIfSupported { try snapshot.links(from: [id]) }?[id] ?? []
                 let backlinks = try readIfSupported { try snapshot.backlinks(to: id) } ?? []
-                // The notes at the other ends of the links, for their titles.
-                var others: [TopoText.Note.ID: TopoText.Note] = [:]
+                // The notes at the other ends of the links, for their titles, each looked up once.
+                var others: [TopoText.Note.ID: LinkedNote] = [:]
                 for other in links.map(\.targetID) + backlinks.map(\.sourceID) where others[other] == nil {
-                    others[other] = try? snapshot.note(for: other)
+                    others[other] = try LinkedNote(lookingUp: { try snapshot.note(for: other).title })
                 }
                 return NoteContext(
                     note: note,
@@ -721,7 +721,7 @@ extension TopoText.Note {
         links: [TopoText.Note.ID: [TopoText.Note.Link]]
     ) -> [String: Value] {
         var object = properties(in: folders)
-        object.merge(inlineProperties(tags: tags[id] ?? [], links: links[id] ?? [], titles: nil)) { $1 }
+        object.merge(inlineProperties(tags: tags[id] ?? [], links: links[id] ?? [], others: [:])) { $1 }
         return object
     }
 
@@ -762,12 +762,12 @@ extension TopoText.Note {
 
 extension TopoText.Note {
     /// A note's tags and links to other notes as properties of a JSON object for tool output.
-    /// - Parameter titles: The notes at the other ends of the links, by identifier, for their titles;
-    ///   `nil` if the caller didn't look them up.
+    /// - Parameter others: What lookups found of the notes at the other ends of the links, by identifier;
+    ///   a note that isn't in it is unknown.
     fileprivate func inlineProperties(
         tags: [TopoText.Note.Tag],
         links: [TopoText.Note.Link],
-        titles: [TopoText.Note.ID: TopoText.Note]?
+        others: [TopoText.Note.ID: LinkedNote]
     ) -> [String: Value] {
         var object: [String: Value] = [:]
         if !tags.isEmpty {
@@ -775,14 +775,7 @@ extension TopoText.Note {
         }
         if !links.isEmpty {
             object["linkedNotes"] = .array(
-                links.map {
-                    linkValue(
-                        $0,
-                        direction: .outgoing,
-                        otherTitle: titles?[$0.targetID]?.title,
-                        wasLookedUp: titles != nil
-                    )
-                }
+                links.map { linkValue($0, direction: .outgoing, other: others[$0.targetID] ?? .unknown) }
             )
         }
         return object

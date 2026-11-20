@@ -24,22 +24,47 @@ func keywordValues(_ tags: [TopoText.Note.Tag]) -> Value {
     .array(tags.map { .string($0.text) })
 }
 
+/// What a lookup found of the note at the other end of a link.
+enum LinkedNote: Sendable, Equatable {
+    /// Notes lists the note, with this title.
+    case found(title: String)
+    /// Notes doesn't list the note.
+    case missing
+    /// Nobody looked for the note, or the lookup failed for another reason.
+    case unknown
+
+    /// Looks up the note at the other end of a link.
+    ///
+    /// - Parameter lookup: Returns the title of the note, or throws if the lookup fails.
+    ///
+    /// Only ``NotesError/noteNotFound(_:)`` makes the note missing.
+    /// Cancellation and ``NotesError/connectionClosed`` propagate,
+    /// and any other error leaves the note unknown, so an existing note is never reported as missing.
+    init(lookingUp lookup: () throws -> String) throws {
+        do {
+            self = .found(title: try lookup())
+        } catch NotesError.noteNotFound {
+            self = .missing
+        } catch let error as CancellationError {
+            throw error
+        } catch NotesError.connectionClosed {
+            throw NotesError.connectionClosed
+        } catch {
+            self = .unknown
+        }
+    }
+}
+
 /// A link between notes as an object for the note's `linkedNotes` or `linkedFrom`.
 ///
 /// - Parameters:
 ///   - link: The link.
 ///   - direction: Whether the link leaves the note (`outgoing`) or arrives at it (`incoming`).
-///   - otherTitle: The title of the note at the other end, or `nil` if Notes doesn't list it.
-///   - wasLookedUp: Whether the caller looked for that note, so that a missing one is reported as missing.
-func linkValue(
-    _ link: TopoText.Note.Link,
-    direction: LinkDirection,
-    otherTitle: String?,
-    wasLookedUp: Bool = true
-) -> Value {
+///   - other: What a lookup found of the note at the other end.
+func linkValue(_ link: TopoText.Note.Link, direction: LinkDirection, other: LinkedNote) -> Value {
     let otherID = direction == .outgoing ? link.targetID : link.sourceID
     var object: [String: Value] = ["@id": .string(otherID.description)]
-    if let title = otherTitle, !title.isEmpty {
+    if case .found(let title) = other, !title.isEmpty {
         object["name"] = .string(title)
     } else if let label = link.label {
         object["name"] = .string(label)
@@ -48,7 +73,7 @@ func linkValue(
     if let label = link.label, label != object["name"]?.stringValue {
         object["linkText"] = .string(label)
     }
-    if wasLookedUp, otherTitle == nil {
+    if other == .missing {
         object["isMissing"] = true
     }
     return .object(object)

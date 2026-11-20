@@ -32,7 +32,7 @@ final class NotesInlineTests: XCTestCase {
 
     func testOutgoingLinkNamesTheTargetAndKeepsDifferentLinkText() {
         let link = Note.Link(sourceID: source, targetID: target, label: "Old title")
-        let object = linkValue(link, direction: .outgoing, otherTitle: "New title").objectValue
+        let object = linkValue(link, direction: .outgoing, other: .found(title: "New title")).objectValue
         XCTAssertEqual(object?["@id"], .string(target.description))
         XCTAssertEqual(object?["name"], "New title")
         XCTAssertEqual(object?["linkText"], "Old title")
@@ -41,28 +41,42 @@ final class NotesInlineTests: XCTestCase {
 
     func testIncomingLinkNamesTheSource() {
         let link = Note.Link(sourceID: source, targetID: target, label: "Trip")
-        let object = linkValue(link, direction: .incoming, otherTitle: "Trip").objectValue
+        let object = linkValue(link, direction: .incoming, other: .found(title: "Trip")).objectValue
         XCTAssertEqual(object?["@id"], .string(source.description))
         XCTAssertEqual(object?["name"], "Trip")
         XCTAssertNil(object?["linkText"])
     }
 
-    func testMissingTargetFallsBackToTheLabelOnlyWhenLookedUp() {
+    func testMissingTargetFallsBackToTheLabelOnlyWhenConfirmed() {
         let link = Note.Link(sourceID: source, targetID: target, label: "Gone")
-        let checked = linkValue(link, direction: .outgoing, otherTitle: nil).objectValue
-        XCTAssertEqual(checked?["name"], "Gone")
-        XCTAssertEqual(checked?["isMissing"], true)
-        // A caller that didn't look up the target can't say it is missing.
-        let unchecked = linkValue(link, direction: .outgoing, otherTitle: nil, wasLookedUp: false).objectValue
-        XCTAssertNil(unchecked?["isMissing"])
+        let missing = linkValue(link, direction: .outgoing, other: .missing).objectValue
+        XCTAssertEqual(missing?["name"], "Gone")
+        XCTAssertEqual(missing?["isMissing"], true)
+        // A note that nobody found or failed to find isn't known to be missing.
+        let unknown = linkValue(link, direction: .outgoing, other: .unknown).objectValue
+        XCTAssertEqual(unknown?["name"], "Gone")
+        XCTAssertNil(unknown?["isMissing"])
         XCTAssertNil(
-            linkValue(
-                Note.Link(sourceID: source, targetID: target),
-                direction: .outgoing,
-                otherTitle: nil,
-                wasLookedUp: false
-            ).objectValue?["name"]
+            linkValue(Note.Link(sourceID: source, targetID: target), direction: .outgoing, other: .unknown)
+                .objectValue?["name"]
         )
+    }
+
+    func testLookupMarksANoteMissingOnlyWhenNotesDoesNotListIt() throws {
+        XCTAssertEqual(try LinkedNote(lookingUp: { "Trip" }), .found(title: "Trip"))
+        XCTAssertEqual(try LinkedNote(lookingUp: { throw NotesError.noteNotFound(self.target) }), .missing)
+        XCTAssertEqual(try LinkedNote(lookingUp: { throw NotesError.timedOut }), .unknown)
+        XCTAssertEqual(try LinkedNote(lookingUp: { throw NotesError.databaseBusy }), .unknown)
+        XCTAssertEqual(try LinkedNote(lookingUp: { throw NotesError.queryFailed("disk I/O error") }), .unknown)
+    }
+
+    func testLookupPropagatesCancellationAndAClosedConnection() {
+        XCTAssertThrowsError(try LinkedNote(lookingUp: { throw CancellationError() })) {
+            XCTAssertTrue($0 is CancellationError)
+        }
+        XCTAssertThrowsError(try LinkedNote(lookingUp: { throw NotesError.connectionClosed })) {
+            XCTAssertEqual($0 as? NotesError, .connectionClosed)
+        }
     }
 
     func testSmartFolderQueryStripsTheDeletedClause() {
