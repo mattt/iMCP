@@ -1138,10 +1138,10 @@
 		};
 		C0FFEE0000000000000000A3 /* XCRemoteSwiftPackageReference "TopoText" */ = {
 			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/oliverames/TopoText";
+			repositoryURL = "https://github.com/mattt/TopoText";
 			requirement = {
-				kind = branch;
-				branch = "feat/smart-folders-tags-links";
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.3.0;
 			};
 		};
 		F825BDBD2D9AD00E0063ADD7 /* XCRemoteSwiftPackageReference "swift-service-lifecycle" */ = {
