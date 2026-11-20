@@ -268,6 +268,28 @@ final class ServerController: ObservableObject {
     @AppStorage("voicemailEnabled") private var voicemailEnabled = false
     @AppStorage("weatherEnabled") private var weatherEnabled = false
 
+    /// Whether any client has connected, kept so that the setup wizard can show that step as done.
+    @AppStorage("hasConnected") private var hasConnectedStorage = false
+
+    var hasConnected: Bool { hasConnectedStorage }
+
+    /// Names that connected clients reported, kept so that the wizard can mark each app as connected.
+    @AppStorage("connectedClientNames") private var connectedClientNamesData = Data()
+
+    var connectedClientNames: [String] {
+        (try? JSONDecoder().decode([String].self, from: connectedClientNamesData)) ?? []
+    }
+
+    private func markConnected(clientName: String) {
+        objectWillChange.send()
+        hasConnectedStorage = true
+        var names = connectedClientNames
+        if !names.contains(clientName) {
+            names.append(clientName)
+            connectedClientNamesData = (try? JSONEncoder().encode(names)) ?? Data()
+        }
+    }
+
     // MARK: - Client Credentials
     private let credentials = ClientCredentialStore(storage: KeychainClientRecordStorage())
     /// The open connections that each credential let in or was issued to,
@@ -340,6 +362,18 @@ final class ServerController: ObservableObject {
     func removeLegacyTrustedClient(_ name: String) {
         objectWillChange.send()
         credentials.removeLegacyTrustedName(name)
+    }
+
+    /// Whether any client is trusted, or was trusted by name in an earlier version,
+    /// which shows that this install was set up before.
+    var hasTrustedClient: Bool { !trustedClients.isEmpty || !legacyTrustedClientNames.isEmpty }
+
+    /// Whether a service beyond the defaults is on, which also shows a prior setup.
+    ///
+    /// Maps is on by default, and Utilities is too where it appears,
+    /// so neither counts.
+    var hasServiceOnBeyondDefaults: Bool {
+        computedServiceConfigs.contains { $0.name != "Maps" && $0.binding.wrappedValue }
     }
 
     /// Revokes every credential and closes the connections that used one.
@@ -498,6 +532,9 @@ final class ServerController: ObservableObject {
         log.notice(
             "\(approved ? "Approving" : "Denying") \(entry.waiters.count) connection(s) for client: \(request.claimedName)"
         )
+        if approved {
+            markConnected(clientName: request.record?.name ?? request.claimedName)
+        }
         for (_, waiter) in entry.waiters {
             approved ? waiter.approve() : waiter.deny()
         }
@@ -660,6 +697,7 @@ final class ServerController: ObservableObject {
         case .approve(let record):
             log.notice("Client \(clientName) presented a trusted credential, auto-approving")
             credentialSessions.add(connectionID, credentialID: record.id)
+            markConnected(clientName: record.name)
             approve()
 
             // Notify the user on auto-approved connections.

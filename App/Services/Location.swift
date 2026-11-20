@@ -53,6 +53,61 @@ final class LocationService: NSObject, Service, CLLocationManagerDelegate {
         }
     }
 
+    /// A place at the current location, for display in the setup wizard.
+    struct CurrentPlace {
+        let city: String
+        let region: String
+        let coordinate: CLLocationCoordinate2D
+
+        var displayName: String {
+            region.isEmpty ? city : "\(city), \(region)"
+        }
+    }
+
+    /// The current place, using this service's location manager and a geocoder.
+    ///
+    /// The wizard shows the result and stores nothing.
+    func currentPlace() async throws -> CurrentPlace {
+        try await activate()
+
+        if latestLocation == nil {
+            locationManager.startUpdatingLocation()
+            // Stop the updates on every exit, including cancellation.
+            defer { locationManager.stopUpdatingLocation() }
+            while latestLocation == nil {
+                try await Task.sleep(for: .milliseconds(100))
+            }
+        }
+
+        guard let location = latestLocation else {
+            throw NSError(
+                domain: "LocationServiceError",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "Failed to get location"]
+            )
+        }
+
+        let geocoder = CLGeocoder()
+        let placemarks = try await withTaskCancellationHandler {
+            try await geocoder.reverseGeocodeLocation(location)
+        } onCancel: {
+            geocoder.cancelGeocode()
+        }
+        guard let placemark = placemarks.first else {
+            throw NSError(
+                domain: "LocationServiceError",
+                code: 4,
+                userInfo: [NSLocalizedDescriptionKey: "No place found for location"]
+            )
+        }
+
+        return CurrentPlace(
+            city: placemark.locality ?? placemark.name ?? "your area",
+            region: placemark.administrativeArea ?? "",
+            coordinate: location.coordinate
+        )
+    }
+
     @MainActor
     func activate() async throws {
         if let authorizationTask {
