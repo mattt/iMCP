@@ -65,10 +65,15 @@ enum RemindersQuery {
 
         guard let hour = group(4).flatMap(Int.init) else {
             // Date only: all-day. Reject dates the calendar would roll over.
-            let components = DateComponents(year: year, month: month, day: day)
+            var components = DateComponents(year: year, month: month, day: day)
             guard let date = utc.date(from: components),
                 utc.dateComponents([.year, .month, .day], from: date) == components
             else { throw invalid }
+            // EKReminder requires a calendar on the components it stores. The
+            // reminder's own calendar supplies it, so the day keeps the list's
+            // time zone rather than the Mac's.
+            components.calendar = calendar
+            components.timeZone = calendar.timeZone
             return ParsedDue(components: components, isAllDay: true)
         }
         let minute = group(5).flatMap(Int.init) ?? 0
@@ -104,7 +109,7 @@ enum RemindersQuery {
         }
 
         var components = instantCalendar.dateComponents(
-            [.year, .month, .day, .hour, .minute],
+            [.year, .month, .day, .hour, .minute, .second],
             from: instant
         )
         components.calendar = calendar
@@ -351,14 +356,43 @@ enum RemindersQuery {
         }
     }
 
-    /// True when the user has disabled `reminders_delete` in Settings.
-    static func isDeleteDisabled(defaults: UserDefaults = .standard) -> Bool {
+    /// True when the user has disabled a tool in Settings.
+    ///
+    /// A write tool that changes the same thing as another is gated by that
+    /// other tool's switch: completing a reminder is an update, and renaming a
+    /// list is a list rename.
+    static func isToolDisabled(_ tool: String, defaults: UserDefaults = .standard) -> Bool {
         guard let data = defaults.data(forKey: "disabledTools"),
             let disabled = try? JSONDecoder().decode(Set<String>.self, from: data)
         else {
             return false
         }
-        return disabled.contains("reminders_delete")
+        return disabled.contains(tool)
+    }
+
+    /// True when the user has disabled `reminders_delete` in Settings.
+    static func isDeleteDisabled(defaults: UserDefaults = .standard) -> Bool {
+        isToolDisabled("reminders_delete", defaults: defaults)
+    }
+
+    /// True when the user has disabled `reminders_update` in Settings.
+    static func isUpdateDisabled(defaults: UserDefaults = .standard) -> Bool {
+        isToolDisabled("reminders_update", defaults: defaults)
+    }
+
+    /// True when the user has disabled `reminders_lists_rename` in Settings.
+    static func isListRenameDisabled(defaults: UserDefaults = .standard) -> Bool {
+        isToolDisabled("reminders_lists_rename", defaults: defaults)
+    }
+
+    /// Minutes before the due date for a stored relative alarm's offset in
+    /// seconds. A stored offset can be any value, so the conversion clamps
+    /// instead of trapping on one that does not fit an `Int`.
+    static func relativeAlarmMinutes(_ offset: TimeInterval) -> Int {
+        let raw = (-offset / 60).rounded()
+        guard raw.isFinite else { return raw > 0 ? Int.max : Int.min }
+        if raw >= Double(Int.min), raw <= Double(Int.max) { return Int(raw) }
+        return raw > 0 ? Int.max : Int.min
     }
 
     // MARK: - Search
@@ -436,11 +470,20 @@ enum RemindersQuery {
     enum Views {
         static func dueDate(of components: DateComponents, calendar: Calendar) -> Date? {
             var components = components
-            components.calendar = calendar
-            components.timeZone = calendar.timeZone
+            // A stored due date carries its own calendar and time zone. Keep
+            // them: a view must place the reminder at the wall time it was
+            // saved with, not re-read it in the Mac's zone.
+            var effective = calendar
+            if let stored = components.calendar {
+                effective = stored
+            } else if let timeZone = components.timeZone {
+                effective.timeZone = timeZone
+            }
+            components.calendar = effective
+            components.timeZone = effective.timeZone
             if components.hour == nil { components.hour = 0 }
             if components.minute == nil { components.minute = 0 }
-            return calendar.date(from: components)
+            return effective.date(from: components)
         }
 
         /// Overdue: an all-day reminder due before today, or a timed one
@@ -706,7 +749,10 @@ enum RemindersQuery {
         }
 
         let queryTokens = Set(tokens(trimmed))
-        let street = (match.thoroughfare ?? match.name).map(tokens) ?? []
+        // The house number is part of the street: "123 Main St" must match a
+        // candidate whose subThoroughfare is 123, not just its street name.
+        let street = ([match.subThoroughfare, match.thoroughfare ?? match.name].compactMap { $0 })
+            .flatMap(tokens)
         let namesPlace = !street.isEmpty && street.allSatisfy(queryTokens.contains)
         let namesName =
             (match.name.map(tokens) ?? []).allSatisfy(queryTokens.contains)
@@ -716,6 +762,20 @@ enum RemindersQuery {
                 code: "location_unconfirmed",
                 message:
                     "The match (\(match.summary)) does not carry the street or place named in \"\(trimmed)\" (street_mismatch). Pass a fuller address or its coordinates.",
+                candidates: [match]
+            )
+        }
+
+        // A bare locality ("Rome") is not a place for a location alarm: it
+        // covers a whole city. Require a street or a specific place name.
+        let namesOnlyLocality =
+            match.thoroughfare == nil
+            && (match.name.map { folded($0) == folded(match.locality ?? "") } ?? false)
+        guard !namesOnlyLocality else {
+            throw GeocodeRejection(
+                code: "location_imprecise",
+                message:
+                    "\"\(trimmed)\" names only a town or region. Add a street address, or pass coordinates for the area meant.",
                 candidates: [match]
             )
         }

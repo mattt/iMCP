@@ -430,4 +430,154 @@ final class RemindersQueryTests: XCTestCase {
         )
         XCTAssertTrue(RemindersQuery.isDeleteDisabled(defaults: defaults))
     }
+
+    /// The guard has to sit in the tool, not only in the settings helper: a
+    /// caller that reaches `reminders_delete_batch` must be refused before any
+    /// reminder is fetched.
+    func testDeleteBatchToolRefusesWhenRemindersDeleteIsDisabled() async throws {
+        try await withDisabledTools(["reminders_delete"]) {
+            let service = RemindersService()
+            let tool = try XCTUnwrap(service.tools.first { $0.name == "reminders_delete_batch" })
+            do {
+                _ = try await tool.callAsFunction(["identifiers": .array([.string("reminder-1")])])
+                XCTFail("the tool ran while reminders_delete was disabled")
+            } catch let error as RemindersInputError {
+                XCTAssertEqual(error.code, "tool_disabled")
+            }
+        }
+    }
+
+    func testCompleteToolRefusesWhenRemindersUpdateIsDisabled() async throws {
+        try await withDisabledTools(["reminders_update"]) {
+            let service = RemindersService()
+            let tool = try XCTUnwrap(service.tools.first { $0.name == "reminders_complete" })
+            do {
+                _ = try await tool.callAsFunction(["identifiers": .array([.string("reminder-1")])])
+                XCTFail("the tool ran while reminders_update was disabled")
+            } catch let error as RemindersInputError {
+                XCTAssertEqual(error.code, "tool_disabled")
+            }
+        }
+    }
+
+    func testListRenameToolRefusesWhenListsRenameIsDisabled() async throws {
+        try await withDisabledTools(["reminders_lists_rename"]) {
+            let service = RemindersService()
+            let tool = try XCTUnwrap(service.tools.first { $0.name == "reminders_lists_update" })
+            do {
+                _ = try await tool.callAsFunction([
+                    "identifier": .string("list-1"), "title": .string("New name"),
+                ])
+                XCTFail("the tool ran while reminders_lists_rename was disabled")
+            } catch let error as RemindersInputError {
+                XCTAssertEqual(error.code, "tool_disabled")
+            }
+        }
+    }
+
+    /// `reminders_update` advertises and accepts `completion_date`.
+    func testUpdateSchemaAcceptsCompletionDate() throws {
+        let service = RemindersService()
+        let tool = try XCTUnwrap(service.tools.first { $0.name == "reminders_update" })
+        let data = try JSONEncoder().encode(tool.inputSchema)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let properties = try XCTUnwrap(json["properties"] as? [String: Any])
+        XCTAssertNotNil(properties["completion_date"], "update must accept completion_date")
+    }
+
+    /// A stored relative alarm with an extreme offset must not trap.
+    func testRelativeAlarmMinutesClampsExtremeOffsets() {
+        XCTAssertEqual(RemindersQuery.relativeAlarmMinutes(-900), 15)
+        XCTAssertEqual(RemindersQuery.relativeAlarmMinutes(900), -15)
+        XCTAssertEqual(RemindersQuery.relativeAlarmMinutes(-Double.greatestFiniteMagnitude), Int.max)
+        XCTAssertEqual(RemindersQuery.relativeAlarmMinutes(Double.greatestFiniteMagnitude), Int.min)
+        XCTAssertEqual(RemindersQuery.relativeAlarmMinutes(.infinity), Int.min)
+        XCTAssertEqual(RemindersQuery.relativeAlarmMinutes(.nan), Int.min)
+    }
+
+    /// An all-day due carries the calendar it was read in; a timed one keeps
+    /// its seconds.
+    func testDueComponentsCarryCalendarAndSeconds() throws {
+        let allDay = try RemindersQuery.parseDue("2026-05-27", calendar: calendar)
+        XCTAssertTrue(allDay.isAllDay)
+        XCTAssertNotNil(allDay.components.calendar, "an all-day due needs a calendar for EKReminder")
+        XCTAssertEqual(allDay.components.timeZone, calendar.timeZone)
+        XCTAssertNil(allDay.components.hour)
+
+        let timed = try RemindersQuery.parseDue("2026-05-27 09:30:45", calendar: calendar)
+        XCTAssertFalse(timed.isAllDay)
+        XCTAssertEqual(timed.components.second, 45, "a timed due keeps its seconds")
+        XCTAssertEqual(timed.components.calendar?.timeZone, calendar.timeZone)
+    }
+
+    /// A view keeps the time zone stored with the due date instead of
+    /// re-reading the wall time in the Mac's zone.
+    func testViewKeepsTheStoredTimeZone() throws {
+        var stored = DateComponents(year: 2026, month: 5, day: 27, hour: 9, minute: 30)
+        stored.calendar = calendar
+        stored.timeZone = calendar.timeZone
+        let viewCalendar = Calendar(identifier: .gregorian)
+        let due = try XCTUnwrap(RemindersQuery.Views.dueDate(of: stored, calendar: viewCalendar))
+        XCTAssertEqual(due, try XCTUnwrap(calendar.date(from: stored)))
+    }
+
+    /// A house number is part of the street, and a bare locality is not a place.
+    func testAddressMatchingChecksHouseNumberAndRejectsBareLocality() {
+        let house = RemindersQuery.GeocodeCandidate(
+            name: nil,
+            thoroughfare: "Main St",
+            subThoroughfare: "123",
+            locality: "Springfield",
+            postalCode: nil,
+            administrativeArea: "IL",
+            country: "US",
+            latitude: 39.8,
+            longitude: -89.65,
+            radiusMeters: 50
+        )
+        // The query names the house number, so the match is accepted.
+        XCTAssertNoThrow(
+            try RemindersQuery.judgeAddress(query: "123 Main St, Springfield", candidates: [house])
+        )
+        // A different number does not match the candidate's house.
+        XCTAssertThrowsError(
+            try RemindersQuery.judgeAddress(query: "456 Main St, Springfield", candidates: [house])
+        )
+
+        let town = RemindersQuery.GeocodeCandidate(
+            name: "Rome",
+            thoroughfare: nil,
+            subThoroughfare: nil,
+            locality: "Rome",
+            postalCode: "00100",
+            administrativeArea: "RM",
+            country: "IT",
+            latitude: 41.9,
+            longitude: 12.5,
+            radiusMeters: 50
+        )
+        // A bare locality is too coarse for a location alarm, even with a
+        // postal code.
+        XCTAssertThrowsError(
+            try RemindersQuery.judgeAddress(query: "Rome", candidates: [town])
+        )
+    }
+
+    /// Runs `body` with `disabledTools` set on the standard defaults, then
+    /// restores whatever was there before.
+    private func withDisabledTools(
+        _ tools: Set<String>,
+        _ body: () async throws -> Void
+    ) async throws {
+        let original = UserDefaults.standard.data(forKey: "disabledTools")
+        defer {
+            if let original {
+                UserDefaults.standard.set(original, forKey: "disabledTools")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "disabledTools")
+            }
+        }
+        UserDefaults.standard.set(try JSONEncoder().encode(tools), forKey: "disabledTools")
+        try await body()
+    }
 }
