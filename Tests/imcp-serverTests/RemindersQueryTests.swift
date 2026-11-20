@@ -409,4 +409,25 @@ final class RemindersQueryTests: XCTestCase {
             XCTAssertEqual(($0 as? RemindersInputError)?.code, "invalid_location_radius")
         }
     }
+
+    func testLargeRelativeAlarmThrowsInsteadOfOverflowing() {
+        for input in ["9223372036854775807w", "10000000000000000d", "100000000h"] {
+            XCTAssertThrowsError(try RemindersQuery.parseAlarm(input), input) {
+                XCTAssertEqual(($0 as? RemindersInputError)?.code, "invalid_alarm")
+            }
+        }
+    }
+
+    func testDeleteBatchRespectsDisabledRemindersDelete() throws {
+        let suite = "RemindersQueryTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        XCTAssertFalse(RemindersQuery.isDeleteDisabled(defaults: defaults))
+        defaults.set(
+            try JSONEncoder().encode(Set(["reminders_delete"])),
+            forKey: "disabledTools"
+        )
+        XCTAssertTrue(RemindersQuery.isDeleteDisabled(defaults: defaults))
+    }
 }

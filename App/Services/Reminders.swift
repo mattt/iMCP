@@ -1364,6 +1364,12 @@ final class RemindersService: Service {
                 openWorldHint: false
             )
         ) { arguments in
+            guard !RemindersQuery.isDeleteDisabled() else {
+                throw RemindersInputError(
+                    code: "tool_disabled",
+                    message: "Batch deletion is unavailable while reminders_delete is disabled."
+                )
+            }
             try await self.requireAccess()
             try Self.rejectUnknownKeys(arguments, allowed: ["identifiers"])
             let plan = try Self.batchPlan(arguments["identifiers"])

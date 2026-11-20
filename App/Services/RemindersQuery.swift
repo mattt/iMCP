@@ -331,7 +331,14 @@ enum RemindersQuery {
             count >= 0
         {
             let multiplier = ["m": 1, "h": 60, "d": 1440, "w": 10080][String(unit)]!
-            return .relative(minutes: count * multiplier)
+            let (minutes, overflow) = count.multipliedReportingOverflow(by: multiplier)
+            guard !overflow, minutes <= 52_560_000 else {
+                throw RemindersInputError(
+                    code: "invalid_alarm",
+                    message: "Relative alarm \"\(string)\" is too large."
+                )
+            }
+            return .relative(minutes: minutes)
         }
         do {
             return .absolute(try parseCompletionDate(string, calendar: calendar))
@@ -342,6 +349,16 @@ enum RemindersQuery {
                     "Invalid alarm \"\(string)\". Use 15m, 1h, 1d, 1w (before the due date), a date such as 2026-05-27 09:30, or clear."
             )
         }
+    }
+
+    /// True when the user has disabled `reminders_delete` in Settings.
+    static func isDeleteDisabled(defaults: UserDefaults = .standard) -> Bool {
+        guard let data = defaults.data(forKey: "disabledTools"),
+            let disabled = try? JSONDecoder().decode(Set<String>.self, from: data)
+        else {
+            return false
+        }
+        return disabled.contains("reminders_delete")
     }
 
     // MARK: - Search
