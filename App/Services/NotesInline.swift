@@ -130,7 +130,8 @@ func smartFolderValue(_ folder: TopoText.SmartFolder, folderNames: [TopoText.Fol
 /// For the query above, the rules are `{"tag":"SMART"}`.
 /// Notes doesn't document the format, and other kinds of rules have not been observed,
 /// so everything else, such as `or` clauses and unknown keys, is passed through as stored.
-/// If two `deleted` clauses disagree, only those in the outer `and` are removed.
+/// If two `deleted` clauses disagree, no note matches the query,
+/// so the rules are the value of `type` as stored, and ``includesRecentlyDeleted`` is `nil`.
 /// JSON without `type` is kept whole as the rules.
 struct SmartFolderQuery: Sendable, Equatable {
     /// The rules of the folder as JSON, or `nil` if the text is not JSON.
@@ -145,19 +146,19 @@ struct SmartFolderQuery: Sendable, Equatable {
             return
         }
         var deleted: Set<Bool> = []
-        let simplified = Self.simplified(type, deleted: &deleted, isNested: true)
-        if deleted.count > 1 {
-            var outer: Set<Bool> = []
-            rules = Self.simplified(type, deleted: &outer, isNested: false)
-        } else {
-            rules = simplified
-            includesRecentlyDeleted = deleted.first
+        let simplified = Self.simplified(type, deleted: &deleted)
+        // Removing clauses that contradict each other would make a query that matches nothing match notes.
+        guard deleted.count <= 1 else {
+            rules = type
+            return
         }
+        rules = simplified
+        includesRecentlyDeleted = deleted.first
     }
 
-    /// Simplifies a conjunction, and collects the values of the `deleted` clauses that it removes.
-    /// - Parameter isNested: Whether to simplify the `and` clauses inside the conjunction too.
-    private static func simplified(_ value: Value, deleted: inout Set<Bool>, isNested: Bool) -> Value {
+    /// Simplifies a conjunction and the `and` clauses inside it,
+    /// and collects the values of the `deleted` clauses that it removes.
+    private static func simplified(_ value: Value, deleted: inout Set<Bool>) -> Value {
         guard let object = value.objectValue, object.count == 1, let clauses = object["and"]?.arrayValue else {
             return value
         }
@@ -166,7 +167,7 @@ struct SmartFolderQuery: Sendable, Equatable {
             if let object = clause.objectValue, object.count == 1, let flag = object["deleted"]?.boolValue {
                 deleted.insert(flag)
             } else {
-                rest.append(isNested ? simplified(clause, deleted: &deleted, isNested: true) : clause)
+                rest.append(simplified(clause, deleted: &deleted))
             }
         }
         return rest.count == 1 ? rest[0] : .object(["and": .array(rest)])

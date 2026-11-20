@@ -122,12 +122,19 @@ final class NotesInlineTests: XCTestCase {
         XCTAssertEqual(query.includesRecentlyDeleted, false)
     }
 
-    func testSmartFolderQueryDoesNotSimplifyDisagreeingDeletedClauses() {
-        let query = SmartFolderQuery(
+    func testSmartFolderQueryKeepsDisagreeingDeletedClausesAsStored() {
+        let nested = SmartFolderQuery(
             #"{"type":{"and":[{"deleted":false},{"and":[{"deleted":true},{"and":[{"tag":"A"}]}]}]}}"#
         )
-        XCTAssertEqual(query.rules, ["and": [["deleted": true], ["and": [["tag": "A"]]]]])
-        XCTAssertNil(query.includesRecentlyDeleted)
+        XCTAssertEqual(
+            nested.rules,
+            ["and": [["deleted": false], ["and": [["deleted": true], ["and": [["tag": "A"]]]]]]]
+        )
+        XCTAssertNil(nested.includesRecentlyDeleted)
+
+        let flat = SmartFolderQuery(#"{"type":{"and":[{"deleted":false},{"deleted":true},{"tag":"A"}]}}"#)
+        XCTAssertEqual(flat.rules, ["and": [["deleted": false], ["deleted": true], ["tag": "A"]]])
+        XCTAssertNil(flat.includesRecentlyDeleted)
     }
 
     func testSmartFolderQueryKeepsOtherShapesWhole() {
