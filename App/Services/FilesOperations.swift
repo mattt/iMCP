@@ -86,12 +86,15 @@ enum FilesOperations {
     ) throws -> Value {
         var info = Darwin.stat()
         var parent: FilesDirectory?
-        if item.isRoot {
+        // The canonical path is empty both for the shared root itself and for a
+        // link that resolves to it (`isRoot` only looks at the path as written).
+        if item.canonicalComponents.isEmpty {
             let folder = try FilesDirectory.open(item.root, components: [], displayPath: item.displayPath)
             guard fstat(folder.fd, &info) == 0 else { throw FilesError.posix(errno, item.displayPath) }
         } else {
             let folder = try FilesDirectory.openParent(of: item)
-            guard let found = try folder.status(of: item.canonicalComponents.last!, displayPath: item.displayPath)
+            guard let name = item.canonicalComponents.last,
+                let found = try folder.status(of: name, displayPath: item.displayPath)
             else { throw FilesError.notFound(item.displayPath) }
             info = found
             parent = folder
@@ -102,7 +105,7 @@ enum FilesOperations {
             isSymlink = try folder.status(of: name, displayPath: linkItem.displayPath)?.isSymbolicLink ?? false
         }
 
-        let name = item.isRoot ? item.root.name : item.canonicalComponents.last!
+        let name = item.canonicalComponents.last ?? item.root.name
         var value: [String: Value] = [
             "name": .string(name),
             "path": .string(item.displayPath),
@@ -484,11 +487,18 @@ enum FilesOperations {
                 mode: info.st_mode & 0o7777,
                 displayPath: file.displayPath
             )
+            // Close the descriptor on every path out, including a write that
+            // throws halfway through.
+            var outputIsOpen = true
+            defer {
+                if outputIsOpen { close(output) }
+            }
             do {
                 try writeAll(data, to: output, displayPath: file.displayPath)
                 fchmod(output, info.st_mode & 0o7777)
                 fsync(output)
                 close(output)
+                outputIsOpen = false
                 guard renameat(parent.fd, temporary, parent.fd, name) == 0 else {
                     throw FilesError.posix(errno, file.displayPath)
                 }
@@ -507,10 +517,15 @@ enum FilesOperations {
                 flags: O_WRONLY | O_CREAT | O_EXCL,
                 displayPath: file.displayPath
             )
+            var outputIsOpen = true
+            defer {
+                if outputIsOpen { close(output) }
+            }
             do {
                 try writeAll(data, to: output, displayPath: file.displayPath)
                 fsync(output)
                 close(output)
+                outputIsOpen = false
             } catch {
                 unlinkat(parent.fd, name, 0)
                 throw error
@@ -686,15 +701,25 @@ enum FilesOperations {
         try FileManager.default.trashItem(at: url, resultingItemURL: &trashed)
 
         var buffer = [CChar](repeating: 0, count: Int(MAXPATHLEN))
-        if fcntl(pin, F_GETPATH, &buffer) == 0 {
-            let components = URL(fileURLWithPath: String(cString: buffer)).pathComponents
-            if !components.contains(where: { $0 == ".Trash" || $0 == ".Trashes" }) {
-                // Another item was trashed in its place. Put it back, and leave the pinned one where it is.
-                if let trashed = trashed as URL?, !FilesAccess.lexists(url.path) {
-                    try? FileManager.default.moveItem(at: trashed, to: url)
+        guard fcntl(pin, F_GETPATH, &buffer) == 0 else {
+            // The item was moved, but iMCP can't tell where it went. Don't
+            // report success: the pinned item may or may not be in the Trash.
+            throw FilesError.trashUnverified(item.displayPath)
+        }
+        let components = URL(fileURLWithPath: String(cString: buffer)).pathComponents
+        if !components.contains(where: { $0 == ".Trash" || $0 == ".Trashes" }) {
+            // Another item was trashed in its place. Put it back, and leave the pinned one where it is.
+            if let trashed = trashed as URL?, !FilesAccess.lexists(url.path) {
+                do {
+                    try FileManager.default.moveItem(at: trashed, to: url)
+                } catch {
+                    throw FilesError.trashRestoreFailed(
+                        path: item.displayPath,
+                        reason: error.localizedDescription
+                    )
                 }
-                throw FilesError.changedWhileWorking(item.displayPath)
             }
+            throw FilesError.changedWhileWorking(item.displayPath)
         }
         return ["path": .string(item.displayPath), "trashed": true]
     }

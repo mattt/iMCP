@@ -865,6 +865,20 @@ final class FilesTests: XCTestCase {
         XCTAssertThrowsError(try FilesOperations.stat(item, linkItem: link, includeHash: true))
     }
 
+    /// A link to the shared root has an empty canonical path, which the old
+    /// `canonicalComponents.last!` could not unwrap.
+    func testStatHandlesALinkToTheSharedRoot() throws {
+        try link("rootlink", to: shared)
+        let item = try access.resolve("Shared/rootlink")
+        let linkItem = try access.resolve("Shared/rootlink", followingFinalSymlink: false)
+        XCTAssertFalse(item.isRoot, "the path as written is a link, not the root")
+        XCTAssertTrue(item.canonicalComponents.isEmpty, "the canonical path is the root itself")
+        let stat = try FilesOperations.stat(item, linkItem: linkItem, includeHash: false)
+        XCTAssertEqual(stat.objectValue?["isSymlink"], true)
+        XCTAssertEqual(stat.objectValue?["type"], "directory")
+        XCTAssertEqual(stat.objectValue?["name"], "Shared")
+    }
+
     func testStatReportsLinksAndHashesThroughTheDescriptor() throws {
         _ = try write("abc", to: "a.txt")
         try link("alias", to: shared.appendingPathComponent("a.txt"))
