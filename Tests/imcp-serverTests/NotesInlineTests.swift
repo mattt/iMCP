@@ -47,6 +47,17 @@ final class NotesInlineTests: XCTestCase {
         XCTAssertNil(object?["linkText"])
     }
 
+    func testIncomingLinkDoesNotNameTheSourceWithTheLabel() {
+        let link = Note.Link(sourceID: source, targetID: target, label: "Target title")
+        for other in [LinkedNote.found(title: ""), .unknown] {
+            let object = linkValue(link, direction: .incoming, other: other).objectValue
+            XCTAssertEqual(object?["@id"], .string(source.description))
+            XCTAssertNil(object?["name"])
+            XCTAssertEqual(object?["linkText"], "Target title")
+            XCTAssertNil(object?["isMissing"])
+        }
+    }
+
     func testMissingTargetFallsBackToTheLabelOnlyWhenConfirmed() {
         let link = Note.Link(sourceID: source, targetID: target, label: "Gone")
         let missing = linkValue(link, direction: .outgoing, other: .missing).objectValue

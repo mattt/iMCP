@@ -70,7 +70,8 @@ func linkValue(_ link: TopoText.Note.Link, direction: LinkDirection, other: Link
     var object: [String: Value] = ["@id": .string(otherID.description)]
     if case .found(let title) = other, !title.isEmpty {
         object["name"] = .string(title)
-    } else if let label = link.label {
+    } else if direction == .outgoing, let label = link.label {
+        // The label names the target, so it can stand in for the target's title but not for the source's.
         object["name"] = .string(label)
     }
     // The label can differ from the title, because it is the text of the link, which doesn't follow renames.
