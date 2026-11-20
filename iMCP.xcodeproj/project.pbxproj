@@ -75,6 +75,9 @@
 		F9E9902DC72D90F6C423EFE2 /* Logging in Frameworks */ = {isa = PBXBuildFile; productRef = 48ABEE9E6903427DD79096A1 /* Logging */; };
 		AA0011000000000000000001 /* Envelope in Frameworks */ = {isa = PBXBuildFile; productRef = AA0011000000000000000002 /* Envelope */; };
 		AB0055000000000000000001 /* TSRP in Frameworks */ = {isa = PBXBuildFile; productRef = AB0055000000000000000002 /* TSRP */; };
+		D2E000000000000000000020 /* NotesInlineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2E000000000000000000010 /* NotesInlineTests.swift */; };
+		D2E000000000000000000021 /* ../../App/Services/NotesInline.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2E000000000000000000011 /* ../../App/Services/NotesInline.swift */; };
+		D2E000000000000000000030 /* TopoText in Frameworks */ = {isa = PBXBuildFile; productRef = D2E000000000000000000040 /* TopoText */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -143,6 +146,8 @@
 		E0E66768348853754D32208C /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/System/Library/Frameworks/Cocoa.framework; sourceTree = DEVELOPER_DIR; };
 		F8F44E6D2D59038D0075D79C /* iMCP.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = iMCP.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F8F44EB62D5908D00075D79C /* imcp-server */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "imcp-server"; sourceTree = BUILT_PRODUCTS_DIR; };
+		D2E000000000000000000010 /* NotesInlineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesInlineTests.swift; sourceTree = "<group>"; };
+		D2E000000000000000000011 /* ../../App/Services/NotesInline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/NotesInline.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -200,6 +205,7 @@
 				A30000000000000000000031 /* JSONSchema in Frameworks */,
 				A30000000000000000000032 /* Ontology in Frameworks */,
 				A50000000000000000000030 /* Envelope in Frameworks */,
+				D2E000000000000000000030 /* TopoText in Frameworks */,
 				76F80A6E3EDBFB02048A6ED8 /* Cocoa.framework in Frameworks */,
 				826C0834A5B647F8A918E54D /* ServiceLifecycle in Frameworks */,
 				8DFCE9E4CBCBEB93A32E8560 /* ServiceLifecycleTestKit in Frameworks */,
@@ -272,6 +278,8 @@
 				A40000000000000000000014 /* ../../Shared/Models/Service.swift */,
 				A50000000000000000000010 /* MailTests.swift */,
 				A50000000000000000000011 /* ../../App/Services/Mail.swift */,
+				D2E000000000000000000010 /* NotesInlineTests.swift */,
+				D2E000000000000000000011 /* ../../App/Services/NotesInline.swift */,
 				A50000000000000000000012 /* ../../App/Extensions/Foundation+Extensions.swift */,
 				B13400000000000000000010 /* AppleScriptTests.swift */,
 				C0A7E00000000000000000B1 /* ConnectionApprovalGateTests.swift */,
@@ -365,6 +373,7 @@
 				A20000000000000000000012 /* Ontology */,
 				DCE061F8A68D0CD546D919E2 /* ServiceLifecycle */,
 				A50000000000000000000040 /* Envelope */,
+				D2E000000000000000000040 /* TopoText */,
 				1CD6B9E157EEC273F178543D /* ServiceLifecycleTestKit */,
 				48ABEE9E6903427DD79096A1 /* Logging */,
 			);
@@ -592,6 +601,8 @@
 				A40000000000000000000024 /* ../../Shared/Models/Service.swift in Sources */,
 				A50000000000000000000020 /* MailTests.swift in Sources */,
 				A50000000000000000000021 /* ../../App/Services/Mail.swift in Sources */,
+				D2E000000000000000000020 /* NotesInlineTests.swift in Sources */,
+				D2E000000000000000000021 /* ../../App/Services/NotesInline.swift in Sources */,
 				A50000000000000000000022 /* ../../App/Extensions/Foundation+Extensions.swift in Sources */,
 				B13400000000000000000020 /* AppleScriptTests.swift in Sources */,
 				A30000000000000000000020 /* HomeToolsTests.swift in Sources */,
@@ -647,7 +658,7 @@
 				ENABLE_TESTING_SEARCH_PATHS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundlePackageType = BNDL;
-				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MACOSX_DEPLOYMENT_TARGET = 15.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "me.mattt.iMCP.imcp-serverTests";
 				PRODUCT_MODULE_NAME = imcp_serverTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -663,7 +674,7 @@
 				ENABLE_TESTING_SEARCH_PATHS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundlePackageType = BNDL;
-				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MACOSX_DEPLOYMENT_TARGET = 15.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "me.mattt.iMCP.imcp-serverTests";
 				PRODUCT_MODULE_NAME = imcp_serverTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1130,7 +1141,7 @@
 			repositoryURL = "https://github.com/mattt/TopoText";
 			requirement = {
 				kind = upToNextMajorVersion;
-				minimumVersion = 0.2.0;
+				minimumVersion = 0.3.0;
 			};
 		};
 		F825BDBD2D9AD00E0063ADD7 /* XCRemoteSwiftPackageReference "swift-service-lifecycle" */ = {
@@ -1286,6 +1297,11 @@
 			productName = MCP;
 		};
 		AA0011000000000000000002 /* Envelope */ = {isa = XCSwiftPackageProductDependency; package = AA0011000000000000000003 /* XCRemoteSwiftPackageReference "Envelope" */; productName = Envelope; };
+		D2E000000000000000000040 /* TopoText */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C0FFEE0000000000000000A3 /* XCRemoteSwiftPackageReference "TopoText" */;
+			productName = TopoText;
+		};
 		A50000000000000000000040 /* Envelope */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = AA0011000000000000000003 /* XCRemoteSwiftPackageReference "Envelope" */;
