@@ -440,9 +440,10 @@ enum NotesMarkdown {
             while index < lines.count, lines[index].contains("|"),
                 !lines[index].trimmingCharacters(in: .whitespaces).isEmpty
             {
-                var cells = Self.cells(of: lines[index])
-                // Every row has as many cells as the header.
-                while cells.count < header.count { cells.append("") }
+                let cells = Self.cells(of: lines[index])
+                // A row is not padded to the header's width: a wide header
+                // with many short rows would otherwise produce a lot of empty
+                // cells. Extra cells past the header are dropped.
                 rows.append(cells.prefix(header.count).map { "<td>\(Self.inline($0))</td>" })
                 index += 1
             }

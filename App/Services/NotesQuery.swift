@@ -107,12 +107,18 @@ struct NoteFilter: Sendable, Equatable {
     var createdEnd: Date?
 
     /// Whether a note's contents have to be read to apply the filter.
+    /// Tags come from the database's tag records, so a tag filter does not
+    /// need the note's text.
     var needsContents: Bool {
-        !tags.isEmpty || !features.isEmpty || minimumWords != nil || maximumWords != nil
+        !features.isEmpty || minimumWords != nil || maximumWords != nil
     }
 
+    /// Whether the filter reads the database's tag records.
+    var needsTags: Bool { !tags.isEmpty }
+
     var isEmpty: Bool {
-        !needsContents && isPinned == nil && isLocked == nil && createdStart == nil && createdEnd == nil
+        !needsContents && !needsTags && isPinned == nil && isLocked == nil
+            && createdStart == nil && createdEnd == nil
     }
 
     /// Returns a tag as Notes compares it: without `#` or surrounding white space.
@@ -138,15 +144,26 @@ struct NoteFilter: Sendable, Equatable {
         return true
     }
 
-    /// Whether a note's contents pass the filter.
+    /// Whether the note's tag records pass the tag filter.
+    ///
+    /// The records are the same ones the note's `keywords` come from, so a
+    /// tag filter matches what the output shows.
+    func matches(tags: [TopoText.Note.Tag]) -> Bool {
+        guard !self.tags.isEmpty else { return true }
+        let present = Set(
+            tags.map(\.text).compactMap(Self.normalizedTag).map { $0.lowercased() }
+        )
+        return self.tags.allSatisfy { tag in
+            Self.normalizedTag(tag).map { present.contains($0.lowercased()) } ?? false
+        }
+    }
+
+    /// Whether a note's contents pass the content filters.
     func matches(_ traits: NoteTraits) -> Bool {
         if !features.isSubset(of: traits.features) { return false }
         if let minimumWords, traits.wordCount < minimumWords { return false }
         if let maximumWords, traits.wordCount > maximumWords { return false }
-        let present = Set(traits.tags.compactMap(Self.normalizedTag).map { $0.lowercased() })
-        return tags.allSatisfy { tag in
-            Self.normalizedTag(tag).map { present.contains($0.lowercased()) } ?? false
-        }
+        return true
     }
 }
 
@@ -177,11 +194,11 @@ extension TopoText.Note.Attachment.Kind {
 
 extension NoteTraits {
     /// The traits as properties of a note in tool output.
+    ///
+    /// Tags are not here: a note's `keywords` come from the database's tag
+    /// records, which are the same records the tag filter reads.
     var properties: [String: Value] {
         var object: [String: Value] = ["wordCount": .int(wordCount)]
-        if !tags.isEmpty {
-            object["keywords"] = .array(tags.map { .string($0) })
-        }
         if !features.isEmpty {
             object["has"] = .array(features.map(\.rawValue).sorted().map { .string($0) })
         }
@@ -258,37 +275,6 @@ func folderPath(of id: TopoText.Folder.ID, in folders: [FolderNode]) -> String? 
         node = parent
     }
     return names.reversed().joined(separator: "/")
-}
-
-/// Counts of notes by tag, for `notes_tags`.
-struct TagTally: Sendable, Equatable {
-    /// The tag and the number of notes that have it, most used first, then by name.
-    private(set) var counts: [(tag: String, count: Int)] = []
-    private var indices: [String: Int] = [:]
-
-    mutating func add(_ traits: NoteTraits) {
-        for tag in traits.tags {
-            let key = tag.lowercased()
-            if let index = indices[key] {
-                counts[index].count += 1
-            } else {
-                indices[key] = counts.count
-                counts.append((tag, 1))
-            }
-        }
-    }
-
-    /// The tags ordered by use.
-    var sorted: [(tag: String, count: Int)] {
-        counts.sorted {
-            $0.count != $1.count
-                ? $0.count > $1.count : $0.tag.localizedCaseInsensitiveCompare($1.tag) == .orderedAscending
-        }
-    }
-
-    static func == (lhs: TagTally, rhs: TagTally) -> Bool {
-        lhs.counts.map(\.tag) == rhs.counts.map(\.tag) && lhs.counts.map(\.count) == rhs.counts.map(\.count)
-    }
 }
 
 /// Counts of notes, for `notes_stats`.

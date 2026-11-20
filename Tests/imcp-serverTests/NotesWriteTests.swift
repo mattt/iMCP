@@ -74,9 +74,10 @@ final class NotesWriteTests: XCTestCase {
     }
 
     func testTables() {
+        // A short row is not padded to the header's width.
         XCTAssertEqual(
             html("| a | b |\n|---|:-:|\n| 1 | 2 |\n| 3 |"),
-            "<table><tbody><tr><td><b>a</b></td><td><b>b</b></td></tr><tr><td>1</td><td>2</td></tr><tr><td>3</td><td></td></tr></tbody></table>"
+            "<table><tbody><tr><td><b>a</b></td><td><b>b</b></td></tr><tr><td>1</td><td>2</td></tr><tr><td>3</td></tr></tbody></table>"
         )
         XCTAssertEqual(html("a | b"), "<div>a | b</div>")
     }

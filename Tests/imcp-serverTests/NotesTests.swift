@@ -55,15 +55,22 @@ final class NotesTests: XCTestCase {
 
     func testFilterAppliesEveryCondition() {
         let traits = NoteTraits(content: sample)
-        XCTAssertTrue(NoteFilter(tags: ["#travel"], features: [.table, .checklist]).matches(traits))
-        XCTAssertFalse(NoteFilter(tags: ["travel", "work"]).matches(traits))
+        // Tags come from the database's tag records, the same ones `keywords` uses.
+        let tags = [TopoText.Note.Tag("#Travel")!]
+        XCTAssertTrue(
+            NoteFilter(tags: ["#travel"], features: [.table, .checklist]).matches(tags: tags)
+        )
+        XCTAssertTrue(NoteFilter(tags: ["#travel"]).matches(tags: tags))
+        XCTAssertFalse(NoteFilter(tags: ["travel", "work"]).matches(tags: tags))
         XCTAssertFalse(NoteFilter(features: [.drawing]).matches(traits))
         XCTAssertTrue(NoteFilter(minimumWords: 6, maximumWords: 6).matches(traits))
         XCTAssertFalse(NoteFilter(minimumWords: 7).matches(traits))
         XCTAssertFalse(NoteFilter(maximumWords: 5).matches(traits))
         XCTAssertTrue(NoteFilter().isEmpty)
         XCTAssertFalse(NoteFilter(isPinned: true).needsContents)
-        XCTAssertTrue(NoteFilter(tags: ["a"]).needsContents)
+        // A tag filter reads tag records, not the note's text.
+        XCTAssertTrue(NoteFilter(tags: ["a"]).needsTags)
+        XCTAssertFalse(NoteFilter(tags: ["a"]).needsContents)
     }
 
     func testFilterMatchesFlagsAndCreationRange() {
@@ -108,20 +115,6 @@ final class NotesTests: XCTestCase {
         XCTAssertNil(folderPath(of: TopoText.Folder.ID("Z")!, in: nodes))
         let loop = [FolderNode(id: a, name: "A", parentID: b), FolderNode(id: b, name: "B", parentID: a)]
         XCTAssertEqual(folderPath(of: a, in: loop), "B/A")
-    }
-
-    func testTagTallyCountsCaseInsensitivelyAndOrdersByUse() {
-        var tally = TagTally()
-        tally.add(NoteTraits(content: sample))
-        var other = Content(paragraphs: [
-            Paragraph(runs: [attachment("T3", type: "com.apple.notes.inlinetextattachment.hashtag", text: "#alpha")])
-        ])
-        tally.add(NoteTraits(content: other))
-        tally.add(NoteTraits(content: sample))
-        other = Content()
-        tally.add(NoteTraits(content: other))
-        XCTAssertEqual(tally.sorted.map(\.tag), ["#Travel", "#alpha"])
-        XCTAssertEqual(tally.sorted.map(\.count), [2, 1])
     }
 
     func testStatisticsCountRecentlyDeletedApart() {
