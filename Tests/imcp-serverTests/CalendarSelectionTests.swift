@@ -102,4 +102,23 @@ final class CalendarSelectionTests: XCTestCase {
         store.selection = selection
         XCTAssertEqual(CalendarSelectionStore(defaults: defaults).selection, selection)
     }
+
+    func testDecodeIfPresentFillsMissingKeys() throws {
+        let data = Data(#"{"deselected":["id-home"]}"#.utf8)
+        let decoded = try JSONDecoder().decode(CalendarSelection.self, from: data)
+        XCTAssertTrue(decoded.showsNewCalendars)
+        XCTAssertFalse(decoded.isSelected(home.selectionIdentifier))
+        XCTAssertTrue(decoded.isSelected(work.selectionIdentifier))
+    }
+
+    func testCorruptStoredSelectionFailsClosed() throws {
+        let suite = "CalendarSelectionTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        defaults.set(Data("{not valid json".utf8), forKey: CalendarSelectionStore.key)
+        let store = CalendarSelectionStore(defaults: defaults)
+        XCTAssertFalse(store.selection.showsNewCalendars)
+        XCTAssertEqual(store.selection.filter(all), [])
+    }
 }

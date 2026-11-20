@@ -1,4 +1,7 @@
 import Foundation
+import OSLog
+
+private let log = Logger.service("calendar")
 
 /// A calendar as the selection sees it: an identifier and a title.
 protocol CalendarSelectable {
@@ -19,6 +22,30 @@ struct CalendarSelection: Codable, Equatable {
     var showsNewCalendars = true
     private(set) var selected: Set<String> = []
     private(set) var deselected: Set<String> = []
+
+    private enum CodingKeys: String, CodingKey {
+        case showsNewCalendars
+        case selected
+        case deselected
+    }
+
+    init(
+        showsNewCalendars: Bool = true,
+        selected: Set<String> = [],
+        deselected: Set<String> = []
+    ) {
+        self.showsNewCalendars = showsNewCalendars
+        self.selected = selected
+        self.deselected = deselected
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        showsNewCalendars =
+            try container.decodeIfPresent(Bool.self, forKey: .showsNewCalendars) ?? true
+        selected = try container.decodeIfPresent(Set<String>.self, forKey: .selected) ?? []
+        deselected = try container.decodeIfPresent(Set<String>.self, forKey: .deselected) ?? []
+    }
 
     func isSelected(_ identifier: String) -> Bool {
         if selected.contains(identifier) { return true }
@@ -102,12 +129,26 @@ struct CalendarSelectionStore {
 
     var selection: CalendarSelection {
         get {
-            defaults.data(forKey: Self.key)
-                .flatMap { try? JSONDecoder().decode(CalendarSelection.self, from: $0) }
-                ?? CalendarSelection()
+            guard let data = defaults.data(forKey: Self.key) else {
+                return CalendarSelection()
+            }
+            do {
+                return try JSONDecoder().decode(CalendarSelection.self, from: data)
+            } catch {
+                log.error(
+                    "Failed to decode calendar selection; sharing no calendars until updated: \(error.localizedDescription, privacy: .public)"
+                )
+                return CalendarSelection(showsNewCalendars: false)
+            }
         }
         nonmutating set {
-            defaults.set(try? JSONEncoder().encode(newValue), forKey: Self.key)
+            do {
+                defaults.set(try JSONEncoder().encode(newValue), forKey: Self.key)
+            } catch {
+                log.error(
+                    "Failed to encode calendar selection: \(error.localizedDescription, privacy: .public)"
+                )
+            }
         }
     }
 }
