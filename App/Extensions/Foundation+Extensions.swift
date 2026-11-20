@@ -237,11 +237,9 @@ extension NSAppleScript {
     static func execute(
         _ source: String,
         calling subroutine: Subroutine? = nil,
-        beforeSending: @escaping () throws -> Void = {}
+        beforeSending: @escaping @Sendable () throws -> Void = {}
     ) async throws -> NSAppleEventDescriptor {
         try Task.checkCancellation()
-        // Callers must not access the closure after passing it to this queue.
-        nonisolated(unsafe) let beforeSending = beforeSending
         let isCancelled = OSAllocatedUnfairLock(initialState: false)
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
@@ -267,6 +265,12 @@ extension NSAppleScript {
                         try beforeSending()
                     } catch {
                         continuation.resume(throwing: error)
+                        return
+                    }
+                    // The hook may have run for a while: a task cancelled
+                    // during it must not start the script.
+                    if isCancelled.withLock({ $0 }) {
+                        continuation.resume(throwing: CancellationError())
                         return
                     }
                     let result =

@@ -134,4 +134,27 @@ final class AppleScriptTests: XCTestCase {
         _ = try? await task.value
         XCTAssertFalse(called.withLock { $0 })
     }
+
+    /// A task cancelled while the hook is running must not start the script.
+    func testCancellingDuringTheHookStopsTheScript() async throws {
+        let entered = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        let task = Task {
+            try await NSAppleScript.execute("return 3") {
+                entered.signal()
+                release.wait()
+            }.int32Value
+        }
+        XCTAssertEqual(entered.wait(timeout: .now() + 5), .success, "the hook never ran")
+        task.cancel()
+        release.signal()
+        do {
+            _ = try await task.value
+            XCTFail("the script ran after the task was cancelled during the hook")
+        } catch is CancellationError {
+            // expected
+        } catch {
+            XCTFail("unexpected error: \(error)")
+        }
+    }
 }
