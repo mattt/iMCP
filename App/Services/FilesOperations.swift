@@ -577,6 +577,7 @@ enum FilesOperations {
         defer { close(output) }
         var info = Darwin.stat()
         guard fstat(output, &info) == 0, info.isRegularFile else { throw FilesError.notAFile(file.displayPath) }
+        guard info.st_nlink <= 1 else { throw FilesError.hardLinked(file.displayPath) }
         try writeAll(data, to: output, displayPath: file.displayPath)
         fsync(output)
         return try changeResult(
@@ -650,8 +651,14 @@ enum FilesOperations {
     /// just before the move. After the move the pinned descriptor says where the item went (`F_GETPATH`
     /// follows the file), and if that isn't the Trash, something else was swapped in and trashed:
     /// iMCP puts it back where it was and reports it.
-    /// - Parameter beforeMove: Called just before the move. Tests use it to swap the item.
-    static func trash(_ item: FilesAccess.Resolved, beforeMove: () -> Void = {}) throws -> Value {
+    /// - Parameters:
+    ///   - beforeMove: Called before the second pin check. Tests use it to swap the item before trashing.
+    ///   - afterCheck: Called after the pin check and just before `trashItem`. Tests use it to exercise post-trash recovery.
+    static func trash(
+        _ item: FilesAccess.Resolved,
+        beforeMove: () -> Void = {},
+        afterCheck: () -> Void = {}
+    ) throws -> Value {
         guard !item.isRoot, let name = item.canonicalComponents.last else {
             throw FilesError.invalidPath("a shared folder can't be trashed: remove it in iMCP's Files settings")
         }
@@ -673,6 +680,7 @@ enum FilesOperations {
         guard let current = try parent.status(of: name, displayPath: item.displayPath), isPinned(current) else {
             throw FilesError.changedWhileWorking(item.displayPath)
         }
+        afterCheck()
         let url = URL(fileURLWithPath: parent.path).appendingPathComponent(name)
         var trashed: NSURL?
         try FileManager.default.trashItem(at: url, resultingItemURL: &trashed)
