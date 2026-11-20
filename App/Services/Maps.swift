@@ -7,6 +7,7 @@ private let log = Logger.service("maps")
 
 private let defaultSearchRadius: CLLocationDistance = 5000  // Default 5km
 private let defaultSearchLimit: Int = 10
+private let defaultMapsSearchLimit: Int = 30
 private let defaultMapImageSize: CGSize = CGSize(width: 1024, height: 1024)
 
 final class MapsService: NSObject, Service {
@@ -59,7 +60,7 @@ final class MapsService: NSObject, Service {
                     ),
                     "limit": .integer(
                         description: "Maximum results to return",
-                        default: .int(defaultSearchLimit),
+                        default: .int(defaultMapsSearchLimit),
                         minimum: 1
                     ),
                 ],
@@ -80,7 +81,7 @@ final class MapsService: NSObject, Service {
                 )
             }
 
-            let limit = arguments["limit"]?.intValue ?? defaultSearchLimit
+            let limit = arguments["limit"]?.intValue ?? defaultMapsSearchLimit
 
             // Set up search request
             let searchRequest = MKLocalSearch.Request()

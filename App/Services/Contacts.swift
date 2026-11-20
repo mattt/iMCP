@@ -227,7 +227,8 @@ final class ContactsService: Service {
             }
 
             let limit = arguments["limit"]?.intValue.map { max($0, 1) } ?? Int.max
-            return JSONLDGraph(contacts.prefix(limit).compactMap { listedPerson(from: $0) })
+            let people = contacts.compactMap { listedPerson(from: $0) }
+            return JSONLDGraph(Array(people.prefix(limit)))
         }
 
         Tool(
