@@ -934,14 +934,14 @@ final class MessageService: NSObject, Service, NSOpenSavePanelDelegate {
                 iMCP can currently read `chat.db` alone. Messages writes new messages to a log \
                 next to it first, so the latest ones stay invisible for hours.
 
-                In the next screen, please select the `Messages` folder and click "Grant Access".
+                Next, select the `Messages` folder and click "Grant Access".
                 """
         } else {
             alert.informativeText = """
-                To read your Messages history, we need access to your Messages folder: the \
+                To read your Messages history, iMCP needs access to your Messages folder: the \
                 database and the log Messages writes new messages to.
 
-                In the next screen, please select the `Messages` folder and click "Grant Access".
+                Next, select the `Messages` folder and click "Grant Access".
                 """
         }
         alert.alertStyle = .informational
