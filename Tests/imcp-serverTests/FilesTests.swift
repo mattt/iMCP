@@ -965,8 +965,9 @@ final class FilesTests: XCTestCase {
         XCTAssertThrowsError(
             try FilesOperations.trash(
                 item,
-                beforeMove: {
-                    // Another process moves the file away and puts a link to an outside file in its place.
+                afterCheck: {
+                    // Another process moves the file away and puts a link to an outside file in its place
+                    // right between the pin check and trashItem, exercising post-trash recovery.
                     try? FileManager.default.moveItem(at: url, to: self.shared.appendingPathComponent("moved-away.txt"))
                     try? self.link(name, to: outside)
                 }
@@ -977,6 +978,22 @@ final class FilesTests: XCTestCase {
         XCTAssertNotNil(try? FileManager.default.destinationOfSymbolicLink(atPath: url.path))
         XCTAssertEqual(try text(at: outside), "outside")
         XCTAssertEqual(try text(at: shared.appendingPathComponent("moved-away.txt")), "original")
+    }
+
+    func testAppendRefusesAFileWithMoreThanOneHardLink() throws {
+        let outside = try write("secret", to: "secret.txt", in: sibling)
+        let linked = shared.appendingPathComponent("linked.txt")
+        try FileManager.default.linkItem(at: outside, to: linked)
+        XCTAssertThrowsError(
+            try FilesOperations.append(
+                try access.resolve("Shared/linked.txt"),
+                content: "\nappended",
+                createIfMissing: false
+            )
+        ) {
+            XCTAssertEqual($0 as? FilesError, .hardLinked("Shared/linked.txt"))
+        }
+        XCTAssertEqual(try text(at: outside), "secret")
     }
 
     func testTrashRefusesAnItemSwappedBeforeThePinIsChecked() throws {

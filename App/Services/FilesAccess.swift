@@ -22,6 +22,7 @@ enum FilesError: Error, LocalizedError, Equatable {
     case notAFile(String)
     case notADirectory(String)
     case alreadyExists(String)
+    case hardLinked(String)
     case tooLarge(String)
     case binaryFile(path: String, size: Int, limit: Int)
     case changedSinceRead(String)
@@ -67,6 +68,8 @@ enum FilesError: Error, LocalizedError, Equatable {
             return "\"\(path)\" is not a folder."
         case .alreadyExists(let path):
             return "\"\(path)\" already exists."
+        case .hardLinked(let path):
+            return "\"\(path)\" has more than one hard link, so iMCP won't append to it in place."
         case .tooLarge(let message):
             return message
         case .binaryFile(let path, let size, let limit):
