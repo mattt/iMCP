@@ -73,4 +73,65 @@ final class AppleScriptTests: XCTestCase {
             XCTAssertNotNil((error as? NSAppleScript.ExecutionError)?.number)
         }
     }
+
+    /// A handler receives hostile text as a value: the script that would run it never does.
+    func testHandlerParametersAreValuesNotScriptSource() async throws {
+        let hostile = "\" & (do shell script \"touch /tmp/imcp-should-not-exist\") & \"\\"
+        let echoed = try await NSAppleScript.execute(
+            """
+            on echo(valueOne, valueTwo)
+                return valueOne & "|" & valueTwo
+            end echo
+            """,
+            calling: NSAppleScript.Subroutine("echo", [.string(hostile), .string("a\nb")])
+        )
+        XCTAssertEqual(echoed.stringValue, hostile + "|a\nb")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: "/tmp/imcp-should-not-exist"))
+    }
+
+    func testSubroutineEventEncodesTypedParameters() throws {
+        let code: FourCharCode = 0x694D_7367  // 'iMsg'
+        let event = NSAppleScript.Subroutine(
+            "SendItem",
+            [.string("hello"), .boolean(true), .strings(["a", "b"]), .enumCode(code)]
+        ).event()
+
+        XCTAssertEqual(event.paramDescriptor(forKeyword: 0x736E_616D)?.stringValue, "senditem")
+        let args = try XCTUnwrap(event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject)))
+        XCTAssertEqual(args.numberOfItems, 4)
+        XCTAssertEqual(args.atIndex(1)?.stringValue, "hello")
+        XCTAssertEqual(args.atIndex(2)?.booleanValue, true)
+        XCTAssertEqual(args.atIndex(3)?.numberOfItems, 2)
+        XCTAssertEqual(args.atIndex(3)?.atIndex(1)?.stringValue, "a")
+        XCTAssertEqual(args.atIndex(3)?.atIndex(2)?.stringValue, "b")
+        XCTAssertEqual(args.atIndex(4)?.enumCodeValue, code)
+    }
+
+    func testBeforeSendingRunsImmediatelyBeforeTheScript() async throws {
+        let marker = OSAllocatedUnfairLock(initialState: 0)
+        let result = try await NSAppleScript.execute("return 7") {
+            marker.withLock { $0 = 1 }
+        }
+        XCTAssertEqual(result.int32Value, 7)
+        XCTAssertEqual(marker.withLock { $0 }, 1)
+
+        struct Stop: Error {}
+        do {
+            _ = try await NSAppleScript.execute("error \"ran\" number 1") { throw Stop() }
+            XCTFail("expected the hook's error")
+        } catch {
+            XCTAssertTrue(error is Stop, "\(error)")
+        }
+    }
+
+    func testCancelledTasksSkipTheHook() async {
+        let called = OSAllocatedUnfairLock(initialState: false)
+        let task = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await NSAppleScript.execute("return 2") { called.withLock { $0 = true } }
+                .int32Value
+        }
+        _ = try? await task.value
+        XCTAssertFalse(called.withLock { $0 })
+    }
 }
