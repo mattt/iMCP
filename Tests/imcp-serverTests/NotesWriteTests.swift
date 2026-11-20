@@ -150,10 +150,6 @@ final class NotesWriteTests: XCTestCase {
             try request(title: "T", body: "**x**", format: .markdown).bodyHTML,
             "<div><h1>T</h1></div><div><b>x</b></div>"
         )
-        XCTAssertEqual(
-            try request(title: "T", body: "<p>raw</p>", format: .html).bodyHTML,
-            "<div><h1>T</h1></div><p>raw</p>"
-        )
         XCTAssertEqual(try request(title: "T").bodyHTML, "<div><h1>T</h1></div>")
     }
 

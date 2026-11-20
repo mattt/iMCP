@@ -52,7 +52,7 @@ enum NotesWriteTools {
                         ),
                         "format": .string(
                             description:
-                                "How the body is written: plaintext shows it as written, markdown converts it, and html passes it to Notes as HTML",
+                                "How the body is written: plaintext shows it as written, and markdown converts it",
                             default: .string(NotesContentFormat.plaintext.rawValue),
                             enum: NotesContentFormat.allCases.map { .string($0.rawValue) }
                         ),

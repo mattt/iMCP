@@ -11,8 +11,6 @@ import Foundation
 enum NotesContentFormat: String, CaseIterable, Sendable {
     /// Text, shown as written.
     case plaintext
-    /// HTML, which Notes reads as it reads any HTML body.
-    case html
     /// Markdown, converted to the HTML subset that Notes keeps.
     case markdown
 }
@@ -148,7 +146,6 @@ struct NotesNoteRequest: Equatable, Sendable {
         let content =
             switch format {
             case .plaintext: NotesHTML.html(fromPlainText: body)
-            case .html: body
             case .markdown: NotesMarkdown.html(from: body)
             }
         self.bodyHTML = "<div><h1>\(NotesHTML.escape(title))</h1></div>" + content
