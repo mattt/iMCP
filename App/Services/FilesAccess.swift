@@ -27,6 +27,8 @@ enum FilesError: Error, LocalizedError, Equatable {
     case binaryFile(path: String, size: Int, limit: Int)
     case changedSinceRead(String)
     case changedWhileWorking(String)
+    case trashUnverified(String)
+    case trashRestoreFailed(path: String, reason: String)
     case invalidArgument(String)
 
     /// The error for a failed system call on `path`.
@@ -80,6 +82,12 @@ enum FilesError: Error, LocalizedError, Equatable {
         case .changedWhileWorking(let path):
             return
                 "\"\(path)\" changed while iMCP worked on it: a folder or file in its path is now a link or is somewhere else. Nothing was changed. Try again."
+        case .trashUnverified(let path):
+            return
+                "\"\(path)\" was moved to the Trash, but iMCP could not confirm where it went. Check the Trash before trying again."
+        case .trashRestoreFailed(let path, let reason):
+            return
+                "Another item was moved to the Trash in the place of \"\(path)\", and putting it back failed: \(reason). Check the Trash for the item that was moved."
         case .invalidArgument(let message):
             return message
         }
