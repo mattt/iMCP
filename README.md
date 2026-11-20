@@ -75,7 +75,7 @@ and a [growing list of clients][mcp-clients] that support the
       <img src="Assets/notes.svg" width="48" height="48" alt="" role="presentation"/>
     </th>
     <td><strong>Notes</strong></td>
-    <td>Search notes by text, tag, folder, date, pinned state, or what they contain (checklists, tables, links, attachments), and read them as Markdown. List accounts, folders, tags, attachments, and counts. With Allow writes on, create notes and folders.</td>
+    <td>Search notes by text, tag, folder, date, pinned state, or what they contain (checklists, tables, links, attachments), and read them as Markdown. List accounts, folders, attachments, and counts. With Allow writes on, create notes and folders.</td>
   </tr>
   <tr>
     <th width="48">
@@ -766,11 +766,11 @@ and Steve Dunham's [notesutils][notesutils].
 The Notes service reads notes with TopoText and returns them as Markdown.
 
 Besides `notes_fetch` and `notes_read`,
-the service lists accounts, folders (with their paths), tags, attachments, and note counts.
+the service lists accounts, folders (with their paths), attachments, and note counts.
 Each note has a `notes://showNote?identifier=` link that opens it in the Notes app.
 Filters on tags, word counts, and what a note contains
 need to read each candidate note's contents,
-so a call reads at most 500 notes and returns a `nextCursor` to continue.
+so a call reads at most 500 notes (and scans at most 2,000 notes for pinned, locked, and creation-date filters) and returns a `nextCursor` to continue.
 Notes can't be created or changed, and smart folders aren't listed yet,
 because TopoText doesn't expose them.
 
