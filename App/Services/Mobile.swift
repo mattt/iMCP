@@ -20,6 +20,7 @@ actor MobileService: MobileBackend {
     private var cache: MobileCache?
     private let pairings: any MobilePairingStore
     private let reconnectGrace: Duration
+    private let livenessTimeout: Duration
     private let advertise: Bool
     private let pollInterval: Duration
     private let codeLifetime: TimeInterval
@@ -45,6 +46,7 @@ actor MobileService: MobileBackend {
         cache: MobileCache? = nil,
         pairings: any MobilePairingStore = MobileKeychainPairings(),
         reconnectGrace: Duration = .seconds(5),
+        livenessTimeout: Duration = .seconds(3),
         advertise: Bool = true,
         pollInterval: Duration = .seconds(15),
         codeLifetime: TimeInterval = MobileService.pairingLifetime,
@@ -53,6 +55,7 @@ actor MobileService: MobileBackend {
         self.cache = cache
         self.pairings = pairings
         self.reconnectGrace = reconnectGrace
+        self.livenessTimeout = livenessTimeout
         self.advertise = advertise
         self.pollInterval = pollInterval
         self.codeLifetime = codeLifetime
@@ -416,8 +419,11 @@ actor MobileService: MobileBackend {
                 // Disconnecting the client fails its pending requests and stops its receive loop.
                 await link.close()
             }
-            attach(link)
-            log.notice("\(device.name, privacy: .public) connected")
+            if await attach(link) {
+                log.notice("\(device.name, privacy: .public) connected")
+            } else {
+                log.notice("\(device.name, privacy: .public) opened a second connection; kept the live one")
+            }
         } catch let refusal as Refusal {
             lastPairingError = refusal.message
             log.error("Refused a mobile connection: \(refusal.message, privacy: .public)")
@@ -432,12 +438,27 @@ actor MobileService: MobileBackend {
     // MARK: - Links
 
     /// Makes `link` the connection that calls go to, replacing any other.
-    func attach(_ link: any MobilePeerLink) {
+    ///
+    /// A second connection from the device that already has a live one
+    /// (the app dials from two places at once) doesn't replace it
+    /// while it still answers a quick status call,
+    /// because replacing it would cancel the sync in progress and start the same fight again.
+    /// A link that doesn't answer is stale, so the new one replaces it.
+    /// Returns whether `link` is now the connection; if not, it has been closed.
+    @discardableResult
+    func attach(_ link: any MobilePeerLink) async -> Bool {
+        if let current = self.link, current !== link, current.device.id == link.device.id,
+            await current.answers(within: livenessTimeout), self.link === current
+        {
+            await link.close()
+            return false
+        }
         let previous = self.link
         self.link = link
         if let previous, previous !== link { Task { await previous.close() } }
         syncTask?.cancel()
         syncTask = Task { [weak self] in await self?.syncLoop(link) }
+        return true
     }
 
     func detach(_ link: any MobilePeerLink) {
@@ -764,6 +785,33 @@ protocol MobilePeerLink: AnyObject, Sendable {
     /// Throws `MobileLinkLost` if the connection ends before the answer arrives.
     func call(_ tool: String, _ input: [String: Value]) async throws -> String
     func close() async
+}
+
+extension MobilePeerLink {
+    /// Whether the phone answers a status call within `timeout`.
+    /// Any reply, even an error from the phone, means the connection is alive.
+    func answers(within timeout: Duration) async -> Bool {
+        await withTaskGroup(of: Bool.self) { group in
+            group.addTask {
+                do {
+                    _ = try await self.call(MobileTools.statusTool, [:])
+                    return true
+                } catch is MobileLinkLost {
+                    return false
+                } catch is CancellationError {
+                    return false
+                } catch {
+                    return true
+                }
+            }
+            group.addTask {
+                try? await Task.sleep(for: timeout)
+                return false
+            }
+            defer { group.cancelAll() }
+            return await group.next() ?? false
+        }
+    }
 }
 
 struct MobileLinkLost: Error, CustomStringConvertible {

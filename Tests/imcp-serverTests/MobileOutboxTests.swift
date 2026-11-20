@@ -110,6 +110,62 @@ final class MobileOutboxTests: XCTestCase {
         let pull = try await outbox.pull(cacheID: "cache-1")
         XCTAssertTrue(pull.reset)
     }
+
+    // MARK: - Suspension safety (0xdead10cc)
+
+    /// iOS kills an app that is suspended holding a file lock in a shared container.
+    /// The outbox has no other reader, so it must not live in the App Group container.
+    func testDatabaseIsNotInTheAppGroupContainer() throws {
+        let group = directory.appendingPathComponent("group", isDirectory: true)
+        let support = directory.appendingPathComponent("support", isDirectory: true)
+        try FileManager.default.createDirectory(at: group, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
+        let url = try MobileOutbox.databaseURL(groupContainer: group, supportDirectory: support)
+        XCTAssertEqual(url.deletingLastPathComponent().standardizedFileURL, support.standardizedFileURL)
+    }
+
+    /// An outbox that an earlier build left in the App Group container moves with its queue and anchors.
+    func testMigrationMovesTheQueuedDataOutOfTheGroupContainer() async throws {
+        let group = directory.appendingPathComponent("group", isDirectory: true)
+        let support = directory.appendingPathComponent("support", isDirectory: true)
+        try FileManager.default.createDirectory(at: group, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
+        do {
+            // The earlier build's connection is closed when its process ends.
+            let old = try MobileOutbox(url: group.appendingPathComponent(MobileOutbox.fileName))
+            try await old.enqueue([record("a")], syncedAt: [:], state: ["anchor.workout": Data([7])])
+        }
+        let url = try MobileOutbox.databaseURL(groupContainer: group, supportDirectory: support)
+        MobileOutbox.migrateFromAppGroup(group, to: url)
+        let moved = try MobileOutbox(url: url)
+        let pending = await moved.pendingCount
+        let anchor = await moved.state("anchor.workout")
+        XCTAssertEqual(pending, 1)
+        XCTAssertEqual(anchor, Data([7]))
+        let left = try FileManager.default.contentsOfDirectory(atPath: group.path).filter { $0.hasPrefix("outbox") }
+        XCTAssertEqual(left, [], "Nothing stays in the group container.")
+    }
+
+    /// When the background-task assertion expires, the work is cancelled.
+    /// A cancelled write must roll back and leave no lock behind.
+    func testCancelledEnqueueQueuesNothingAndHoldsNoLock() async throws {
+        let task = Task {
+            while !Task.isCancelled { await Task.yield() }
+            try await outbox.enqueue([record("a")], syncedAt: [.health: Date()], state: ["anchor": Data([1])])
+        }
+        task.cancel()
+        do {
+            try await task.value
+            XCTFail("A cancelled enqueue must not commit.")
+        } catch is CancellationError {}
+        let pending = await outbox.pendingCount
+        XCTAssertEqual(pending, 0)
+        let anchor = await outbox.state("anchor")
+        XCTAssertNil(anchor)
+        // Another connection can take the write lock at once.
+        let other = try MobileDatabase(path: directory.appendingPathComponent("outbox.sqlite").path)
+        try other.transaction { try other.run("INSERT INTO state (name, value) VALUES ('x', x'00')") }
+    }
 }
 
 final class MobileAlarmRequestTests: XCTestCase {
