@@ -121,4 +121,39 @@ final class CalendarSelectionTests: XCTestCase {
         XCTAssertFalse(store.selection.showsNewCalendars)
         XCTAssertEqual(store.selection.filter(all), [])
     }
+
+    /// A stored value with none of the known keys is corrupt, not a first run.
+    func testUnknownKeysFailClosed() throws {
+        let suite = "CalendarSelectionTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        defaults.set(Data(#"{"calendars":42}"#.utf8), forKey: CalendarSelectionStore.key)
+        let store = CalendarSelectionStore(defaults: defaults)
+        XCTAssertFalse(store.selection.showsNewCalendars, "an unknown-key value must not share everything")
+        XCTAssertEqual(store.selection.filter(all), [])
+    }
+
+    /// A stored value of the wrong type is corrupt, not a first run.
+    func testWrongStoredTypeFailsClosed() throws {
+        let suite = "CalendarSelectionTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        defaults.set("not data", forKey: CalendarSelectionStore.key)
+        let store = CalendarSelectionStore(defaults: defaults)
+        XCTAssertFalse(store.selection.showsNewCalendars)
+        XCTAssertEqual(store.selection.filter(all), [])
+    }
+
+    /// Only a missing key gets the first-run default.
+    func testMissingKeySharesEverything() throws {
+        let suite = "CalendarSelectionTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let store = CalendarSelectionStore(defaults: defaults)
+        XCTAssertTrue(store.selection.showsNewCalendars)
+        XCTAssertEqual(store.selection.filter(all).count, all.count)
+    }
 }

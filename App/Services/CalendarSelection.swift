@@ -41,10 +41,28 @@ struct CalendarSelection: Codable, Equatable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        showsNewCalendars =
-            try container.decodeIfPresent(Bool.self, forKey: .showsNewCalendars) ?? true
-        selected = try container.decodeIfPresent(Set<String>.self, forKey: .selected) ?? []
-        deselected = try container.decodeIfPresent(Set<String>.self, forKey: .deselected) ?? []
+        // A stored value with none of the known keys is corrupt, not a first
+        // run: `decodeIfPresent` alone would turn `{"calendars":42}` into the
+        // default and share every calendar. Only a missing key gets the
+        // first-run default.
+        var sawKnownKey = false
+        if let shows = try container.decodeIfPresent(Bool.self, forKey: .showsNewCalendars) {
+            showsNewCalendars = shows
+            sawKnownKey = true
+        }
+        if let selected = try container.decodeIfPresent(Set<String>.self, forKey: .selected) {
+            self.selected = selected
+            sawKnownKey = true
+        }
+        if let deselected = try container.decodeIfPresent(Set<String>.self, forKey: .deselected) {
+            self.deselected = deselected
+            sawKnownKey = true
+        }
+        guard sawKnownKey else {
+            throw DecodingError.dataCorrupted(
+                .init(codingPath: decoder.codingPath, debugDescription: "no known keys")
+            )
+        }
     }
 
     func isSelected(_ identifier: String) -> Bool {
@@ -129,8 +147,17 @@ struct CalendarSelectionStore {
 
     var selection: CalendarSelection {
         get {
-            guard let data = defaults.data(forKey: Self.key) else {
+            // A missing key is a first run: share everything. A present value
+            // that is not data, or that decodes to nothing, is corrupt: share
+            // no calendars until it is set again.
+            guard let object = defaults.object(forKey: Self.key) else {
                 return CalendarSelection()
+            }
+            guard let data = object as? Data else {
+                log.error(
+                    "Calendar selection is not data; sharing no calendars until updated: \(String(describing: type(of: object)), privacy: .public)"
+                )
+                return CalendarSelection(showsNewCalendars: false)
             }
             do {
                 return try JSONDecoder().decode(CalendarSelection.self, from: data)

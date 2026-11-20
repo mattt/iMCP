@@ -678,6 +678,13 @@ final class CalendarService: Service {
                 event = anyOccurrence
             }
 
+            // The occurrence that was resolved searches every calendar, so it
+            // can land in one the person deselected. Check the calendar of the
+            // event that is actually removed.
+            if let calendar = event.calendar {
+                try self.calendarSelectionStore.selection.require(calendar)
+            }
+
             try self.eventStore.remove(event, span: span, commit: true)
 
             return Value.object([
@@ -964,6 +971,13 @@ final class CalendarService: Service {
                             "Occurrence must be an ISO 8601 date string."
                     ]
                 )
+            }
+
+            // The occurrence that was resolved searches every calendar, so it
+            // can land in one the person deselected. Check the calendar of the
+            // event that is actually updated.
+            if let calendar = event.calendar {
+                try self.calendarSelectionStore.selection.require(calendar)
             }
 
             // The event may already live in a read-only calendar (a
