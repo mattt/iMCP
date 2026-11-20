@@ -63,7 +63,7 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
         Tool(
             name: "notes_fetch",
             description:
-                "Fetch notes from the Notes app, most recently edited first, with each note's title, preview, folder, dates, tags (keywords), and the notes it links to (linkedNotes). Use notes_read for a note's full contents. Notes in Recently Deleted are left out unless that folder is requested. When more notes may match, the result has a nextCursor; pass it as cursor, with the same filters, to continue.",
+                "Fetch notes from the Notes app, most recently edited first, with each note's title, preview, folder, dates, tags (keywords), and the notes it links to (linkedNotes). Tags and links come from the database's records, not from the note's text, so a link on ordinary text, not inserted as a link to a note, is not listed. Locked notes and notes in Recently Deleted are left out of tags and links. Use notes_read for a note's full contents. Notes in Recently Deleted are left out unless that folder is requested. When more notes may match, the result has a nextCursor; pass it as cursor, with the same filters, to continue.",
             inputSchema: .object(
                 properties: [
                     "query": .string(
@@ -217,7 +217,7 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
         Tool(
             name: "notes_tags",
             description:
-                "List the tags (#hashtags) used in the Notes app, with how many notes carry each one, most used first. Reads the database's tag records without opening the notes. Locked notes are skipped, and notes in Recently Deleted unless includeRecentlyDeleted is true.",
+                "List the tags (#hashtags) used in the Notes app, with how many notes carry each one, most used first. Counts come from the database's tag records, not from the notes' text. Locked notes are skipped, and notes in Recently Deleted unless includeRecentlyDeleted is true.",
             inputSchema: .object(
                 properties: [
                     "includeRecentlyDeleted": .boolean(
@@ -239,7 +239,7 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
         Tool(
             name: "notes_read",
             description:
-                "Read the full contents of a note from the Notes app, as Markdown with headings, lists, checklists, links, and tables, or as plain text, with its tags (keywords), the notes it links to (linkedNotes), and the notes that link to it (linkedFrom). Attachments such as images and drawings appear as bracketed descriptions. Notes locked with a password can't be read.",
+                "Read the full contents of a note from the Notes app, as Markdown with headings, lists, checklists, links, and tables, or as plain text, with its tags (keywords), the notes it links to (linkedNotes), and the notes that link to it (linkedFrom). Tags and links come from the database's records, not from the note's text, so a link on ordinary text, not inserted as a link to a note, is not listed. Locked notes and notes in Recently Deleted are left out of tags and links. Attachments such as images and drawings appear as bracketed descriptions. Notes locked with a password can't be read.",
             inputSchema: .object(
                 properties: [
                     "id": .string(
