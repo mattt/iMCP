@@ -116,33 +116,59 @@ func smartFolderValue(_ folder: TopoText.SmartFolder, folderNames: [TopoText.Fol
 
 /// The query that Notes stores for a smart folder.
 ///
-/// Notes stores `{"entity":"note","type":{"and":[{"deleted":false}, <rules>…]}}`.
-/// The `deleted` clause only keeps Recently Deleted out of the results,
-/// so the rules are what remains of the `and` clause.
-/// Notes doesn't document the format, so anything else is kept whole as the rules.
+/// On macOS 27.0.1, Notes stores this query for a smart folder with one tag rule:
+///
+/// ```json
+/// {"type":{"and":[{"deleted":false},{"and":[{"and":[{"deleted":false},{"and":[{"tag":"SMART"}]}]}]}]},"entity":"note"}
+/// ```
+///
+/// Notes stores the tag in capitals, without its `#`.
+/// The rules are the value of `type`, with its conjunctions simplified:
+/// an `and` with one clause becomes that clause,
+/// and a clause that is exactly `{"deleted": <Bool>}` in an `and`, at any depth of nested `and` clauses,
+/// is the filter for Recently Deleted, so it moves to ``includesRecentlyDeleted``.
+/// For the query above, the rules are `{"tag":"SMART"}`.
+/// Notes doesn't document the format, and other kinds of rules have not been observed,
+/// so everything else, such as `or` clauses and unknown keys, is passed through as stored.
+/// If two `deleted` clauses disagree, only those in the outer `and` are removed.
+/// JSON without `type` is kept whole as the rules.
 struct SmartFolderQuery: Sendable, Equatable {
     /// The rules of the folder as JSON, or `nil` if the text is not JSON.
     private(set) var rules: Value?
-    /// Whether the folder includes Recently Deleted, if the query says.
+    /// Whether the folder includes Recently Deleted, if the query says so without contradiction.
     private(set) var includesRecentlyDeleted: Bool?
 
     init(_ text: String) {
         guard let value = try? JSONDecoder().decode(Value.self, from: Data(text.utf8)) else { return }
-        rules = value
-        guard let type = value.objectValue?["type"], let clauses = type.objectValue?["and"]?.arrayValue else {
-            if let type = value.objectValue?["type"] {
-                rules = type
-            }
+        guard let type = value.objectValue?["type"] else {
+            rules = value
             return
+        }
+        var deleted: Set<Bool> = []
+        let simplified = Self.simplified(type, deleted: &deleted, isNested: true)
+        if deleted.count > 1 {
+            var outer: Set<Bool> = []
+            rules = Self.simplified(type, deleted: &outer, isNested: false)
+        } else {
+            rules = simplified
+            includesRecentlyDeleted = deleted.first
+        }
+    }
+
+    /// Simplifies a conjunction, and collects the values of the `deleted` clauses that it removes.
+    /// - Parameter isNested: Whether to simplify the `and` clauses inside the conjunction too.
+    private static func simplified(_ value: Value, deleted: inout Set<Bool>, isNested: Bool) -> Value {
+        guard let object = value.objectValue, object.count == 1, let clauses = object["and"]?.arrayValue else {
+            return value
         }
         var rest: [Value] = []
         for clause in clauses {
-            if let object = clause.objectValue, object.count == 1, let deleted = object["deleted"]?.boolValue {
-                includesRecentlyDeleted = deleted
+            if let object = clause.objectValue, object.count == 1, let flag = object["deleted"]?.boolValue {
+                deleted.insert(flag)
             } else {
-                rest.append(clause)
+                rest.append(isNested ? simplified(clause, deleted: &deleted, isNested: true) : clause)
             }
         }
-        rules = rest.count == 1 ? rest[0] : .object(["and": .array(rest)])
+        return rest.count == 1 ? rest[0] : .object(["and": .array(rest)])
     }
 }

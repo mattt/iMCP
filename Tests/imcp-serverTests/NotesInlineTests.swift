@@ -98,6 +98,44 @@ final class NotesInlineTests: XCTestCase {
         XCTAssertNil(SmartFolderQuery("not json").includesRecentlyDeleted)
     }
 
+    func testSmartFolderQueryReducesTheObservedTagRule() {
+        let text =
+            #"{"type":{"and":[{"deleted":false},{"and":[{"and":[{"deleted":false},{"and":[{"tag":"SMART"}]}]}]}]},"entity":"note"}"#
+        let query = SmartFolderQuery(text)
+        XCTAssertEqual(query.rules, ["tag": "SMART"])
+        XCTAssertEqual(query.includesRecentlyDeleted, false)
+    }
+
+    func testSmartFolderQueryKeepsTwoRulesInTheirConjunction() {
+        let query = SmartFolderQuery(
+            #"{"type":{"and":[{"deleted":false},{"and":[{"and":[{"deleted":false},{"and":[{"tag":"A"},{"pinned":true}]}]}]}]}}"#
+        )
+        XCTAssertEqual(query.rules, ["and": [["tag": "A"], ["pinned": true]]])
+        XCTAssertEqual(query.includesRecentlyDeleted, false)
+    }
+
+    func testSmartFolderQueryLeavesOrClausesAsStored() {
+        let query = SmartFolderQuery(
+            #"{"type":{"and":[{"deleted":false},{"or":[{"and":[{"tag":"A"}]},{"deleted":true}]}]}}"#
+        )
+        XCTAssertEqual(query.rules, ["or": [["and": [["tag": "A"]]], ["deleted": true]]])
+        XCTAssertEqual(query.includesRecentlyDeleted, false)
+    }
+
+    func testSmartFolderQueryDoesNotSimplifyDisagreeingDeletedClauses() {
+        let query = SmartFolderQuery(
+            #"{"type":{"and":[{"deleted":false},{"and":[{"deleted":true},{"and":[{"tag":"A"}]}]}]}}"#
+        )
+        XCTAssertEqual(query.rules, ["and": [["deleted": true], ["and": [["tag": "A"]]]]])
+        XCTAssertNil(query.includesRecentlyDeleted)
+    }
+
+    func testSmartFolderQueryKeepsOtherShapesWhole() {
+        XCTAssertEqual(SmartFolderQuery(#"{"type":["pinned"]}"#).rules, ["pinned"])
+        XCTAssertEqual(SmartFolderQuery(#"[{"and":[{"tag":"A"}]}]"#).rules, [["and": [["tag": "A"]]]])
+        XCTAssertNil(SmartFolderQuery(#"{"tags":["groceries"]}"#).includesRecentlyDeleted)
+    }
+
     func testSmartFolderValueHasRulesParentAndStoredQuery() {
         let parent = TopoText.Folder.ID("P")!
         let text = #"{"type":{"and":[{"deleted":false},{"pinned":true}]}}"#

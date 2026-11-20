@@ -200,7 +200,7 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
         Tool(
             name: "notes_smart_folders",
             description:
-                "List the smart folders in the Notes app, with the rules that select their notes. Smart folders collect notes by a query and hold none of their own, so notes_folders leaves them out. rules is the stored query without the clause that keeps Recently Deleted out; query is the stored text as is.",
+                "List the smart folders in the Notes app, with the rules that select their notes. Smart folders collect notes by a query and hold none of their own, so notes_folders leaves them out. rules is the stored query with single-clause and clauses unwrapped and the Recently Deleted filter moved to includesRecentlyDeleted; anything else, such as or clauses, is as stored. query is the stored text as is.",
             inputSchema: .object(
                 properties: [:],
                 additionalProperties: false
