@@ -62,6 +62,15 @@ actor MobileOutbox {
             supportDirectory: MobileAppGroup.supportDirectory()
         )
         migrateFromAppGroup(MobileAppGroup.containerURL(), to: url)
+        // The old file stays the source of truth until the new one is complete.
+        // If the migration has not finished, open the old outbox, so queued
+        // records and anchors are never left behind.
+        if let group = MobileAppGroup.containerURL() {
+            let old = group.appendingPathComponent(fileName)
+            if FileManager.default.fileExists(atPath: old.path) {
+                return try MobileOutbox(url: old)
+            }
+        }
         return try MobileOutbox(url: url)
     }
 
@@ -72,25 +81,67 @@ actor MobileOutbox {
         supportDirectory.appendingPathComponent(fileName)
     }
 
+    /// The outbox's sidecar files, in the order they are copied.
+    private static let sidecars = ["-wal", "-shm"]
+
     /// Moves an outbox that an earlier build left in the App Group container,
     /// so queued batches and HealthKit anchors survive and nothing is sent twice.
-    /// The old file is checkpointed and closed first, so no lock stays behind in the container.
+    ///
+    /// The old file is the source of truth until the new one is complete. Each
+    /// file is copied, not moved, and the old files are removed only after every
+    /// copy has the same size as its source. A failed checkpoint or a failed copy
+    /// leaves the old outbox in place, so the next launch tries again.
     static func migrateFromAppGroup(_ group: URL?, to url: URL) {
         let manager = FileManager.default
         guard let group else { return }
         let old = group.appendingPathComponent(fileName)
         guard old.standardizedFileURL != url.standardizedFileURL,
-            manager.fileExists(atPath: old.path),
-            !manager.fileExists(atPath: url.path)
+            manager.fileExists(atPath: old.path)
         else { return }
-        if let database = try? MobileDatabase(path: old.path) {
-            try? database.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+
+        // Fold the write-ahead log into the database before copying. If the
+        // database can't be opened or the checkpoint fails, leave the old
+        // outbox alone rather than copy a database whose recent commits are
+        // only in the log.
+        guard let database = try? MobileDatabase(path: old.path) else { return }
+        do {
+            try database.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        } catch {
             database.close()
+            return
         }
-        for suffix in ["", "-wal", "-shm"] {
+        database.close()
+
+        // Copy every file that exists. A partial copy is harmless: the old
+        // files stay, and the next launch copies over them.
+        for suffix in [""] + sidecars {
+            let source = URL(fileURLWithPath: old.path + suffix)
+            let destination = URL(fileURLWithPath: url.path + suffix)
+            guard manager.fileExists(atPath: source.path) else { continue }
+            do {
+                if manager.fileExists(atPath: destination.path) {
+                    try manager.removeItem(at: destination)
+                }
+                try manager.copyItem(at: source, to: destination)
+            } catch {
+                return
+            }
+        }
+
+        // Remove the old files only when every copy matches its source.
+        for suffix in [""] + sidecars {
+            let source = URL(fileURLWithPath: old.path + suffix)
+            let destination = URL(fileURLWithPath: url.path + suffix)
+            guard manager.fileExists(atPath: source.path) else { continue }
+            let sourceSize = (try? source.resourceValues(forKeys: [.fileSizeKey]))?.fileSize
+            let destinationSize =
+                (try? destination.resourceValues(forKeys: [.fileSizeKey]))?.fileSize
+            guard let sourceSize, sourceSize == destinationSize else { return }
+        }
+        for suffix in [""] + sidecars {
             let source = URL(fileURLWithPath: old.path + suffix)
             guard manager.fileExists(atPath: source.path) else { continue }
-            try? manager.moveItem(at: source, to: URL(fileURLWithPath: url.path + suffix))
+            try? manager.removeItem(at: source)
         }
     }
 

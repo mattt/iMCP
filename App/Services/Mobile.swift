@@ -447,9 +447,18 @@ actor MobileService: MobileBackend {
     /// Returns whether `link` is now the connection; if not, it has been closed.
     @discardableResult
     func attach(_ link: any MobilePeerLink) async -> Bool {
+        // Remember whether the device was paired before the liveness check, so
+        // an unpair during the wait can be told from a device that never paired.
+        let wasPaired = pairings.key(for: link.device.id) != nil
         if let current = self.link, current !== link, current.device.id == link.device.id,
             await current.answers(within: livenessTimeout), self.link === current
         {
+            await link.close()
+            return false
+        }
+        // The device may have been unpaired while the status call ran.
+        // Don't install a link for a device that was just forgotten.
+        if wasPaired, pairings.key(for: link.device.id) == nil {
             await link.close()
             return false
         }
@@ -790,26 +799,66 @@ protocol MobilePeerLink: AnyObject, Sendable {
 extension MobilePeerLink {
     /// Whether the phone answers a status call within `timeout`.
     /// Any reply, even an error from the phone, means the connection is alive.
+    ///
+    /// The wait ends as soon as either the call or the timer finishes. A silent
+    /// socket can't hold the result open: the call is abandoned when the timer
+    /// wins, and its eventual result is discarded.
     func answers(within timeout: Duration) async -> Bool {
-        await withTaskGroup(of: Bool.self) { group in
-            group.addTask {
-                do {
-                    _ = try await self.call(MobileTools.statusTool, [:])
-                    return true
-                } catch is MobileLinkLost {
-                    return false
-                } catch is CancellationError {
-                    return false
-                } catch {
-                    return true
-                }
+        let once = RaceOnce()
+        let callTask = Task {
+            let alive: Bool
+            do {
+                _ = try await self.call(MobileTools.statusTool, [:])
+                alive = true
+            } catch is MobileLinkLost {
+                alive = false
+            } catch is CancellationError {
+                alive = false
+            } catch {
+                alive = true
             }
-            group.addTask {
-                try? await Task.sleep(for: timeout)
-                return false
+            once.finish(alive)
+        }
+        let timerTask = Task {
+            try? await Task.sleep(for: timeout)
+            once.finish(false)
+        }
+        let answer = await once.wait()
+        callTask.cancel()
+        timerTask.cancel()
+        return answer
+    }
+}
+
+/// Resumes the first caller with the first result; later results are ignored.
+private final class RaceOnce: @unchecked Sendable {
+    private let lock = NSLock()
+    private var result: Bool?
+    private var continuation: CheckedContinuation<Bool, Never>?
+
+    func finish(_ value: Bool) {
+        lock.lock()
+        guard result == nil else {
+            lock.unlock()
+            return
+        }
+        result = value
+        let continuation = self.continuation
+        self.continuation = nil
+        lock.unlock()
+        continuation?.resume(returning: value)
+    }
+
+    func wait() async -> Bool {
+        await withCheckedContinuation { continuation in
+            lock.lock()
+            if let result {
+                lock.unlock()
+                continuation.resume(returning: result)
+            } else {
+                self.continuation = continuation
+                lock.unlock()
             }
-            defer { group.cancelAll() }
-            return await group.next() ?? false
         }
     }
 }

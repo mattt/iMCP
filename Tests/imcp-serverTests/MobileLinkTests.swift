@@ -701,6 +701,49 @@ final class MobileRetryTests: XCTestCase {
         XCTAssertFalse(c)
     }
 
+    /// A silent socket must not hold the liveness check open: the timer wins
+    /// and the status call is abandoned, not waited for.
+    func testAnswersDoesNotWaitForASilentSocketPastTheTimeout() async {
+        let silent = FakeLink { _, _ in
+            try await Task.sleep(for: .seconds(30))
+            return "{}"
+        }
+        let clock = ContinuousClock()
+        let start = clock.now
+        let answer = await silent.answers(within: .milliseconds(100))
+        let elapsed = clock.now - start
+        XCTAssertFalse(answer)
+        XCTAssertLessThan(elapsed, .seconds(2), "the check waited for the socket")
+    }
+
+    /// A device unpaired while the live link is being checked must not get a
+    /// new link installed for it.
+    func testAttachRefusesADeviceUnpairedDuringTheLivenessCheck() async throws {
+        let deviceID = "phone-1"
+        try pairings.save(
+            MobileDevice(id: deviceID, name: "Phone", pairedAt: Date()),
+            key: SymmetricKey(size: .bits256)
+        )
+        let started = Signal()
+        let release = Signal()
+        let current = FakeLink(device: deviceID) { _, _ in
+            started.signal()
+            await release.wait()
+            return "{}"
+        }
+        await service.attach(current)
+
+        let replacement = FakeLink(device: deviceID) { _, _ in "{}" }
+        let task = Task { await service.attach(replacement) }
+        await started.wait()
+        await service.unpair(deviceID)
+        release.signal()
+
+        let attached = await task.value
+        XCTAssertFalse(attached, "an unpaired device must not get a new link")
+        XCTAssertEqual(replacement.closeCount, 1)
+    }
+
     func testPhoneErrorsAreNotRetried() async throws {
         let link = FakeLink { _, _ in throw MobileError("AlarmKit access is off.") }
         await service.attach(link)
@@ -732,6 +775,44 @@ final class MobileMemoryPairings: MobilePairingStore, @unchecked Sendable {
 
     func remove(_ device: String) {
         lock.withLock { _ = entries.removeValue(forKey: device) }
+    }
+}
+
+/// A one-shot async signal for tests: `wait()` suspends until `signal()`.
+private final class Signal: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var signaled = false
+
+    func wait() async {
+        await withCheckedContinuation { continuation in
+            lock.lock()
+            if signaled {
+                lock.unlock()
+                continuation.resume()
+            } else {
+                self.continuation = continuation
+                lock.unlock()
+            }
+        }
+    }
+
+    func signal() {
+        lock.lock()
+        guard !signaled else {
+            lock.unlock()
+            return
+        }
+        signaled = true
+        let continuation = self.continuation
+        self.continuation = nil
+        lock.unlock()
+        continuation?.resume()
+    }
+
+    func signalAndWait() async {
+        signal()
+        await wait()
     }
 }
 
