@@ -65,17 +65,19 @@ final class NotesInlineTests: XCTestCase {
     func testLookupMarksANoteMissingOnlyWhenNotesDoesNotListIt() throws {
         XCTAssertEqual(try LinkedNote(lookingUp: { "Trip" }), .found(title: "Trip"))
         XCTAssertEqual(try LinkedNote(lookingUp: { throw NotesError.noteNotFound(self.target) }), .missing)
-        XCTAssertEqual(try LinkedNote(lookingUp: { throw NotesError.timedOut }), .unknown)
         XCTAssertEqual(try LinkedNote(lookingUp: { throw NotesError.databaseBusy }), .unknown)
         XCTAssertEqual(try LinkedNote(lookingUp: { throw NotesError.queryFailed("disk I/O error") }), .unknown)
     }
 
-    func testLookupPropagatesCancellationAndAClosedConnection() {
+    func testLookupPropagatesErrorsThatEndTheSnapshot() {
         XCTAssertThrowsError(try LinkedNote(lookingUp: { throw CancellationError() })) {
             XCTAssertTrue($0 is CancellationError)
         }
         XCTAssertThrowsError(try LinkedNote(lookingUp: { throw NotesError.connectionClosed })) {
             XCTAssertEqual($0 as? NotesError, .connectionClosed)
+        }
+        XCTAssertThrowsError(try LinkedNote(lookingUp: { throw NotesError.timedOut })) {
+            XCTAssertEqual($0 as? NotesError, .timedOut)
         }
     }
 

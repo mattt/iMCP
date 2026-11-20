@@ -38,8 +38,10 @@ enum LinkedNote: Sendable, Equatable {
     /// - Parameter lookup: Returns the title of the note, or throws if the lookup fails.
     ///
     /// Only ``NotesError/noteNotFound(_:)`` makes the note missing.
-    /// Cancellation and ``NotesError/connectionClosed`` propagate,
-    /// and any other error leaves the note unknown, so an existing note is never reported as missing.
+    /// The errors that leave the whole snapshot unusable propagate:
+    /// cancellation, ``NotesError/connectionClosed``, and ``NotesError/timedOut``,
+    /// because every statement of a snapshot shares one time limit.
+    /// Any other error leaves the note unknown, so an existing note is never reported as missing.
     init(lookingUp lookup: () throws -> String) throws {
         do {
             self = .found(title: try lookup())
@@ -49,6 +51,8 @@ enum LinkedNote: Sendable, Equatable {
             throw error
         } catch NotesError.connectionClosed {
             throw NotesError.connectionClosed
+        } catch NotesError.timedOut {
+            throw NotesError.timedOut
         } catch {
             self = .unknown
         }
