@@ -13,6 +13,23 @@ final class NotesInlineTests: XCTestCase {
         XCTAssertEqual(keywordValues(tags), ["#groceries", "#Café", "#x"])
     }
 
+    func testUnsupportedSchemaLeavesTheReadOut() throws {
+        XCTAssertEqual(try readIfSupported { 1 }, 1)
+        XCTAssertNil(try readIfSupported { () throws -> Int in throw NotesError.unsupportedSchema })
+    }
+
+    func testOtherReadErrorsPropagate() {
+        XCTAssertThrowsError(try readIfSupported { () throws -> Int in throw NotesError.connectionClosed }) {
+            XCTAssertEqual($0 as? NotesError, .connectionClosed)
+        }
+        XCTAssertThrowsError(try readIfSupported { () throws -> Int in throw NotesError.timedOut }) {
+            XCTAssertEqual($0 as? NotesError, .timedOut)
+        }
+        XCTAssertThrowsError(try readIfSupported { () throws -> Int in throw CancellationError() }) {
+            XCTAssertTrue($0 is CancellationError)
+        }
+    }
+
     func testOutgoingLinkNamesTheTargetAndKeepsDifferentLinkText() {
         let link = Note.Link(sourceID: source, targetID: target, label: "Old title")
         let object = linkValue(link, direction: .outgoing, otherTitle: "New title").objectValue

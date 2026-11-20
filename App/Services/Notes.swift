@@ -161,9 +161,10 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
                     }
                     let result = try snapshot.search(request)
                     // Tags and links come from the database's rows, so they cost no decoding.
+                    // A database that can't supply them still gives the page without them.
                     let ids = result.notes.map(\.id)
-                    let tags = try snapshot.tags(for: ids)
-                    let links = try snapshot.links(from: ids)
+                    let tags = try readIfSupported { try snapshot.tags(for: ids) } ?? [:]
+                    let links = try readIfSupported { try snapshot.links(from: ids) } ?? [:]
                     return (result, folders, tags, links)
                 }
             }
@@ -318,9 +319,10 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
                 let note = try snapshot.note(for: id)
                 let content = try snapshot.content(for: id)
                 let folders = try snapshot.folders()
-                let tags = try snapshot.tags(for: [id])[id] ?? []
-                let links = try snapshot.links(from: [id])[id] ?? []
-                let backlinks = try snapshot.backlinks(to: id)
+                // A database that can't supply tags and links still gives the note without them.
+                let tags = try readIfSupported { try snapshot.tags(for: [id]) }?[id] ?? []
+                let links = try readIfSupported { try snapshot.links(from: [id]) }?[id] ?? []
+                let backlinks = try readIfSupported { try snapshot.backlinks(to: id) } ?? []
                 // The notes at the other ends of the links, for their titles.
                 var others: [TopoText.Note.ID: TopoText.Note] = [:]
                 for other in links.map(\.targetID) + backlinks.map(\.sourceID) where others[other] == nil {

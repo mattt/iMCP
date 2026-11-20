@@ -5,6 +5,20 @@ import TopoText
 // and smart folders for tool output. They take TopoText's plain values, not a database,
 // so that tests can build the values.
 
+/// Returns the result of a read of tags or links, or `nil` if the database's schema doesn't support the read.
+///
+/// TopoText throws ``NotesError/unsupportedSchema`` from these reads when the database
+/// has no column that marks locked notes. The note or page is still readable then,
+/// so the caller leaves out the fields that the read supplies instead of failing.
+/// Every other error, including cancellation, propagates.
+func readIfSupported<T>(_ read: () throws -> T) throws -> T? {
+    do {
+        return try read()
+    } catch NotesError.unsupportedSchema {
+        return nil
+    }
+}
+
 /// The tags of a note as the note's `keywords`: `#name`, in the order the database lists them.
 func keywordValues(_ tags: [TopoText.Note.Tag]) -> Value {
     .array(tags.map { .string($0.text) })
