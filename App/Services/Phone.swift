@@ -404,10 +404,10 @@ final class PhoneService: NSObject, Service, NSOpenSavePanelDelegate {
         let alert = NSAlert()
         alert.messageText = "Call History Database Access Required"
         alert.informativeText = """
-            To read your phone call history, we need access to your CallHistoryDB folder: \
+            To read your phone call history, iMCP needs access to your CallHistoryDB folder: \
             the database and the log new calls are written to first.
 
-            In the next screen, please select the `CallHistoryDB` folder and click "Grant Access".
+            Next, select the `CallHistoryDB` folder and click "Grant Access".
             """
         alert.alertStyle = .informational
         alert.addButton(withTitle: "Continue")
