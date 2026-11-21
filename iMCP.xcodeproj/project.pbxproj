@@ -78,6 +78,10 @@
 		D2E000000000000000000020 /* NotesInlineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2E000000000000000000010 /* NotesInlineTests.swift */; };
 		D2E000000000000000000021 /* ../../App/Services/NotesInline.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2E000000000000000000011 /* ../../App/Services/NotesInline.swift */; };
 		D2E000000000000000000030 /* TopoText in Frameworks */ = {isa = PBXBuildFile; productRef = D2E000000000000000000040 /* TopoText */; };
+		B13600000000000000000011 /* ServiceWritesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13600000000000000000010 /* ServiceWritesTests.swift */; };
+		B13600000000000000000021 /* ../../Shared/Models/ServiceWrites.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13600000000000000000020 /* ../../Shared/Models/ServiceWrites.swift */; };
+		B13600000000000000000031 /* OutboundConfirmationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13600000000000000000030 /* OutboundConfirmationTests.swift */; };
+		B13600000000000000000041 /* ../../Shared/Models/OutboundConfirmation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13600000000000000000040 /* ../../Shared/Models/OutboundConfirmation.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -148,6 +152,10 @@
 		F8F44EB62D5908D00075D79C /* imcp-server */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "imcp-server"; sourceTree = BUILT_PRODUCTS_DIR; };
 		D2E000000000000000000010 /* NotesInlineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesInlineTests.swift; sourceTree = "<group>"; };
 		D2E000000000000000000011 /* ../../App/Services/NotesInline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/NotesInline.swift; sourceTree = "<group>"; };
+		B13600000000000000000010 /* ServiceWritesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceWritesTests.swift; sourceTree = "<group>"; };
+		B13600000000000000000020 /* ../../Shared/Models/ServiceWrites.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../Shared/Models/ServiceWrites.swift; sourceTree = "<group>"; };
+		B13600000000000000000030 /* OutboundConfirmationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutboundConfirmationTests.swift; sourceTree = "<group>"; };
+		B13600000000000000000040 /* ../../Shared/Models/OutboundConfirmation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../Shared/Models/OutboundConfirmation.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -271,6 +279,10 @@
 				A40000000000000000000010 /* HomeProxyTests.swift */,
 				A40000000000000000000011 /* ../../App/Services/Home.swift */,
 				A40000000000000000000019 /* ../../App/Services/HomeHelperLocator.swift */,
+				B13600000000000000000010 /* ServiceWritesTests.swift */,
+				B13600000000000000000020 /* ../../Shared/Models/ServiceWrites.swift */,
+				B13600000000000000000030 /* OutboundConfirmationTests.swift */,
+				B13600000000000000000040 /* ../../Shared/Models/OutboundConfirmation.swift */,
 				B13300000000000000000010 /* MusicTests.swift */,
 				B13300000000000000000011 /* ../../App/Services/Music.swift */,
 				A40000000000000000000012 /* ../../Shared/Extensions/Logger+Extensions.swift */,
@@ -594,6 +606,10 @@
 				A40000000000000000000020 /* HomeProxyTests.swift in Sources */,
 				A40000000000000000000021 /* ../../App/Services/Home.swift in Sources */,
 				A40000000000000000000029 /* ../../App/Services/HomeHelperLocator.swift in Sources */,
+				B13600000000000000000011 /* ServiceWritesTests.swift in Sources */,
+				B13600000000000000000021 /* ../../Shared/Models/ServiceWrites.swift in Sources */,
+				B13600000000000000000031 /* OutboundConfirmationTests.swift in Sources */,
+				B13600000000000000000041 /* ../../Shared/Models/OutboundConfirmation.swift in Sources */,
 				B13300000000000000000020 /* MusicTests.swift in Sources */,
 				B13300000000000000000021 /* ../../App/Services/Music.swift in Sources */,
 				A40000000000000000000022 /* ../../Shared/Extensions/Logger+Extensions.swift in Sources */,
