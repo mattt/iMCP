@@ -52,6 +52,29 @@ final class NotesWriteTests: XCTestCase {
         XCTAssertEqual(html("[**x**](https://e.com?a=1&b=2)"), "<div><b>x</b> (https://e.com?a=1&amp;b=2)</div>")
     }
 
+    func testDeeplyNestedLinksStopNestingAsPlainText() {
+        // Each level of a nested link is a recursive call; past the limit the label is plain text.
+        let levels = 40_000
+        let markdown = String(repeating: "[", count: levels) + "a" + String(repeating: "](u)", count: levels)
+        let result = html(markdown)
+        XCTAssertTrue(result.hasPrefix("<div>"))
+        XCTAssertTrue(result.hasSuffix(" (u)</div>"))
+        XCTAssertTrue(result.contains("[a](u)"), "the innermost link stays as written")
+
+        let shallow = String(repeating: "[", count: 3) + "a" + String(repeating: "](u)", count: 3)
+        XCTAssertEqual(html(shallow), "<div>a (u) (u) (u)</div>")
+    }
+
+    func testALineOfOpeningBracketsIsScannedOnce() {
+        // Each `[` used to scan to the end of the line for a `]`, which took quadratic time.
+        let line = String(repeating: "[", count: 100_000)
+        let start = Date()
+        XCTAssertEqual(html(line), "<div>\(line)</div>")
+        XCTAssertLessThan(Date().timeIntervalSince(start), 2)
+        // A link after a bracket that never closes still converts.
+        XCTAssertEqual(html("[ [a](u)"), "<div>[ a (u)</div>")
+    }
+
     func testHeadingsStartBelowTheTitle() {
         XCTAssertEqual(html("# One\n## Two\n### Three"), "<h2>One</h2><h2>Two</h2><h3>Three</h3>")
         XCTAssertEqual(html("#NotAHeading"), "<div>#NotAHeading</div>")
