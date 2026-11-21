@@ -1088,6 +1088,8 @@ final class FilesTests: XCTestCase {
         }
         XCTAssertEqual(result, 0)
         chmod(url.path, 0o640)
+        let old = Date(timeIntervalSince1970: 1_000_000_000)
+        try FileManager.default.setAttributes([.modificationDate: old], ofItemAtPath: url.path)
 
         _ = try FilesOperations.write(
             try access.resolve("Shared/mixed case.TXT"),
@@ -1105,5 +1107,9 @@ final class FilesTests: XCTestCase {
         var info = stat()
         XCTAssertEqual(stat(url.path, &info), 0)
         XCTAssertEqual(info.st_mode & 0o7777, 0o640)
+        let modified = try XCTUnwrap(
+            FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date
+        )
+        XCTAssertGreaterThan(modified, old, "new content gets a new modification date")
     }
 }

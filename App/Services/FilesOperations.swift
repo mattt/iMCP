@@ -500,10 +500,12 @@ enum FilesOperations {
             }
             do {
                 try writeAll(data, to: output, displayPath: file.displayPath)
-                // Carry over the extended attributes (Finder tags among them), ACL, and mode.
-                guard fcopyfile(reading, output, nil, copyfile_flags_t(COPYFILE_METADATA)) == 0 else {
+                // Carry over the extended attributes (Finder tags among them), the ACL, and the mode.
+                // Not COPYFILE_STAT: the new content must get a new modification date.
+                guard fcopyfile(reading, output, nil, copyfile_flags_t(COPYFILE_XATTR | COPYFILE_ACL)) == 0 else {
                     throw FilesError.posix(errno, file.displayPath)
                 }
+                fchmod(output, info.st_mode & 0o7777)
                 fsync(output)
                 close(output)
                 outputIsOpen = false
