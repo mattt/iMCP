@@ -188,6 +188,24 @@ final class OutboundConfirmationTests: XCTestCase {
         XCTAssertEqual(counter.value, 0, "a cancelled call must not send")
     }
 
+    func testACancelledCallIsReportedAsCancelledNotDeclined() async {
+        // Cancelling the caller closes the window as declined; the error must still say cancelled.
+        let confirmer = SlowConfirmer(answer: .declined, delay: .milliseconds(200))
+        let task = Task {
+            try await confirmer.approve(request) { "sent" }
+        }
+        try? await Task.sleep(for: .milliseconds(20))
+        task.cancel()
+        do {
+            _ = try await task.value
+            XCTFail("ran after cancellation")
+        } catch is CancellationError {
+            // expected
+        } catch {
+            XCTFail("a cancelled call was reported as \(error)")
+        }
+    }
+
     /// A confirmer that waits, cancellation-aware, then answers.
     private actor SlowConfirmer: OutboundConfirming {
         let answer: OutboundConfirmationAnswer

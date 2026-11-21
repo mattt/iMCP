@@ -97,11 +97,13 @@ extension OutboundConfirming {
         _ request: OutboundConfirmationRequest,
         then perform: () async throws -> T
     ) async throws -> T {
-        switch await confirm(request) {
+        let answer = await confirm(request)
+        // The caller may have been cancelled while the window was up. Check before acting on
+        // the answer, so a cancelled call can't still send, and so a cancellation is reported
+        // as one rather than as the person declining.
+        try Task.checkCancellation()
+        switch answer {
         case .approved:
-            // The person approved, but the caller may have been cancelled while the window was up.
-            // Check again before the action runs, so a cancelled call can't still send.
-            try Task.checkCancellation()
             return try await perform()
         case .declined:
             throw OutboundConfirmationError.declined(action: request.action)
