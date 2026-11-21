@@ -487,12 +487,30 @@ final class RemindersQueryTests: XCTestCase {
 
     /// A stored relative alarm with an extreme offset must not trap.
     func testRelativeAlarmMinutesClampsExtremeOffsets() {
+        let limit = RemindersQuery.maximumRelativeAlarmMinutes
         XCTAssertEqual(RemindersQuery.relativeAlarmMinutes(-900), 15)
         XCTAssertEqual(RemindersQuery.relativeAlarmMinutes(900), -15)
-        XCTAssertEqual(RemindersQuery.relativeAlarmMinutes(-Double.greatestFiniteMagnitude), Int.max)
-        XCTAssertEqual(RemindersQuery.relativeAlarmMinutes(Double.greatestFiniteMagnitude), Int.min)
-        XCTAssertEqual(RemindersQuery.relativeAlarmMinutes(.infinity), Int.min)
-        XCTAssertEqual(RemindersQuery.relativeAlarmMinutes(.nan), Int.min)
+        XCTAssertEqual(RemindersQuery.relativeAlarmMinutes(-Double.greatestFiniteMagnitude), limit)
+        XCTAssertEqual(RemindersQuery.relativeAlarmMinutes(Double.greatestFiniteMagnitude), -limit)
+        XCTAssertEqual(RemindersQuery.relativeAlarmMinutes(.infinity), -limit)
+        XCTAssertEqual(RemindersQuery.relativeAlarmMinutes(-.infinity), limit)
+        XCTAssertEqual(RemindersQuery.relativeAlarmMinutes(.nan), 0)
+        // Exactly 2^63 minutes, the value that overflowed `Int(_:)`.
+        XCTAssertEqual(RemindersQuery.relativeAlarmMinutes(-9.223372036854775808e18 * 60), limit)
+    }
+
+    /// The label is built from the magnitude, so no offset can negate `Int.min`.
+    func testRelativeAlarmLabelForExtremeOffsets() {
+        let late = RemindersQuery.relativeAlarmMinutes(Double.greatestFiniteMagnitude)
+        XCTAssertEqual(
+            RemindersQuery.relativeAlarmLabel(minutes: late),
+            "\(RemindersQuery.maximumRelativeAlarmMinutes) minutes after due date"
+        )
+        XCTAssertEqual(RemindersQuery.relativeAlarmLabel(minutes: 15), "15 minutes before due date")
+        XCTAssertEqual(
+            RemindersQuery.relativeAlarmLabel(minutes: Int.min),
+            "9223372036854775808 minutes after due date"
+        )
     }
 
     /// An all-day due carries the calendar it was read in; a timed one keeps
@@ -511,14 +529,27 @@ final class RemindersQueryTests: XCTestCase {
     }
 
     /// A view keeps the time zone stored with the due date instead of
-    /// re-reading the wall time in the Mac's zone.
+    /// re-reading the wall time in the view's zone, and the stored time zone
+    /// wins over the stored calendar's own zone. Every zone is fixed, so the
+    /// result does not depend on the machine.
     func testViewKeepsTheStoredTimeZone() throws {
+        var storedCalendar = Calendar(identifier: .gregorian)
+        storedCalendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Tokyo"))
+        let storedZone = try XCTUnwrap(TimeZone(identifier: "America/Los_Angeles"))
         var stored = DateComponents(year: 2026, month: 5, day: 27, hour: 9, minute: 30)
-        stored.calendar = calendar
-        stored.timeZone = calendar.timeZone
-        let viewCalendar = Calendar(identifier: .gregorian)
+        stored.calendar = storedCalendar
+        stored.timeZone = storedZone
+
+        var viewCalendar = Calendar(identifier: .gregorian)
+        viewCalendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Europe/London"))
         let due = try XCTUnwrap(RemindersQuery.Views.dueDate(of: stored, calendar: viewCalendar))
-        XCTAssertEqual(due, try XCTUnwrap(calendar.date(from: stored)))
+
+        // 09:30 in Los Angeles (UTC-7 in May) is 16:30Z.
+        XCTAssertEqual(due, Date(timeIntervalSince1970: 1_779_899_400))
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = try XCTUnwrap(TimeZone(identifier: "UTC"))
+        XCTAssertEqual(utc.component(.hour, from: due), 16)
+        XCTAssertEqual(utc.component(.minute, from: due), 30)
     }
 
     /// A house number is part of the street, and a bare locality is not a place.

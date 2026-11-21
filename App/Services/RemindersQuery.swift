@@ -337,7 +337,7 @@ enum RemindersQuery {
         {
             let multiplier = ["m": 1, "h": 60, "d": 1440, "w": 10080][String(unit)]!
             let (minutes, overflow) = count.multipliedReportingOverflow(by: multiplier)
-            guard !overflow, minutes <= 52_560_000 else {
+            guard !overflow, minutes <= maximumRelativeAlarmMinutes else {
                 throw RemindersInputError(
                     code: "invalid_alarm",
                     message: "Relative alarm \"\(string)\" is too large."
@@ -385,14 +385,26 @@ enum RemindersQuery {
         isToolDisabled("reminders_lists_rename", defaults: defaults)
     }
 
+    /// Largest relative alarm, in minutes, that parsing accepts and that a
+    /// stored alarm is reported at.
+    static let maximumRelativeAlarmMinutes = 52_560_000
+
     /// Minutes before the due date for a stored relative alarm's offset in
-    /// seconds. A stored offset can be any value, so the conversion clamps
-    /// instead of trapping on one that does not fit an `Int`.
+    /// seconds. A stored offset can be any value, so the result is clamped to
+    /// the same bound parsing enforces; it never reaches `Int.min` or
+    /// `Int.max`, so negating it is safe.
     static func relativeAlarmMinutes(_ offset: TimeInterval) -> Int {
         let raw = (-offset / 60).rounded()
-        guard raw.isFinite else { return raw > 0 ? Int.max : Int.min }
-        if raw >= Double(Int.min), raw <= Double(Int.max) { return Int(raw) }
-        return raw > 0 ? Int.max : Int.min
+        guard !raw.isNaN else { return 0 }
+        let limit = Double(maximumRelativeAlarmMinutes)
+        return Int(min(max(raw, -limit), limit))
+    }
+
+    /// Plain-language label for a relative alarm's minutes.
+    static func relativeAlarmLabel(minutes: Int) -> String {
+        minutes >= 0
+            ? "\(minutes) minutes before due date"
+            : "\(minutes.magnitude) minutes after due date"
     }
 
     // MARK: - Search
