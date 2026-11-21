@@ -45,9 +45,12 @@ jobs:
                       ~/Library/Developer/Xcode/DerivedData
                       !~/Library/Developer/Xcode/DerivedData/ModuleCache.noindex
                       ~/Library/Caches/org.swift.swiftpm
-                  key: ${{ runner.os }}-xcode-${{ steps.xcode.outputs.build }}-derived-${{ hashFiles('**/Package.resolved') }}
+                  # Bump the version when a saved cache is known to be bad.
+                  # v2: Xcode 26.0 and 26.0.1 share build 17A400, so the archives saved
+                  # with the Helper's module cache inside still match the old key.
+                  key: ${{ runner.os }}-xcode-${{ steps.xcode.outputs.build }}-derived-v2-${{ hashFiles('**/Package.resolved') }}
                   restore-keys: |
-                      ${{ runner.os }}-xcode-${{ steps.xcode.outputs.build }}-derived-
+                      ${{ runner.os }}-xcode-${{ steps.xcode.outputs.build }}-derived-v2-
 
             - name: Lint
               run: swift format lint --strict --recursive .
