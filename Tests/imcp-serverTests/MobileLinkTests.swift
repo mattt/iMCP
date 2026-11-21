@@ -744,6 +744,25 @@ final class MobileRetryTests: XCTestCase {
         XCTAssertEqual(replacement.closeCount, 1)
     }
 
+    /// A device unpaired while its connection was still being set up has no
+    /// installed link for `unpair` to close; the accept path must refuse it.
+    func testAttachIfPairedRefusesADeviceUnpairedBeforeAttach() async throws {
+        let link = FakeLink(device: "gone") { _, _ in "{}" }
+        let attached = await service.attachIfPaired(link)
+        XCTAssertFalse(attached)
+        XCTAssertEqual(link.closeCount, 1)
+        let connected = await service.connectedDevice
+        XCTAssertNil(connected)
+
+        try pairings.save(
+            MobileDevice(id: "gone", name: "Phone", pairedAt: Date()),
+            key: SymmetricKey(size: .bits256)
+        )
+        let paired = FakeLink(device: "gone") { _, _ in "{}" }
+        let ok = await service.attachIfPaired(paired)
+        XCTAssertTrue(ok)
+    }
+
     func testPhoneErrorsAreNotRetried() async throws {
         let link = FakeLink { _, _ in throw MobileError("AlarmKit access is off.") }
         await service.attach(link)

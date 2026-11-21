@@ -419,7 +419,7 @@ actor MobileService: MobileBackend {
                 // Disconnecting the client fails its pending requests and stops its receive loop.
                 await link.close()
             }
-            if await attach(link) {
+            if await attachIfPaired(link) {
                 log.notice("\(device.name, privacy: .public) connected")
             } else {
                 log.notice("\(device.name, privacy: .public) opened a second connection; kept the live one")
@@ -436,6 +436,16 @@ actor MobileService: MobileBackend {
     }
 
     // MARK: - Links
+
+    /// Attaches `link` unless its device was unpaired while the connection was
+    /// still being set up, which `unpair` can't see because the link isn't installed yet.
+    func attachIfPaired(_ link: any MobilePeerLink) async -> Bool {
+        guard pairings.key(for: link.device.id) != nil else {
+            await link.close()
+            return false
+        }
+        return await attach(link)
+    }
 
     /// Makes `link` the connection that calls go to, replacing any other.
     ///

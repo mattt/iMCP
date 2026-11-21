@@ -179,8 +179,9 @@ final class MobileOutboxTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: oldURL.path))
     }
 
-    /// A database that can't be opened is not copied over a good one.
-    func testMigrationLeavesAnUnopenableDatabaseAlone() throws {
+    /// A database that can't be opened is set aside in place, not copied, so
+    /// nothing in the group container is ever opened again.
+    func testMigrationQuarantinesAnUnopenableDatabase() throws {
         let group = directory.appendingPathComponent("group", isDirectory: true)
         let support = directory.appendingPathComponent("support", isDirectory: true)
         try FileManager.default.createDirectory(at: group, withIntermediateDirectories: true)
@@ -189,8 +190,27 @@ final class MobileOutboxTests: XCTestCase {
         try Data("not a database".utf8).write(to: oldURL)
         let url = try MobileOutbox.databaseURL(groupContainer: group, supportDirectory: support)
         MobileOutbox.migrateFromAppGroup(group, to: url)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: oldURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: oldURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: oldURL.path + ".unreadable"))
         XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+    }
+
+    /// A corrupt old outbox must not make `open` throw or keep using the group file.
+    func testOpenFallsThroughToTheNewPathWhenTheOldOutboxIsCorrupt() async throws {
+        let group = directory.appendingPathComponent("group", isDirectory: true)
+        let support = directory.appendingPathComponent("support", isDirectory: true)
+        try FileManager.default.createDirectory(at: group, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
+        try Data("not a database".utf8).write(to: group.appendingPathComponent(MobileOutbox.fileName))
+        let opened = try MobileOutbox.open(groupContainer: group, supportDirectory: support)
+        try await opened.enqueue([record("a")], syncedAt: [:])
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: support.appendingPathComponent(MobileOutbox.fileName).path
+            )
+        )
+        let left = try FileManager.default.contentsOfDirectory(atPath: group.path)
+        XCTAssertEqual(left, [MobileOutbox.fileName + ".unreadable"])
     }
 
     /// When the background-task assertion expires, the work is cancelled.

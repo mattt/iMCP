@@ -57,15 +57,19 @@ actor MobileOutbox {
     /// and background syncs can be suspended mid-write. Nothing else reads the outbox
     /// (the widget extension has no App Group), so it stays out of the shared container.
     static func shared() throws -> MobileOutbox {
-        let url = try databaseURL(
+        try open(
             groupContainer: MobileAppGroup.containerURL(),
             supportDirectory: MobileAppGroup.supportDirectory()
         )
-        migrateFromAppGroup(MobileAppGroup.containerURL(), to: url)
+    }
+
+    static func open(groupContainer: URL?, supportDirectory: URL) throws -> MobileOutbox {
+        let url = try databaseURL(groupContainer: groupContainer, supportDirectory: supportDirectory)
+        migrateFromAppGroup(groupContainer, to: url)
         // The old file stays the source of truth until the new one is complete.
         // If the migration has not finished, open the old outbox, so queued
         // records and anchors are never left behind.
-        if let group = MobileAppGroup.containerURL() {
+        if let group = groupContainer {
             let old = group.appendingPathComponent(fileName)
             if FileManager.default.fileExists(atPath: old.path) {
                 return try MobileOutbox(url: old)
@@ -83,6 +87,19 @@ actor MobileOutbox {
 
     /// The outbox's sidecar files, in the order they are copied.
     private static let sidecars = ["-wal", "-shm"]
+
+    /// Renames an outbox that can't be opened, with its sidecars, so it is never
+    /// opened again (no lock inside the App Group) and nothing is lost.
+    private static func quarantine(_ old: URL) {
+        let manager = FileManager.default
+        for suffix in [""] + sidecars {
+            let source = URL(fileURLWithPath: old.path + suffix)
+            let target = URL(fileURLWithPath: old.path + ".unreadable" + suffix)
+            guard manager.fileExists(atPath: source.path) else { continue }
+            try? manager.removeItem(at: target)
+            try? manager.moveItem(at: source, to: target)
+        }
+    }
 
     /// Moves an outbox that an earlier build left in the App Group container,
     /// so queued batches and HealthKit anchors survive and nothing is sent twice.
@@ -103,7 +120,10 @@ actor MobileOutbox {
         // database can't be opened or the checkpoint fails, leave the old
         // outbox alone rather than copy a database whose recent commits are
         // only in the log.
-        guard let database = try? MobileDatabase(path: old.path) else { return }
+        guard let database = try? MobileDatabase(path: old.path) else {
+            quarantine(old)
+            return
+        }
         do {
             try database.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         } catch {
