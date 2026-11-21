@@ -1026,4 +1026,84 @@ final class FilesTests: XCTestCase {
         ) { XCTAssertEqual($0 as? FilesError, .changedWhileWorking("Shared/\(name)")) }
         XCTAssertEqual(try text(at: url), "replacement")
     }
+
+    // MARK: - Spellings that the file system treats as the same name
+
+    /// APFS folds "ſ" (long s) to "s", so this names the same folder as `<id>.photoslibrary`.
+    private func photosLibrarySpelledWithLongS() throws -> (real: URL, name: String) {
+        let id = UUID().uuidString
+        let real = shared.appendingPathComponent("T-\(id).photoslibrary")
+        try FileManager.default.createDirectory(at: real, withIntermediateDirectories: true)
+        let name = "T-\(id).photo\u{17F}library"
+        try XCTSkipUnless(
+            FilesAccess.lexists(shared.appendingPathComponent(name).path),
+            "This volume doesn't fold the long s, so the spelling can't reach the library."
+        )
+        return (real, name)
+    }
+
+    private func resolvedWithoutNameChecks(_ name: String) -> FilesAccess.Resolved {
+        FilesAccess.Resolved(
+            root: access.roots[0],
+            url: shared.appendingPathComponent(name),
+            relativeComponents: [name]
+        )
+    }
+
+    func testAPhotosLibrarySpelledWithALongSIsRefused() throws {
+        let (real, name) = try photosLibrarySpelledWithLongS()
+        for follow in [true, false] {
+            assertRefused(
+                "Shared/\(name)",
+                { if case .photosLibrary = $0 { true } else { false } },
+                followingFinalSymlink: follow
+            )
+        }
+        XCTAssertTrue(FilesAccess.lexists(real.path))
+    }
+
+    /// The name check isn't the only guard: trash and move look at where the item is on disk.
+    func testTrashAndMoveRefuseALibraryWhoseSpellingPassesTheNameCheck() throws {
+        let (real, name) = try photosLibrarySpelledWithLongS()
+        let item = resolvedWithoutNameChecks(name)
+        XCTAssertThrowsError(try FilesOperations.trash(item)) {
+            guard case .photosLibrary = $0 as? FilesError else { return XCTFail("\($0)") }
+        }
+        XCTAssertTrue(FilesAccess.lexists(real.path), "the library is still where it was")
+
+        XCTAssertThrowsError(
+            try FilesOperations.move(item, to: resolvedWithoutNameChecks("Elsewhere"))
+        ) {
+            guard case .photosLibrary = $0 as? FilesError else { return XCTFail("\($0)") }
+        }
+        XCTAssertTrue(FilesAccess.lexists(real.path))
+        XCTAssertFalse(FilesAccess.lexists(shared.appendingPathComponent("Elsewhere").path))
+    }
+
+    func testWriteKeepsExtendedAttributesAndTheNameOnDisk() throws {
+        let url = try write("old", to: "Mixed Case.txt")
+        let tags = Data("tag-data".utf8)
+        let result = tags.withUnsafeBytes {
+            setxattr(url.path, "com.apple.metadata:_kMDItemUserTags", $0.baseAddress, tags.count, 0, 0)
+        }
+        XCTAssertEqual(result, 0)
+        chmod(url.path, 0o640)
+
+        _ = try FilesOperations.write(
+            try access.resolve("Shared/mixed case.TXT"),
+            content: "new",
+            overwrite: true,
+            precondition: .init()
+        )
+
+        let names = try FileManager.default.contentsOfDirectory(atPath: shared.path)
+        XCTAssertEqual(names, ["Mixed Case.txt"], "the name keeps the file system's spelling")
+        XCTAssertEqual(try text(at: url), "new")
+        var buffer = [UInt8](repeating: 0, count: 64)
+        let length = getxattr(url.path, "com.apple.metadata:_kMDItemUserTags", &buffer, buffer.count, 0, 0)
+        XCTAssertEqual(Data(buffer.prefix(max(length, 0))), tags)
+        var info = stat()
+        XCTAssertEqual(stat(url.path, &info), 0)
+        XCTAssertEqual(info.st_mode & 0o7777, 0o640)
+    }
 }

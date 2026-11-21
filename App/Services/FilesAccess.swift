@@ -128,7 +128,9 @@ struct FilesAccess: Sendable {
 
     /// Whether a name is a Photos library, which iMCP never opens.
     static func isPhotosLibraryName(_ name: String) -> Bool {
-        name.lowercased().hasSuffix(".photoslibrary")
+        // APFS matches names after case folding, so "photoſlibrary" (long s) names the same directory.
+        name.folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: nil)
+            .hasSuffix(".photoslibrary")
     }
 
     /// Whether any part of a location is a Photos library.
@@ -341,6 +343,19 @@ final class FilesDirectory {
             if name != ".", name != ".." { names.append(name) }
         }
         return names
+    }
+
+    /// Where the item `name` is on disk, as the file system spells it, without following a link.
+    ///
+    /// The spelling in a client's path can differ from the name on disk (case, long s, normalization),
+    /// so checks on the final component use this instead of the client's text.
+    func onDiskPath(of name: String, displayPath: String) throws -> String {
+        let pin = openat(fd, name, O_EVTONLY | O_SYMLINK | O_CLOEXEC)
+        guard pin >= 0 else { throw FilesError.posix(errno, displayPath) }
+        defer { close(pin) }
+        var buffer = [CChar](repeating: 0, count: Int(MAXPATHLEN))
+        guard fcntl(pin, F_GETPATH, &buffer) == 0 else { throw FilesError.changedWhileWorking(displayPath) }
+        return String(cString: buffer)
     }
 
     /// What is at `name` in the folder, without following a link, or nil if nothing is.
