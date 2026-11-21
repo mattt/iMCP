@@ -1316,6 +1316,7 @@
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = iOS/Info.plist;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				INFOPLIST_KEY_CFBundleDisplayName = iMCP;
 				INFOPLIST_KEY_NSCameraUsageDescription = "iMCP uses the camera to scan the pairing code that iMCP shows on your Mac.";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "iMCP reads the health data you choose and sends it to iMCP on your Mac, where the AI apps you connect can use it.";
@@ -1355,6 +1356,7 @@
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = iOS/Info.plist;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				INFOPLIST_KEY_CFBundleDisplayName = iMCP;
 				INFOPLIST_KEY_NSCameraUsageDescription = "iMCP uses the camera to scan the pairing code that iMCP shows on your Mac.";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "iMCP reads the health data you choose and sends it to iMCP on your Mac, where the AI apps you connect can use it.";
