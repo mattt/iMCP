@@ -625,6 +625,144 @@ final class MobileRetryTests: XCTestCase {
         XCTAssertNotEqual(after, before)
     }
 
+    func testSecondConnectionFromTheSameDeviceDoesNotReplaceALiveLink() async throws {
+        let first = FakeLink(device: "iphone") { _, _ in "{}" }
+        let second = FakeLink(device: "iphone") { _, _ in "{}" }
+        let firstAttached = await service.attach(first)
+        let secondAttached = await service.attach(second)
+        XCTAssertTrue(firstAttached)
+        XCTAssertFalse(secondAttached)
+        XCTAssertEqual(second.closeCount, 1, "The duplicate is closed.")
+        XCTAssertEqual(first.closeCount, 0, "The live link keeps serving.")
+        _ = try await service.call("alarms_list", [:])
+        XCTAssertEqual(first.calls.filter { $0.tool == "alarms_list" }.count, 1)
+        XCTAssertEqual(second.calls.count, 0)
+    }
+
+    func testStaleLinkIsReplacedByANewConnectionFromTheSameDevice() async throws {
+        let stale = FakeLink(device: "iphone") { _, _ in throw MobileLinkLost() }
+        let fresh = FakeLink(device: "iphone") { _, _ in "{}" }
+        await service.attach(stale)
+        let attached = await service.attach(fresh)
+        XCTAssertTrue(attached)
+        let connected = await service.connectedDevice
+        XCTAssertEqual(connected?.id, "iphone")
+        _ = try await service.call("alarms_list", [:])
+        XCTAssertEqual(fresh.calls.filter { $0.tool == "alarms_list" }.count, 1)
+    }
+
+    func testHungLinkIsReplacedAfterTheLivenessTimeout() async throws {
+        let service = MobileService(
+            cache: cache,
+            pairings: pairings,
+            reconnectGrace: .milliseconds(300),
+            livenessTimeout: .milliseconds(100),
+            advertise: false,
+            pollInterval: .seconds(60)
+        )
+        let hung = FakeLink(device: "iphone") { _, _ in
+            try await Task.sleep(for: .seconds(30))
+            return "{}"
+        }
+        let fresh = FakeLink(device: "iphone") { _, _ in "{}" }
+        await service.attach(hung)
+        let attached = await service.attach(fresh)
+        XCTAssertTrue(attached)
+        // The replaced link closes on its own task.
+        for _ in 0 ..< 100 where hung.closeCount == 0 { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(hung.closeCount, 1)
+        await service.stop()
+    }
+
+    func testAnotherDeviceReplacesTheLink() async throws {
+        let first = FakeLink(device: "iphone") { _, _ in "{}" }
+        let other = FakeLink(device: "ipad") { _, _ in "{}" }
+        await service.attach(first)
+        let attached = await service.attach(other)
+        XCTAssertTrue(attached)
+        let connected = await service.connectedDevice
+        XCTAssertEqual(connected?.id, "ipad")
+        for _ in 0 ..< 100 where first.closeCount == 0 { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(first.closeCount, 1)
+    }
+
+    func testAnswersTreatsPhoneErrorsAsAlive() async {
+        let erroring = FakeLink { _, _ in throw MobileError("HealthKit is locked.") }
+        let lost = FakeLink { _, _ in throw MobileLinkLost() }
+        let silent = FakeLink { _, _ in
+            try await Task.sleep(for: .seconds(30))
+            return "{}"
+        }
+        let a = await erroring.answers(within: .seconds(1))
+        let b = await lost.answers(within: .seconds(1))
+        let c = await silent.answers(within: .milliseconds(100))
+        XCTAssertTrue(a)
+        XCTAssertFalse(b)
+        XCTAssertFalse(c)
+    }
+
+    /// A silent socket must not hold the liveness check open: the timer wins
+    /// and the status call is abandoned, not waited for.
+    func testAnswersDoesNotWaitForASilentSocketPastTheTimeout() async {
+        let silent = FakeLink { _, _ in
+            try await Task.sleep(for: .seconds(30))
+            return "{}"
+        }
+        let clock = ContinuousClock()
+        let start = clock.now
+        let answer = await silent.answers(within: .milliseconds(100))
+        let elapsed = clock.now - start
+        XCTAssertFalse(answer)
+        XCTAssertLessThan(elapsed, .seconds(2), "the check waited for the socket")
+    }
+
+    /// A device unpaired while the live link is being checked must not get a
+    /// new link installed for it.
+    func testAttachRefusesADeviceUnpairedDuringTheLivenessCheck() async throws {
+        let deviceID = "phone-1"
+        try pairings.save(
+            MobileDevice(id: deviceID, name: "Phone", pairedAt: Date()),
+            key: SymmetricKey(size: .bits256)
+        )
+        let started = Signal()
+        let release = Signal()
+        let current = FakeLink(device: deviceID) { _, _ in
+            started.signal()
+            await release.wait()
+            return "{}"
+        }
+        await service.attach(current)
+
+        let replacement = FakeLink(device: deviceID) { _, _ in "{}" }
+        let task = Task { await service.attach(replacement) }
+        await started.wait()
+        await service.unpair(deviceID)
+        release.signal()
+
+        let attached = await task.value
+        XCTAssertFalse(attached, "an unpaired device must not get a new link")
+        XCTAssertEqual(replacement.closeCount, 1)
+    }
+
+    /// A device unpaired while its connection was still being set up has no
+    /// installed link for `unpair` to close; the accept path must refuse it.
+    func testAttachIfPairedRefusesADeviceUnpairedBeforeAttach() async throws {
+        let link = FakeLink(device: "gone") { _, _ in "{}" }
+        let attached = await service.attachIfPaired(link)
+        XCTAssertFalse(attached)
+        XCTAssertEqual(link.closeCount, 1)
+        let connected = await service.connectedDevice
+        XCTAssertNil(connected)
+
+        try pairings.save(
+            MobileDevice(id: "gone", name: "Phone", pairedAt: Date()),
+            key: SymmetricKey(size: .bits256)
+        )
+        let paired = FakeLink(device: "gone") { _, _ in "{}" }
+        let ok = await service.attachIfPaired(paired)
+        XCTAssertTrue(ok)
+    }
+
     func testPhoneErrorsAreNotRetried() async throws {
         let link = FakeLink { _, _ in throw MobileError("AlarmKit access is off.") }
         await service.attach(link)
@@ -656,6 +794,44 @@ final class MobileMemoryPairings: MobilePairingStore, @unchecked Sendable {
 
     func remove(_ device: String) {
         lock.withLock { _ = entries.removeValue(forKey: device) }
+    }
+}
+
+/// A one-shot async signal for tests: `wait()` suspends until `signal()`.
+private final class Signal: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var signaled = false
+
+    func wait() async {
+        await withCheckedContinuation { continuation in
+            lock.lock()
+            if signaled {
+                lock.unlock()
+                continuation.resume()
+            } else {
+                self.continuation = continuation
+                lock.unlock()
+            }
+        }
+    }
+
+    func signal() {
+        lock.lock()
+        guard !signaled else {
+            lock.unlock()
+            return
+        }
+        signaled = true
+        let continuation = self.continuation
+        self.continuation = nil
+        lock.unlock()
+        continuation?.resume()
+    }
+
+    func signalAndWait() async {
+        signal()
+        await wait()
     }
 }
 
@@ -695,7 +871,10 @@ private final class FakeLink: MobilePeerLink, @unchecked Sendable {
         return try await handler(tool, input)
     }
 
-    func close() async {}
+    private var closes = 0
+    var closeCount: Int { lock.withLock { closes } }
+
+    func close() async { lock.withLock { closes += 1 } }
 }
 
 /// A Boolean that a test changes while the service reads it.

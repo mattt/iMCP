@@ -3,7 +3,7 @@ import Foundation
 /// Changes that iMCP on iOS has collected but the Mac hasn't stored yet,
 /// and the sync state, such as HealthKit anchors, that produced them.
 ///
-/// The outbox lives in the App Group container.
+/// The outbox lives in the app's own Application Support directory, not the App Group container.
 /// Records and the state that follows them are written in one transaction,
 /// so an anchor never advances past changes that aren't queued.
 /// The Mac pulls the oldest batch and acknowledges it after storing it;
@@ -50,9 +50,119 @@ actor MobileOutbox {
         )
     }
 
-    /// The outbox in the App Group container that the app and its extensions share.
+    /// The outbox in the app's own Application Support directory.
+    ///
+    /// It used to live in the App Group container. iOS kills an app with 0xdead10cc
+    /// when it is suspended while holding a SQLite lock on a file in a shared container,
+    /// and background syncs can be suspended mid-write. Nothing else reads the outbox
+    /// (the widget extension has no App Group), so it stays out of the shared container.
     static func shared() throws -> MobileOutbox {
-        try MobileOutbox(url: MobileAppGroup.directory().appendingPathComponent("outbox.sqlite"))
+        try open(
+            groupContainer: MobileAppGroup.containerURL(),
+            supportDirectory: MobileAppGroup.supportDirectory()
+        )
+    }
+
+    static func open(groupContainer: URL?, supportDirectory: URL) throws -> MobileOutbox {
+        let url = try databaseURL(groupContainer: groupContainer, supportDirectory: supportDirectory)
+        migrateFromAppGroup(groupContainer, to: url)
+        // The old file stays the source of truth until the new one is complete.
+        // If the migration has not finished, open the old outbox, so queued
+        // records and anchors are never left behind.
+        if let group = groupContainer {
+            let old = group.appendingPathComponent(fileName)
+            if FileManager.default.fileExists(atPath: old.path) {
+                return try MobileOutbox(url: old)
+            }
+        }
+        return try MobileOutbox(url: url)
+    }
+
+    static let fileName = "outbox.sqlite"
+
+    /// Where the database lives. The App Group container is never used.
+    static func databaseURL(groupContainer: URL?, supportDirectory: URL) throws -> URL {
+        supportDirectory.appendingPathComponent(fileName)
+    }
+
+    /// The outbox's sidecar files, in the order they are copied.
+    private static let sidecars = ["-wal", "-shm"]
+
+    /// Renames an outbox that can't be opened, with its sidecars, so it is never
+    /// opened again (no lock inside the App Group) and nothing is lost.
+    private static func quarantine(_ old: URL) {
+        let manager = FileManager.default
+        for suffix in [""] + sidecars {
+            let source = URL(fileURLWithPath: old.path + suffix)
+            let target = URL(fileURLWithPath: old.path + ".unreadable" + suffix)
+            guard manager.fileExists(atPath: source.path) else { continue }
+            try? manager.removeItem(at: target)
+            try? manager.moveItem(at: source, to: target)
+        }
+    }
+
+    /// Moves an outbox that an earlier build left in the App Group container,
+    /// so queued batches and HealthKit anchors survive and nothing is sent twice.
+    ///
+    /// The old file is the source of truth until the new one is complete. Each
+    /// file is copied, not moved, and the old files are removed only after every
+    /// copy has the same size as its source. A failed checkpoint or a failed copy
+    /// leaves the old outbox in place, so the next launch tries again.
+    static func migrateFromAppGroup(_ group: URL?, to url: URL) {
+        let manager = FileManager.default
+        guard let group else { return }
+        let old = group.appendingPathComponent(fileName)
+        guard old.standardizedFileURL != url.standardizedFileURL,
+            manager.fileExists(atPath: old.path)
+        else { return }
+
+        // Fold the write-ahead log into the database before copying. If the
+        // database can't be opened or the checkpoint fails, leave the old
+        // outbox alone rather than copy a database whose recent commits are
+        // only in the log.
+        guard let database = try? MobileDatabase(path: old.path) else {
+            quarantine(old)
+            return
+        }
+        do {
+            try database.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        } catch {
+            database.close()
+            return
+        }
+        database.close()
+
+        // Copy every file that exists. A partial copy is harmless: the old
+        // files stay, and the next launch copies over them.
+        for suffix in [""] + sidecars {
+            let source = URL(fileURLWithPath: old.path + suffix)
+            let destination = URL(fileURLWithPath: url.path + suffix)
+            guard manager.fileExists(atPath: source.path) else { continue }
+            do {
+                if manager.fileExists(atPath: destination.path) {
+                    try manager.removeItem(at: destination)
+                }
+                try manager.copyItem(at: source, to: destination)
+            } catch {
+                return
+            }
+        }
+
+        // Remove the old files only when every copy matches its source.
+        for suffix in [""] + sidecars {
+            let source = URL(fileURLWithPath: old.path + suffix)
+            let destination = URL(fileURLWithPath: url.path + suffix)
+            guard manager.fileExists(atPath: source.path) else { continue }
+            let sourceSize = (try? source.resourceValues(forKeys: [.fileSizeKey]))?.fileSize
+            let destinationSize =
+                (try? destination.resourceValues(forKeys: [.fileSizeKey]))?.fileSize
+            guard let sourceSize, sourceSize == destinationSize else { return }
+        }
+        for suffix in [""] + sidecars {
+            let source = URL(fileURLWithPath: old.path + suffix)
+            guard manager.fileExists(atPath: source.path) else { continue }
+            try? manager.removeItem(at: source)
+        }
     }
 
     private struct Body: Codable {
@@ -79,6 +189,8 @@ actor MobileOutbox {
         }
         if chunks.isEmpty, !dates.isEmpty || !replacing.isEmpty { chunks = [[]] }
         try database.transaction {
+            // An expired background task cancels the sync; roll back instead of writing.
+            try Task.checkCancellation()
             if let generation, generation != self.generation { throw Superseded() }
             for (index, chunk) in chunks.enumerated() {
                 let last = index == chunks.count - 1
@@ -171,7 +283,7 @@ actor MobileOutbox {
     }
 }
 
-/// The container that iMCP on iOS shares with its extensions.
+/// The container that iMCP on iOS shares with its extensions. It holds preferences only; databases stay out of it.
 enum MobileAppGroup {
     /// The group ID from the `iMCPAppGroup` Info.plist key,
     /// which the build sets from the iOS app's bundle ID.
@@ -179,21 +291,17 @@ enum MobileAppGroup {
         Bundle.main.object(forInfoDictionaryKey: "iMCPAppGroup") as? String
     }
 
-    static func directory() throws -> URL {
-        if let identifier,
-            let url = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: identifier)
-        {
-            return url
-        }
-        // Builds without the App Group entitlement, such as unsigned simulator builds,
-        // keep the outbox in the app's own container.
-        let url = try FileManager.default.url(
+    static func containerURL() -> URL? {
+        identifier.flatMap { FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: $0) }
+    }
+
+    static func supportDirectory() throws -> URL {
+        try FileManager.default.url(
             for: .applicationSupportDirectory,
             in: .userDomainMask,
             appropriateFor: nil,
             create: true
         )
-        return url
     }
 
     static var defaults: UserDefaults {
