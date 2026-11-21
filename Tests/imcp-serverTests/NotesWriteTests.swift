@@ -39,6 +39,15 @@ final class NotesWriteTests: XCTestCase {
             html("[x](https://en.wikipedia.org/wiki/Foo_(bar))"),
             "<div>x (https://en.wikipedia.org/wiki/Foo_(bar))</div>"
         )
+        // A bare address keeps its closing parenthesis, and a title after the address is still dropped.
+        XCTAssertEqual(
+            html("[https://e.com/a_(b)](https://e.com/a_(b))"),
+            "<div>https://e.com/a_(b)</div>"
+        )
+        XCTAssertEqual(
+            html(#"[x](https://e.com/a_(b) "title") after"#),
+            "<div>x (https://e.com/a_(b)) after</div>"
+        )
         XCTAssertEqual(html("![a chart](chart.png)"), "<div>a chart (chart.png)</div>")
         XCTAssertEqual(html("[**x**](https://e.com?a=1&b=2)"), "<div><b>x</b> (https://e.com?a=1&amp;b=2)</div>")
     }
