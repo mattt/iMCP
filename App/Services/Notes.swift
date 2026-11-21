@@ -179,7 +179,13 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
                         }
                         request.folderIDs = Set(matches.map(\.id))
                     }
-                    let page = try Self.search(request, filter: filter, in: snapshot)
+                    let page = try searchNotes(
+                        request,
+                        filter: filter,
+                        scanLimit: Self.metadataScanLimit,
+                        contentReadLimit: Self.contentReadLimit,
+                        in: SnapshotNoteSource(snapshot: snapshot)
+                    )
                     // Tags and links come from the database's rows, so they cost no decoding.
                     // A database that can't supply them still gives the page without them.
                     let ids = page.notes.map(\.id)
@@ -532,6 +538,74 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
         }
     }
 
+    // MARK: - Finding What a Script Created
+
+    /// Looks for the database's identifier of a note that the scripting interface just made.
+    ///
+    /// The scripting interface's identifier is not the database's, so a client can't use it with the read tools.
+    /// The database can lag behind Notes by a moment, so this tries again for about a second.
+    /// - Returns: The identifier, or `nil` if the database can't be read or doesn't have exactly one such note.
+    func lookUpCreatedNote(
+        title: String,
+        folderPath: [String],
+        folderName: String,
+        accountName: String,
+        createdAfter date: Date
+    ) async -> String? {
+        guard (try? checkDatabaseAccess()) != nil else { return nil }
+        for attempt in 0 ..< 5 {
+            if attempt > 0 { try? await Task.sleep(for: .milliseconds(200)) }
+            let found = try? await withStore { store in
+                try await store.withSnapshot { snapshot -> String? in
+                    let folders = try snapshot.folders()
+                    let nodes = folders.map {
+                        FolderNode(id: $0.id, name: $0.name, parentID: $0.parentID, accountName: $0.account?.name)
+                    }
+                    let ids = Set(
+                        folderIDs(
+                            atPath: folderPath,
+                            defaultFolderName: folderName,
+                            accountName: accountName,
+                            among: nodes
+                        )
+                    )
+                    guard !ids.isEmpty else { return nil }
+                    var request = TopoText.Note.FetchRequest(
+                        query: title,
+                        limit: TopoText.Note.FetchRequest.maximumLimit
+                    )
+                    request.folderIDs = ids
+                    request.startDate = date
+                    let candidates = try snapshot.search(request).notes.map {
+                        NoteCandidate(id: $0.id, title: $0.title, creationDate: $0.creationDate)
+                    }
+                    return uniqueNewNoteID(title: title, createdAfter: date, among: candidates)?.description
+                }
+            }
+            if let found { return found }
+        }
+        return nil
+    }
+
+    /// Looks for the database's identifier of a folder that the scripting interface just made.
+    func lookUpCreatedFolder(path: [String], accountName: String) async -> String? {
+        guard (try? checkDatabaseAccess()) != nil else { return nil }
+        for attempt in 0 ..< 5 {
+            if attempt > 0 { try? await Task.sleep(for: .milliseconds(200)) }
+            let found = try? await withStore { store in
+                try await store.withSnapshot { snapshot -> String? in
+                    let nodes = try snapshot.folders().map {
+                        FolderNode(id: $0.id, name: $0.name, parentID: $0.parentID, accountName: $0.account?.name)
+                    }
+                    let ids = folderIDs(atPath: path, defaultFolderName: "", accountName: accountName, among: nodes)
+                    return ids.count == 1 ? ids[0].description : nil
+                }
+            }
+            if let found { return found }
+        }
+        return nil
+    }
+
     // MARK: - Tool Results
 
     private func attachmentsResult(_ arguments: [String: Value]) async throws -> Value {
@@ -630,109 +704,11 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
 
     /// The most notes whose contents one `notes_fetch` call reads to apply a filter,
     /// which bounds the time of a call whose filters match few notes.
-    private static let contentReadLimit = 500
+    static let contentReadLimit = 500
     /// The most notes one `notes_fetch` call scans to apply metadata filters,
     /// bounding large stores. The budget counts every note the search examined,
     /// including notes that matched no text query.
-    private static let metadataScanLimit = 2_000
-
-    /// One page of notes, after the filters that TopoText can't apply.
-    private struct NotesPage: Sendable {
-        enum StoppedEarly: Sendable {
-            case contentRead
-            case metadataScan
-        }
-
-        var notes: [TopoText.Note] = []
-        var nextCursor: TopoText.Note.FetchRequest.Cursor?
-        var unreadableNoteIDs: [TopoText.Note.ID] = []
-        /// What the contents of each note hold, for the notes whose contents were read.
-        var traits: [TopoText.Note.ID: NoteTraits] = [:]
-        /// Whether the search hit a scan limit before filling the page.
-        var stoppedEarly: StoppedEarly?
-    }
-
-    /// Searches the notes, then keeps those that pass the filter.
-    ///
-    /// `FetchRequest` filters by text, folder, and modification date only,
-    /// so this asks for as many notes as the page still needs and filters them,
-    /// until the page is full or the notes run out.
-    /// Every page it asks for is examined to its end, so `nextCursor` skips no note.
-    /// The scan budget counts the notes the search examined, not the notes it
-    /// returned, so a text query with few matches cannot scan far past it.
-    private static func search(
-        _ request: TopoText.Note.FetchRequest,
-        filter: NoteFilter,
-        scanLimit: Int = metadataScanLimit,
-        in snapshot: TopoText.Store.Snapshot
-    ) throws -> NotesPage {
-        let wanted = request.limit
-        var request = request
-        var page = NotesPage()
-        var read = 0
-        var scanned = 0
-        while page.notes.count < wanted {
-            let remaining = scanLimit - scanned
-            guard remaining > 0 else {
-                page.stoppedEarly = .metadataScan
-                break
-            }
-            // Cap the page by what is left of the scan budget.
-            request.limit = min(wanted - page.notes.count, remaining)
-            let result = try snapshot.search(request)
-            scanned += result.scannedNoteCount
-            // Unreadable notes are reported whether or not they matched.
-            for id in result.unreadableNoteIDs where !page.unreadableNoteIDs.contains(id) {
-                page.unreadableNoteIDs.append(id)
-            }
-            // Tags come from the same records the note's `keywords` come from.
-            let ids = result.notes.map(\.id)
-            let tags =
-                filter.needsTags
-                ? (try readIfSupported { try snapshot.tags(for: ids) } ?? [:]) : [:]
-            for note in result.notes {
-                guard
-                    filter.matches(
-                        isPinned: note.isPinned,
-                        isLocked: note.isLocked,
-                        creationDate: note.creationDate
-                    )
-                else { continue }
-                guard filter.matches(tags: tags[note.id] ?? []) else { continue }
-                guard filter.needsContents else {
-                    page.notes.append(note)
-                    if result.unreadableNoteIDs.contains(note.id) {
-                        page.unreadableNoteIDs.append(note.id)
-                    }
-                    continue
-                }
-                read += 1
-                do {
-                    let traits = NoteTraits(content: try snapshot.content(for: note.id))
-                    guard filter.matches(traits) else { continue }
-                    page.traits[note.id] = traits
-                    page.notes.append(note)
-                } catch is TopoText.NotesError {
-                    // A locked note or a damaged one can't be checked against the filter.
-                    page.unreadableNoteIDs.append(note.id)
-                }
-            }
-            page.nextCursor = result.nextCursor
-            guard result.nextCursor != nil else { break }
-            request.cursor = result.nextCursor
-            if page.notes.count < wanted {
-                if read >= contentReadLimit {
-                    page.stoppedEarly = .contentRead
-                    break
-                }
-                if scanned >= scanLimit {
-                    page.stoppedEarly = .metadataScan
-                    break
-                }
-            }
-        }
-        return page
-    }
+    static let metadataScanLimit = 2_000
 
     /// Returns a date argument as a start or end of a range.
     private func dateArgument(_ name: String, in arguments: [String: Value], isEnd: Bool) throws -> Date? {

@@ -14,8 +14,37 @@ import Foundation
 /// (see `ServiceWrites`), which starts off.
 extension NotesService {
     var tools: [Tool] {
-        readTools + NotesWriteTools.tools(runner: AppleNotesScriptRunner())
+        readTools
+            + NotesWriteTools.tools(
+                runner: AppleNotesScriptRunner(),
+                resolver: DatabaseIdentifierResolver(service: self)
+            )
     }
 
     var writesEnabledByDefault: Bool { false }
+}
+
+/// Looks in the Notes database through the Notes service.
+struct DatabaseIdentifierResolver: NotesIdentifierResolving, @unchecked Sendable {
+    let service: NotesService
+
+    func noteID(
+        title: String,
+        folderPath: [String],
+        folderName: String,
+        accountName: String,
+        createdAfter date: Date
+    ) async -> String? {
+        await service.lookUpCreatedNote(
+            title: title,
+            folderPath: folderPath,
+            folderName: folderName,
+            accountName: accountName,
+            createdAfter: date
+        )
+    }
+
+    func folderID(path: [String], accountName: String) async -> String? {
+        await service.lookUpCreatedFolder(path: path, accountName: accountName)
+    }
 }
