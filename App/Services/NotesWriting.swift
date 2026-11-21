@@ -636,7 +636,23 @@ enum NotesMarkdown {
                 j += 1
             }
             guard let closing, closing + 1 < characters.count, characters[closing + 1] == "(" else { return nil }
-            guard let end = characters[(closing + 2)...].firstIndex(of: ")") else { return nil }
+            // Parentheses inside the address balance, as in a Wikipedia address.
+            var end: Int?
+            var nesting = 0
+            var k = closing + 2
+            while k < characters.count {
+                if characters[k] == "(" {
+                    nesting += 1
+                } else if characters[k] == ")" {
+                    if nesting == 0 {
+                        end = k
+                        break
+                    }
+                    nesting -= 1
+                }
+                k += 1
+            }
+            guard let end else { return nil }
 
             let label = Array(characters[(i + 1) ..< closing])
             // An address may be followed by a title, which Notes has no place for.

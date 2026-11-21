@@ -768,11 +768,11 @@ The Notes service reads notes with TopoText and returns them as Markdown.
 Besides `notes_fetch` and `notes_read`,
 the service lists accounts, folders (with their paths), attachments, and note counts.
 Each note has a `notes://showNote?identifier=` link that opens it in the Notes app.
-Filters on tags, word counts, and what a note contains
+Filters on word counts and on what a note contains
 need to read each candidate note's contents,
-so a call reads at most 500 notes (and scans at most 2,000 notes for pinned, locked, and creation-date filters) and returns a `nextCursor` to continue.
-Notes can't be created or changed, and smart folders aren't listed yet,
-because TopoText doesn't expose them.
+so a call reads the contents of at most 500 notes.
+Every `notes_fetch` call, whatever its filters, examines at most 2,000 notes,
+and returns a `nextCursor` to continue when it stops before filling the page.
 
 The Notes service can also create notes and folders,
 but only while **Allow writes** is on in iMCP's Notes settings, where it is off by default.
