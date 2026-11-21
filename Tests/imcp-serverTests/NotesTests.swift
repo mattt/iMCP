@@ -169,6 +169,8 @@ final class NotesTests: XCTestCase {
     }
 
     /// Notes numbered 0..<count, newest first. Every `matchEvery`th note matches the text query.
+    /// An unreadable note is reported as unreadable and matches only if its number does,
+    /// as a note whose text can't be read can't match a text query.
     private final class FakeSource: NoteSearchSource {
         let count: Int
         let matchEvery: Int
@@ -196,7 +198,7 @@ final class NotesTests: XCTestCase {
             while index < count, examined < request.scanLimit, notes.count < request.limit {
                 examined += 1
                 if unreadable.contains(index) { ids.append(.init("N\(index)")!) }
-                if index % matchEvery == 0 || unreadable.contains(index) {
+                if index % matchEvery == 0 {
                     notes.append(FakeNote(id: .init("N\(index)")!))
                 }
                 index += 1
@@ -236,8 +238,9 @@ final class NotesTests: XCTestCase {
     }
 
     func testSearchKeepsUnreadableNotesOnceWhetherOrNotTheyMatch() throws {
+        // N0 matches and N3 doesn't; both are reported, and only N0 is returned.
         let source = FakeSource(count: 10, matchEvery: 1_000)
-        source.unreadable = [3]
+        source.unreadable = [0, 3]
         let page = try searchNotes(
             TopoText.Note.FetchRequest(query: "x", limit: 10),
             filter: NoteFilter(),
@@ -245,14 +248,15 @@ final class NotesTests: XCTestCase {
             contentReadLimit: 500,
             in: source
         )
-        XCTAssertEqual(page.unreadableNoteIDs.map(\.description), ["N3"])
-        XCTAssertEqual(page.notes.map(\.id.description), ["N0", "N3"])
+        XCTAssertEqual(page.unreadableNoteIDs.map(\.description), ["N0", "N3"])
+        XCTAssertEqual(page.notes.map(\.id.description), ["N0"])
     }
 
     func testSearchReportsAnUnreadableNoteOnceWhenItsContentsAreNeeded() throws {
         let source = FakeSource(count: 10, matchEvery: 1_000)
-        source.unreadable = [3]
-        // The filter needs contents, and the fake can't supply them.
+        source.unreadable = [0]
+        // The filter needs contents, and the fake can't supply them, so N0 is
+        // unreadable both in the search and when its contents are read.
         let page = try searchNotes(
             TopoText.Note.FetchRequest(query: "x", limit: 10),
             filter: NoteFilter(minimumWords: 1),
@@ -260,7 +264,7 @@ final class NotesTests: XCTestCase {
             contentReadLimit: 500,
             in: source
         )
-        XCTAssertEqual(page.unreadableNoteIDs.map(\.description), ["N3", "N0"])
+        XCTAssertEqual(page.unreadableNoteIDs.map(\.description), ["N0"])
         XCTAssertTrue(page.notes.isEmpty)
     }
 

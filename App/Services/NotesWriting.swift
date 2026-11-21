@@ -483,12 +483,21 @@ enum NotesMarkdown {
 
         /// Text with Markdown's emphasis, code, and links, as HTML.
         static func inline(_ text: String) -> String {
-            inline(Array(text))
+            inline(Array(text), depth: 0)
         }
 
-        private static func inline(_ characters: [Character]) -> String {
+        /// How deeply links and emphasis nest before the rest is plain text.
+        /// Each level is a recursive call, so a body of thousands of `[`
+        /// must not become thousands of stack frames.
+        static let maximumInlineDepth = 8
+
+        private static func inline(_ characters: [Character], depth: Int) -> String {
+            guard depth < maximumInlineDepth else { return NotesHTML.escape(String(characters)) }
             var html = ""
             var i = 0
+            // Once a scan finds no closing bracket, no later `[` can close
+            // either, so a line of `[` is scanned once rather than once each.
+            var mayHaveLinks = true
             while i < characters.count {
                 let character = characters[i]
 
@@ -514,12 +523,16 @@ enum NotesMarkdown {
                     continue
                 }
 
-                if character == "[" || (character == "!" && i + 1 < characters.count && characters[i + 1] == "["),
-                    let link = link(in: characters, at: i)
+                if mayHaveLinks,
+                    character == "[" || (character == "!" && i + 1 < characters.count && characters[i + 1] == "[")
                 {
-                    html += link.html
-                    i = link.end
-                    continue
+                    var foundClosingBracket = true
+                    if let link = link(in: characters, at: i, depth: depth, foundClosingBracket: &foundClosingBracket) {
+                        html += link.html
+                        i = link.end
+                        continue
+                    }
+                    mayHaveLinks = foundClosingBracket
                 }
 
                 if let delimiter = emphasisDelimiter(in: characters, at: i),
@@ -533,7 +546,7 @@ enum NotesMarkdown {
                     end > i + delimiter.length
                 {
                     let inner = Array(characters[(i + delimiter.length) ..< end])
-                    html += "<\(delimiter.tag)>\(inline(inner))</\(delimiter.tag)>"
+                    html += "<\(delimiter.tag)>\(inline(inner, depth: depth + 1))</\(delimiter.tag)>"
                     i = end + delimiter.length
                     continue
                 }
@@ -612,29 +625,38 @@ enum NotesMarkdown {
         }
 
         /// A link or an image at `start`, as its text followed by its address.
-        private static func link(in characters: [Character], at start: Int) -> (html: String, end: Int)? {
+        /// `foundClosingBracket` is false when nothing after `start` closes a bracket.
+        private static func link(
+            in characters: [Character],
+            at start: Int,
+            depth: Int,
+            foundClosingBracket: inout Bool
+        ) -> (html: String, end: Int)? {
             var i = start
             if characters[i] == "!" { i += 1 }
             guard i < characters.count, characters[i] == "[" else { return nil }
 
-            var depth = 0
+            var nestedBrackets = 0
             var closing: Int?
+            var sawClosingBracket = false
             var j = i
             while j < characters.count {
                 if characters[j] == "\\" {
                     j += 2
                     continue
                 }
-                if characters[j] == "[" { depth += 1 }
+                if characters[j] == "[" { nestedBrackets += 1 }
                 if characters[j] == "]" {
-                    depth -= 1
-                    if depth == 0 {
+                    sawClosingBracket = true
+                    nestedBrackets -= 1
+                    if nestedBrackets == 0 {
                         closing = j
                         break
                     }
                 }
                 j += 1
             }
+            foundClosingBracket = sawClosingBracket
             guard let closing, closing + 1 < characters.count, characters[closing + 1] == "(" else { return nil }
             // Parentheses inside the address balance, as in a Wikipedia address.
             var end: Int?
@@ -659,7 +681,7 @@ enum NotesMarkdown {
             let target =
                 String(characters[(closing + 2) ..< end]).trimmingCharacters(in: .whitespaces)
                 .split(separator: " ", maxSplits: 1).first.map(String.init) ?? ""
-            let text = inline(label)
+            let text = inline(label, depth: depth + 1)
             guard !target.isEmpty else { return (text, end + 1) }
             if String(label) == target { return (NotesHTML.escape(target), end + 1) }
             return ("\(text) (\(NotesHTML.escape(target)))", end + 1)
