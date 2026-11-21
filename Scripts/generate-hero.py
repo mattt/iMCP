@@ -14,7 +14,7 @@ ASSETS = Path(__file__).resolve().parents[1] / "Assets"
 SVG = "http://www.w3.org/2000/svg"
 ET.register_namespace("", SVG)
 
-# Arrange icons by hue, from red through green and blue to purple.
+# Arrange icons by hue, from red through green and blue to purple and pink.
 # Each entry pairs an asset name with its dark appearance background color.
 SERVICES = (
     ("calendar", "#ff453a"),
@@ -31,6 +31,7 @@ SERVICES = (
     ("mail", "#0a84ff"),
     ("shortcuts", "#5e5ce6"),
     ("maps", "#bf5af2"),
+    ("photos", "#ff375f"),
     ("music", "#000"),
 )
 
