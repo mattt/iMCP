@@ -480,6 +480,11 @@ enum FilesOperations {
                 throw FilesError.alreadyExists(file.displayPath)
             }
 
+            // Keep the name as the file system spells it, so a request in another case doesn't rename the file.
+            let diskName = URL(
+                fileURLWithPath: try parent.onDiskPath(of: name, displayPath: file.displayPath)
+            ).lastPathComponent
+
             let temporary = ".imcp-\(UUID().uuidString).tmp"
             let output = try parent.openFile(
                 temporary,
@@ -495,11 +500,14 @@ enum FilesOperations {
             }
             do {
                 try writeAll(data, to: output, displayPath: file.displayPath)
-                fchmod(output, info.st_mode & 0o7777)
+                // Carry over the extended attributes (Finder tags among them), ACL, and mode.
+                guard fcopyfile(reading, output, nil, copyfile_flags_t(COPYFILE_METADATA)) == 0 else {
+                    throw FilesError.posix(errno, file.displayPath)
+                }
                 fsync(output)
                 close(output)
                 outputIsOpen = false
-                guard renameat(parent.fd, temporary, parent.fd, name) == 0 else {
+                guard renameat(parent.fd, temporary, parent.fd, diskName) == 0 else {
                     throw FilesError.posix(errno, file.displayPath)
                 }
             } catch {
@@ -638,6 +646,12 @@ enum FilesOperations {
         guard let info = try sourceParent.status(of: sourceName, displayPath: source.displayPath) else {
             throw FilesError.notFound(source.displayPath)
         }
+        // The final component is never opened as a folder, so check where it is on disk:
+        // the client's spelling of a Photos library's name can differ from the file system's.
+        let onDisk = try sourceParent.onDiskPath(of: sourceName, displayPath: source.displayPath)
+        guard !FilesAccess.isInsidePhotosLibrary(URL(fileURLWithPath: onDisk)) else {
+            throw FilesError.photosLibrary(source.displayPath)
+        }
         if info.isDirectory, destination.url.pathComponents.starts(with: source.url.pathComponents) {
             throw FilesError.invalidPath("\"\(source.displayPath)\" can't be moved into itself")
         }
@@ -690,6 +704,12 @@ enum FilesOperations {
             return fstat(pin, &pinned) == 0 && pinned.st_dev == other.st_dev && pinned.st_ino == other.st_ino
         }
         guard isPinned(found) else { throw FilesError.changedWhileWorking(item.displayPath) }
+        // The client's spelling of a Photos library's name can differ from the file system's.
+        var pinnedPath = [CChar](repeating: 0, count: Int(MAXPATHLEN))
+        guard fcntl(pin, F_GETPATH, &pinnedPath) == 0 else { throw FilesError.changedWhileWorking(item.displayPath) }
+        guard !FilesAccess.isInsidePhotosLibrary(URL(fileURLWithPath: String(cString: pinnedPath))) else {
+            throw FilesError.photosLibrary(item.displayPath)
+        }
 
         beforeMove()
         guard let current = try parent.status(of: name, displayPath: item.displayPath), isPinned(current) else {
