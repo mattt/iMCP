@@ -10,6 +10,11 @@ private let log = Logger.service("calendar")
 final class CalendarService: Service {
     private let eventStore = EKEventStore()
 
+    /// The calendars the person using iMCP has chosen to share.
+    /// Every tool gets its calendars from here
+    /// or checks them against the selection, so no tool sees the others.
+    let calendarSelectionStore = CalendarSelectionStore()
+
     static let shared = CalendarService()
 
     var isActivated: Bool {
@@ -45,7 +50,7 @@ final class CalendarService: Service {
                 )
             }
 
-            let calendars = self.eventStore.calendars(for: .event)
+            let calendars = self.sharedCalendars()
 
             return calendars.map { calendar in
                 Value.object([
@@ -113,12 +118,14 @@ final class CalendarService: Service {
             }
 
             // Filter calendars based on provided names
-            var calendars = self.eventStore.calendars(for: .event)
+            var calendars = self.sharedCalendars()
             if case .array(let calendarNames) = arguments["calendars"],
                 !calendarNames.isEmpty
             {
-                let requestedNames = Set(calendarNames.compactMap { $0.stringValue?.lowercased() })
-                calendars = calendars.filter { requestedNames.contains($0.title.lowercased()) }
+                calendars = try self.calendarSelectionStore.selection.resolve(
+                    names: calendarNames.compactMap { $0.stringValue },
+                    in: self.eventStore.calendars(for: .event)
+                )
             }
 
             // Parse dates and set defaults
@@ -189,8 +196,11 @@ final class CalendarService: Service {
                 calendars: calendars
             )
 
-            // Fetch events
+            // Fetch events. EventKit treats an empty calendar list like nil and searches
+            // every calendar, so keep only events from the calendars resolved above.
+            let allowed = Set(calendars.map(\.calendarIdentifier))
             var events = self.eventStore.events(matching: predicate)
+                .filter { allowed.contains($0.calendar.calendarIdentifier) }
 
             // Apply additional filters
             if case .bool(let includeAllDay) = arguments["includeAllDay"],
@@ -441,11 +451,15 @@ final class CalendarService: Service {
             // Set calendar
             var targetCalendar = self.eventStore.defaultCalendarForNewEvents
             if case .string(let calendarName) = arguments["calendar"] {
-                if let matchingCalendar = self.eventStore.calendars(for: .event)
-                    .first(where: { $0.title.lowercased() == calendarName.lowercased() })
-                {
+                if let matchingCalendar = try self.calendarSelectionStore.selection.resolve(
+                    names: [calendarName],
+                    in: self.eventStore.calendars(for: .event)
+                ).first {
                     targetCalendar = matchingCalendar
                 }
+            }
+            if let targetCalendar {
+                try self.calendarSelectionStore.selection.require(targetCalendar)
             }
             event.calendar = targetCalendar
 
@@ -611,6 +625,9 @@ final class CalendarService: Service {
             }
             let anyOccurrence = resolved.event
             let seriesIdentifier = resolved.seriesIdentifier
+            if let calendar = anyOccurrence.calendar {
+                try self.calendarSelectionStore.selection.require(calendar)
+            }
 
             let event: EKEvent
             if case .string(let startString) = arguments["start"] {
@@ -659,6 +676,13 @@ final class CalendarService: Service {
                 )
             } else {
                 event = anyOccurrence
+            }
+
+            // The occurrence that was resolved searches every calendar, so it
+            // can land in one the person deselected. Check the calendar of the
+            // event that is actually removed.
+            if let calendar = event.calendar {
+                try self.calendarSelectionStore.selection.require(calendar)
             }
 
             try self.eventStore.remove(event, span: span, commit: true)
@@ -885,6 +909,9 @@ final class CalendarService: Service {
             }
             let anyOccurrence = resolved.event
             let seriesIdentifier = resolved.seriesIdentifier
+            if let calendar = anyOccurrence.calendar {
+                try self.calendarSelectionStore.selection.require(calendar)
+            }
 
             let event: EKEvent
             switch arguments["occurrence"] {
@@ -944,6 +971,13 @@ final class CalendarService: Service {
                             "Occurrence must be an ISO 8601 date string."
                     ]
                 )
+            }
+
+            // The occurrence that was resolved searches every calendar, so it
+            // can land in one the person deselected. Check the calendar of the
+            // event that is actually updated.
+            if let calendar = event.calendar {
+                try self.calendarSelectionStore.selection.require(calendar)
             }
 
             // The event may already live in a read-only calendar (a
@@ -1058,11 +1092,10 @@ final class CalendarService: Service {
                 // the shared store until the next successful save of
                 // anything commits it.
                 guard
-                    let matchingCalendar = self.eventStore.calendars(for: .event)
-                        .first(where: {
-                            $0.title.lowercased() == calendarName.lowercased()
-                                && $0.allowsContentModifications
-                        })
+                    let matchingCalendar = try self.calendarSelectionStore.selection.resolve(
+                        names: [calendarName],
+                        in: self.eventStore.calendars(for: .event)
+                    ).first(where: { $0.allowsContentModifications })
                 else {
                     throw NSError(
                         domain: "CalendarError",
@@ -1519,6 +1552,18 @@ final class CalendarService: Service {
         }
     }
 
+    /// The event calendars clients may see.
+    private func sharedCalendars() -> [EKCalendar] {
+        calendarSelectionStore.selection.filter(eventStore.calendars(for: .event))
+    }
+
+    /// Every calendar on this Mac, grouped by account, for choosing which to share.
+    func calendarsBySource() -> [(source: String, calendars: [EKCalendar])] {
+        Dictionary(grouping: eventStore.calendars(for: .event), by: { $0.source.title })
+            .map { (source: $0.key, calendars: $0.value.sorted { $0.title < $1.title }) }
+            .sorted { $0.source < $1.source }
+    }
+
     /// Resolves the exact occurrence of a recurring event at a start date. Detached
     /// exceptions from earlier `thisEvent` edits carry `<series-id>/RID=<n>` instead of
     /// the series identifier, so match that prefix as well.
@@ -1548,4 +1593,9 @@ final class CalendarService: Service {
         guard let event = eventStore.event(withIdentifier: prefix) else { return nil }
         return (event, prefix)
     }
+}
+
+extension EKCalendar: CalendarSelectable {
+    var selectionIdentifier: String { calendarIdentifier }
+    var selectionTitle: String { title }
 }
