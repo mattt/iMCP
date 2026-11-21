@@ -34,7 +34,8 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
         }
     }
 
-    var tools: [Tool] {
+    /// The tools that read notes. `tools` adds the ones that change the Notes app (see `NotesWrite.swift`).
+    @ToolBuilder var readTools: [Tool] {
         Tool(
             name: "notes_folders",
             description: "List the folders in the Notes app, with their accounts and how many notes each holds",
@@ -63,7 +64,7 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
         Tool(
             name: "notes_fetch",
             description:
-                "Fetch notes from the Notes app, most recently edited first, with each note's title, preview, folder, dates, tags (keywords), and the notes it links to (linkedNotes). Tags and links are database records, which may remain after their text is deleted; links set on ordinary text are not listed. Locked and Recently Deleted notes supply no tags or links but can be link targets. Use notes_read for a note's full contents. Notes in Recently Deleted are left out unless that folder is requested. When more notes may match, the result has a nextCursor; pass it as cursor, with the same filters, to continue.",
+                "Fetch notes from the Notes app, most recently edited first, with each note's title, preview, folder, dates, tags (keywords), and the notes it links to (linkedNotes). Tags and links are database records, which may remain after their text is deleted; links set on ordinary text are not listed. Locked and Recently Deleted notes supply no tags or links but can be link targets. Filter by text, folder, edit or creation dates, tags, pinned or locked state, word counts, and what a note contains (checklists, tables, links, attachments). Use notes_read for a note's full contents. Notes in Recently Deleted are left out unless that folder is requested or includeRecentlyDeleted is true. When more notes may match, the result has a nextCursor; pass it as cursor, with the same filters, to continue.",
             inputSchema: .object(
                 properties: [
                     "query": .string(
@@ -83,6 +84,46 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
                         description:
                             "End of the range of dates the notes were last edited (exclusive). If timezone is omitted, local time is assumed. A date-only value includes that whole day.",
                         format: .dateTime
+                    ),
+                    "tag": .array(
+                        description:
+                            "Tags the notes must all have, with or without the leading #, as in [\"groceries\"] (case-insensitive). Reads the contents of each candidate note",
+                        items: .string()
+                    ),
+                    "has": .array(
+                        description:
+                            "What the notes must all contain. attachment is any image, table, drawing, file, or link card; link is a link in the text or a link card; scan is a scanned document. Reads the contents of each candidate note",
+                        items: .string(enum: NoteFeature.allCases.map { .string($0.rawValue) })
+                    ),
+                    "pinned": .boolean(
+                        description: "Only pinned notes when true, only notes that are not pinned when false"
+                    ),
+                    "locked": .boolean(
+                        description:
+                            "Only notes locked with a password when true, only notes that are not locked when false"
+                    ),
+                    "minWords": .integer(
+                        description: "Fewest words in a note's contents. Reads the contents of each candidate note",
+                        minimum: 0
+                    ),
+                    "maxWords": .integer(
+                        description: "Most words in a note's contents. Reads the contents of each candidate note",
+                        minimum: 0
+                    ),
+                    "createdStart": .string(
+                        description:
+                            "Start of the range of dates the notes were created (inclusive). If timezone is omitted, local time is assumed. Date-only uses local midnight.",
+                        format: .dateTime
+                    ),
+                    "createdEnd": .string(
+                        description:
+                            "End of the range of dates the notes were created (exclusive). If timezone is omitted, local time is assumed. A date-only value includes that whole day.",
+                        format: .dateTime
+                    ),
+                    "includeRecentlyDeleted": .boolean(
+                        description:
+                            "Include notes in Recently Deleted when no folder is given. Ignored when folder is set",
+                        default: false
                     ),
                     "limit": .integer(
                         description: "Maximum notes to return",
@@ -109,32 +150,10 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
             if let limit = try self.argument("limit", in: arguments, as: \.intValue) {
                 request.limit = limit
             }
-            if let start = try self.argument("start", in: arguments, as: \.stringValue) {
-                guard
-                    let parsed = ISO8601DateFormatter.parsedLenientISO8601Date(
-                        fromISO8601String: start
-                    )
-                else {
-                    throw ArgumentError.invalid("start must be an ISO 8601 date")
-                }
-                request.startDate = Calendar.current.normalizedStartDate(
-                    from: parsed.date,
-                    isDateOnly: parsed.isDateOnly
-                )
-            }
-            if let end = try self.argument("end", in: arguments, as: \.stringValue) {
-                guard
-                    let parsed = ISO8601DateFormatter.parsedLenientISO8601Date(
-                        fromISO8601String: end
-                    )
-                else {
-                    throw ArgumentError.invalid("end must be an ISO 8601 date")
-                }
-                request.endDate = Calendar.current.normalizedEndDate(
-                    from: parsed.date,
-                    isDateOnly: parsed.isDateOnly
-                )
-            }
+            request.startDate = try self.dateArgument("start", in: arguments, isEnd: false)
+            request.endDate = try self.dateArgument("end", in: arguments, isEnd: true)
+            request.includesRecentlyDeleted =
+                try self.argument("includeRecentlyDeleted", in: arguments, as: \.boolValue) ?? false
             if let cursor = try self.argument("cursor", in: arguments, as: \.stringValue) {
                 guard let cursor = TopoText.Note.FetchRequest.Cursor(cursor) else {
                     throw ArgumentError.invalid("cursor must be the nextCursor of a previous result")
@@ -142,10 +161,11 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
                 request.cursor = cursor
             }
             let folderArgument = try self.argument("folder", in: arguments, as: \.stringValue)
+            let filter = try self.noteFilter(from: arguments)
 
             try self.checkDatabaseAccess()
             let baseRequest = request
-            let (result, folders, tags, links) = try await self.withStore { store in
+            let (page, folders, tags, links) = try await self.withStore { store in
                 // The folders and the notes come from one snapshot, so they agree.
                 try await store.withSnapshot { snapshot in
                     let folders = try snapshot.folders()
@@ -159,15 +179,22 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
                         }
                         request.folderIDs = Set(matches.map(\.id))
                     }
-                    let result = try snapshot.search(request)
+                    let page = try searchNotes(
+                        request,
+                        filter: filter,
+                        scanLimit: Self.metadataScanLimit,
+                        contentReadLimit: Self.contentReadLimit,
+                        in: SnapshotNoteSource(snapshot: snapshot)
+                    )
                     // Tags and links come from the database's rows, so they cost no decoding.
                     // A database that can't supply them still gives the page without them.
-                    let ids = result.notes.map(\.id)
+                    let ids = page.notes.map(\.id)
                     let tags = try readIfSupported { try snapshot.tags(for: ids) } ?? [:]
                     let links = try readIfSupported { try snapshot.links(from: ids) } ?? [:]
-                    return (result, folders, tags, links)
+                    return (page, folders, tags, links)
                 }
             }
+            let result = page
             if !result.unreadableNoteIDs.isEmpty {
                 log.warning(
                     "Matched \(result.unreadableNoteIDs.count) notes by title and preview alone, because their contents could not be read"
@@ -181,18 +208,40 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
                 "name": "Notes",
                 "numberOfItems": .int(result.notes.count),
                 "itemListElement": .array(
-                    result.notes.map { .object($0.properties(in: folders, tags: tags, links: links)) }
+                    page.notes.map { note in
+                        var object = note.properties(in: folders, tags: tags, links: links)
+                        object.merge(page.traits[note.id]?.properties ?? [:]) { current, _ in current }
+                        return .object(object)
+                    }
                 ),
             ]
             if let nextCursor = result.nextCursor {
                 list["nextCursor"] = .string(nextCursor.description)
             }
             // Without this, a search that skipped some contents looks complete.
+            var caveats: [String] = []
             if !result.unreadableNoteIDs.isEmpty {
                 list["unreadableNoteIDs"] = .array(result.unreadableNoteIDs.map { .string($0.description) })
-                list["description"] = .string(
-                    "The contents of the notes in unreadableNoteIDs could not be read, so the search matched them by title and preview alone. These notes can contain the query without appearing in the results."
+                caveats.append(
+                    filter.needsContents
+                        ? "The contents of the notes in unreadableNoteIDs could not be read, so they were left out of the results because the filters need a note's contents."
+                        : "The contents of the notes in unreadableNoteIDs could not be read, so the search matched them by title and preview alone. These notes can contain the query without appearing in the results."
                 )
+            }
+            if let stoppedEarly = page.stoppedEarly {
+                switch stoppedEarly {
+                case .contentRead:
+                    caveats.append(
+                        "The search read the contents of \(Self.contentReadLimit) notes without filling the page, so more notes can match. Pass nextCursor as cursor to continue."
+                    )
+                case .metadataScan:
+                    caveats.append(
+                        "The search scanned \(Self.metadataScanLimit) notes without filling the page, so more notes can match. Pass nextCursor as cursor to continue."
+                    )
+                }
+            }
+            if !caveats.isEmpty {
+                list["description"] = .string(caveats.joined(separator: " "))
             }
             return list
         }
@@ -239,7 +288,7 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
         Tool(
             name: "notes_read",
             description:
-                "Read the full contents of a note from the Notes app, as Markdown with headings, lists, checklists, links, and tables, or as plain text, with its tags (keywords), the notes it links to (linkedNotes), and the notes that link to it (linkedFrom). Tags and links are database records, which may remain after their text is deleted; links set on ordinary text are not listed. Locked and Recently Deleted notes supply no tags or links but can be link targets. Attachments such as images and drawings appear as bracketed descriptions. Notes locked with a password can't be read.",
+                "Read the full contents of a note from the Notes app, as Markdown with headings, lists, checklists, links, and tables, or as plain text, with its tags (keywords), the notes it links to (linkedNotes), and the notes that link to it (linkedFrom). Tags and links are database records, which may remain after their text is deleted; links set on ordinary text are not listed. Locked and Recently Deleted notes supply no tags or links but can be link targets. Attachments such as images and drawings appear as bracketed descriptions; notes_attachments lists them. Notes locked with a password can't be read.",
             inputSchema: .object(
                 properties: [
                     "id": .string(
@@ -282,8 +331,65 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
             object["@type"] = "NoteDigitalDocument"
             object["encodingFormat"] = .string(isMarkdown ? "text/markdown" : "text/plain")
             object["text"] = .string(isMarkdown ? content.markdown() : content.plainText())
-            object.merge(context.inlineProperties) { $1 }
+            object.merge(context.inlineProperties) { current, _ in current }
+            object.merge(NoteTraits(content: content).properties) { current, _ in current }
             return object
+        }
+
+        Tool(
+            name: "notes_attachments",
+            description:
+                "List the attachments of a note in the Notes app, such as images, drawings, tables, PDFs, and link cards, with each one's name, kind, type, and size in bytes. Returns what Notes records about them, not the files' contents. Notes locked with a password can't be read.",
+            inputSchema: .object(
+                properties: [
+                    "id": .string(
+                        description: "The note @id, as returned by notes_fetch"
+                    )
+                ],
+                required: ["id"],
+                additionalProperties: false
+            ),
+            annotations: .init(
+                title: "List Note Attachments",
+                readOnlyHint: true,
+                openWorldHint: false
+            )
+        ) { arguments in
+            try await self.attachmentsResult(arguments)
+        }
+
+        Tool(
+            name: "notes_accounts",
+            description:
+                "List the accounts in the Notes app, such as iCloud and On My Mac, with how many folders and notes each holds. Notes in Recently Deleted are counted apart.",
+            inputSchema: .object(
+                properties: [:],
+                additionalProperties: false
+            ),
+            annotations: .init(
+                title: "List Note Accounts",
+                readOnlyHint: true,
+                openWorldHint: false
+            )
+        ) { _ in
+            try await self.accountsResult()
+        }
+
+        Tool(
+            name: "notes_stats",
+            description:
+                "Summarize the notes in the Notes app: how many there are in total, by account, pinned, locked, and in Recently Deleted, and when the oldest and newest were last edited. Reads note metadata only, so it is quick.",
+            inputSchema: .object(
+                properties: [:],
+                additionalProperties: false
+            ),
+            annotations: .init(
+                title: "Summarize Notes",
+                readOnlyHint: true,
+                openWorldHint: false
+            )
+        ) { _ in
+            try await self.statisticsResult()
         }
     }
 
@@ -430,6 +536,229 @@ final class NotesService: NSObject, Service, NSOpenSavePanelDelegate {
         guard canAccessDatabaseUsingBookmark else {
             throw DatabaseAccessError.grantUnusable
         }
+    }
+
+    // MARK: - Finding What a Script Created
+
+    /// Looks for the database's identifier of a note that the scripting interface just made.
+    ///
+    /// The scripting interface's identifier is not the database's, so a client can't use it with the read tools.
+    /// The database can lag behind Notes by a moment, so this tries again for about a second.
+    /// - Returns: The identifier, or `nil` if the database can't be read or doesn't have exactly one such note.
+    func lookUpCreatedNote(
+        title: String,
+        folderPath: [String],
+        folderName: String,
+        accountName: String,
+        createdAfter date: Date
+    ) async -> String? {
+        guard (try? checkDatabaseAccess()) != nil else { return nil }
+        for attempt in 0 ..< 5 {
+            if attempt > 0 { try? await Task.sleep(for: .milliseconds(200)) }
+            let found = try? await withStore { store in
+                try await store.withSnapshot { snapshot -> String? in
+                    let folders = try snapshot.folders()
+                    let nodes = folders.map {
+                        FolderNode(id: $0.id, name: $0.name, parentID: $0.parentID, accountName: $0.account?.name)
+                    }
+                    let ids = Set(
+                        folderIDs(
+                            atPath: folderPath,
+                            defaultFolderName: folderName,
+                            accountName: accountName,
+                            among: nodes
+                        )
+                    )
+                    guard !ids.isEmpty else { return nil }
+                    var request = TopoText.Note.FetchRequest(
+                        query: title,
+                        limit: TopoText.Note.FetchRequest.maximumLimit
+                    )
+                    request.folderIDs = ids
+                    request.startDate = date
+                    let candidates = try snapshot.search(request).notes.map {
+                        NoteCandidate(id: $0.id, title: $0.title, creationDate: $0.creationDate)
+                    }
+                    return uniqueNewNoteID(title: title, createdAfter: date, among: candidates)?.description
+                }
+            }
+            if let found { return found }
+        }
+        return nil
+    }
+
+    /// Looks for the database's identifier of a folder that the scripting interface just made.
+    func lookUpCreatedFolder(path: [String], accountName: String) async -> String? {
+        guard (try? checkDatabaseAccess()) != nil else { return nil }
+        for attempt in 0 ..< 5 {
+            if attempt > 0 { try? await Task.sleep(for: .milliseconds(200)) }
+            let found = try? await withStore { store in
+                try await store.withSnapshot { snapshot -> String? in
+                    let nodes = try snapshot.folders().map {
+                        FolderNode(id: $0.id, name: $0.name, parentID: $0.parentID, accountName: $0.account?.name)
+                    }
+                    let ids = folderIDs(atPath: path, defaultFolderName: "", accountName: accountName, among: nodes)
+                    return ids.count == 1 ? ids[0].description : nil
+                }
+            }
+            if let found { return found }
+        }
+        return nil
+    }
+
+    // MARK: - Tool Results
+
+    private func attachmentsResult(_ arguments: [String: Value]) async throws -> Value {
+        guard
+            let argument = try self.argument("id", in: arguments, as: \.stringValue),
+            let id = TopoText.Note.ID(argument.trimmingCharacters(in: .whitespacesAndNewlines))
+        else {
+            throw ArgumentError.invalid("id must be the @id of a note")
+        }
+
+        try self.checkDatabaseAccess()
+        let attachments = try await self.withStore { store in
+            try await store.withSnapshot { snapshot in
+                let content = try snapshot.content(for: id)
+                return attachmentValues(in: content) { attachment in
+                    // A missing file is normal: Notes keeps some attachments only in iCloud.
+                    guard let url = try? snapshot.fileURL(for: attachment.id) else { return nil }
+                    return try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize
+                }
+            }
+        }
+
+        return [
+            "@context": "https://schema.org",
+            "@type": "ItemList",
+            "name": "Note Attachments",
+            "url": .string(noteURL(for: id)),
+            "numberOfItems": .int(attachments.count),
+            "itemListElement": .array(attachments),
+        ]
+    }
+
+    private func accountsResult() async throws -> Value {
+        try self.checkDatabaseAccess()
+        let (accounts, folders) = try await self.withStore { store in
+            try await store.withSnapshot { (try $0.accounts(), try $0.folders()) }
+        }
+
+        let items = accounts.map { account -> Value in
+            let own = folders.filter { $0.account?.id == account.id }
+            let live = own.filter { !$0.isRecentlyDeleted }
+            var object: [String: Value] = [
+                "@id": .string(account.id.description),
+                "name": .string(account.name ?? "Unnamed Account"),
+                "numberOfFolders": .int(live.count),
+                "numberOfItems": .int(live.reduce(0) { $0 + $1.noteCount }),
+            ]
+            let deleted = own.filter(\.isRecentlyDeleted).reduce(0) { $0 + $1.noteCount }
+            if deleted > 0 {
+                object["numberOfRecentlyDeletedItems"] = .int(deleted)
+            }
+            return .object(object)
+        }
+        return [
+            "@context": "https://schema.org",
+            "@type": "ItemList",
+            "name": "Note Accounts",
+            "numberOfItems": .int(items.count),
+            "itemListElement": .array(items),
+        ]
+    }
+
+    private func statisticsResult() async throws -> Value {
+        try self.checkDatabaseAccess()
+        let statistics = try await self.withStore { store in
+            try await store.withSnapshot { snapshot in
+                let folders = try snapshot.folders()
+                var statistics = NoteStatistics()
+                var request = TopoText.Note.FetchRequest(
+                    includesRecentlyDeleted: true,
+                    limit: TopoText.Note.FetchRequest.maximumLimit
+                )
+                for _ in 0 ..< NoteStatistics.pageLimit {
+                    let result = try snapshot.search(request)
+                    for note in result.notes {
+                        let account = folders.first { $0.id == note.folderID }?.account
+                        statistics.add(
+                            isPinned: note.isPinned,
+                            isLocked: note.isLocked,
+                            isRecentlyDeleted: note.isRecentlyDeleted,
+                            account: account?.name ?? account?.id.description,
+                            modificationDate: note.modificationDate
+                        )
+                    }
+                    guard let next = result.nextCursor else { return statistics }
+                    request.cursor = next
+                }
+                statistics.isTruncated = true
+                return statistics
+            }
+        }
+        return statistics.value
+    }
+
+    // MARK: - Arguments and Search
+
+    /// The most notes whose contents one `notes_fetch` call reads to apply a filter,
+    /// which bounds the time of a call whose filters match few notes.
+    static let contentReadLimit = 500
+    /// The most notes one `notes_fetch` call scans to apply metadata filters,
+    /// bounding large stores. The budget counts every note the search examined,
+    /// including notes that matched no text query.
+    static let metadataScanLimit = 2_000
+
+    /// Returns a date argument as a start or end of a range.
+    private func dateArgument(_ name: String, in arguments: [String: Value], isEnd: Bool) throws -> Date? {
+        guard let string = try argument(name, in: arguments, as: \.stringValue) else { return nil }
+        guard let parsed = ISO8601DateFormatter.parsedLenientISO8601Date(fromISO8601String: string) else {
+            throw ArgumentError.invalid("\(name) must be an ISO 8601 date")
+        }
+        return isEnd
+            ? Calendar.current.normalizedEndDate(from: parsed.date, isDateOnly: parsed.isDateOnly)
+            : Calendar.current.normalizedStartDate(from: parsed.date, isDateOnly: parsed.isDateOnly)
+    }
+
+    private func noteFilter(from arguments: [String: Value]) throws -> NoteFilter {
+        var filter = NoteFilter()
+        if let tags = try argument("tag", in: arguments, as: \.arrayValue) {
+            filter.tags = try tags.map {
+                guard let tag = $0.stringValue.flatMap(NoteFilter.normalizedTag) else {
+                    throw ArgumentError.invalid("tag must be a list of tag names")
+                }
+                return tag
+            }
+        }
+        if let features = try argument("has", in: arguments, as: \.arrayValue) {
+            filter.features = Set(
+                try features.map {
+                    guard let feature = $0.stringValue.flatMap(NoteFeature.init(rawValue:)) else {
+                        throw ArgumentError.invalid(
+                            "has must be a list of: \(NoteFeature.allCases.map(\.rawValue).joined(separator: ", "))"
+                        )
+                    }
+                    return feature
+                }
+            )
+        }
+        filter.isPinned = try argument("pinned", in: arguments, as: \.boolValue)
+        filter.isLocked = try argument("locked", in: arguments, as: \.boolValue)
+        filter.minimumWords = try argument("minWords", in: arguments, as: \.intValue)
+        filter.maximumWords = try argument("maxWords", in: arguments, as: \.intValue)
+        if let minimum = filter.minimumWords, let maximum = filter.maximumWords, minimum > maximum {
+            throw ArgumentError.invalid("minWords must not be more than maxWords")
+        }
+        if filter.minimumWords.map({ $0 < 0 }) ?? false || filter.maximumWords.map({ $0 < 0 }) ?? false {
+            throw ArgumentError.invalid("minWords and maxWords must not be negative")
+        }
+        filter.createdStart = try dateArgument("createdStart", in: arguments, isEnd: false)
+        filter.createdEnd = try dateArgument("createdEnd", in: arguments, isEnd: true)
+        if let start = filter.createdStart, let end = filter.createdEnd, start >= end {
+            throw ArgumentError.invalid("createdStart must be before createdEnd")
+        }
+        return filter
     }
 
     /// Returns an optional argument, or throws if it is present with the wrong type.
@@ -697,6 +1026,15 @@ extension TopoText.Folder {
             "name": .string(name),
             "numberOfItems": .int(noteCount),
         ]
+        if parentID != nil,
+            let path = folderPath(
+                of: id,
+                in: folders.map { FolderNode(id: $0.id, name: $0.name, parentID: $0.parentID) }
+            )
+        {
+            // The path tells nested folders with the same name apart.
+            object["path"] = .string(path)
+        }
         if let accountName = account?.name {
             object["account"] = .string(accountName)
         }
@@ -730,6 +1068,7 @@ extension TopoText.Note {
         var object: [String: Value] = [
             "@id": .string(id.description),
             "name": .string(title.isEmpty ? "New Note" : title),
+            "url": .string(noteURL(for: id)),
         ]
         if let snippet, !snippet.isEmpty {
             object["abstract"] = .string(snippet)
@@ -749,6 +1088,9 @@ extension TopoText.Note {
                 isPartOf["account"] = .string(accountName)
             }
             object["isPartOf"] = .object(isPartOf)
+        }
+        if isRecentlyDeleted {
+            object["isRecentlyDeleted"] = true
         }
         if isPinned {
             object["isPinned"] = true

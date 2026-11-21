@@ -75,7 +75,7 @@ and a [growing list of clients][mcp-clients] that support the
       <img src="Assets/notes.svg" width="48" height="48" alt="" role="presentation"/>
     </th>
     <td><strong>Notes</strong></td>
-    <td>Search notes by text, folder, or date, and read them as Markdown with their checklists, tables, and links.</td>
+    <td>Search notes by text, tag, folder, date, pinned state, or what they contain (checklists, tables, links, attachments), and read them as Markdown. List accounts, folders, attachments, and counts. With Allow writes on, create notes and folders.</td>
   </tr>
   <tr>
     <th width="48">
@@ -201,6 +201,38 @@ click <img style="display: inline" width="20" height="16" src="/Assets/icon.svg"
 \> "Settings", and then click the service in the sidebar.
 
 <br clear="all">
+
+### Allow writes
+
+Each service that has tools that change things
+has an **Allow writes** switch on its Settings page.
+While it is off, clients don't see that service's write tools
+and a call to one is refused, so nothing changes.
+Tools that only read are never affected.
+Deleting counts as a write,
+so the same switch covers it.
+A tool's own switch in the same list still turns that one tool off
+when **Allow writes** is on.
+
+Services that already had write tools
+(Calendar, Contacts, Home, Mail, Music, Phone, Reminders and Shortcuts)
+start with **Allow writes** on,
+so an update changes nothing for them.
+A service whose write tools are new
+can start with it off until you turn it on.
+
+Sending something to another person needs one more step.
+Even with **Allow writes** on,
+a tool that sends a message or an email
+(none does yet; they arrive with their services)
+shows a window with the client's name, the recipient, and the full text,
+and sends only after you click its button.
+The window waits 50 seconds and then cancels,
+shows one request at a time,
+and has no "always allow",
+so each send needs its own click.
+Starting a call is the same:
+the Phone app asks you to confirm before dialing.
 
 ### Approve connections
 
@@ -716,7 +748,7 @@ The Notes app keeps them in a SQLite database at
 Recent edits sit in its write-ahead log,
 so the Notes service asks you to open the `group.com.apple.notes` folder
 rather than the file alone.
-iMCP only reads the database; it never changes your notes.
+iMCP reads notes from the database and never writes to it.
 
 Each note's contents are stored as a gzip-compressed protocol buffer:
 the text, followed by runs that give the formatting of each part of it.
@@ -732,6 +764,43 @@ It builds on the reverse engineering in Jon Baumann's
 [apple_cloud_notes_parser][apple-cloud-notes-parser]
 and Steve Dunham's [notesutils][notesutils].
 The Notes service reads notes with TopoText and returns them as Markdown.
+
+Besides `notes_fetch` and `notes_read`,
+the service lists accounts, folders (with their paths), attachments, and note counts.
+Each note has a `notes://showNote?identifier=` link that opens it in the Notes app.
+Filters on word counts and on what a note contains
+need to read each candidate note's contents,
+so a call reads the contents of at most 500 notes.
+Every `notes_fetch` call, whatever its filters, examines at most 2,000 notes,
+and returns a `nextCursor` to continue when it stops before filling the page.
+
+The Notes service can also create notes and folders,
+but only while **Allow writes** is on in iMCP's Notes settings, where it is off by default.
+These tools (`notes_create` and `notes_create_folder`)
+ask the Notes app to make the note or folder with its own scripting interface,
+so Notes stores it as it stores anything else that it makes.
+They need Automation permission for Notes,
+which macOS asks you for the first time.
+iMCP never edits, moves, or deletes a note that exists:
+scripting rewrites a note's whole body,
+and doing that to a note with attachments, checklists, links, or tags
+silently drops them.
+Even a new note keeps less than you might write,
+because Notes drops what it can't store:
+
+- A link keeps its text but not its address,
+  so iMCP writes Markdown links as the text followed by the address.
+- Notes has no checklists to create through scripting,
+  so a Markdown task becomes a bullet that starts with ☐ or ☑.
+- A numbered list would merge into the bullet list before it,
+  so iMCP writes numbered items as lines that start with their numbers.
+- Block quotes and code blocks become plain and monospaced text,
+  and headings become bold text in a larger size,
+  not the Heading styles.
+
+iMCP passes a note's title, text, and folder to a fixed script as parameters
+and never builds a script from them,
+so nothing in a title or a note can change what the script does.
 
 ### JSON-LD for Tool Results
 

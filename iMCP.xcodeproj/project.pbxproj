@@ -33,6 +33,9 @@
 		A40000000000000000000021 /* ../../App/Services/Home.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000011 /* ../../App/Services/Home.swift */; };
 		A40000000000000000000029 /* ../../App/Services/HomeHelperLocator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000019 /* ../../App/Services/HomeHelperLocator.swift */; };
 		B13300000000000000000020 /* MusicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13300000000000000000010 /* MusicTests.swift */; };
+		B13500000000000000000020 /* NotesWriteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13500000000000000000010 /* NotesWriteTests.swift */; };
+		B13500000000000000000021 /* ../../App/Services/NotesWriting.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13500000000000000000011 /* ../../App/Services/NotesWriting.swift */; };
+		B13500000000000000000022 /* ../../App/Services/NotesWriteTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13500000000000000000012 /* ../../App/Services/NotesWriteTools.swift */; };
 		B13400000000000000000020 /* AppleScriptTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13400000000000000000010 /* AppleScriptTests.swift */; };
 		B13300000000000000000021 /* ../../App/Services/Music.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13300000000000000000011 /* ../../App/Services/Music.swift */; };
 		A40000000000000000000022 /* ../../Shared/Extensions/Logger+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000012 /* ../../Shared/Extensions/Logger+Extensions.swift */; };
@@ -77,7 +80,13 @@
 		AB0055000000000000000001 /* TSRP in Frameworks */ = {isa = PBXBuildFile; productRef = AB0055000000000000000002 /* TSRP */; };
 		D2E000000000000000000020 /* NotesInlineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2E000000000000000000010 /* NotesInlineTests.swift */; };
 		D2E000000000000000000021 /* ../../App/Services/NotesInline.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2E000000000000000000011 /* ../../App/Services/NotesInline.swift */; };
-		D2E000000000000000000030 /* TopoText in Frameworks */ = {isa = PBXBuildFile; productRef = D2E000000000000000000040 /* TopoText */; };
+		B13600000000000000000011 /* ServiceWritesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13600000000000000000010 /* ServiceWritesTests.swift */; };
+		B13600000000000000000021 /* ../../Shared/Models/ServiceWrites.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13600000000000000000020 /* ../../Shared/Models/ServiceWrites.swift */; };
+		B13600000000000000000031 /* OutboundConfirmationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13600000000000000000030 /* OutboundConfirmationTests.swift */; };
+		B13600000000000000000041 /* ../../Shared/Models/OutboundConfirmation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13600000000000000000040 /* ../../Shared/Models/OutboundConfirmation.swift */; };
+		D1E000000000000000000020 /* NotesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1E000000000000000000010 /* NotesTests.swift */; };
+		D1E000000000000000000021 /* ../../App/Services/NotesQuery.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1E000000000000000000011 /* ../../App/Services/NotesQuery.swift */; };
+		D1E000000000000000000030 /* TopoText in Frameworks */ = {isa = PBXBuildFile; productRef = D1E000000000000000000040 /* TopoText */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -121,6 +130,9 @@
 		A40000000000000000000019 /* ../../App/Services/HomeHelperLocator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/HomeHelperLocator.swift; sourceTree = "<group>"; };
 		B13300000000000000000010 /* MusicTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicTests.swift; sourceTree = "<group>"; };
 		B13400000000000000000010 /* AppleScriptTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleScriptTests.swift; sourceTree = "<group>"; };
+		B13500000000000000000010 /* NotesWriteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesWriteTests.swift; sourceTree = "<group>"; };
+		B13500000000000000000011 /* ../../App/Services/NotesWriting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/NotesWriting.swift; sourceTree = "<group>"; };
+		B13500000000000000000012 /* ../../App/Services/NotesWriteTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/NotesWriteTools.swift; sourceTree = "<group>"; };
 		B13300000000000000000011 /* ../../App/Services/Music.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/Music.swift; sourceTree = "<group>"; };
 		A40000000000000000000012 /* ../../Shared/Extensions/Logger+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../../Shared/Extensions/Logger+Extensions.swift"; sourceTree = "<group>"; };
 		A40000000000000000000013 /* ../../Shared/Extensions/Bundle+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../../Shared/Extensions/Bundle+Extensions.swift"; sourceTree = "<group>"; };
@@ -148,6 +160,12 @@
 		F8F44EB62D5908D00075D79C /* imcp-server */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "imcp-server"; sourceTree = BUILT_PRODUCTS_DIR; };
 		D2E000000000000000000010 /* NotesInlineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesInlineTests.swift; sourceTree = "<group>"; };
 		D2E000000000000000000011 /* ../../App/Services/NotesInline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/NotesInline.swift; sourceTree = "<group>"; };
+		B13600000000000000000010 /* ServiceWritesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceWritesTests.swift; sourceTree = "<group>"; };
+		B13600000000000000000020 /* ../../Shared/Models/ServiceWrites.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../Shared/Models/ServiceWrites.swift; sourceTree = "<group>"; };
+		B13600000000000000000030 /* OutboundConfirmationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutboundConfirmationTests.swift; sourceTree = "<group>"; };
+		B13600000000000000000040 /* ../../Shared/Models/OutboundConfirmation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../Shared/Models/OutboundConfirmation.swift; sourceTree = "<group>"; };
+		D1E000000000000000000010 /* NotesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesTests.swift; sourceTree = "<group>"; };
+		D1E000000000000000000011 /* ../../App/Services/NotesQuery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/NotesQuery.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -205,7 +223,7 @@
 				A30000000000000000000031 /* JSONSchema in Frameworks */,
 				A30000000000000000000032 /* Ontology in Frameworks */,
 				A50000000000000000000030 /* Envelope in Frameworks */,
-				D2E000000000000000000030 /* TopoText in Frameworks */,
+				D1E000000000000000000030 /* TopoText in Frameworks */,
 				76F80A6E3EDBFB02048A6ED8 /* Cocoa.framework in Frameworks */,
 				826C0834A5B647F8A918E54D /* ServiceLifecycle in Frameworks */,
 				8DFCE9E4CBCBEB93A32E8560 /* ServiceLifecycleTestKit in Frameworks */,
@@ -271,6 +289,13 @@
 				A40000000000000000000010 /* HomeProxyTests.swift */,
 				A40000000000000000000011 /* ../../App/Services/Home.swift */,
 				A40000000000000000000019 /* ../../App/Services/HomeHelperLocator.swift */,
+				B13600000000000000000010 /* ServiceWritesTests.swift */,
+				B13600000000000000000020 /* ../../Shared/Models/ServiceWrites.swift */,
+				B13600000000000000000030 /* OutboundConfirmationTests.swift */,
+				B13600000000000000000040 /* ../../Shared/Models/OutboundConfirmation.swift */,
+				B13500000000000000000010 /* NotesWriteTests.swift */,
+				B13500000000000000000011 /* ../../App/Services/NotesWriting.swift */,
+				B13500000000000000000012 /* ../../App/Services/NotesWriteTools.swift */,
 				B13300000000000000000010 /* MusicTests.swift */,
 				B13300000000000000000011 /* ../../App/Services/Music.swift */,
 				A40000000000000000000012 /* ../../Shared/Extensions/Logger+Extensions.swift */,
@@ -280,6 +305,8 @@
 				A50000000000000000000011 /* ../../App/Services/Mail.swift */,
 				D2E000000000000000000010 /* NotesInlineTests.swift */,
 				D2E000000000000000000011 /* ../../App/Services/NotesInline.swift */,
+				D1E000000000000000000010 /* NotesTests.swift */,
+				D1E000000000000000000011 /* ../../App/Services/NotesQuery.swift */,
 				A50000000000000000000012 /* ../../App/Extensions/Foundation+Extensions.swift */,
 				B13400000000000000000010 /* AppleScriptTests.swift */,
 				C0A7E00000000000000000B1 /* ConnectionApprovalGateTests.swift */,
@@ -373,7 +400,7 @@
 				A20000000000000000000012 /* Ontology */,
 				DCE061F8A68D0CD546D919E2 /* ServiceLifecycle */,
 				A50000000000000000000040 /* Envelope */,
-				D2E000000000000000000040 /* TopoText */,
+				D1E000000000000000000040 /* TopoText */,
 				1CD6B9E157EEC273F178543D /* ServiceLifecycleTestKit */,
 				48ABEE9E6903427DD79096A1 /* Logging */,
 			);
@@ -594,6 +621,13 @@
 				A40000000000000000000020 /* HomeProxyTests.swift in Sources */,
 				A40000000000000000000021 /* ../../App/Services/Home.swift in Sources */,
 				A40000000000000000000029 /* ../../App/Services/HomeHelperLocator.swift in Sources */,
+				B13600000000000000000011 /* ServiceWritesTests.swift in Sources */,
+				B13600000000000000000021 /* ../../Shared/Models/ServiceWrites.swift in Sources */,
+				B13600000000000000000031 /* OutboundConfirmationTests.swift in Sources */,
+				B13600000000000000000041 /* ../../Shared/Models/OutboundConfirmation.swift in Sources */,
+				B13500000000000000000020 /* NotesWriteTests.swift in Sources */,
+				B13500000000000000000021 /* ../../App/Services/NotesWriting.swift in Sources */,
+				B13500000000000000000022 /* ../../App/Services/NotesWriteTools.swift in Sources */,
 				B13300000000000000000020 /* MusicTests.swift in Sources */,
 				B13300000000000000000021 /* ../../App/Services/Music.swift in Sources */,
 				A40000000000000000000022 /* ../../Shared/Extensions/Logger+Extensions.swift in Sources */,
@@ -603,6 +637,8 @@
 				A50000000000000000000021 /* ../../App/Services/Mail.swift in Sources */,
 				D2E000000000000000000020 /* NotesInlineTests.swift in Sources */,
 				D2E000000000000000000021 /* ../../App/Services/NotesInline.swift in Sources */,
+				D1E000000000000000000020 /* NotesTests.swift in Sources */,
+				D1E000000000000000000021 /* ../../App/Services/NotesQuery.swift in Sources */,
 				A50000000000000000000022 /* ../../App/Extensions/Foundation+Extensions.swift in Sources */,
 				B13400000000000000000020 /* AppleScriptTests.swift in Sources */,
 				A30000000000000000000020 /* HomeToolsTests.swift in Sources */,
@@ -1297,7 +1333,7 @@
 			productName = MCP;
 		};
 		AA0011000000000000000002 /* Envelope */ = {isa = XCSwiftPackageProductDependency; package = AA0011000000000000000003 /* XCRemoteSwiftPackageReference "Envelope" */; productName = Envelope; };
-		D2E000000000000000000040 /* TopoText */ = {
+		D1E000000000000000000040 /* TopoText */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = C0FFEE0000000000000000A3 /* XCRemoteSwiftPackageReference "TopoText" */;
 			productName = TopoText;

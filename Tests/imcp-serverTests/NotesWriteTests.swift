@@ -1,0 +1,398 @@
+import Foundation
+import MCP
+import XCTest
+import os
+
+/// These tests send no Apple events to Notes or any other app.
+final class NotesWriteTests: XCTestCase {
+    // MARK: - Markdown
+
+    private func html(_ markdown: String) -> String {
+        NotesMarkdown.html(from: markdown)
+    }
+
+    func testParagraphsKeepTheirLinesAndSeparateBlocks() {
+        XCTAssertEqual(html("one\ntwo\n\nthree"), "<div>one<br>two</div><div><br></div><div>three</div>")
+    }
+
+    func testTextIsEscapedSoThatItCannotBecomeMarkup() {
+        XCTAssertEqual(
+            html("a <script>alert(1)</script> & b"),
+            "<div>a &lt;script&gt;alert(1)&lt;/script&gt; &amp; b</div>"
+        )
+        XCTAssertEqual(html("`<b>`"), "<div><tt>&lt;b&gt;</tt></div>")
+    }
+
+    func testEmphasis() {
+        XCTAssertEqual(
+            html("**bold** and *italic* and _also_ and ~~gone~~"),
+            "<div><b>bold</b> and <i>italic</i> and <i>also</i> and <s>gone</s></div>"
+        )
+        XCTAssertEqual(html("use snake_case_names and 2 * 3 * 4"), "<div>use snake_case_names and 2 * 3 * 4</div>")
+        XCTAssertEqual(html(#"\*literal\*"#), "<div>*literal*</div>")
+    }
+
+    func testLinksKeepTheirAddressesInTheText() {
+        XCTAssertEqual(html("[iMCP](https://imcp.app)"), "<div>iMCP (https://imcp.app)</div>")
+        XCTAssertEqual(html("[https://a.example](https://a.example)"), "<div>https://a.example</div>")
+        XCTAssertEqual(
+            html("[x](https://en.wikipedia.org/wiki/Foo_(bar))"),
+            "<div>x (https://en.wikipedia.org/wiki/Foo_(bar))</div>"
+        )
+        // A bare address keeps its closing parenthesis, and a title after the address is still dropped.
+        XCTAssertEqual(
+            html("[https://e.com/a_(b)](https://e.com/a_(b))"),
+            "<div>https://e.com/a_(b)</div>"
+        )
+        XCTAssertEqual(
+            html(#"[x](https://e.com/a_(b) "title") after"#),
+            "<div>x (https://e.com/a_(b)) after</div>"
+        )
+        XCTAssertEqual(html("![a chart](chart.png)"), "<div>a chart (chart.png)</div>")
+        XCTAssertEqual(html("[**x**](https://e.com?a=1&b=2)"), "<div><b>x</b> (https://e.com?a=1&amp;b=2)</div>")
+    }
+
+    func testDeeplyNestedLinksStopNestingAsPlainText() {
+        // Each level of a nested link is a recursive call; past the limit the label is plain text.
+        let levels = 40_000
+        let markdown = String(repeating: "[", count: levels) + "a" + String(repeating: "](u)", count: levels)
+        let result = html(markdown)
+        XCTAssertTrue(result.hasPrefix("<div>"))
+        XCTAssertTrue(result.hasSuffix(" (u)</div>"))
+        XCTAssertTrue(result.contains("[a](u)"), "the innermost link stays as written")
+
+        let shallow = String(repeating: "[", count: 3) + "a" + String(repeating: "](u)", count: 3)
+        XCTAssertEqual(html(shallow), "<div>a (u) (u) (u)</div>")
+    }
+
+    func testALineOfOpeningBracketsIsScannedOnce() {
+        // Each `[` used to scan to the end of the line for a `]`, which took quadratic time.
+        let line = String(repeating: "[", count: 100_000)
+        let start = Date()
+        XCTAssertEqual(html(line), "<div>\(line)</div>")
+        XCTAssertLessThan(Date().timeIntervalSince(start), 2)
+        // A link after a bracket that never closes still converts.
+        XCTAssertEqual(html("[ [a](u)"), "<div>[ a (u)</div>")
+    }
+
+    func testHeadingsStartBelowTheTitle() {
+        XCTAssertEqual(html("# One\n## Two\n### Three"), "<h2>One</h2><h2>Two</h2><h3>Three</h3>")
+        XCTAssertEqual(html("#NotAHeading"), "<div>#NotAHeading</div>")
+    }
+
+    func testBulletsNestAsNotesWritesThem() {
+        XCTAssertEqual(html("- a\n- b\n  - c\n- d"), "<ul><li>a</li><li>b</li><ul><li>c</li></ul><li>d</li></ul>")
+    }
+
+    func testChecklistsBecomeBulletsThatKeepTheirState() {
+        XCTAssertEqual(html("- [ ] todo\n- [x] done"), "<ul><li>☐ todo</li><li>☑ done</li></ul>")
+    }
+
+    func testNumberedItemsKeepTheirNumbersAsText() {
+        XCTAssertEqual(html("1. one\n2. two"), "<div>1. one</div><div>2. two</div>")
+        XCTAssertEqual(html("- a\n1. one"), "<ul><li>a</li></ul><div>1. one</div>")
+    }
+
+    func testAListIsFollowedByAnEmptyLine() {
+        XCTAssertEqual(html("- a\n\nafter"), "<ul><li>a</li></ul><div><br></div><div>after</div>")
+        XCTAssertEqual(html("- a"), "<ul><li>a</li></ul>")
+    }
+
+    func testCodeBlocksKeepEveryLineUnformatted() {
+        XCTAssertEqual(
+            html("```swift\nlet a = *1*\n\nlet b\n```"),
+            "<div><tt>let a = *1*</tt></div><div><br></div><div><tt>let b</tt></div>"
+        )
+    }
+
+    func testQuotesKeepTheirMarker() {
+        XCTAssertEqual(html("> quoted **text**"), "<div>&gt; quoted <b>text</b></div>")
+    }
+
+    func testTables() {
+        // A short row is not padded to the header's width.
+        XCTAssertEqual(
+            html("| a | b |\n|---|:-:|\n| 1 | 2 |\n| 3 |"),
+            "<table><tbody><tr><td><b>a</b></td><td><b>b</b></td></tr><tr><td>1</td><td>2</td></tr><tr><td>3</td></tr></tbody></table>"
+        )
+        XCTAssertEqual(html("a | b"), "<div>a | b</div>")
+    }
+
+    func testUnterminatedMarkdownStaysText() {
+        XCTAssertEqual(html("**open and `code and [link"), "<div>**open and `code and [link</div>")
+    }
+
+    func testPlainTextBecomesEscapedParagraphs() {
+        XCTAssertEqual(
+            NotesHTML.html(fromPlainText: "a < b\r\n\r\nc"),
+            "<div>a &lt; b</div><div><br></div><div>c</div>"
+        )
+    }
+
+    // MARK: - Validation
+
+    func testFolderPaths() throws {
+        XCTAssertEqual(try NotesFolderPath.parse("Work").components, ["Work"])
+        XCTAssertEqual(try NotesFolderPath.parse(" Work / Projects/2026 ").components, ["Work", "Projects", "2026"])
+        for invalid in ["", "/", "/Work", "Work/", "Work//Projects", " / ", "A\nB", "A/B\u{7}"] {
+            XCTAssertThrowsError(try NotesFolderPath.parse(invalid), "\(invalid.debugDescription)")
+        }
+        XCTAssertThrowsError(try NotesFolderPath.parse(Array(repeating: "a", count: 11).joined(separator: "/")))
+        XCTAssertNoThrow(try NotesFolderPath.parse(Array(repeating: "a", count: 10).joined(separator: "/")))
+        XCTAssertThrowsError(try NotesFolderPath.parse(String(repeating: "a", count: 201)))
+    }
+
+    private func request(
+        title: String = "T",
+        body: String = "",
+        format: NotesContentFormat = .plaintext,
+        folder: String? = nil,
+        account: String? = nil,
+        create: Bool = false
+    ) throws -> NotesNoteRequest {
+        try NotesNoteRequest(
+            title: title,
+            body: body,
+            format: format,
+            folder: folder,
+            account: account,
+            createMissingFolders: create
+        )
+    }
+
+    func testTitlesAreOneLineAndBounded() throws {
+        XCTAssertEqual(try request(title: "  Plan  ").title, "Plan")
+        for invalid in ["", "   ", "a\nb", "a\u{0}b", String(repeating: "x", count: 251)] {
+            XCTAssertThrowsError(try request(title: invalid), "\(invalid.debugDescription)")
+        }
+    }
+
+    func testBodiesAreBounded() throws {
+        XCTAssertNoThrow(try request(body: String(repeating: "x", count: NotesWriteInput.maximumBodyLength)))
+        XCTAssertThrowsError(try request(body: String(repeating: "x", count: NotesWriteInput.maximumBodyLength + 1)))
+    }
+
+    func testAccountsAreNotEmpty() {
+        XCTAssertThrowsError(try request(account: ""))
+        XCTAssertThrowsError(try request(account: "i\nCloud"))
+        XCTAssertEqual(try? request(account: " iCloud ").account, "iCloud")
+    }
+
+    func testTheTitleLeadsTheNote() throws {
+        XCTAssertEqual(
+            try request(title: "A & <B>", body: "x", format: .plaintext).bodyHTML,
+            "<div><h1>A &amp; &lt;B&gt;</h1></div><div>x</div>"
+        )
+        XCTAssertEqual(
+            try request(title: "T", body: "**x**", format: .markdown).bodyHTML,
+            "<div><h1>T</h1></div><div><b>x</b></div>"
+        )
+        XCTAssertEqual(try request(title: "T").bodyHTML, "<div><h1>T</h1></div>")
+    }
+
+    func testFolderNamesCannotHoldASeparator() throws {
+        XCTAssertEqual(
+            try NotesFolderRequest(name: " Ideas ", parent: "Work/Projects", account: nil).parent.components,
+            ["Work", "Projects"]
+        )
+        XCTAssertThrowsError(try NotesFolderRequest(name: "a/b", parent: nil, account: nil))
+        XCTAssertThrowsError(try NotesFolderRequest(name: "", parent: nil, account: nil))
+        XCTAssertThrowsError(try NotesFolderRequest(name: "a", parent: "x//y", account: nil))
+    }
+
+    // MARK: - Passing arguments to the script
+
+    /// Text that would change a script if it were part of the script's source.
+    private let hostile = [
+        "\" & (do shell script \"touch /tmp/injected\") & \"",
+        "\\\" end tell\ntell application \"Finder\" to delete every item\n",
+        "line one\rline two\ttab \u{2028} “smart” 日本語 🎉",
+        "on run\nreturn 1\nend run",
+    ]
+
+    func testValuesReachAHandlerUnchanged() async throws {
+        let script = """
+            on echo(one, two, flag)
+            	return {one, two, flag}
+            end echo
+            """
+        for text in hostile {
+            let result = try await NSAppleScript.execute(
+                script,
+                calling: .init("echo", [.string(text), .strings([text, "b"]), .boolean(true)])
+            )
+            XCTAssertEqual(result.atIndex(1)?.stringValue, text)
+            XCTAssertEqual(result.atIndex(2)?.atIndex(1)?.stringValue, text)
+            XCTAssertEqual(result.atIndex(2)?.atIndex(2)?.stringValue, "b")
+            XCTAssertEqual(result.atIndex(3)?.booleanValue, true)
+        }
+    }
+
+    func testAHandlerNameKeepsItsCaseInTheScript() async throws {
+        let result = try await NSAppleScript.execute(
+            "on createNote(a)\nreturn a\nend createNote",
+            calling: .init("createNote", [.string("x")])
+        )
+        XCTAssertEqual(result.stringValue, "x")
+    }
+
+    func testRequestsPassEveryValueAsAParameter() throws {
+        // A folder name can't contain "/", which a path would split on.
+        let text = #"" & (do shell script "id") & ""#
+        let note = try request(
+            title: text,
+            body: text,
+            format: .markdown,
+            folder: "A/\(text)",
+            account: text,
+            create: true
+        )
+        let call = NotesScripts.createNote(note)
+        XCTAssertEqual(call.name, "createNote")
+        XCTAssertEqual(call.parameters.count, 4)
+        XCTAssertEqual(call.parameters[0], .string(text))
+        XCTAssertEqual(call.parameters[1], .strings(["A", text]))
+        XCTAssertEqual(call.parameters[2], .string(note.bodyHTML))
+        XCTAssertEqual(call.parameters[3], .boolean(true))
+        XCTAssertFalse(NotesScripts.source.contains("do shell script"))
+
+        let folder = try NotesFolderRequest(name: text, parent: "P", account: nil)
+        let folderCall = NotesScripts.createFolder(folder)
+        XCTAssertEqual(folderCall.parameters[0], .string(""))
+        XCTAssertEqual(folderCall.parameters[1], .strings(["P"]))
+        XCTAssertEqual(folderCall.parameters[2], .string(folder.name))
+    }
+
+    func testEveryHandlerTheToolsCallIsInTheScript() {
+        for name in ["createNote", "createFolder", "resolveAccount", "resolveFolder", "findChild"] {
+            XCTAssertTrue(NotesScripts.source.contains("on \(name)("), name)
+        }
+    }
+
+    // MARK: - Tools
+
+    private final class FakeRunner: NotesScriptRunning {
+        private let calls = OSAllocatedUnfairLock(initialState: [NSAppleScript.Subroutine]())
+        var recorded: [NSAppleScript.Subroutine] { calls.withLock { $0 } }
+
+        func run(_ source: String, calling subroutine: NSAppleScript.Subroutine) async throws -> [String] {
+            calls.withLock { $0.append(subroutine) }
+            return subroutine.name == "createNote"
+                ? ["x-coredata://1/ICNote/p7", "Plan", "Notes", "iCloud"]
+                : ["x-coredata://1/ICFolder/p8", "Ideas", "iCloud"]
+        }
+    }
+
+    private struct FakeResolver: NotesIdentifierResolving {
+        var noteIdentifier: String?
+        var folderIdentifier: String?
+        func noteID(
+            title: String,
+            folderPath: [String],
+            folderName: String,
+            accountName: String,
+            createdAfter date: Date
+        ) async -> String? { noteIdentifier }
+        func folderID(path: [String], accountName: String) async -> String? { folderIdentifier }
+    }
+
+    private func tools(runner: FakeRunner = FakeRunner(), resolver: FakeResolver = FakeResolver()) -> [String: Tool] {
+        Dictionary(
+            uniqueKeysWithValues: NotesWriteTools.tools(runner: runner, resolver: resolver).map { ($0.name, $0) }
+        )
+    }
+
+    func testToolsAreNamedAndAnnotatedAsCreateOnly() {
+        let tools = tools()
+        XCTAssertEqual(Set(tools.keys), NotesWriteTools.toolNames)
+        for tool in tools.values {
+            XCTAssertEqual(tool.annotations.readOnlyHint, false, tool.name)
+            XCTAssertEqual(tool.annotations.destructiveHint, false, tool.name)
+            XCTAssertEqual(tool.annotations.openWorldHint, false, tool.name)
+        }
+    }
+
+    /// A service with the Notes write tools and the Notes default for "Allow writes".
+    private struct WritesOffService: Service {
+        var tools: [Tool] { return NotesWriteTools.tools(runner: FakeRunner()) }
+        var writesEnabledByDefault: Bool { false }
+    }
+
+    func testWritesAreOffUntilTheSettingIsTurnedOn() async throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "NotesWriteTests.\(UUID().uuidString)"))
+        let service = WritesOffService()
+        XCTAssertFalse(service.writesEnabledByDefault)
+        XCTAssertFalse(service.areWritesEnabled(defaults: defaults))
+        let listed = Set(service.listedTools(defaults: defaults).map(\.name))
+        XCTAssertTrue(listed.isDisjoint(with: NotesWriteTools.toolNames))
+        for name in NotesWriteTools.toolNames {
+            do {
+                _ = try await service.call(tool: name, with: [:], defaults: defaults)
+                XCTFail("\(name) ran while writes were off")
+            } catch {
+                XCTAssertEqual(error as? WritesDisabledError, WritesDisabledError(tool: name))
+            }
+        }
+        ServiceWrites.setEnabled(true, serviceID: service.serviceID, defaults: defaults)
+        let listedOn = Set(service.listedTools(defaults: defaults).map(\.name))
+        XCTAssertTrue(NotesWriteTools.toolNames.isSubset(of: listedOn))
+    }
+
+    func testCreateRunsTheScriptWithTheCheckedRequest() async throws {
+        let runner = FakeRunner()
+        let result = try await tools(runner: runner, resolver: FakeResolver(noteIdentifier: "UUID-1"))["notes_create"]!(
+            [
+                "title": "Plan", "body": "- [ ] a", "format": "markdown", "folder": "Work/Ideas",
+                "createMissingFolders": true,
+            ])
+        let call = try XCTUnwrap(runner.recorded.first)
+        XCTAssertEqual(call.parameters[1], .strings(["Work", "Ideas"]))
+        XCTAssertEqual(call.parameters[2], .string("<div><h1>Plan</h1></div><ul><li>☐ a</li></ul>"))
+        XCTAssertEqual(call.parameters[3], .boolean(true))
+        XCTAssertEqual(result.objectValue?["name"]?.stringValue, "Plan")
+        XCTAssertEqual(result.objectValue?["folder"]?.stringValue, "Notes")
+        XCTAssertEqual(result.objectValue?["scriptIdentifier"]?.stringValue, "x-coredata://1/ICNote/p7")
+        XCTAssertEqual(result.objectValue?["identifier"]?.stringValue, "UUID-1")
+        XCTAssertNil(result.objectValue?["description"])
+    }
+
+    func testCreateOmitsTheIdentifierItCannotResolve() async throws {
+        let result = try await tools()["notes_create"]!(["title": "Plan"])
+        // The scripting id is never passed off as an id the read tools take.
+        XCTAssertNil(result.objectValue?["identifier"])
+        XCTAssertEqual(result.objectValue?["scriptIdentifier"]?.stringValue, "x-coredata://1/ICNote/p7")
+        XCTAssertNotNil(result.objectValue?["description"]?.stringValue)
+    }
+
+    func testCreateFolderRunsTheScript() async throws {
+        let runner = FakeRunner()
+        let result = try await tools(runner: runner)["notes_create_folder"]!(
+            ["name": "Ideas", "parent": "Work", "account": "iCloud"])
+        let call = try XCTUnwrap(runner.recorded.first)
+        XCTAssertEqual(call.name, "createFolder")
+        XCTAssertEqual(call.parameters, [.string("iCloud"), .strings(["Work"]), .string("Ideas")])
+        XCTAssertEqual(result.objectValue?["name"]?.stringValue, "Ideas")
+        XCTAssertEqual(result.objectValue?["scriptIdentifier"]?.stringValue, "x-coredata://1/ICFolder/p8")
+        XCTAssertNil(result.objectValue?["identifier"])
+        let resolved = try await tools(resolver: FakeResolver(folderIdentifier: "F-1"))["notes_create_folder"]!(
+            ["name": "Ideas"])
+        XCTAssertEqual(resolved.objectValue?["identifier"]?.stringValue, "F-1")
+    }
+
+    func testBadArgumentsRunNoScript() async {
+        let runner = FakeRunner()
+        let create = tools(runner: runner)["notes_create"]!
+        for arguments: [String: Value] in [
+            [:], ["title": 5], ["title": "T", "format": "rtf"], ["title": "T", "folder": "a//b"],
+            ["title": "T", "createMissingFolders": "yes"], ["title": "a\nb"],
+        ] {
+            do {
+                _ = try await create(arguments)
+                XCTFail("accepted \(arguments)")
+            } catch {
+                XCTAssertTrue(error is NotesWriteError, "\(error)")
+            }
+        }
+        XCTAssertTrue(runner.recorded.isEmpty)
+    }
+}
