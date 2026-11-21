@@ -513,13 +513,14 @@ final class RemindersQueryTests: XCTestCase {
         )
     }
 
-    /// An all-day due carries the calendar it was read in; a timed one keeps
-    /// its seconds.
+    /// An all-day due carries the calendar it was read in and no time zone,
+    /// so it stays floating; a timed one keeps its seconds.
     func testDueComponentsCarryCalendarAndSeconds() throws {
         let allDay = try RemindersQuery.parseDue("2026-05-27", calendar: calendar)
         XCTAssertTrue(allDay.isAllDay)
         XCTAssertNotNil(allDay.components.calendar, "an all-day due needs a calendar for EKReminder")
-        XCTAssertEqual(allDay.components.timeZone, calendar.timeZone)
+        XCTAssertNil(allDay.components.timeZone, "an all-day due is floating")
+        XCTAssertEqual(allDay.components.day, 27)
         XCTAssertNil(allDay.components.hour)
 
         let timed = try RemindersQuery.parseDue("2026-05-27 09:30:45", calendar: calendar)

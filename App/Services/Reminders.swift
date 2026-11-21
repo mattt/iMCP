@@ -1869,9 +1869,9 @@ final class RemindersService: Service {
 
         let newNotes = try Self.stringChange(arguments["notes"], description: "notes")
         let newURL = try Self.urlChange(arguments["url"])
-        // Dates are read in the reminder's own calendar, so an all-day due
-        // keeps the list's time zone and a timed one keeps its seconds.
-        let calendar = Self.calendar(for: reminder)
+        // Dates are read in local time, as the schema says. Date-only values
+        // stay floating, and a timed due keeps its seconds.
+        let calendar = Self.localCalendar
         let newStart = try Self.dateComponentsChange(
             arguments["start"],
             description: "start",
@@ -2056,11 +2056,12 @@ final class RemindersService: Service {
         alarm.absoluteDate == nil && alarm.structuredLocation == nil
     }
 
-    /// The calendar a reminder's dates are read and written in: its own
-    /// time zone, so a date-only value keeps the day it was saved with.
-    private static func calendar(for reminder: EKReminder) -> Calendar {
+    /// The calendar new dates are read in: Gregorian in the Mac's time
+    /// zone, as the schema says. Reading them in a reminder's stored zone
+    /// would move "09:00" to wherever the reminder was saved.
+    private static var localCalendar: Calendar {
         var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = reminder.timeZone ?? .current
+        calendar.timeZone = .current
         return calendar
     }
 
@@ -2669,7 +2670,8 @@ final class RemindersService: Service {
             from: date
         )
         components.calendar = calendar
-        components.timeZone = calendar.timeZone
+        // A nil time zone keeps a date-only value floating, per EKReminder.h.
+        components.timeZone = parsedDate.isDateOnly ? nil : calendar.timeZone
         return components
     }
 

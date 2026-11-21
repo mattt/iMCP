@@ -69,11 +69,9 @@ enum RemindersQuery {
             guard let date = utc.date(from: components),
                 utc.dateComponents([.year, .month, .day], from: date) == components
             else { throw invalid }
-            // EKReminder requires a calendar on the components it stores. The
-            // reminder's own calendar supplies it, so the day keeps the list's
-            // time zone rather than the Mac's.
+            // EKReminder requires a calendar on the components it stores.
+            // The time zone stays nil so the day is floating, per EKReminder.h.
             components.calendar = calendar
-            components.timeZone = calendar.timeZone
             return ParsedDue(components: components, isAllDay: true)
         }
         let minute = group(5).flatMap(Int.init) ?? 0
