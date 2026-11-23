@@ -495,9 +495,7 @@ enum NotesMarkdown {
             guard depth < maximumInlineDepth else { return NotesHTML.escape(String(characters)) }
             var html = ""
             var i = 0
-            // Once a scan finds no closing bracket, no later `[` can close
-            // either, so a line of `[` is scanned once rather than once each.
-            var mayHaveLinks = true
+            var delimiters = InlineDelimiters(characters)
             while i < characters.count {
                 let character = characters[i]
 
@@ -512,7 +510,7 @@ enum NotesMarkdown {
 
                 if character == "`" {
                     let run = characters[i...].prefix(while: { $0 == "`" }).count
-                    if let end = closingRun(of: "`", length: run, in: characters, from: i + run) {
+                    if let end = delimiters.closingRun(of: "`", length: run, from: i + run) {
                         let code = String(characters[(i + run) ..< end]).trimmingCharacters(in: .whitespaces)
                         html += "<tt>\(NotesHTML.escape(code))</tt>"
                         i = end + run
@@ -523,23 +521,18 @@ enum NotesMarkdown {
                     continue
                 }
 
-                if mayHaveLinks,
-                    character == "[" || (character == "!" && i + 1 < characters.count && characters[i + 1] == "[")
+                if character == "[" || (character == "!" && i + 1 < characters.count && characters[i + 1] == "["),
+                    let link = link(in: characters, at: i, depth: depth, delimiters: delimiters)
                 {
-                    var foundClosingBracket = true
-                    if let link = link(in: characters, at: i, depth: depth, foundClosingBracket: &foundClosingBracket) {
-                        html += link.html
-                        i = link.end
-                        continue
-                    }
-                    mayHaveLinks = foundClosingBracket
+                    html += link.html
+                    i = link.end
+                    continue
                 }
 
                 if let delimiter = emphasisDelimiter(in: characters, at: i),
-                    let end = closingRun(
+                    let end = delimiters.closingRun(
                         of: delimiter.character,
                         length: delimiter.length,
-                        in: characters,
                         from: i + delimiter.length
                     ),
                     isClosing(characters, at: end, delimiter: delimiter),
@@ -600,81 +593,102 @@ enum NotesMarkdown {
             return true
         }
 
-        /// The index of the next run of exactly `length` of `character` at or after `start`.
-        private static func closingRun(
-            of character: Character,
-            length: Int,
-            in characters: [Character],
-            from start: Int
-        ) -> Int? {
-            var i = start
-            while i < characters.count {
-                if characters[i] == "\\" {
-                    i += 2
-                    continue
-                }
-                if characters[i] == character {
-                    let run = characters[i...].prefix(while: { $0 == character }).count
-                    if run == length { return i }
-                    i += run
-                    continue
-                }
-                i += 1
+        /// Where the brackets, parentheses, and delimiter runs of a line close.
+        ///
+        /// Everything is matched in one pass,
+        /// so a line of delimiters that never close isn't scanned again for each one.
+        private struct InlineDelimiters {
+            private struct Run: Hashable {
+                let character: Character
+                let length: Int
             }
-            return nil
+
+            /// The index of the bracket that closes the one at each index. A backslash escapes a bracket.
+            let closingBrackets: [Int: Int]
+            /// The index of the parenthesis that closes the one at each index. An address has no escapes.
+            let closingParentheses: [Int: Int]
+            /// How many of the same delimiter follow from each index, counting itself.
+            private let runLengths: [Int: Int]
+            /// Where runs of each character and length start, in order.
+            private let runs: [Run: [Int]]
+            /// The first start in `runs` that a search may still need.
+            private var nextRuns: [Run: Int] = [:]
+            private let characters: [Character]
+
+            init(_ characters: [Character]) {
+                var closingBrackets: [Int: Int] = [:]
+                var closingParentheses: [Int: Int] = [:]
+                var runLengths: [Int: Int] = [:]
+                var runs: [Run: [Int]] = [:]
+                var openBrackets: [Int] = []
+                var openParentheses: [Int] = []
+
+                for i in characters.indices {
+                    if characters[i] == "(" {
+                        openParentheses.append(i)
+                    } else if characters[i] == ")", let open = openParentheses.popLast() {
+                        closingParentheses[open] = i
+                    }
+                }
+                for i in characters.indices.reversed() where "`*_~".contains(characters[i]) {
+                    let continues = i + 1 < characters.count && characters[i + 1] == characters[i]
+                    runLengths[i] = 1 + (continues ? runLengths[i + 1, default: 0] : 0)
+                }
+                var i = 0
+                while i < characters.count {
+                    if characters[i] == "\\" {
+                        i += 2
+                        continue
+                    }
+                    if characters[i] == "[" {
+                        openBrackets.append(i)
+                    } else if characters[i] == "]", let open = openBrackets.popLast() {
+                        closingBrackets[open] = i
+                    }
+                    if let length = runLengths[i] {
+                        runs[Run(character: characters[i], length: length), default: []].append(i)
+                        i += length
+                    } else {
+                        i += 1
+                    }
+                }
+
+                self.characters = characters
+                self.closingBrackets = closingBrackets
+                self.closingParentheses = closingParentheses
+                self.runLengths = runLengths
+                self.runs = runs
+            }
+
+            /// The index of the next run of exactly `length` of `character` at or after `start`.
+            /// Each search starts at or after the one before it.
+            mutating func closingRun(of character: Character, length: Int, from start: Int) -> Int? {
+                // What is left of a longer run counts as a run of its own.
+                if start < characters.count, characters[start] == character, runLengths[start] == length {
+                    return start
+                }
+                let run = Run(character: character, length: length)
+                guard let starts = runs[run] else { return nil }
+                var next = nextRuns[run, default: 0]
+                while next < starts.count, starts[next] < start { next += 1 }
+                nextRuns[run] = next
+                return next < starts.count ? starts[next] : nil
+            }
         }
 
         /// A link or an image at `start`, as its text followed by its address.
-        /// `foundClosingBracket` is false when nothing after `start` closes a bracket.
         private static func link(
             in characters: [Character],
             at start: Int,
             depth: Int,
-            foundClosingBracket: inout Bool
+            delimiters: InlineDelimiters
         ) -> (html: String, end: Int)? {
-            var i = start
-            if characters[i] == "!" { i += 1 }
-            guard i < characters.count, characters[i] == "[" else { return nil }
-
-            var nestedBrackets = 0
-            var closing: Int?
-            var sawClosingBracket = false
-            var j = i
-            while j < characters.count {
-                if characters[j] == "\\" {
-                    j += 2
-                    continue
-                }
-                if characters[j] == "[" { nestedBrackets += 1 }
-                if characters[j] == "]" {
-                    sawClosingBracket = true
-                    nestedBrackets -= 1
-                    if nestedBrackets == 0 {
-                        closing = j
-                        break
-                    }
-                }
-                j += 1
-            }
-            foundClosingBracket = sawClosingBracket
-            guard let closing, closing + 1 < characters.count, characters[closing + 1] == "(" else { return nil }
+            let i = characters[start] == "!" ? start + 1 : start
             // Parentheses inside the address balance, as in a Wikipedia address.
-            var end: Int?
-            var nesting = 0
-            var k = closing + 2
-            while k < characters.count {
-                if characters[k] == "(" {
-                    nesting += 1
-                } else if characters[k] == ")" {
-                    if nesting == 0 {
-                        end = k
-                        break
-                    }
-                    nesting -= 1
-                }
-                k += 1
-            }
-            guard let end else { return nil }
+            guard let closing = delimiters.closingBrackets[i],
+                closing + 1 < characters.count, characters[closing + 1] == "(",
+                let end = delimiters.closingParentheses[closing + 1]
+            else { return nil }
 
             let label = Array(characters[(i + 1) ..< closing])
             // An address may be followed by a title, which Notes has no place for.

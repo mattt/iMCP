@@ -75,6 +75,20 @@ final class NotesWriteTests: XCTestCase {
         XCTAssertEqual(html("[ [a](u)"), "<div>[ a (u)</div>")
     }
 
+    func testDelimitersThatNeverMakeALinkAreMatchedOnce() {
+        // Each of these used to scan the rest of the line once per opening delimiter.
+        let count = 50_000
+        for line in [
+            String(repeating: "[", count: count) + String(repeating: "]", count: count),
+            String(repeating: "[a](", count: count),
+            String(repeating: "***a ", count: count) + "b",
+        ] {
+            let start = Date()
+            XCTAssertEqual(html(line), "<div>\(line)</div>")
+            XCTAssertLessThan(Date().timeIntervalSince(start), 5, String(line.prefix(8)))
+        }
+    }
+
     func testHeadingsStartBelowTheTitle() {
         XCTAssertEqual(html("# One\n## Two\n### Three"), "<h2>One</h2><h2>Two</h2><h3>Three</h3>")
         XCTAssertEqual(html("#NotAHeading"), "<div>#NotAHeading</div>")
