@@ -64,6 +64,11 @@
 		A40000000000000000000022 /* ../../Shared/Extensions/Logger+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000012 /* ../../Shared/Extensions/Logger+Extensions.swift */; };
 		A40000000000000000000023 /* ../../Shared/Extensions/Bundle+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000013 /* ../../Shared/Extensions/Bundle+Extensions.swift */; };
 		A40000000000000000000024 /* ../../Shared/Models/Service.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000014 /* ../../Shared/Models/Service.swift */; };
+		D2E1A00000000000000000A2 /* RemindersQueryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2E1A00000000000000000A1 /* RemindersQueryTests.swift */; };
+		D2E1A00000000000000000A4 /* ../../App/Services/RemindersQuery.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2E1A00000000000000000A3 /* ../../App/Services/RemindersQuery.swift */; };
+		D2E1A00000000000000000C4 /* ../../App/Services/Reminders.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2E1A00000000000000000C3 /* ../../App/Services/Reminders.swift */; };
+		D2E1A00000000000000000D4 /* ../../App/Extensions/AppKit+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2E1A00000000000000000D3 /* ../../App/Extensions/AppKit+Extensions.swift */; };
+		D2E1A00000000000000000E4 /* ../../App/Extensions/EventKit+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2E1A00000000000000000E3 /* ../../App/Extensions/EventKit+Extensions.swift */; };
 		A50000000000000000000020 /* MailTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000010 /* MailTests.swift */; };
 		A50000000000000000000021 /* ../../App/Services/Mail.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000011 /* ../../App/Services/Mail.swift */; };
 		A50000000000000000000022 /* ../../App/Extensions/Foundation+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000012 /* ../../App/Extensions/Foundation+Extensions.swift */; };
@@ -136,6 +141,9 @@
 		F26A5BE8BADF564840BB4AE9 /* ../../Shared/Mobile/MobileAlarmRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59DE6C73F45F5069A5C32229 /* ../../Shared/Mobile/MobileAlarmRequest.swift */; };
 		A7000000000000000000000C /* iMCP iOS Widgets.appex in Embed */ = {isa = PBXBuildFile; fileRef = A70000000000000000000001 /* iMCP iOS Widgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		A70000000000000000000040 /* AlarmMetadata.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000020 /* AlarmMetadata.swift */; };
+		D2E000000000000000000020 /* NotesInlineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2E000000000000000000010 /* NotesInlineTests.swift */; };
+		D2E000000000000000000021 /* ../../App/Services/NotesInline.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2E000000000000000000011 /* ../../App/Services/NotesInline.swift */; };
+		D2E000000000000000000030 /* TopoText in Frameworks */ = {isa = PBXBuildFile; productRef = D2E000000000000000000040 /* TopoText */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -230,6 +238,11 @@
 		A40000000000000000000012 /* ../../Shared/Extensions/Logger+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../../Shared/Extensions/Logger+Extensions.swift"; sourceTree = "<group>"; };
 		A40000000000000000000013 /* ../../Shared/Extensions/Bundle+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../../Shared/Extensions/Bundle+Extensions.swift"; sourceTree = "<group>"; };
 		A40000000000000000000014 /* ../../Shared/Models/Service.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../Shared/Models/Service.swift; sourceTree = "<group>"; };
+		D2E1A00000000000000000A1 /* RemindersQueryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemindersQueryTests.swift; sourceTree = "<group>"; };
+		D2E1A00000000000000000A3 /* ../../App/Services/RemindersQuery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/RemindersQuery.swift; sourceTree = "<group>"; };
+		D2E1A00000000000000000C3 /* ../../App/Services/Reminders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/Reminders.swift; sourceTree = "<group>"; };
+		D2E1A00000000000000000D3 /* ../../App/Extensions/AppKit+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../../App/Extensions/AppKit+Extensions.swift"; sourceTree = "<group>"; };
+		D2E1A00000000000000000E3 /* ../../App/Extensions/EventKit+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../../App/Extensions/EventKit+Extensions.swift"; sourceTree = "<group>"; };
 		A50000000000000000000010 /* MailTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MailTests.swift; sourceTree = "<group>"; };
 		A50000000000000000000011 /* ../../App/Services/Mail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/Mail.swift; sourceTree = "<group>"; };
 		A50000000000000000000012 /* ../../App/Extensions/Foundation+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../../App/Extensions/Foundation+Extensions.swift"; sourceTree = "<group>"; };
@@ -282,6 +295,8 @@
 		59DE6C73F45F5069A5C32229 /* ../../Shared/Mobile/MobileAlarmRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../Shared/Mobile/MobileAlarmRequest.swift; sourceTree = "<group>"; };
 		A70000000000000000000020 /* AlarmMetadata.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AlarmMetadata.swift; path = iOS/AlarmMetadata.swift; sourceTree = SOURCE_ROOT; };
 		A70000000000000000000001 /* iMCP iOS Widgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "iMCP iOS Widgets.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
+		D2E000000000000000000010 /* NotesInlineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesInlineTests.swift; sourceTree = "<group>"; };
+		D2E000000000000000000011 /* ../../App/Services/NotesInline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/NotesInline.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -400,6 +415,7 @@
 				A30000000000000000000031 /* JSONSchema in Frameworks */,
 				A30000000000000000000032 /* Ontology in Frameworks */,
 				A50000000000000000000030 /* Envelope in Frameworks */,
+				D2E000000000000000000030 /* TopoText in Frameworks */,
 				76F80A6E3EDBFB02048A6ED8 /* Cocoa.framework in Frameworks */,
 				826C0834A5B647F8A918E54D /* ServiceLifecycle in Frameworks */,
 				8DFCE9E4CBCBEB93A32E8560 /* ServiceLifecycleTestKit in Frameworks */,
@@ -517,8 +533,15 @@
 				A40000000000000000000012 /* ../../Shared/Extensions/Logger+Extensions.swift */,
 				A40000000000000000000013 /* ../../Shared/Extensions/Bundle+Extensions.swift */,
 				A40000000000000000000014 /* ../../Shared/Models/Service.swift */,
+				D2E1A00000000000000000A1 /* RemindersQueryTests.swift */,
+				D2E1A00000000000000000A3 /* ../../App/Services/RemindersQuery.swift */,
+				D2E1A00000000000000000C3 /* ../../App/Services/Reminders.swift */,
+				D2E1A00000000000000000D3 /* ../../App/Extensions/AppKit+Extensions.swift */,
+				D2E1A00000000000000000E3 /* ../../App/Extensions/EventKit+Extensions.swift */,
 				A50000000000000000000010 /* MailTests.swift */,
 				A50000000000000000000011 /* ../../App/Services/Mail.swift */,
+				D2E000000000000000000010 /* NotesInlineTests.swift */,
+				D2E000000000000000000011 /* ../../App/Services/NotesInline.swift */,
 				A50000000000000000000012 /* ../../App/Extensions/Foundation+Extensions.swift */,
 				B13400000000000000000010 /* AppleScriptTests.swift */,
 				C0A7E00000000000000000B1 /* ConnectionApprovalGateTests.swift */,
@@ -642,6 +665,7 @@
 				A20000000000000000000012 /* Ontology */,
 				DCE061F8A68D0CD546D919E2 /* ServiceLifecycle */,
 				A50000000000000000000040 /* Envelope */,
+				D2E000000000000000000040 /* TopoText */,
 				1CD6B9E157EEC273F178543D /* ServiceLifecycleTestKit */,
 				48ABEE9E6903427DD79096A1 /* Logging */,
 			);
@@ -970,8 +994,15 @@
 				A40000000000000000000022 /* ../../Shared/Extensions/Logger+Extensions.swift in Sources */,
 				A40000000000000000000023 /* ../../Shared/Extensions/Bundle+Extensions.swift in Sources */,
 				A40000000000000000000024 /* ../../Shared/Models/Service.swift in Sources */,
+				D2E1A00000000000000000A2 /* RemindersQueryTests.swift in Sources */,
+				D2E1A00000000000000000A4 /* ../../App/Services/RemindersQuery.swift in Sources */,
+				D2E1A00000000000000000C4 /* ../../App/Services/Reminders.swift in Sources */,
+				D2E1A00000000000000000D4 /* ../../App/Extensions/AppKit+Extensions.swift in Sources */,
+				D2E1A00000000000000000E4 /* ../../App/Extensions/EventKit+Extensions.swift in Sources */,
 				A50000000000000000000020 /* MailTests.swift in Sources */,
 				A50000000000000000000021 /* ../../App/Services/Mail.swift in Sources */,
+				D2E000000000000000000020 /* NotesInlineTests.swift in Sources */,
+				D2E000000000000000000021 /* ../../App/Services/NotesInline.swift in Sources */,
 				A50000000000000000000022 /* ../../App/Extensions/Foundation+Extensions.swift in Sources */,
 				B13400000000000000000020 /* AppleScriptTests.swift in Sources */,
 				A30000000000000000000020 /* HomeToolsTests.swift in Sources */,
@@ -1076,7 +1107,7 @@
 				ENABLE_TESTING_SEARCH_PATHS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundlePackageType = BNDL;
-				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MACOSX_DEPLOYMENT_TARGET = 15.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "me.mattt.iMCP.imcp-serverTests";
 				PRODUCT_MODULE_NAME = imcp_serverTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1092,7 +1123,7 @@
 				ENABLE_TESTING_SEARCH_PATHS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundlePackageType = BNDL;
-				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MACOSX_DEPLOYMENT_TARGET = 15.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "me.mattt.iMCP.imcp-serverTests";
 				PRODUCT_MODULE_NAME = imcp_serverTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1719,7 +1750,7 @@
 			repositoryURL = "https://github.com/mattt/TopoText";
 			requirement = {
 				kind = upToNextMajorVersion;
-				minimumVersion = 0.2.0;
+				minimumVersion = 0.3.0;
 			};
 		};
 		F825BDBD2D9AD00E0063ADD7 /* XCRemoteSwiftPackageReference "swift-service-lifecycle" */ = {
@@ -1883,6 +1914,11 @@
 			productName = MCP;
 		};
 		AA0011000000000000000002 /* Envelope */ = {isa = XCSwiftPackageProductDependency; package = AA0011000000000000000003 /* XCRemoteSwiftPackageReference "Envelope" */; productName = Envelope; };
+		D2E000000000000000000040 /* TopoText */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C0FFEE0000000000000000A3 /* XCRemoteSwiftPackageReference "TopoText" */;
+			productName = TopoText;
+		};
 		A50000000000000000000040 /* Envelope */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = AA0011000000000000000003 /* XCRemoteSwiftPackageReference "Envelope" */;
