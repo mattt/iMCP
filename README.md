@@ -16,6 +16,13 @@ and a [growing list of clients][mcp-clients] that support the
 <table>
   <tr>
     <th width="48">
+      <img src="Assets/alarms.svg" width="48" height="48" alt="" role="presentation"/>
+    </th>
+    <td><strong>Alarms</strong></td>
+    <td>Set one-time and weekly alarms and countdown timers on your iPhone or iPad, list them, and cancel them. They sound even in silent mode and Focus. Needs iMCP for iOS, which you <a href="#imcp-for-iphone-and-ipad">build with your own Apple Developer account</a>.</td>
+  </tr>
+  <tr>
+    <th width="48">
       <img src="Assets/calendar.svg" width="48" height="48" alt="" role="presentation"/>
     </th>
     <td><strong>Calendar</strong></td>
@@ -27,6 +34,13 @@ and a [growing list of clients][mcp-clients] that support the
     </th>
     <td><strong>Contacts</strong></td>
     <td>Access contact information about yourself and search your contacts by name, phone number, or email address.</td>
+  </tr>
+  <tr>
+    <th width="48">
+      <img src="Assets/health.svg" width="48" height="48" alt="" role="presentation"/>
+    </th>
+    <td><strong>Health</strong></td>
+    <td>Read Health data from your iPhone or iPad: samples, daily statistics, workouts, and health records. Needs iMCP for iOS, which you <a href="#imcp-for-iphone-and-ipad">build with your own Apple Developer account</a>.</td>
   </tr>
   <tr>
     <th width="48">
@@ -177,7 +191,10 @@ a dialog asks "'iMCP' Would Like Full Access to Your Calendar".
 Click "Allow Full Access" to continue.
 
 > [!IMPORTANT]
-> iMCP **does not** collect or store any of your data.
+> iMCP **does not** collect your data.
+> The only data it stores is a copy of what a paired iPhone or iPad sends
+> for the Health and Alarms services,
+> as described in [iMCP for iPhone and iPad](#imcp-for-iphone-and-ipad).
 > AI apps like Claude and ChatGPT _do_ send
 > your data off device as part of tool calls.
 > Turn on only the services you want your AI app to use.
@@ -201,6 +218,49 @@ click <img style="display: inline" width="20" height="16" src="/Assets/icon.svg"
 \> "Settings", and then click the service in the sidebar.
 
 <br clear="all">
+
+### Allow writes
+
+Each service that has tools that change things
+has an **Allow writes** switch on its Settings page.
+While it is off, clients don't see that service's write tools
+and a call to one is refused, so nothing changes.
+Tools that only read are never affected.
+Deleting counts as a write,
+so the same switch covers it.
+A tool's own switch in the same list still turns that one tool off
+when **Allow writes** is on.
+
+Services that already had write tools
+(Calendar, Contacts, Home, Mail, Music, Phone, Reminders and Shortcuts)
+start with **Allow writes** on,
+so an update changes nothing for them.
+A service whose write tools are new
+can start with it off until you turn it on.
+
+Sending something to another person needs one more step.
+Even with **Allow writes** on,
+a tool that sends a message or an email
+(none does yet; they arrive with their services)
+shows a window with the client's name, the recipient, and the full text,
+and sends only after you click its button.
+The window waits 50 seconds and then cancels,
+shows one request at a time,
+and has no "always allow",
+so each send needs its own click.
+Starting a call is the same:
+the Phone app asks you to confirm before dialing.
+
+### Approval modes
+
+**General** settings has an **Approval Mode** that applies to every tool call from every client:
+
+- **Ask for Everything** asks in iMCP before each read and each write.
+- **Ask for Writes Only** asks before tools that change things and runs read-only tools right away.
+- **Ask in Agent (Full Access in iMCP)** shows no iMCP prompts and shows how to make Claude Desktop, Claude Code, claude.ai, Duet and Muse ask instead.
+- **Allow Everything** shows no prompts, and shows how to permit all iMCP tools in those clients.
+
+The last two modes also ignore each service's **Allow writes** switch while they are selected, without changing what you set there.
 
 ### Approve connections
 
@@ -584,6 +644,147 @@ then open the web UI at <http://localhost:9931>.
 > from "llama.cpp" in that time,
 > no iMCP tools appear until you restart the server.
 
+### Connect from your other devices
+
+iMCP can serve clients on your other devices
+over your [Tailscale][tailscale] network.
+iMCP and its permissions stay on your Mac,
+and the client connects with an access token.
+iMCP joins your tailnet as its own device,
+so you don't need the Tailscale app on the Mac.
+
+1. In iMCP's Settings, choose Remote Access,
+   then turn on Allow Remote Access.
+2. Click Log In, and log in to Tailscale in your browser
+   with the account that you use on your other devices.
+   iMCP appears in your tailnet as a new device,
+   with a name made from your Mac's name,
+   such as `my-mac-imcp`.
+   Settings then shows the server's URL,
+   such as `http://my-mac-imcp.example.ts.net:4627/mcp`.
+3. Click Create Token, enter a name for the client,
+   and choose its access:
+   read-only tools, all tools, or the tools that you select.
+4. Copy the token.
+   iMCP keeps only a hash of the token,
+   so it can't show the token again.
+5. On the other device,
+   add an HTTP server with the URL
+   and the header `Authorization: Bearer <token>`.
+   For example, in [Claude Code][claude-code]:
+
+   ```console
+   claude mcp add --transport http iMCP http://my-mac-imcp.example.ts.net:4627/mcp \
+       --header "Authorization: Bearer <token>"
+   ```
+
+A token can use only the services and tools that are on in iMCP.
+When you turn off a service or tool,
+no token can use it, whatever the token's access allows.
+You can change a token's name and access at any time;
+connected clients get the new list of tools.
+To replace a lost or leaked token,
+choose Re-roll: the token keeps its name and access,
+and the old token stops working.
+To remove a client's access, delete its token.
+
+To log in without a browser,
+click Use Auth Key and enter an auth key
+from the Keys page of the Tailscale admin console.
+Use a key without tags, so that the device belongs to you;
+iMCP uses the key once and doesn't keep it.
+To remove iMCP from your tailnet,
+click Log Out, or remove the device in the admin console.
+
+<details>
+<summary>How remote access works</summary>
+
+iMCP runs its own Tailscale node,
+with its own identity and tailnet address.
+The node's address belongs only to iMCP,
+so no other app on the Mac can listen on it
+or answer in iMCP's place.
+The node keeps its keys in iMCP's container
+and stays logged in between launches,
+until you log out or its key expires.
+It runs only while remote access is on.
+
+iMCP listens only on the node's tailnet IPv4 address,
+on port 4627 unless you choose another one.
+Tailscale encrypts all traffic between devices with WireGuard,
+so the server uses plain HTTP inside the tailnet.
+The node can't get TLS certificates,
+so iMCP doesn't serve HTTPS.
+
+For each connection,
+iMCP asks its node which device and user the peer address belongs to.
+iMCP accepts only untagged devices
+that belong to the same Tailscale user as its node,
+and then requires a valid access token on every request.
+A token is bound to the first device that uses it,
+and other devices can't use it.
+A session belongs to the token that started it,
+and deleting or re-rolling a token ends its sessions.
+
+The endpoint implements the
+[Streamable HTTP transport][mcp-streamable-http]
+of MCP revision 2025-11-25, with sessions.
+It checks the `Host` and `Origin` headers
+against the node's tailnet address and MagicDNS name.
+Remote clients don't see the connection approval dialog;
+the access token takes its place.
+
+</details>
+
+### Connect cloud apps such as claude.ai
+
+Cloud apps can't join your tailnet,
+so iMCP can also serve a public HTTPS address.
+Cloud apps connect to it with OAuth 2.1;
+you approve each app once in a window on your Mac,
+and there is no token to copy.
+
+Choose one of two routes in Settings, under Remote Access:
+
+- **Cloudflare Tunnel** serves iMCP on a hostname in your own Cloudflare zone.
+  Install `cloudflared` (`brew install cloudflared`),
+  turn on Public Access (Cloudflare Tunnel),
+  and sign in with the browser, a `cert.pem`, or an API token.
+  iMCP finds the zone, creates a tunnel for your Mac,
+  sets its DNS record, and keeps `cloudflared` running.
+  It restarts the tunnel with backoff if it exits,
+  and again after your Mac wakes or the network comes back.
+- **Tailscale Funnel** serves iMCP at `https://<node>.<tailnet>.ts.net/mcp`.
+  Turn on Public Access (Tailscale Funnel).
+  Your tailnet policy must grant the `funnel` attribute to the node;
+  Settings shows the `nodeAttrs` entry to add when it is missing.
+
+Then add the address that Settings shows as a custom connector in the app,
+for example in claude.ai under Settings, Connectors.
+The app opens iMCP's consent window on your Mac;
+check the 6-character code against the one in your browser and approve.
+Approved apps are listed in Settings,
+where you can revoke them.
+
+<details>
+<summary>How public access works</summary>
+
+Both routes forward to the same loopback HTTP server,
+which only accepts the `Host` names of the active routes.
+Requests from the internet are held to smaller size limits
+than requests from your tailnet.
+iMCP serves the metadata from
+[RFC 9728][rfc-9728] and [RFC 8414][rfc-8414],
+and supports dynamic client registration ([RFC 7591][rfc-7591]),
+Client ID Metadata Documents,
+PKCE with S256, and refresh token rotation.
+The approval is bound to the browser that started it
+with a code and an HttpOnly cookie,
+and the fetch of a client's metadata pins the resolved address.
+Grants keep only a hash of the refresh token, in the Keychain.
+
+</details>
+
 ## Technical Details
 
 ### App & CLI
@@ -942,6 +1143,173 @@ xcodebuild -scheme iMCP -configuration Debug -destination "platform=macOS" \
   HELPER_CODE_SIGNING_ALLOWED=NO build
 ```
 
+### iMCP for iPhone and iPad
+
+HealthKit and AlarmKit data stays on the iPhone or iPad,
+so the Health and Alarms services get it from iMCP for iOS,
+an app in [`iOS`](/iOS/).
+Build and install it with your own Apple Developer account:
+
+```console
+Scripts/install-ios.sh
+```
+
+The script signs the app with your team's development certificate,
+gives it the bundle ID `local.imcp.ios.<team ID>`,
+checks that the build has its HealthKit and App Group entitlements,
+and installs it on your iPhone or iPad with `devicectl`.
+Run it with `--help` to choose another team, bundle ID, or device.
+You need a paid Apple Developer account with Xcode signed in to it,
+and an iPhone or iPad with iOS 26 or later in Developer Mode.
+Development profiles expire;
+the script prints the expiration date, and running it again renews the profile.
+
+To pair, open Settings > iPhone & iPad in iMCP on your Mac
+and click Pair iPhone or iPad,
+then scan the code in iMCP on the device.
+The code works once, for ten minutes.
+Then turn on each service on both devices; all of them start off.
+Turning a service on shares its data with the AI apps that you approve in iMCP,
+and the iOS app says so before it asks for permission.
+Health asks for each group of types, such as Activity or Sleep, separately.
+To unpair, remove the device in Settings > iPhone & iPad on the Mac,
+or tap Unpair in iMCP on the device.
+
+The device connects to the Mac over your local network by default;
+nothing goes through iCloud or another server.
+Settings > iPhone & iPad on the Mac can also offer a Tailscale address
+or a Cloudflare Tunnel you set up yourself, see [Reaching the Mac away from home](#reaching-the-mac-away-from-home).
+The connection uses TLS 1.2 with a pre-shared key from pairing
+and an ephemeral X25519 key exchange, which gives it forward secrecy.
+The pairing code and its link contain the pairing secret.
+Anyone who sees the code or the link during its ten minutes
+could pose as the Mac or as the device for that pairing,
+so show it only to the device that you're pairing.
+
+The Mac keeps an encrypted copy of what the paired iPhone or iPad sends,
+so read-only tools can answer while the device is locked or away.
+Every answer says where it came from and when the device last sent the data.
+The copy is a SQLite database in the Mac's Application Support folder.
+Each record's contents are encrypted with AES-GCM under a key in the Keychain,
+but record kinds, identifiers, query keys such as the Health data type, and dates
+stay unencrypted so that queries can filter on them.
+So does the device's last status report,
+which lists the services that are on and their permissions.
+Removing the last paired device deletes the copy,
+whether you remove it on the Mac or tap Unpair on the device while the Mac is reachable.
+To delete the copy and stay paired,
+click Delete Cached Data in Settings > iPhone & iPad;
+the device sends its data again the next time it connects.
+
+<details>
+<summary>How the iOS app works</summary>
+
+Both apps compile the same tool definitions from
+[`Shared/Mobile/MobileTools.swift`](/Shared/Mobile/MobileTools.swift).
+iOS suspends apps in the background, so the iPhone or iPad dials the Mac,
+which advertises "\_imcp-mobile.\_tcp" with Bonjour,
+and serves the tools as an MCP server on that connection;
+iMCP is the MCP client.
+The Mac listens and advertises only while a pairing code is on screen,
+or while a device is paired and Health or Alarms is on.
+The connection uses TLS 1.2 with pre-shared keys:
+the one-time secret in the QR code for pairing,
+and a key for each device after that.
+A device that doesn't have a key can't complete the handshake.
+The cipher suite, `TLS_ECDHE_PSK_WITH_CHACHA20_POLY1305_SHA256`,
+adds an ephemeral X25519 key exchange to each connection,
+so someone who steals a key later can't decrypt traffic they recorded earlier.
+Apple's TLS stack doesn't support external pre-shared keys in TLS 1.3,
+and it also offers pre-shared key suites without a key exchange,
+so both devices close a connection that negotiates any other suite.
+During pairing, the two devices derive the device key
+from an X25519 key exchange salted with the pairing secret,
+so the device key never crosses the network.
+Someone who saw the QR code and recorded the pairing still can't derive it.
+
+Read results include `source` (`live` or `cache`), `synced_at`, and `stale`.
+Cached data is stale after 4 hours for Health
+and 1 hour for Alarms.
+After a lost connection, a read is retried once when the device reconnects
+and otherwise answers from the cache.
+Alarm changes carry an ID, so retrying one doesn't create a second alarm.
+
+The Mac keeps the live link when the same device connects a second time,
+and the device joins one in-flight connection attempt
+instead of dialing from several places at once.
+Pull to refresh on the device gives up after 8 seconds and tries the Mac again at once.
+Syncs run under a background task assertion,
+and the outbox lives in the app's own container instead of the App Group container,
+because iOS ended the app with `0xdead10cc` for holding a SQLite lock in a shared container while it suspended.
+The first launch after the change moves queued batches and Health anchors across.
+
+The Mac records each tool call
+(client, service, tool, read or write, outcome, and duration)
+in an activity history of the last 500 calls and syncs it to the device,
+which shows it under Activity with filters and search.
+Turn it off with "Show activity history on iPhone and iPad" in Settings > iPhone & iPad.
+
+The Mac also offers each connection request to the paired device,
+and the first answer from either device wins.
+Approving on the device allows that one connection and never trusts the client.
+A request nobody answers is denied.
+Turn this off with "Approve on iPhone" in Settings > iPhone & iPad.
+
+#### Reaching the Mac away from home
+
+Connection Mode on the device and Connection Route on the Mac choose how the device finds the Mac:
+
+- **Local network** (Bonjour), always first in Automatic.
+- **Tailscale VPN**, when the Mac and the device are on the same tailnet.
+  The Mac advertises the address of its own Tailscale interface,
+  or a host you type under Advanced.
+- **Cloudflare Tunnel**, when you forward your own tunnel to a local port
+  and enter its public `wss://` address under Advanced.
+- **Tailscale Funnel**, when something on the Mac supplies a Funnel address.
+  Nothing in this pull request does; see the public access work for that.
+
+Automatic tries the routes in the order set on the Mac and skips routes with no address.
+Each route has its own time budget, and the last one gets what is left.
+Routes other than the local network use an encrypted WebSocket
+keyed from the same device key and an ephemeral X25519 exchange,
+so the tunnel or Funnel host only carries ciphertext.
+
+The Mac decides the device's routes.
+It sends its route list, with a revision number that only goes up,
+when the device connects and again whenever you change the settings while it is connected.
+The device shows which Mac configured it and follows that order;
+Settings > iPhone & iPad on the Mac shows the revision each device has applied.
+
+HealthKit encrypts its store while the device is locked,
+and wakes apps in the background at most hourly for common types,
+so the device queues changes and sends them the next time it can.
+Each type has a saved anchor, so a sync sends only new and deleted objects.
+Quantity types, such as steps and heart rate, sync as daily statistics for two years;
+their raw samples are available only while the iOS app is reachable.
+Sleep, workouts, and health records sync in full.
+HealthKit doesn't tell apps when read access is denied,
+so an empty result means no samples or no access.
+
+AlarmKit gives an app access only to the alarms it creates,
+so the Alarms tools can't see or change Clock app alarms.
+Alarms sound even in silent mode and Focus.
+A running timer shows as a Live Activity from the
+[`iOSWidgets`](/iOSWidgets/) extension.
+The iOS app lists the alarms that AI apps created and can cancel them.
+
+With Health or Alarms on,
+`uv run Scripts/check-ios.py <path-to-imcp-server>`
+runs read-only checks of the tools, their schemas, and their sync status.
+CI builds the app unsigned,
+which checks compilation and packaging but can't access HealthKit:
+
+```console
+xcodebuild -scheme "iMCP iOS" -destination "generic/platform=iOS" \
+  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+```
+
+</details>
+
 ## Debugging
 
 ### Connecting `imcp-server` to the app
@@ -1041,12 +1409,17 @@ This project is not affiliated with, endorsed, or sponsored by Apple Inc.
 [madrid]: https://github.com/mattt/Madrid
 [mcp]: https://modelcontextprotocol.io/introduction
 [mcp-clients]: https://modelcontextprotocol.io/clients
+[mcp-streamable-http]: https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#streamable-http
 [mcp-transports]: https://modelcontextprotocol.io/docs/concepts/architecture#transport-layer
 [notesutils]: https://github.com/dunhamsteve/notesutils
 [nsopenpanel]: https://developer.apple.com/documentation/appkit/nsopenpanel
 [ontology]: https://github.com/mattt/Ontology
 [schema.org]: https://schema.org
 [swift-sdk]: https://github.com/modelcontextprotocol/swift-sdk
+[tailscale]: https://tailscale.com
 [topotext]: https://github.com/mattt/TopoText
 [tsrp]: https://github.com/mattt/TSRP
 [typedstream-blog-post]: https://chrissardegna.com/blog/reverse-engineering-apples-typedstream-format/
+[rfc-7591]: https://www.rfc-editor.org/rfc/rfc7591
+[rfc-8414]: https://www.rfc-editor.org/rfc/rfc8414
+[rfc-9728]: https://www.rfc-editor.org/rfc/rfc9728

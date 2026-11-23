@@ -27,6 +27,10 @@ struct SettingsView: View {
                     .tag(SettingsPane.general)
                 Label("Clients", systemImage: "app.connected.to.app.below.fill")
                     .tag(SettingsPane.clients)
+                Label("Remote Access", systemImage: "network")
+                    .tag(SettingsPane.remoteAccess)
+                Label("iPhone & iPad", systemImage: "ipad.and.iphone")
+                    .tag(SettingsPane.mobile)
 
                 Section("Services") {
                     ForEach(configs) { config in
@@ -46,9 +50,16 @@ struct SettingsView: View {
             Group {
                 switch selection {
                 case .general:
-                    GeneralSettingsView(isMenuBarExtraInserted: isMenuBarExtraInserted)
+                    GeneralSettingsView(
+                        serverController: serverController,
+                        isMenuBarExtraInserted: isMenuBarExtraInserted
+                    )
                 case .clients:
                     ClientsSettingsView(serverController: serverController)
+                case .remoteAccess:
+                    RemoteAccessSettingsView(serverController: serverController)
+                case .mobile:
+                    MobileSettingsView()
                 case .service(let id):
                     if let config = configs.first(where: { $0.id == id }) {
                         ServiceSettingsView(serverController: serverController, config: config)
@@ -123,6 +134,8 @@ private struct NonCollapsibleSidebar: NSViewRepresentable {
 enum SettingsPane: Hashable, RawRepresentable {
     case general
     case clients
+    case remoteAccess
+    case mobile
     /// The pane for the service with this ``ServiceConfig/id``.
     case service(String)
 
@@ -130,6 +143,8 @@ enum SettingsPane: Hashable, RawRepresentable {
         switch rawValue {
         case "general": self = .general
         case "clients": self = .clients
+        case "remoteAccess": self = .remoteAccess
+        case "mobile": self = .mobile
         default: self = .service(rawValue)
         }
     }
@@ -138,12 +153,15 @@ enum SettingsPane: Hashable, RawRepresentable {
         switch self {
         case .general: "general"
         case .clients: "clients"
+        case .remoteAccess: "remoteAccess"
+        case .mobile: "mobile"
         case .service(let id): id
         }
     }
 }
 
 struct GeneralSettingsView: View {
+    @ObservedObject var serverController: ServerController
     @AppStorage("showMenuBarExtra") private var showMenuBarExtra = true
     var isMenuBarExtraInserted: Bool
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
@@ -179,12 +197,123 @@ struct GeneralSettingsView: View {
                     }
                 }
             }
+
+            ApprovalModeSection(serverController: serverController)
         }
         .formStyle(.grouped)
         .navigationTitle("General")
         .onAppear {
             launchAtLogin = SMAppService.mainApp.status == .enabled
         }
+    }
+}
+
+private struct ApprovalModeSection: View {
+    @ObservedObject var serverController: ServerController
+    @State private var expandedAgents: Set<String> = ["claude-desktop", "claude-code"]
+
+    private var selectedMode: ApprovalMode {
+        serverController.approvalMode
+    }
+
+    var body: some View {
+        Section {
+            ForEach(ApprovalMode.allCases) { mode in
+                Button {
+                    serverController.approvalMode = mode
+                } label: {
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: selectedMode == mode ? "largecircle.fill.circle" : "circle")
+                            .foregroundStyle(selectedMode == mode ? Color.accentColor : .secondary)
+                            .padding(.top, 2)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(mode.title)
+                                .foregroundStyle(.primary)
+                            Text(mode.summary)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(selectedMode == mode ? [.isSelected] : [])
+            }
+        } header: {
+            Text("Approval Mode")
+        } footer: {
+            Text(
+                "Applies to tool calls across all enabled services. Changing between iMCP-managed and full-access modes updates the tools offered to connected clients."
+            )
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+
+        if selectedMode.showsAgentConfigurationHelp {
+            Section {
+                ForEach(selectedMode.agentInstructions) { instruction in
+                    DisclosureGroup(isExpanded: binding(for: instruction.id)) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(instruction.instructions)
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            if let snippet = instruction.codeSnippet {
+                                HStack(alignment: .top, spacing: 8) {
+                                    Text(snippet)
+                                        .font(.caption.monospaced())
+                                        .textSelection(.enabled)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .padding(8)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 6)
+                                                .fill(Color(NSColor.textBackgroundColor))
+                                        )
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 6)
+                                                .stroke(Color(NSColor.separatorColor))
+                                        )
+
+                                    Button("Copy") {
+                                        let pasteboard = NSPasteboard.general
+                                        pasteboard.clearContents()
+                                        pasteboard.setString(snippet, forType: .string)
+                                        _ = NSSound.play(.pop)
+                                    }
+                                    .controlSize(.small)
+                                }
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    } label: {
+                        Text(instruction.agentName)
+                            .fontWeight(.medium)
+                    }
+                }
+            } header: {
+                Text("Agent Setup Instructions")
+            } footer: {
+                if let heading = selectedMode.agentInstructionsHeading {
+                    Text(heading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+    }
+
+    private func binding(for agentID: String) -> Binding<Bool> {
+        Binding(
+            get: { expandedAgents.contains(agentID) },
+            set: { isExpanded in
+                if isExpanded {
+                    expandedAgents.insert(agentID)
+                } else {
+                    expandedAgents.remove(agentID)
+                }
+            }
+        )
     }
 }
 
@@ -228,8 +357,8 @@ struct ClientsSettingsView: View {
             Section {
                 if trustedClients.isEmpty {
                     VStack(spacing: 4) {
-                        Text("No Trusted Clients")
-                        Text("To trust a client, select \"Always trust this client\" when you approve its connection.")
+                        Text("No Trusted Apps")
+                        Text("To trust an app, choose Always Allow when you approve its connection.")
                             .font(.caption)
                     }
                     .foregroundStyle(.secondary)
@@ -238,22 +367,17 @@ struct ClientsSettingsView: View {
                     .padding(.vertical, 8)
                 } else {
                     ForEach(trustedClients) { client in
-                        LabeledContent {
-                            Button("Remove") {
-                                serverController.removeTrustedClient(client)
-                            }
-                        } label: {
-                            Text(client.name)
-                            Text("Trusted since \(client.issuedAt.formatted(date: .abbreviated, time: .omitted))")
+                        TrustedAppRow(client: client) {
+                            serverController.removeTrustedClient(client)
                         }
                     }
                 }
             } header: {
-                Text("Trusted Clients")
+                Text("Trusted Apps")
             } footer: {
                 VStack(alignment: .trailing) {
                     Text(
-                        "Trusted clients connect without an approval dialog, and iMCP shows a notification whenever one connects. Each trusted client presents a credential that iMCP created for it, in the \(ClientCredential.environmentVariable) environment variable of its MCP settings. Removing a client revokes its credential."
+                        "Trusted apps connect without an approval dialog, and iMCP shows a notification whenever one connects. iMCP identifies an app by its code signature. Claude Code and other clients that run in a terminal use a local credential instead. Removing an app revokes its trust."
                     )
                     .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -263,6 +387,10 @@ struct ClientsSettingsView: View {
                         }
                     }
                 }
+            }
+
+            if !serverController.oauthConnections.grants.isEmpty || !serverController.activePublicURLs.isEmpty {
+                ConnectedOAuthAppsSection(model: serverController.oauthConnections)
             }
 
             if !legacyTrustedClientNames.isEmpty {
@@ -278,7 +406,7 @@ struct ClientsSettingsView: View {
                     Text("Approve Again")
                 } footer: {
                     Text(
-                        "Earlier versions of iMCP trusted these clients by the name they reported, which any app can claim. They need your approval the next time they connect. Select \"Always trust this client\" to give one a credential."
+                        "Earlier versions of iMCP trusted these clients by the name they reported, which any app can claim. They need your approval the next time they connect."
                     )
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -286,13 +414,72 @@ struct ClientsSettingsView: View {
         }
         .formStyle(.grouped)
         .navigationTitle("Clients")
-        .alert("Remove All Trusted Clients?", isPresented: $isConfirmingRemoveAll) {
+        .alert("Remove All Trusted Apps?", isPresented: $isConfirmingRemoveAll) {
             Button("Remove All", role: .destructive) {
                 serverController.resetTrustedClients()
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Each client needs your approval again the next time it connects.")
+            Text("Each app needs your approval again the next time it connects.")
+        }
+    }
+}
+/// Connected OAuth 2.1 cloud apps, shown in the Clients pane.
+struct ConnectedOAuthAppsSection: View {
+    @ObservedObject var model: OAuthConnectionsModel
+    @State private var appToRevoke: OAuthGrant?
+    @State private var revokeError: String?
+
+    var body: some View {
+        Section {
+            if let error = model.storageError {
+                Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.secondary)
+            } else if model.grants.isEmpty {
+                Text("No cloud apps connected yet.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(model.grants) { grant in
+                    LabeledContent {
+                        Button("Revoke…", role: .destructive) { appToRevoke = grant }
+                    } label: {
+                        Text(grant.clientName)
+                        Text("Returns to \(grant.redirectHost)")
+                        Text(
+                            "Connected \(grant.createdAt.formatted(date: .abbreviated, time: .omitted)). "
+                                + (grant.lastUsedAt.map {
+                                    "Last used \($0.formatted(.relative(presentation: .named)))."
+                                } ?? "Not used yet.")
+                        )
+                    }
+                }
+            }
+        } header: {
+            Text("Connected Cloud Apps (OAuth)")
+        } footer: {
+            Text("Revoking a cloud app ends its access right away.")
+        }
+        .confirmationDialog(
+            "Revoke \"\(appToRevoke?.clientName ?? "")\"?",
+            isPresented: Binding(get: { appToRevoke != nil }, set: { if !$0 { appToRevoke = nil } }),
+            presenting: appToRevoke
+        ) { grant in
+            Button("Revoke", role: .destructive) {
+                do {
+                    try model.revoke(grant.id)
+                } catch {
+                    revokeError = error.localizedDescription
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+        .alert(
+            "Couldn't Revoke the App",
+            isPresented: Binding(get: { revokeError != nil }, set: { if !$0 { revokeError = nil } })
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(revokeError ?? "")
         }
     }
 }

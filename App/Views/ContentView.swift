@@ -75,6 +75,10 @@ struct ContentView: View {
                     ClaudeDesktop.showConfigurationPanel(serverController: serverController)
                 }
 
+                MenuButton("Configure Claude Code") {
+                    ClaudeCode.showConfigurationPanel(serverController: serverController)
+                }
+
                 MenuButton("Copy server command to clipboard") {
                     let command = Bundle.main.bundleURL
                         .appendingPathComponent("Contents/MacOS/imcp-server")
