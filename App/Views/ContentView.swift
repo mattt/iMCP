@@ -5,7 +5,6 @@ import SwiftUI
 struct ContentView: View {
     @ObservedObject var serverController: ServerController
     @Binding var isEnabled: Bool
-    @Environment(\.openSettings) private var openSettings
 
     private let aboutWindowController: AboutWindowController
     private let updater: SPUUpdater
@@ -75,6 +74,10 @@ struct ContentView: View {
                     ClaudeDesktop.showConfigurationPanel(serverController: serverController)
                 }
 
+                MenuButton("Configure Claude Code") {
+                    ClaudeCode.showConfigurationPanel(serverController: serverController)
+                }
+
                 MenuButton("Copy server command to clipboard") {
                     let command = Bundle.main.bundleURL
                         .appendingPathComponent("Contents/MacOS/imcp-server")
@@ -95,9 +98,7 @@ struct ContentView: View {
                 Divider()
 
                 MenuButton("Settings...") {
-                    // openSettings() alone is unreliable for this accessory (LSUIElement) app.
-                    NSApp.activate(ignoringOtherApps: true)
-                    openSettings()
+                    SettingsWindowController.shared.show()
                 }
 
                 MenuButton("Check for Updates...") {

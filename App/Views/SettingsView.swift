@@ -1,20 +1,24 @@
 import AppKit
 import ServiceManagement
+import Sparkle
 import SwiftUI
 
+/// The Settings window: a sidebar with the app tabs and the Services section, and the pane that is selected.
+/// The window can be resized, and the sidebar can be collapsed.
 struct SettingsView: View {
     @ObservedObject var serverController: ServerController
     var isMenuBarExtraInserted: Bool
+    var updater: SPUUpdater?
 
     // Settings reopens to the pane that was open last.
     @AppStorage("settingsPane") private var pane = SettingsPane.general
+    @State private var columnVisibility = NavigationSplitViewVisibility.all
 
     var body: some View {
         let configs = serverController.computedServiceConfigs
         let selection = selection(in: configs)
 
-        // Settings has no sidebar button, so the sidebar always shows.
-        NavigationSplitView(columnVisibility: .constant(.all)) {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             List(
                 selection: Binding(
                     get: { selection },
@@ -23,10 +27,10 @@ struct SettingsView: View {
                     }
                 )
             ) {
-                Label("General", systemImage: "gearshape")
-                    .tag(SettingsPane.general)
-                Label("Clients", systemImage: "app.connected.to.app.below.fill")
-                    .tag(SettingsPane.clients)
+                ForEach(SettingsPane.tabs, id: \.self) { tab in
+                    Label(tab.title, systemImage: tab.symbol)
+                        .tag(tab)
+                }
 
                 Section("Services") {
                     ForEach(configs) { config in
@@ -40,15 +44,24 @@ struct SettingsView: View {
                     }
                 }
             }
-            .toolbar(removing: .sidebarToggle)
-            .navigationSplitViewColumnWidth(200)
+            .navigationSplitViewColumnWidth(min: 170, ideal: 200, max: 260)
         } detail: {
             Group {
                 switch selection {
                 case .general:
-                    GeneralSettingsView(isMenuBarExtraInserted: isMenuBarExtraInserted)
+                    GeneralSettingsView(
+                        serverController: serverController,
+                        isMenuBarExtraInserted: isMenuBarExtraInserted,
+                        updater: updater
+                    )
                 case .clients:
                     ClientsSettingsView(serverController: serverController)
+                case .mobile:
+                    MobileSettingsView(serverController: serverController)
+                case .remoteAccess:
+                    RemoteAccessSettingsView(serverController: serverController)
+                case .advanced:
+                    AdvancedSettingsView(serverController: serverController)
                 case .service(let id):
                     if let config = configs.first(where: { $0.id == id }) {
                         ServiceSettingsView(serverController: serverController, config: config)
@@ -57,10 +70,14 @@ struct SettingsView: View {
                     }
                 }
             }
-            // The detail column is always loaded, unlike a sidebar that the window restores collapsed.
-            .background(NonCollapsibleSidebar())
         }
-        .frame(width: 715, height: 560)
+        .navigationSplitViewStyle(.prominentDetail)
+        .toolbarBackground(.bar, for: .windowToolbar)
+        .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
+        .frame(
+            minWidth: SettingsWindowMetrics.minimumSize.width,
+            minHeight: SettingsWindowMetrics.minimumSize.height
+        )
     }
 
     /// The stored pane, or General if the stored pane is for a service that this build doesn't include.
@@ -72,100 +89,45 @@ struct SettingsView: View {
     }
 }
 
-/// Keeps people from dragging the Settings sidebar closed.
-/// Settings has no sidebar button or View menu to show it again,
-/// and SwiftUI has no setting for this, so this changes the sidebar's split view item.
-private struct NonCollapsibleSidebar: NSViewRepresentable {
-    func makeNSView(context: Context) -> WindowReaderView {
-        WindowReaderView()
-    }
-
-    func updateNSView(_ nsView: WindowReaderView, context: Context) {
-        nsView.keepSidebarExpanded()
-    }
-
-    final class WindowReaderView: NSView {
-        override func viewDidMoveToWindow() {
-            super.viewDidMoveToWindow()
-            keepSidebarExpanded()
-        }
-
-        func keepSidebarExpanded() {
-            guard let contentView = window?.contentView,
-                let controller = splitViewController(in: contentView)
-            else { return }
-            for item in controller.splitViewItems where item.behavior == .sidebar {
-                item.canCollapse = false
-                // The window can restore a sidebar that was collapsed before this change.
-                if item.isCollapsed {
-                    DispatchQueue.main.async { item.isCollapsed = false }
-                }
-            }
-        }
-
-        private func splitViewController(in view: NSView) -> NSSplitViewController? {
-            if let splitView = view as? NSSplitView,
-                let controller = splitView.delegate as? NSSplitViewController
-            {
-                return controller
-            }
-            for subview in view.subviews {
-                if let controller = splitViewController(in: subview) {
-                    return controller
-                }
-            }
-            return nil
-        }
-    }
-}
-
-/// A pane in Settings, stored as its raw value so that Settings can reopen to it.
-enum SettingsPane: Hashable, RawRepresentable {
-    case general
-    case clients
-    /// The pane for the service with this ``ServiceConfig/id``.
-    case service(String)
-
-    init(rawValue: String) {
-        switch rawValue {
-        case "general": self = .general
-        case "clients": self = .clients
-        default: self = .service(rawValue)
-        }
-    }
-
-    var rawValue: String {
-        switch self {
-        case .general: "general"
-        case .clients: "clients"
-        case .service(let id): id
-        }
-    }
-}
-
 struct GeneralSettingsView: View {
+    @ObservedObject var serverController: ServerController
     @AppStorage("showMenuBarExtra") private var showMenuBarExtra = true
+    @AppStorage("isEnabled") private var isEnabled = true
     var isMenuBarExtraInserted: Bool
+    var updater: SPUUpdater?
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
+
+    private var version: String {
+        let info = Bundle.main.infoDictionary
+        let short = info?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = info?["CFBundleVersion"] as? String ?? "?"
+        return "Version \(short) (\(build))"
+    }
 
     var body: some View {
         Form {
             Section {
-                Toggle(isOn: $showMenuBarExtra) {
-                    Text("Show in Menu Bar")
-                    if showMenuBarExtra && !isMenuBarExtraInserted {
-                        if #available(macOS 26.0, *) {
-                            Text("macOS hid the menu bar icon. Check System Settings > Menu Bar.")
-                        } else {
-                            Text("macOS hid the menu bar icon.")
-                        }
+                Toggle(isOn: $isEnabled) {
+                    RowLabel(title: "Server", subtitle: isEnabled ? nil : "Off. AI apps can't connect.") {
+                        SettingsIcon(symbol: "power", color: .green)
                     }
-                    Text("If the icon is hidden, open iMCP again to return to Settings.")
+                }
+
+                Toggle(isOn: $showMenuBarExtra) {
+                    RowLabel(
+                        title: "Show in menu bar",
+                        subtitle: showMenuBarExtra && !isMenuBarExtraInserted
+                            ? "macOS hid the icon. Check System Settings."
+                            : nil
+                    ) {
+                        SettingsIcon(symbol: "menubar.rectangle", color: .blue)
+                    }
                 }
 
                 Toggle(isOn: $launchAtLogin) {
-                    Text("Launch at Login")
-                    Text("Opens iMCP automatically when you log in.")
+                    RowLabel(title: "Launch at login") {
+                        SettingsIcon(symbol: "sunrise.fill", color: .orange)
+                    }
                 }
                 .onChange(of: launchAtLogin) { _, enabled in
                     do {
@@ -179,120 +141,55 @@ struct GeneralSettingsView: View {
                     }
                 }
             }
+
+            Section {
+                Picker(
+                    selection: Binding(
+                        get: { serverController.approvalMode },
+                        set: { serverController.approvalMode = $0 }
+                    )
+                ) {
+                    ForEach(ApprovalMode.allCases) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                } label: {
+                    RowLabel(title: "Ask before", subtitle: serverController.approvalMode.settingsCaption) {
+                        SettingsIcon(symbol: "hand.raised.fill", color: .purple)
+                    }
+                }
+                .pickerStyle(.menu)
+            } header: {
+                Text("Approvals")
+            }
+
+            Section {
+                LabeledContent {
+                    Button("Open…") {
+                        OnboardingWindowController.shared.present(
+                            serverController: serverController,
+                            isEnabled: $isEnabled
+                        )
+                    }
+                } label: {
+                    RowLabel(title: "Setup Assistant") {
+                        SettingsIcon(symbol: "wand.and.stars", color: .indigo)
+                    }
+                }
+
+                LabeledContent {
+                    Button("Check Now") { updater?.checkForUpdates() }
+                        .disabled(!(updater?.canCheckForUpdates ?? false))
+                } label: {
+                    RowLabel(title: "Updates", subtitle: version) {
+                        SettingsIcon(symbol: "arrow.triangle.2.circlepath", color: .teal)
+                    }
+                }
+            }
         }
         .formStyle(.grouped)
         .navigationTitle("General")
         .onAppear {
             launchAtLogin = SMAppService.mainApp.status == .enabled
-        }
-    }
-}
-
-struct ClientsSettingsView: View {
-    @ObservedObject var serverController: ServerController
-    @State private var isConfirmingRemoveAll = false
-
-    private let serverCommand = Bundle.main.bundleURL
-        .appendingPathComponent("Contents/MacOS/imcp-server")
-        .path
-
-    var body: some View {
-        let trustedClients = serverController.trustedClients
-        let legacyTrustedClientNames = serverController.legacyTrustedClientNames
-
-        Form {
-            Section("Connect a Client") {
-                LabeledContent {
-                    Button("Set Up…") {
-                        ClaudeDesktop.showConfigurationPanel(serverController: serverController)
-                    }
-                } label: {
-                    Text("Claude Desktop")
-                    Text("Adds iMCP to the MCP servers in Claude Desktop's configuration file.")
-                }
-
-                LabeledContent {
-                    Button("Copy") {
-                        let pasteboard = NSPasteboard.general
-                        pasteboard.clearContents()
-                        pasteboard.setString(serverCommand, forType: .string)
-                        _ = NSSound.play(.pop)
-                    }
-                } label: {
-                    Text("Server Command")
-                    Text(serverCommand)
-                        .textSelection(.enabled)
-                }
-            }
-
-            Section {
-                if trustedClients.isEmpty {
-                    VStack(spacing: 4) {
-                        Text("No Trusted Clients")
-                        Text("To trust a client, select \"Always trust this client\" when you approve its connection.")
-                            .font(.caption)
-                    }
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-                } else {
-                    ForEach(trustedClients) { client in
-                        LabeledContent {
-                            Button("Remove") {
-                                serverController.removeTrustedClient(client)
-                            }
-                        } label: {
-                            Text(client.name)
-                            Text("Trusted since \(client.issuedAt.formatted(date: .abbreviated, time: .omitted))")
-                        }
-                    }
-                }
-            } header: {
-                Text("Trusted Clients")
-            } footer: {
-                VStack(alignment: .trailing) {
-                    Text(
-                        "Trusted clients connect without an approval dialog, and iMCP shows a notification whenever one connects. Each trusted client presents a credential that iMCP created for it, in the \(ClientCredential.environmentVariable) environment variable of its MCP settings. Removing a client revokes its credential."
-                    )
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                    if !trustedClients.isEmpty || !legacyTrustedClientNames.isEmpty {
-                        Button("Remove All…") {
-                            isConfirmingRemoveAll = true
-                        }
-                    }
-                }
-            }
-
-            if !legacyTrustedClientNames.isEmpty {
-                Section {
-                    ForEach(legacyTrustedClientNames, id: \.self) { name in
-                        LabeledContent(name) {
-                            Button("Remove") {
-                                serverController.removeLegacyTrustedClient(name)
-                            }
-                        }
-                    }
-                } header: {
-                    Text("Approve Again")
-                } footer: {
-                    Text(
-                        "Earlier versions of iMCP trusted these clients by the name they reported, which any app can claim. They need your approval the next time they connect. Select \"Always trust this client\" to give one a credential."
-                    )
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
-        }
-        .formStyle(.grouped)
-        .navigationTitle("Clients")
-        .alert("Remove All Trusted Clients?", isPresented: $isConfirmingRemoveAll) {
-            Button("Remove All", role: .destructive) {
-                serverController.resetTrustedClients()
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Each client needs your approval again the next time it connects.")
         }
     }
 }

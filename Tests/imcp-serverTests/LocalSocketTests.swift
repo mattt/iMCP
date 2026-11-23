@@ -384,14 +384,24 @@ final class LocalSocketTests: XCTestCase {
         }
 
         // A peer that sends a byte more often than the timeout still runs out of time.
+        let stop = DispatchSemaphore(value: 0)
+        let stopped = DispatchSemaphore(value: 0)
         let sender = Thread {
+            defer { stopped.signal() }
             for _ in 0 ..< 20 {
                 var byte = UInt8(ascii: "a")
                 guard write(writer, &byte, 1) == 1 else { return }
-                Thread.sleep(forTimeInterval: 0.03)
+                if stop.wait(timeout: .now() + .milliseconds(30)) == .success { return }
             }
         }
         sender.start()
+        // Stop the sender before the descriptors close.
+        // Otherwise it writes to whatever reuses the descriptor number in a later test,
+        // and a write to a socket whose peer closed raises `SIGPIPE` and ends the test process.
+        defer {
+            stop.signal()
+            stopped.wait()
+        }
 
         let start = ContinuousClock.now
         XCTAssertThrowsError(
@@ -419,6 +429,52 @@ final class LocalSocketTests: XCTestCase {
         XCTAssertEqual(data.last, UInt8(ascii: "\n"))
         XCTAssertEqual(try LocalSocketHello.decode(data.dropLast()), hello)
         XCTAssertLessThanOrEqual(data.count - 1, LocalSocketHello.maximumLength)
+
+        let automatic = LocalSocketHello(credential: "imcp_abc", isAutomaticCredential: true)
+        let automaticData = try automatic.encoded()
+        XCTAssertEqual(try LocalSocketHello.decode(automaticData.dropLast()), automatic)
+    }
+
+    func testLoadOrCreateCredentialPersistsWithPrivatePermissions() throws {
+        let credentialPath = directory + "/nested/client-credential"
+
+        let first = try LocalSocket.loadOrCreateCredential(at: credentialPath)
+        XCTAssertTrue(LocalSocket.isValidCredentialFormat(first))
+
+        let attributes = try FileManager.default.attributesOfItem(atPath: credentialPath)
+        XCTAssertEqual((attributes[.posixPermissions] as? NSNumber)?.intValue, 0o600)
+
+        let second = try LocalSocket.loadOrCreateCredential(at: credentialPath)
+        XCTAssertEqual(second, first)
+    }
+
+    func testLoadOrCreateCredentialReplacesMalformedFile() throws {
+        let credentialPath = directory + "/client-credential"
+        FileManager.default.createFile(atPath: credentialPath, contents: Data("not-a-credential\n".utf8))
+
+        let credential = try LocalSocket.loadOrCreateCredential(at: credentialPath)
+        XCTAssertTrue(LocalSocket.isValidCredentialFormat(credential))
+        XCTAssertEqual(try LocalSocket.loadOrCreateCredential(at: credentialPath), credential)
+    }
+
+    func testHelloResolvedUsesEnvironmentBeforeFallbackFile() throws {
+        let credentialPath = directory + "/client-credential"
+
+        let fromEnv = try LocalSocketHello.resolved(
+            environment: ["IMCP_CLIENT_CREDENTIAL": " imcp_env_override\n"],
+            credentialPath: credentialPath
+        )
+        XCTAssertEqual(fromEnv.credential, "imcp_env_override")
+        XCTAssertNil(fromEnv.isAutomaticCredential)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: credentialPath))
+
+        let firstFallback = try LocalSocketHello.resolved(environment: [:], credentialPath: credentialPath)
+        XCTAssertEqual(firstFallback.isAutomaticCredential, true)
+        let fallbackCredential = try XCTUnwrap(firstFallback.credential)
+        XCTAssertTrue(LocalSocket.isValidCredentialFormat(fallbackCredential))
+
+        let secondFallback = try LocalSocketHello.resolved(environment: [:], credentialPath: credentialPath)
+        XCTAssertEqual(secondFallback, firstFallback)
     }
 
     /// Accepts one connection on a background thread.

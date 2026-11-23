@@ -41,6 +41,11 @@ enum ClaudeDesktop {
     /// The name that iMCP gives the credential it writes for Claude Desktop.
     static let clientName = "Claude Desktop"
 
+    /// Whether the person has let iMCP edit Claude Desktop's settings file, which setup does.
+    static var isConfigured: Bool {
+        UserDefaults.standard.data(forKey: configBookmarkKey) != nil
+    }
+
     @MainActor
     static func showConfigurationPanel(serverController: ServerController) {
         do {
