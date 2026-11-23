@@ -7,6 +7,7 @@ private let log = Logger.service("maps")
 
 private let defaultSearchRadius: CLLocationDistance = 5000  // Default 5km
 private let defaultSearchLimit: Int = 10
+private let defaultMapsSearchLimit: Int = 30
 private let defaultMapImageSize: CGSize = CGSize(width: 1024, height: 1024)
 
 final class MapsService: NSObject, Service {
@@ -57,6 +58,11 @@ final class MapsService: NSObject, Service {
                         required: ["latitude", "longitude"],
                         additionalProperties: false
                     ),
+                    "limit": .integer(
+                        description: "Maximum results to return",
+                        default: .int(defaultMapsSearchLimit),
+                        minimum: 1
+                    ),
                 ],
                 required: ["query"],
                 additionalProperties: false
@@ -74,6 +80,8 @@ final class MapsService: NSObject, Service {
                     userInfo: [NSLocalizedDescriptionKey: "Search query is required"]
                 )
             }
+
+            let limit = arguments["limit"]?.intValue ?? defaultMapsSearchLimit
 
             // Set up search request
             let searchRequest = MKLocalSearch.Request()
@@ -116,7 +124,7 @@ final class MapsService: NSObject, Service {
                     }
 
                     // Convert MKMapItems to Ontology Place objects
-                    let places = response.mapItems.map { item -> Place in
+                    let places = response.mapItems.prefix(max(limit, 1)).map { item -> Place in
                         return Place(item)
                     }
 
