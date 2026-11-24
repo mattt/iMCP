@@ -2665,10 +2665,12 @@ final class RemindersService: Service {
             from: parsedDate.date,
             isDateOnly: parsedDate.isDateOnly
         )
-        var components = calendar.dateComponents(
-            [.year, .month, .day, .hour, .minute, .second],
-            from: date
-        )
+        // Date-only values become all-day reminders: leave out the time
+        // components, or EventKit stores them as timed reminders at 12:00 AM.
+        let units: Set<Calendar.Component> = parsedDate.isDateOnly
+            ? [.year, .month, .day]
+            : [.year, .month, .day, .hour, .minute, .second]
+        var components = calendar.dateComponents(units, from: date)
         components.calendar = calendar
         // A nil time zone keeps a date-only value floating, per EKReminder.h.
         components.timeZone = parsedDate.isDateOnly ? nil : calendar.timeZone
