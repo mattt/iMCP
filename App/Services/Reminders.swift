@@ -2667,7 +2667,8 @@ final class RemindersService: Service {
         )
         // Date-only values become all-day reminders: leave out the time
         // components, or EventKit stores them as timed reminders at 12:00 AM.
-        let units: Set<Calendar.Component> = parsedDate.isDateOnly
+        let units: Set<Calendar.Component> =
+            parsedDate.isDateOnly
             ? [.year, .month, .day]
             : [.year, .month, .day, .hour, .minute, .second]
         var components = calendar.dateComponents(units, from: date)
