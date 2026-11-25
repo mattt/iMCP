@@ -525,6 +525,7 @@ actor MobileService: MobileBackend {
             throw MobileError("Unknown mobile tool: \(tool)")
         }
         try ToolInput.validate(input, schema: definition.inputSchema)
+        if tool == "alarms_create" { try MobileTools.checkAlarmSchedule(input) }
         if listener == nil, advertise { try? await start() }
         if tool == MobileTools.statusTool { return try await status() }
         guard let link else { return try await cached(tool, MobileArguments(input)) }
