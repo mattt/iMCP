@@ -87,6 +87,8 @@
 		D2E000000000000000000021 /* ../../App/Services/NotesInline.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2E000000000000000000011 /* ../../App/Services/NotesInline.swift */; };
 		B13600000000000000000011 /* ServiceWritesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13600000000000000000010 /* ServiceWritesTests.swift */; };
 		B13600000000000000000021 /* ../../Shared/Models/ServiceWrites.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13600000000000000000020 /* ../../Shared/Models/ServiceWrites.swift */; };
+		B13700000000000000000031 /* ClaudeDesktopSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13700000000000000000030 /* ClaudeDesktopSettingsTests.swift */; };
+		B13700000000000000000041 /* ../../App/Integrations/ClaudeDesktopSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13700000000000000000040 /* ../../App/Integrations/ClaudeDesktopSettings.swift */; };
 		B13600000000000000000031 /* OutboundConfirmationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13600000000000000000030 /* OutboundConfirmationTests.swift */; };
 		B13600000000000000000041 /* ../../Shared/Models/OutboundConfirmation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13600000000000000000040 /* ../../Shared/Models/OutboundConfirmation.swift */; };
 		D1E000000000000000000020 /* NotesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1E000000000000000000010 /* NotesTests.swift */; };
@@ -172,6 +174,8 @@
 		D2E000000000000000000011 /* ../../App/Services/NotesInline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/NotesInline.swift; sourceTree = "<group>"; };
 		B13600000000000000000010 /* ServiceWritesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceWritesTests.swift; sourceTree = "<group>"; };
 		B13600000000000000000020 /* ../../Shared/Models/ServiceWrites.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../Shared/Models/ServiceWrites.swift; sourceTree = "<group>"; };
+		B13700000000000000000030 /* ClaudeDesktopSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeDesktopSettingsTests.swift; sourceTree = "<group>"; };
+		B13700000000000000000040 /* ../../App/Integrations/ClaudeDesktopSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Integrations/ClaudeDesktopSettings.swift; sourceTree = "<group>"; };
 		B13600000000000000000030 /* OutboundConfirmationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutboundConfirmationTests.swift; sourceTree = "<group>"; };
 		B13600000000000000000040 /* ../../Shared/Models/OutboundConfirmation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../Shared/Models/OutboundConfirmation.swift; sourceTree = "<group>"; };
 		D1E000000000000000000010 /* NotesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesTests.swift; sourceTree = "<group>"; };
@@ -301,6 +305,8 @@
 				A40000000000000000000019 /* ../../App/Services/HomeHelperLocator.swift */,
 				B13600000000000000000010 /* ServiceWritesTests.swift */,
 				B13600000000000000000020 /* ../../Shared/Models/ServiceWrites.swift */,
+				B13700000000000000000030 /* ClaudeDesktopSettingsTests.swift */,
+				B13700000000000000000040 /* ../../App/Integrations/ClaudeDesktopSettings.swift */,
 				B13600000000000000000030 /* OutboundConfirmationTests.swift */,
 				B13600000000000000000040 /* ../../Shared/Models/OutboundConfirmation.swift */,
 				B13500000000000000000010 /* NotesWriteTests.swift */,
@@ -638,6 +644,8 @@
 				A40000000000000000000029 /* ../../App/Services/HomeHelperLocator.swift in Sources */,
 				B13600000000000000000011 /* ServiceWritesTests.swift in Sources */,
 				B13600000000000000000021 /* ../../Shared/Models/ServiceWrites.swift in Sources */,
+				B13700000000000000000031 /* ClaudeDesktopSettingsTests.swift in Sources */,
+				B13700000000000000000041 /* ../../App/Integrations/ClaudeDesktopSettings.swift in Sources */,
 				B13600000000000000000031 /* OutboundConfirmationTests.swift in Sources */,
 				B13600000000000000000041 /* ../../Shared/Models/OutboundConfirmation.swift in Sources */,
 				B13500000000000000000020 /* NotesWriteTests.swift in Sources */,

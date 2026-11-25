@@ -1,6 +1,5 @@
 import AppKit
 import Foundation
-import MCP
 import OSLog
 
 private let log = Logger.integration("claude-desktop")
@@ -8,25 +7,7 @@ private let configPath = FileManager.userHomeDirectoryURL
     .appendingPathComponent("Library/Application Support/Claude/claude_desktop_config.json").path
 private let configBookmarkKey = "me.mattt.iMCP.claudeConfigBookmark"
 
-private let jsonEncoder: JSONEncoder = {
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-    return encoder
-}()
-
-private let jsonDecoder = JSONDecoder()
-
 enum ClaudeDesktop {
-    struct Config: Codable {
-        struct MCPServer: Codable {
-            var command: String
-            var args: [String]?
-            var env: [String: String]?
-        }
-
-        var mcpServers: [String: MCPServer]
-    }
-
     enum Error: LocalizedError {
         case noLocationSelected
 
@@ -44,19 +25,15 @@ enum ClaudeDesktop {
     @MainActor
     static func showConfigurationPanel(serverController: ServerController) {
         do {
-            log.debug("Loading existing Claude Desktop configuration")
-            let (config, defaultServer) = try loadConfig()
-            var imcpServer = defaultServer
-
-            let fileExists = FileManager.default.fileExists(atPath: configPath)
-
+            let bookmarkedURL = try? getSecurityScopedConfigURL()
+            let configURL = bookmarkedURL ?? URL(fileURLWithPath: configPath)
             let alert = NSAlert()
             alert.messageText = "Set Up iMCP Server"
             alert.informativeText = """
-                This will \(fileExists ? "update" : "create") the iMCP server settings in Claude Desktop, \
+                This will set up the iMCP server in Claude Desktop, \
                 including a credential that identifies Claude Desktop to iMCP.
 
-                Location: \(configPath)
+                Location: \(configURL.path)
 
                 Your existing server configurations won't be affected.
                 """
@@ -70,24 +47,15 @@ enum ClaudeDesktop {
             if alertResponse == .alertFirstButtonReturn {
                 log.debug("User clicked Save, updating configuration")
 
-                // Keep the existing entry's environment and credential, if iMCP issued it.
-                let existing = config["mcpServers"]?.objectValue?["iMCP"]?.objectValue?["env"]?.objectValue
-                var environment = existing?.compactMapValues(\.stringValue) ?? [:]
-                let existingCredential = environment[ClientCredential.environmentVariable]
-                let credential = try serverController.credentialForClientSettings(
-                    name: clientName,
-                    existing: existingCredential
-                )
-                environment[ClientCredential.environmentVariable] = credential
-                imcpServer.env = environment
-
-                do {
-                    try updateConfig(config, upserting: imcpServer)
-                } catch {
-                    if credential != existingCredential {
-                        serverController.discardCredential(credential)
-                    }
-                    throw error
+                try updateConfig(at: configURL, hasBookmark: bookmarkedURL != nil) { url in
+                    try ClaudeDesktopSettings.update(
+                        at: url,
+                        command: Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/imcp-server").path,
+                        credentialForSettings: { existing in
+                            try serverController.credentialForClientSettings(name: clientName, existing: existing)
+                        },
+                        discardCredential: serverController.discardCredential
+                    )
                 }
                 log.notice("Configuration updated successfully")
             } else {
@@ -139,143 +107,39 @@ private func saveSecurityScopedAccess(for url: URL) throws {
     log.debug("Successfully saved security-scoped bookmark")
 }
 
-private func loadConfig() throws -> ([String: Value], ClaudeDesktop.Config.MCPServer) {
-    log.debug("Creating default iMCP server configuration")
-    let imcpServer = ClaudeDesktop.Config.MCPServer(
-        command: Bundle.main.bundleURL
-            .appendingPathComponent("Contents/MacOS/imcp-server")
-            .path
-    )
-
-    var loadedConfiguration: [String: Value]?
-
-    // 1. Try to load using security-scoped URL
-    if let secureURL = try? getSecurityScopedConfigURL() {
-        log.debug("Attempting to load from security-scoped URL: \(secureURL.path)")
-        if secureURL.startAccessingSecurityScopedResource() {
-            defer { secureURL.stopAccessingSecurityScopedResource() }
-            if FileManager.default.fileExists(atPath: secureURL.path) {
-                do {
-                    log.debug("Loading existing configuration from: \(secureURL.path)")
-                    let data = try Data(contentsOf: secureURL)
-                    loadedConfiguration = try jsonDecoder.decode([String: Value].self, from: data)
-                    log.debug(
-                        "Successfully loaded from security-scoped URL. Attempting to refresh bookmark."
-                    )
-                    try saveSecurityScopedAccess(for: secureURL)  // Refresh bookmark
-                } catch {
-                    log.error(
-                        "Failed to load or decode from security-scoped URL \(secureURL.path): \(error.localizedDescription)"
-                    )
-                }
-            } else {
-                log.debug(
-                    "Security-scoped URL \(secureURL.path) does not point to an existing file."
-                )
-            }
-        } else {
-            log.debug(
-                "Failed to start accessing security-scoped resource for URL: \(secureURL.path)"
-            )
-        }
-    } else {
-        log.debug("No security-scoped URL obtained or an error occurred retrieving it.")
+@MainActor
+private func updateConfig(at url: URL, hasBookmark: Bool, write: (URL) throws -> Void) throws {
+    let accessing = hasBookmark && url.startAccessingSecurityScopedResource()
+    defer {
+        if accessing { url.stopAccessingSecurityScopedResource() }
     }
 
-    // 2. If config is still nil (not loaded via security scope), try to load from default direct path
-    if loadedConfiguration == nil {
-        let defaultURL = URL(fileURLWithPath: configPath)
-        log.debug("Attempting to load from default direct path: \(defaultURL.path)")
-        if FileManager.default.fileExists(atPath: defaultURL.path) {
-            do {
-                let data = try Data(contentsOf: defaultURL)
-                loadedConfiguration = try jsonDecoder.decode([String: Value].self, from: data)
-                log.debug(
-                    "Successfully loaded from default path. Attempting to save security bookmark for it."
-                )
-                try saveSecurityScopedAccess(for: defaultURL)  // Establish bookmark if loaded directly
-            } catch {
-                log.error(
-                    "Failed to load or decode from default path \(defaultURL.path): \(error.localizedDescription)"
-                )
-            }
-        } else {
-            log.debug("Default config file \(defaultURL.path) does not exist.")
-        }
-    }
-
-    // 3. Use loaded configuration or fall back to default if still nil
-    let finalConfig =
-        loadedConfiguration
-        ?? {
-            log.notice(
-                "No existing config found or accessible after all attempts. Creating a new default configuration."
-            )
-            return ["mcpServers": .object([:])]
-        }()
-
-    return (finalConfig, imcpServer)
-}
-
-private func updateConfig(
-    _ config: [String: Value],
-    upserting imcpServer: ClaudeDesktop.Config.MCPServer
-)
-    throws
-{
-    // Update the iMCP server entry
-    var updatedConfig = config
-    let imcpServerValue = try Value(imcpServer)
-
-    if var mcpServers = config["mcpServers"]?.objectValue {
-        mcpServers["iMCP"] = imcpServerValue
-        updatedConfig["mcpServers"] = .object(mcpServers)
-    } else {
-        updatedConfig["mcpServers"] = .object(["iMCP": imcpServerValue])
-    }
-
-    // First try with the security-scoped URL if available
-    if let secureURL = try? getSecurityScopedConfigURL() {
-        if secureURL.startAccessingSecurityScopedResource() {
-            defer { secureURL.stopAccessingSecurityScopedResource() }
-            do {
-                try writeConfig(updatedConfig, to: secureURL)
-                return
-            } catch {
-                log.error("Failed to write to security-scoped URL: \(error.localizedDescription)")
-                // Continue to fallback options
-            }
-        } else {
-            log.error("Failed to access security-scoped resource")
-        }
-    }
-
-    // Then try to use the default path directly if it exists and is writable
-    let defaultURL = URL(fileURLWithPath: configPath)
-    if FileManager.default.fileExists(atPath: configPath) {
+    func save(to destination: URL) throws {
+        try write(destination)
         do {
-            // Test if we can write to this file
-            if FileManager.default.isWritableFile(atPath: configPath) {
-                try writeConfig(updatedConfig, to: defaultURL)
-
-                // Since we succeeded with direct path, create a bookmark for future use
-                try? saveSecurityScopedAccess(for: defaultURL)
-                return
-            }
+            try saveSecurityScopedAccess(for: destination)
         } catch {
-            log.error("Failed to write to default config path: \(error.localizedDescription)")
-            // Continue to show save panel
+            log.error("Saved configuration but could not save its bookmark: \(error.localizedDescription)")
         }
     }
 
-    // Finally, show save panel as a last resort
-    log.debug("Showing save panel for new configuration location")
+    if accessing || FileManager.default.isWritableFile(atPath: url.path) {
+        do {
+            try save(to: url)
+            return
+        } catch let error as CocoaError
+            where error.code == .fileWriteNoPermission || error.code == .fileReadNoPermission
+        {
+            log.debug("Requesting permission to access the configuration")
+        }
+    }
+
     let savePanel = NSSavePanel()
     savePanel.message = "Choose where to save the iMCP server settings."
     savePanel.prompt = "Set Up"
     savePanel.allowedContentTypes = [.json]
-    savePanel.directoryURL = URL(fileURLWithPath: configPath).deletingLastPathComponent()
-    savePanel.nameFieldStringValue = "claude_desktop_config.json"
+    savePanel.directoryURL = url.deletingLastPathComponent()
+    savePanel.nameFieldStringValue = url.lastPathComponent
     savePanel.canCreateDirectories = true
     savePanel.showsHiddenFiles = false
 
@@ -284,48 +148,5 @@ private func updateConfig(
         throw ClaudeDesktop.Error.noLocationSelected
     }
 
-    // The save panel grants us access to the selected URL, so re-read any
-    // existing contents to merge rather than overwrite.
-    log.debug("Creating configuration at selected URL: \(selectedURL.path)")
-    do {
-        var configToWrite = updatedConfig
-        if FileManager.default.fileExists(atPath: selectedURL.path) {
-            log.debug("Selected file exists, re-reading to merge existing config")
-            let existingData = try Data(contentsOf: selectedURL)
-            let existingConfig = try jsonDecoder.decode([String: Value].self, from: existingData)
-            // Start from the existing config and upsert iMCP into it
-            configToWrite = existingConfig
-            if var mcpServers = existingConfig["mcpServers"]?.objectValue {
-                mcpServers["iMCP"] = imcpServerValue
-                configToWrite["mcpServers"] = .object(mcpServers)
-            } else {
-                configToWrite["mcpServers"] = .object(["iMCP": imcpServerValue])
-            }
-        }
-
-        try writeConfig(configToWrite, to: selectedURL)
-
-        // Then create the security-scoped bookmark
-        log.debug("Creating security-scoped access for selected URL")
-        try saveSecurityScopedAccess(for: selectedURL)
-    } catch {
-        log.error("Failed to write config to selected URL: \(error)")
-        throw error
-    }
-}
-
-private func writeConfig(_ config: [String: Value], to url: URL) throws {
-    log.debug("Creating directory if needed: \(url.deletingLastPathComponent().path)")
-    try FileManager.default.createDirectory(
-        at: url.deletingLastPathComponent(),
-        withIntermediateDirectories: true,
-        attributes: nil
-    )
-
-    log.debug("Encoding and writing configuration")
-    let data = try jsonEncoder.encode(config)
-    try data.write(to: url, options: .atomic)
-    // The file holds a client credential, so keep it private to the user.
-    try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
-    log.notice("Successfully saved config to \(url.path)")
+    try save(to: selectedURL)
 }
