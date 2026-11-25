@@ -45,7 +45,7 @@ private let reminderProperties: OrderedDictionary<String, JSONSchema> = [
     "start": .anyOf([
         .string(
             description:
-                "Start date/time for the reminder. If timezone is omitted, local time is assumed. Date-only uses local midnight. Pass null to clear.",
+                "Start date/time for the reminder. YYYY-MM-DD is a date-only start with no time; a datetime without a timezone uses local time. Pass null to clear.",
             format: .dateTime
         ),
         .null,
@@ -2639,8 +2639,9 @@ final class RemindersService: Service {
         return formatter.string(from: date)
     }
 
-    /// Parses an ISO 8601 date string into due/start date components,
-    /// normalizing date-only values to midnight in `calendar`.
+    /// Parses an ISO 8601 date string into `start` date components.
+    /// A date-only value keeps only the year, month, and day,
+    /// with no time zone.
     private static func dateComponents(
         fromDateString dateString: String,
         description: String,
@@ -2665,10 +2666,13 @@ final class RemindersService: Service {
             from: parsedDate.date,
             isDateOnly: parsedDate.isDateOnly
         )
-        var components = calendar.dateComponents(
-            [.year, .month, .day, .hour, .minute, .second],
-            from: date
-        )
+        // Date-only values become all-day reminders: leave out the time
+        // components, or EventKit stores them as timed reminders at 12:00 AM.
+        let units: Set<Calendar.Component> =
+            parsedDate.isDateOnly
+            ? [.year, .month, .day]
+            : [.year, .month, .day, .hour, .minute, .second]
+        var components = calendar.dateComponents(units, from: date)
         components.calendar = calendar
         // A nil time zone keeps a date-only value floating, per EKReminder.h.
         components.timeZone = parsedDate.isDateOnly ? nil : calendar.timeZone
@@ -2839,8 +2843,7 @@ final class RemindersService: Service {
                     ]
                 )
             }
-            // Date-only values mean local midnight, like every other date
-            // parameter of these tools (due, start) and like events_create.
+            // A date-only alarm fires at local midnight.
             guard
                 let parsed = ISO8601DateFormatter.parsedLenientISO8601Date(
                     fromISO8601String: datetimeString
