@@ -28,6 +28,7 @@ struct MobileAlarmRequest: Equatable, Sendable {
             }
             schedule = .timer(seconds: seconds)
         case "alarms_create":
+            try MobileTools.checkAlarmSchedule(args.values)
             if let date = try args.date("fire_at") {
                 guard date > now else { throw MobileError("fire_at must be in the future.") }
                 schedule = .fixed(date)

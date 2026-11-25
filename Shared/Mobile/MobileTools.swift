@@ -150,43 +150,29 @@ enum MobileTools {
                     "List the alarms and timers that iMCP created on the user's iPhone or iPad. AlarmKit doesn't give apps access to Clock app alarms. When the iPhone or iPad isn't connected, the list is the last state it sent. Results include synced_at and stale.",
                     read: true
                 ),
-                Tool(
-                    name: "alarms_create",
-                    description:
-                        "Schedule an alarm on the user's iPhone or iPad. It sounds even in silent mode and Focus, and the user can cancel it in iMCP on that device. Give fire_at for a one-time alarm on a date, or hour and minute for the next occurrence of a time, with optional weekdays to repeat weekly. Needs iMCP on the iPhone or iPad to be reachable.",
-                    inputSchema: .anyOf([
-                        .object(
-                            properties: [
-                                "fire_at": .string(
-                                    description: "Future ISO 8601 timestamp with a time zone.",
-                                    format: .dateTime
-                                ),
-                                "id": id,
-                                "title": title,
-                            ],
-                            required: ["title", "fire_at"],
-                            additionalProperties: false
+                // Clients reject the whole tool list if a schema's root isn't an object,
+                // so `checkAlarmSchedule` enforces the two forms instead of an `anyOf` here.
+                tool(
+                    "alarms_create",
+                    "Schedule an alarm on the user's iPhone or iPad. It sounds even in silent mode and Focus, and the user can cancel it in iMCP on that device. Give fire_at for a one-time alarm on a date, or hour and minute for the next occurrence of a time, with optional weekdays to repeat weekly. Needs iMCP on the iPhone or iPad to be reachable.",
+                    [
+                        "id": id, "title": title,
+                        "fire_at": .string(
+                            description:
+                                "Future ISO 8601 timestamp with a time zone. Don't combine it with hour, minute, or weekdays.",
+                            format: .dateTime
                         ),
-                        .object(
-                            properties: [
-                                "hour": .integer(minimum: 0, maximum: 23),
-                                "id": id,
-                                "minute": .integer(minimum: 0, maximum: 59),
-                                "title": title,
-                                "weekdays": .array(
-                                    items: .string(enum: weekdays.map { .string($0) }),
-                                    minItems: 1,
-                                    uniqueItems: true
-                                ),
-                            ],
-                            required: ["title", "hour", "minute"],
-                            additionalProperties: false
+                        "hour": .integer(description: "Needs minute.", minimum: 0, maximum: 23),
+                        "minute": .integer(description: "Needs hour.", minimum: 0, maximum: 59),
+                        "weekdays": .array(
+                            description: "Days to repeat weekly. Needs hour and minute.",
+                            items: .string(enum: weekdays.map { .string($0) }),
+                            minItems: 1,
+                            uniqueItems: true
                         ),
-                    ]),
-                    annotations: annotations(read: false, idempotent: false, destructive: false)
-                ) { input in
-                    try await backend.call("alarms_create", input)
-                },
+                    ],
+                    required: ["title"]
+                ),
                 tool(
                     "timers_create",
                     "Start a countdown timer on the user's iPhone or iPad that alerts when it ends, even in silent mode and Focus. Needs iMCP on the iPhone or iPad to be reachable.",
@@ -246,6 +232,17 @@ enum MobileTools {
             idempotentHint: read || idempotent,
             openWorldHint: false
         )
+    }
+}
+
+extension MobileTools {
+    /// Requires an `alarms_create` call to give either `fire_at`, or `hour` and `minute`.
+    static func checkAlarmSchedule(_ input: [String: Value]) throws {
+        let hasTime = input["hour"] != nil && input["minute"] != nil
+        let hasTimeField = ["hour", "minute", "weekdays"].contains { input[$0] != nil }
+        guard input["fire_at"] != nil ? !hasTimeField : hasTime else {
+            throw MobileError("Give either fire_at, or hour and minute with optional weekdays.")
+        }
     }
 }
 

@@ -60,6 +60,14 @@ final class MobileToolsTests: XCTestCase {
         XCTAssertTrue(try description("health_fetch").contains("synced_at"))
     }
 
+    /// MCP requires `"type": "object"`, and strict clients drop every tool if one schema lacks it.
+    func testSchemasAreObjectsAtTheRoot() throws {
+        for tool in MobileTools.all(backend: backend) {
+            let schema = try Value(tool.inputSchema)
+            XCTAssertEqual(schema.objectValue?["type"], "object", tool.name)
+        }
+    }
+
     func testRejectsUnknownArgumentsAndWrongTypes() throws {
         XCTAssertThrowsError(try validate("health_fetch", ["type": "stepCount", "surprise": true]))
         XCTAssertThrowsError(try validate("health_fetch", [:]))
@@ -80,6 +88,14 @@ final class MobileToolsTests: XCTestCase {
         try validate("alarms_create", ["title": "Wake", "hour": 7, "minute": 0])
         XCTAssertThrowsError(
             try validate("alarms_create", ["title": "Both", "fire_at": "2030-01-01T06:00:00Z", "hour": 6, "minute": 0])
+        )
+        XCTAssertThrowsError(try validate("alarms_create", ["title": "Neither"]))
+        XCTAssertThrowsError(try validate("alarms_create", ["title": "Half", "hour": 6]))
+        XCTAssertThrowsError(
+            try validate(
+                "alarms_create",
+                ["title": "Days", "fire_at": "2030-01-01T06:00:00Z", "weekdays": ["monday"]]
+            )
         )
         XCTAssertThrowsError(try validate("alarms_create", ["title": "Late", "hour": 24, "minute": 0]))
         XCTAssertThrowsError(try validate("alarms_create", ["title": "Odd", "hour": 6, "minute": 0, "weekdays": []]))
@@ -117,6 +133,7 @@ final class MobileToolsTests: XCTestCase {
     private func validate(_ name: String, _ input: [String: Value]) throws {
         let tool = try XCTUnwrap(MobileTools.all(backend: backend).first { $0.name == name })
         try ToolInput.validate(input, schema: tool.inputSchema)
+        if name == "alarms_create" { try MobileTools.checkAlarmSchedule(input) }
     }
 }
 
