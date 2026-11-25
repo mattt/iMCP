@@ -93,7 +93,7 @@ final class ShortcutsService: Service {
         do {
             try await runProcess(process)
         } catch {
-            log.error("Failed to run shortcuts command: \(error.localizedDescription)")
+            log.error("Failed to run shortcuts command: \(error.localizedDescription, privacy: .private)")
             throw NSError(
                 domain: "ShortcutsError",
                 code: 2,
@@ -108,7 +108,9 @@ final class ShortcutsService: Service {
 
         guard process.terminationStatus == 0 else {
             let errorMessage = String(data: errorData, encoding: .utf8) ?? "Unknown error"
-            log.error("shortcuts list failed: \(errorMessage)")
+            log.error(
+                "shortcuts list failed with status \(process.terminationStatus): \(errorMessage, privacy: .private)"
+            )
             throw NSError(
                 domain: "ShortcutsError",
                 code: 3,
@@ -132,7 +134,7 @@ final class ShortcutsService: Service {
     }
 
     private func runShortcut(name: String, input: String?) async throws -> Value {
-        log.info("Running shortcut: \(name, privacy: .public)")
+        log.info("Running shortcut: \(name, privacy: .private)")
 
         let tempDir = FileManager.default.temporaryDirectory
         let outputFileURL = tempDir.appendingPathComponent("shortcut_output_\(UUID().uuidString).txt")
@@ -193,9 +195,11 @@ final class ShortcutsService: Service {
             errorData = (try? errorHandle.readToEnd()) ?? Data()
             if !errorData.isEmpty {
                 let stderrMessage = String(data: errorData, encoding: .utf8) ?? "Unknown error"
-                log.error("Shortcut '\(name, privacy: .public)' stderr: \(stderrMessage, privacy: .public)")
+                log.error("Shortcut '\(name, privacy: .private)' stderr: \(stderrMessage, privacy: .private)")
             }
-            log.error("Failed to run shortcut '\(name, privacy: .public)': \(error.localizedDescription)")
+            log.error(
+                "Failed to run shortcut '\(name, privacy: .private)': \(error.localizedDescription, privacy: .private)"
+            )
             throw error
         }
 
@@ -205,7 +209,9 @@ final class ShortcutsService: Service {
 
         guard process.terminationStatus == 0 else {
             let errorMessage = String(data: errorData, encoding: .utf8) ?? "Unknown error"
-            log.error("Shortcut '\(name, privacy: .public)' failed: \(errorMessage)")
+            log.error(
+                "Shortcut '\(name, privacy: .private)' failed with status \(process.terminationStatus): \(errorMessage, privacy: .private)"
+            )
             throw NSError(
                 domain: "ShortcutsError",
                 code: 5,
@@ -218,7 +224,7 @@ final class ShortcutsService: Service {
             output = try? String(contentsOf: outputFileURL, encoding: .utf8)
         }
 
-        log.info("Shortcut '\(name, privacy: .public)' completed successfully")
+        log.info("Shortcut '\(name, privacy: .private)' completed successfully")
 
         if let output = output, !output.isEmpty {
             return .object([
