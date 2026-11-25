@@ -50,7 +50,7 @@ Commands:
   commit      Commit version bump and create release tag
   appcast     Generate and validate the signed Sparkle appcast
   release     Create a draft GitHub release for the tag at HEAD (no assets)
-  upload      Upload the release asset to the draft release
+  upload      Upload the release ZIP and its SHA-256 checksum to the draft release
   upload-appcast Upload the appcast to the draft release
   publish     Publish the draft release and mark it latest
   help        Show this help
@@ -434,12 +434,20 @@ staple() {
   xcrun stapler staple "${APP_BUNDLE}"
 }
 
+write_release_checksum() {
+  local zip_path="$1"
+  local checksum
+  checksum="$(shasum -a 256 < "${zip_path}")"
+  # Record the download name for both the versioned and published ZIPs.
+  printf '%s  %s.zip\n' "${checksum%% *}" "${APP_NAME}" > "${zip_path}.sha256"
+}
+
 package_release() {
   require_app_bundle
   local release_zip_path
   release_zip_path="$(release_zip)"
   build_zip "${APP_BUNDLE}" "${release_zip_path}"
-  shasum -a 256 "${release_zip_path}" > "${release_zip_path}.sha256"
+  write_release_checksum "${release_zip_path}"
   echo "Done: ${release_zip_path}"
 }
 
@@ -595,12 +603,14 @@ upload_asset() {
   if [[ "${release_zip_path}" != "${upload_path}" ]]; then
     cp -f "${release_zip_path}" "${upload_path}"
   fi
+  write_release_checksum "${upload_path}"
   if [[ -n "${DRY_RUN}" ]]; then
-    echo "Dry run: would upload ${upload_path} to release ${VERSION}"
+    echo "Dry run: would upload ${upload_path} and ${upload_path}.sha256 to release ${VERSION}"
     return 0
   fi
   echo "Uploading release asset ${upload_path}"
   upload_release_file "${upload_path}"
+  upload_release_file "${upload_path}.sha256"
 }
 
 # Sparkle ships generate_appcast inside its SwiftPM artifact,

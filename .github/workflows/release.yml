@@ -170,13 +170,13 @@ jobs:
               run: ./Scripts/release.sh appcast
 
             # Everything is built and validated before anything is published.
-            # The release stays a draft until both uploads have succeeded.
+            # The release stays a draft until all assets have been uploaded.
             - name: Create draft release
               env:
                   GH_TOKEN: ${{ github.token }}
               run: ./Scripts/release.sh release
 
-            - name: Upload release asset
+            - name: Upload release ZIP and checksum
               env:
                   GH_TOKEN: ${{ github.token }}
               run: ./Scripts/release.sh upload
