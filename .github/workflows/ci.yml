@@ -31,6 +31,9 @@ jobs:
             - name: Checkout code
               uses: actions/checkout@v6
 
+            - name: Check the release ZIP checksum
+              run: /bin/bash Tests/release-checksum.sh
+
             # Key the cache on the exact Xcode build,
             # so a runner image update can't restore module files
             # compiled against an older toolchain.

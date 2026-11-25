@@ -137,6 +137,9 @@ Then follow the instructions for your AI app:
 
 First, [download the iMCP app](https://iMCP.app/download)
 (requires macOS 15.3 or later).
+To verify the ZIP, download `iMCP.zip.sha256` from the same
+[GitHub release](https://github.com/mattt/iMCP/releases)
+and run `shasum -a 256 -c iMCP.zip.sha256` in the directory with both files.
 
 Or, if you have [Homebrew](https://brew.sh) installed,
 you can run the following command:
