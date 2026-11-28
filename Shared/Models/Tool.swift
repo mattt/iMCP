@@ -42,6 +42,13 @@ public struct Tool: Sendable {
     }
 }
 
+/// Information about the tool call in progress.
+public enum ToolCallContext {
+    /// The client connection that made the call,
+    /// so that a tool can tie what it keeps to the connection and remove it when the connection closes.
+    @TaskLocal public static var connectionID: UUID?
+}
+
 /// A JSON-LD document that lists values in `@graph` under one `@context`.
 ///
 /// Return a list as a graph so that its values keep their Schema.org context

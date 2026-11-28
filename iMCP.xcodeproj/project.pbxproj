@@ -38,6 +38,8 @@
 		B13500000000000000000022 /* ../../App/Services/NotesWriteTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13500000000000000000012 /* ../../App/Services/NotesWriteTools.swift */; };
 		B13400000000000000000020 /* AppleScriptTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13400000000000000000010 /* AppleScriptTests.swift */; };
 		B13300000000000000000021 /* ../../App/Services/Music.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13300000000000000000011 /* ../../App/Services/Music.swift */; };
+		9E0700000000000000000020 /* PhotosTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E0700000000000000000010 /* PhotosTests.swift */; };
+		9E0700000000000000000021 /* ../../App/Services/Photos.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E0700000000000000000011 /* ../../App/Services/Photos.swift */; };
 		A40000000000000000000022 /* ../../Shared/Extensions/Logger+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000012 /* ../../Shared/Extensions/Logger+Extensions.swift */; };
 		A40000000000000000000023 /* ../../Shared/Extensions/Bundle+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000013 /* ../../Shared/Extensions/Bundle+Extensions.swift */; };
 		A40000000000000000000024 /* ../../Shared/Models/Service.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000014 /* ../../Shared/Models/Service.swift */; };
@@ -141,6 +143,8 @@
 		B13500000000000000000011 /* ../../App/Services/NotesWriting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/NotesWriting.swift; sourceTree = "<group>"; };
 		B13500000000000000000012 /* ../../App/Services/NotesWriteTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/NotesWriteTools.swift; sourceTree = "<group>"; };
 		B13300000000000000000011 /* ../../App/Services/Music.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/Music.swift; sourceTree = "<group>"; };
+		9E0700000000000000000010 /* PhotosTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotosTests.swift; sourceTree = "<group>"; };
+		9E0700000000000000000011 /* ../../App/Services/Photos.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../App/Services/Photos.swift; sourceTree = "<group>"; };
 		A40000000000000000000012 /* ../../Shared/Extensions/Logger+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../../Shared/Extensions/Logger+Extensions.swift"; sourceTree = "<group>"; };
 		A40000000000000000000013 /* ../../Shared/Extensions/Bundle+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../../Shared/Extensions/Bundle+Extensions.swift"; sourceTree = "<group>"; };
 		A40000000000000000000014 /* ../../Shared/Models/Service.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../Shared/Models/Service.swift; sourceTree = "<group>"; };
@@ -314,6 +318,8 @@
 				B13500000000000000000012 /* ../../App/Services/NotesWriteTools.swift */,
 				B13300000000000000000010 /* MusicTests.swift */,
 				B13300000000000000000011 /* ../../App/Services/Music.swift */,
+				9E0700000000000000000010 /* PhotosTests.swift */,
+				9E0700000000000000000011 /* ../../App/Services/Photos.swift */,
 				A40000000000000000000012 /* ../../Shared/Extensions/Logger+Extensions.swift */,
 				A40000000000000000000013 /* ../../Shared/Extensions/Bundle+Extensions.swift */,
 				A40000000000000000000014 /* ../../Shared/Models/Service.swift */,
@@ -653,6 +659,8 @@
 				B13500000000000000000022 /* ../../App/Services/NotesWriteTools.swift in Sources */,
 				B13300000000000000000020 /* MusicTests.swift in Sources */,
 				B13300000000000000000021 /* ../../App/Services/Music.swift in Sources */,
+				9E0700000000000000000020 /* PhotosTests.swift in Sources */,
+				9E0700000000000000000021 /* ../../App/Services/Photos.swift in Sources */,
 				A40000000000000000000022 /* ../../Shared/Extensions/Logger+Extensions.swift in Sources */,
 				A40000000000000000000023 /* ../../Shared/Extensions/Bundle+Extensions.swift in Sources */,
 				A40000000000000000000024 /* ../../Shared/Models/Service.swift in Sources */,
@@ -975,6 +983,7 @@
 				ENABLE_RESOURCE_ACCESS_CAMERA = YES;
 				ENABLE_RESOURCE_ACCESS_CONTACTS = YES;
 				ENABLE_RESOURCE_ACCESS_LOCATION = YES;
+				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -991,6 +1000,7 @@
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "iMCP needs access to provide location information to the MCP server.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "iMCP needs access to provide location information to the MCP server.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "iMCP needs access to the microphone to record audio for the MCP server.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "iMCP needs access to your photo library to provide photos and their details to the MCP server.";
 				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "iMCP needs access to provide reminders information to the MCP server.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
@@ -1043,7 +1053,7 @@
 				ENABLE_RESOURCE_ACCESS_CAMERA = YES;
 				ENABLE_RESOURCE_ACCESS_CONTACTS = YES;
 				ENABLE_RESOURCE_ACCESS_LOCATION = YES;
-				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
+				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = YES;
 				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
 				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -1062,6 +1072,7 @@
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "iMCP needs access to provide location information to the MCP server.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "iMCP needs access to provide location information to the MCP server.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "iMCP needs access to the microphone to record audio for the MCP server.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "iMCP needs access to your photo library to provide photos and their details to the MCP server.";
 				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "iMCP needs access to provide reminders information to the MCP server.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
