@@ -21,24 +21,35 @@ struct App: SwiftUI.App {
         userDriverDelegate: nil
     )
 
+    private func installMenuBar() {
+        MenuBarController.shared.install(
+            serverController: serverController,
+            updater: updaterController.updater,
+            openSettings: { [appDelegate] in appDelegate.shouldOpenSettings = true }
+        )
+    }
+
     var body: some Scene {
         @Bindable var appDelegate = appDelegate
 
-        // The binding lets removal hide the item without terminating the server.
-        MenuBarExtra(
-            "iMCP",
-            image: #"MenuIcon-\#(isEnabled ? "On" : "Off")"#,
-            isInserted: $appDelegate.isMenuBarExtraInserted
-        ) {
-            ContentView(
-                serverManager: serverController,
-                isEnabled: $isEnabled,
-                updater: updaterController.updater
-            )
+        // The menu bar item is `MenuBarController`'s status item, because the system draws a `MenuBarExtra`
+        // window with rounder corners than a native menu and an app can't change that. This never-inserted
+        // scene only carries the app-level handlers below.
+        MenuBarExtra("iMCP", systemImage: "circle", isInserted: .constant(false)) {
+            EmptyView()
         }
-        .menuBarExtraStyle(.window)
+        .onChange(of: isEnabled, initial: true) { _, isEnabled in
+            installMenuBar()
+            MenuBarController.shared.updateIcon(isOn: isEnabled)
+            // The panel's content isn't kept alive while it is closed, so the server follows the setting here.
+            Task { await serverController.setEnabled(isEnabled) }
+        }
         .onChange(of: showMenuBarExtra) { _, showMenuBarExtra in
             appDelegate.isMenuBarExtraInserted = showMenuBarExtra
+        }
+        .onChange(of: appDelegate.isMenuBarExtraInserted, initial: true) { _, inserted in
+            installMenuBar()
+            MenuBarController.shared.setVisible(inserted)
         }
         .onChange(of: appDelegate.shouldOpenSettings, initial: true) { _, shouldOpenSettings in
             guard shouldOpenSettings else { return }

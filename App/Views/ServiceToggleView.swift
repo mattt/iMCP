@@ -17,6 +17,10 @@ struct ServiceToggleView: View {
         HStack {
             Button(action: {
                 config.binding.wrappedValue.toggle()
+                if MobileService.serves(config.service) {
+                    // The Mac listens for paired devices only while a mobile service is on.
+                    Task { await MobileService.shared.servicesChanged() }
+                }
                 if config.binding.wrappedValue && !isServiceActivated {
                     Task {
                         do {
@@ -39,7 +43,7 @@ struct ServiceToggleView: View {
                         Image(systemName: config.iconName)
                             .resizable()
                             .scaledToFit()
-                            .foregroundColor(buttonForegroundColor)
+                            .foregroundStyle(buttonForegroundColor)
                             .padding(imagePadding)
                     )
                     .animation(.snappy, value: config.binding.wrappedValue || isEnabled)
@@ -49,12 +53,11 @@ struct ServiceToggleView: View {
             .frame(width: buttonSize, height: buttonSize)
             .accessibilityLabel(config.name)
             .accessibilityValue(config.binding.wrappedValue ? "Enabled" : "Disabled")
-            .accessibilityAddTraits(.isButton)
             .help("\(config.name) tools: \(toolSummary)")
 
             Text(config.name)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .foregroundColor(isEnabled ? Color.primary : .primary.opacity(0.5))
+                .foregroundStyle(isEnabled ? .primary : .secondary)
         }
         .frame(height: buttonSize)
         .padding(.horizontal, 14)
