@@ -72,7 +72,7 @@ struct ContentView: View {
                 Divider()
 
                 MenuButton("Configure Claude Desktop") {
-                    ClaudeDesktop.showConfigurationPanel(serverController: serverController)
+                    ClaudeDesktop.showConfigurationPanel()
                 }
 
                 MenuButton("Copy server command to clipboard") {

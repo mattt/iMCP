@@ -12,40 +12,32 @@ enum ClaudeDesktopSettings {
     }
 
     /// Reads the selected destination after the setup and save panels have closed.
-    static func update(
-        at url: URL,
-        command: String,
-        credentialForSettings: (String?) throws -> String,
-        discardCredential: (String) -> Void
-    ) throws {
+    ///
+    /// iMCP trusts Claude Desktop by its code signature, so it writes no credential.
+    /// It keeps the server's environment as it is,
+    /// including a credential that an earlier version wrote,
+    /// which keeps working.
+    static func update(at url: URL, command: String) throws {
         var config = try read(at: url)
         var servers = try object(config["mcpServers"], field: "mcpServers")
         var server = try object(servers["iMCP"], field: "mcpServers.iMCP")
-        var environment = try object(server["env"], field: "mcpServers.iMCP.env")
+        if server["env"] != nil {
+            _ = try object(server["env"], field: "mcpServers.iMCP.env")
+        }
 
-        let key = ClientCredential.environmentVariable
-        let existing = environment[key] as? String
-        let credential = try credentialForSettings(existing)
-        environment[key] = credential
-        server["env"] = environment
         server["command"] = command
         servers["iMCP"] = server
         config["mcpServers"] = servers
 
-        do {
-            let data = try JSONSerialization.data(
-                withJSONObject: config,
-                options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-            )
-            try FileManager.default.createDirectory(
-                at: url.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
-            try data.write(to: url, options: .atomic)
-        } catch {
-            if credential != existing { discardCredential(credential) }
-            throw error
-        }
+        let data = try JSONSerialization.data(
+            withJSONObject: config,
+            options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        )
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try data.write(to: url, options: .atomic)
         try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
     }
 

@@ -19,19 +19,16 @@ enum ClaudeDesktop {
         }
     }
 
-    /// The name that iMCP gives the credential it writes for Claude Desktop.
-    static let clientName = "Claude Desktop"
-
     @MainActor
-    static func showConfigurationPanel(serverController: ServerController) {
+    static func showConfigurationPanel() {
         do {
             let bookmarkedURL = try? getSecurityScopedConfigURL()
             let configURL = bookmarkedURL ?? URL(fileURLWithPath: configPath)
             let alert = NSAlert()
             alert.messageText = "Set Up iMCP Server"
             alert.informativeText = """
-                This will set up the iMCP server in Claude Desktop, \
-                including a credential that identifies Claude Desktop to iMCP.
+                This will set up the iMCP server in Claude Desktop. \
+                iMCP identifies Claude Desktop by its code signature.
 
                 Location: \(configURL.path)
 
@@ -50,11 +47,7 @@ enum ClaudeDesktop {
                 try updateConfig(at: configURL, hasBookmark: bookmarkedURL != nil) { url in
                     try ClaudeDesktopSettings.update(
                         at: url,
-                        command: Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/imcp-server").path,
-                        credentialForSettings: { existing in
-                            try serverController.credentialForClientSettings(name: clientName, existing: existing)
-                        },
-                        discardCredential: serverController.discardCredential
+                        command: Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/imcp-server").path
                     )
                 }
                 log.notice("Configuration updated successfully")

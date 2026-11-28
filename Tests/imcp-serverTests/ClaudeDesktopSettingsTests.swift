@@ -14,37 +14,21 @@ final class ClaudeDesktopSettingsTests: XCTestCase {
         try FileManager.default.removeItem(at: directory)
     }
 
-    private func update(existing expected: String?) throws {
-        try ClaudeDesktopSettings.update(
-            at: url,
-            command: "/fixture/imcp-server",
-            credentialForSettings: { existing in
-                XCTAssertEqual(existing, expected)
-                return existing ?? "fixture-token"
-            },
-            discardCredential: { _ in XCTFail("Unexpected credential discard") }
-        )
+    private func update() throws {
+        try ClaudeDesktopSettings.update(at: url, command: "/fixture/imcp-server")
     }
 
-    func testMissingFileCreatesPrivateSettings() throws {
-        try update(existing: nil)
+    func testMissingFileCreatesPrivateSettingsWithoutCredential() throws {
+        try update()
 
-        let expected = [
-            "mcpServers": [
-                "iMCP": [
-                    "command": "/fixture/imcp-server",
-                    "env": [ClientCredential.environmentVariable: "fixture-token"],
-                ]
-            ]
-        ]
+        let expected = ["mcpServers": ["iMCP": ["command": "/fixture/imcp-server"]]]
         let saved = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? NSDictionary
         XCTAssertEqual(saved, expected as NSDictionary)
         let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
         XCTAssertEqual(attributes[.posixPermissions] as? Int, 0o600)
     }
 
-    func testUpdateUsesLatestCredentialAndKeepsOtherSettings() throws {
-        try update(existing: nil)
+    func testUpdateKeepsExistingCredentialAndOtherSettings() throws {
         let edited = """
             {
               "preferences": {"zoom": 1.25, "theme": null},
@@ -58,7 +42,7 @@ final class ClaudeDesktopSettingsTests: XCTestCase {
             }
             """
         try Data(edited.utf8).write(to: url)
-        try update(existing: "edited")
+        try update()
 
         let expected = edited.replacingOccurrences(of: "\"previous\"", with: "\"/fixture/imcp-server\"")
         let saved = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? NSDictionary
@@ -72,7 +56,7 @@ final class ClaudeDesktopSettingsTests: XCTestCase {
         ] {
             let original = Data(text.utf8)
             try original.write(to: url)
-            assertUpdateFailsBeforeIssuingCredential()
+            XCTAssertThrowsError(try update(), text)
             XCTAssertEqual(try Data(contentsOf: url), original)
         }
     }
@@ -81,28 +65,12 @@ final class ClaudeDesktopSettingsTests: XCTestCase {
         let original = Data(#"{"keep":true}"#.utf8)
         try original.write(to: url)
         try FileManager.default.setAttributes([.posixPermissions: 0o200], ofItemAtPath: url.path)
-        assertUpdateFailsBeforeIssuingCredential()
+        XCTAssertThrowsError(try update())
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
         XCTAssertEqual(try Data(contentsOf: url), original)
     }
 
-    private func assertUpdateFailsBeforeIssuingCredential(file: StaticString = #filePath, line: UInt = #line) {
-        XCTAssertThrowsError(
-            try ClaudeDesktopSettings.update(
-                at: url,
-                command: "/fixture/imcp-server",
-                credentialForSettings: { _ in
-                    XCTFail("Invalid settings must fail before issuing a credential", file: file, line: line)
-                    return "fixture-token"
-                },
-                discardCredential: { _ in XCTFail("Unexpected credential discard", file: file, line: line) }
-            ),
-            file: file,
-            line: line
-        )
-    }
-
-    func testWriteFailureDiscardsOnlyANewCredential() throws {
+    func testWriteFailureLeavesSettingsUntouched() throws {
         let original = Data(
             """
             {"mcpServers":{"iMCP":{"env":{"\(ClientCredential.environmentVariable)":"existing"}}}}
@@ -112,18 +80,7 @@ final class ClaudeDesktopSettingsTests: XCTestCase {
         try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.path)
         defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path) }
 
-        for credential in ["existing", "new"] {
-            var discarded: [String] = []
-            XCTAssertThrowsError(
-                try ClaudeDesktopSettings.update(
-                    at: url,
-                    command: "/fixture/imcp-server",
-                    credentialForSettings: { _ in credential },
-                    discardCredential: { discarded.append($0) }
-                )
-            )
-            XCTAssertEqual(discarded, credential == "new" ? ["new"] : [])
-            XCTAssertEqual(try Data(contentsOf: url), original)
-        }
+        XCTAssertThrowsError(try update())
+        XCTAssertEqual(try Data(contentsOf: url), original)
     }
 }

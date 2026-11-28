@@ -376,22 +376,6 @@ final class ServerController: ObservableObject {
         }
     }
 
-    /// Returns a credential for iMCP to write into a client's MCP settings.
-    ///
-    /// - Parameters:
-    ///   - name: The client's name, which the approval dialog shows.
-    ///   - existing: The credential that the settings already have, if any.
-    ///     It's kept if iMCP issued it.
-    func credentialForClientSettings(name: String, existing: String?) throws -> String {
-        try credentials.credentialForSettings(name: name, existing: existing)
-    }
-
-    /// Revokes a credential that iMCP issued for settings it then failed to write.
-    func discardCredential(_ credential: String) {
-        guard let record = credentials.record(for: credential) else { return }
-        try? credentials.revoke(id: record.id)
-    }
-
     // MARK: - Disabled Tools Management
     var disabledTools: Set<String> {
         get {

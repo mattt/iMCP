@@ -204,7 +204,7 @@ struct ClientsSettingsView: View {
             Section("Connect a Client") {
                 LabeledContent {
                     Button("Set Up…") {
-                        ClaudeDesktop.showConfigurationPanel(serverController: serverController)
+                        ClaudeDesktop.showConfigurationPanel()
                     }
                 } label: {
                     Text("Claude Desktop")

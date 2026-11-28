@@ -586,16 +586,4 @@ final class ClientCredentialStore {
         let (credential, record) = try issue(name: request.claimedName, trusted: true)
         return Trust(record: record, credential: credential)
     }
-
-    /// Returns a credential to write into a client's settings.
-    ///
-    /// If `existing` is a credential that iMCP issued, it's returned unchanged,
-    /// so that writing the settings again keeps the client's trust.
-    /// Otherwise iMCP issues an untrusted credential named `name`.
-    func credentialForSettings(name: String, existing: String?) throws -> String {
-        if let existing, record(for: existing) != nil {
-            return existing
-        }
-        return try issue(name: name, trusted: false).credential
-    }
 }

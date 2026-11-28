@@ -180,12 +180,12 @@ final class ClientCredentialsTests: XCTestCase {
         }
     }
 
-    func testSettingsCredentialIsTrustedOnlyAfterApproval() throws {
+    func testUntrustedCredentialIsTrustedOnlyAfterApproval() throws {
         let store = makeStore()
-        let credential = try store.credentialForSettings(name: "Claude Desktop", existing: nil)
+        let credential = try store.issue(name: "Claude Desktop", trusted: false).credential
 
         guard case .ask(let request) = store.evaluate(credential: credential, claimedName: "Claude") else {
-            return XCTFail("A credential from settings must ask until it's approved")
+            return XCTFail("An untrusted credential must ask until it's approved")
         }
         XCTAssertEqual(request.record?.name, "Claude Desktop")
         XCTAssertTrue(store.trustedRecords.isEmpty)
@@ -198,20 +198,9 @@ final class ClientCredentialsTests: XCTestCase {
         XCTAssertEqual(store.records.count, 1)
     }
 
-    func testSettingsKeepExistingCredential() throws {
-        let store = makeStore()
-        let credential = try store.credentialForSettings(name: "Claude Desktop", existing: nil)
-
-        XCTAssertEqual(try store.credentialForSettings(name: "Claude Desktop", existing: credential), credential)
-        XCTAssertNotEqual(
-            try store.credentialForSettings(name: "Claude Desktop", existing: ClientCredential.generate()),
-            credential
-        )
-    }
-
     func testApprovalKeyFollowsCredentialNotName() throws {
         let store = makeStore()
-        let credential = try store.credentialForSettings(name: "Client", existing: nil)
+        let credential = try store.issue(name: "Client", trusted: false).credential
         let first = UUID()
         let second = UUID()
 
@@ -231,7 +220,7 @@ final class ClientCredentialsTests: XCTestCase {
 
     func testCooldownKeyFollowsCredentialAndIgnoresName() throws {
         let store = makeStore()
-        let credential = try store.credentialForSettings(name: "Client", existing: nil)
+        let credential = try store.issue(name: "Client", trusted: false).credential
 
         guard case .ask(let withCredential) = store.evaluate(credential: credential, claimedName: "Client"),
             case .ask(let renamed) = store.evaluate(credential: credential, claimedName: "Other Name"),
@@ -385,7 +374,7 @@ final class ClientCredentialsTests: XCTestCase {
 
     func testVerifiedSignatureWithUntrustedSettingsCredentialTrustsSignature() throws {
         let store = makeStore()
-        let credential = try store.credentialForSettings(name: "Claude Desktop", existing: nil)
+        let credential = try store.issue(name: "Claude Desktop", trusted: false).credential
         guard
             case .ask(let request) = store.evaluate(
                 credential: credential,

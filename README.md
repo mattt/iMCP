@@ -307,7 +307,8 @@ iMCP stores only a hash of each credential, in your Keychain.
 
 To skip the dialog next time, select "Always trust this client".
 If the client already presents a credential,
-for example because iMCP [set up Claude Desktop](#connect-to-claude-desktop),
+for example because an earlier version of iMCP
+[set up Claude Desktop](#connect-to-claude-desktop),
 iMCP trusts that credential.
 Otherwise, iMCP creates a credential and shows it once.
 Click "Copy Value"
@@ -436,11 +437,11 @@ click <img style="display: inline" width="20" height="16" src="/Assets/icon.svg"
 and then click "Set Up".
 
 iMCP adds or updates its entry in the configuration file
-so that Claude Desktop starts the `imcp-server` executable in the app,
-with a credential that identifies Claude Desktop to iMCP.
-iMCP keeps the other MCP servers in the file.
+so that Claude Desktop starts the `imcp-server` executable in the app.
+iMCP keeps the other MCP servers in the file,
+and keeps a credential that an earlier version of iMCP wrote there.
 The first time Claude Desktop connects, iMCP still asks you to approve it;
-select "Always trust this client" to trust its credential.
+select "Always trust this client" to trust it by its code signature.
 
 <details>
 <summary>Configure Claude Desktop manually</summary>
