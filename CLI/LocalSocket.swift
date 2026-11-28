@@ -344,7 +344,7 @@ enum LocalSocket {
     /// `proc_pidfdinfo` reports the kernel addresses of the sockets' protocol control blocks.
     /// It obscures them, but it reports the same value for a socket to every process,
     /// so they can be compared across processes.
-    struct SocketIdentity: Equatable {
+    struct SocketIdentity: Equatable, Sendable {
         /// The socket's control block.
         var socket: UInt64
         /// The connected socket's control block, or 0 if the socket isn't connected.
@@ -363,6 +363,13 @@ enum LocalSocket {
 
     /// Returns the socket descriptors that process `pid` has open.
     static func socketDescriptors(process pid: pid_t) throws -> [Int32] {
+        try descriptors(process: pid)
+            .filter { $0.proc_fdtype == PROX_FDTYPE_SOCKET }
+            .map(\.proc_fd)
+    }
+
+    /// Returns the descriptors that process `pid` has open, with their types.
+    static func descriptors(process pid: pid_t) throws -> [proc_fdinfo] {
         let stride = MemoryLayout<proc_fdinfo>.stride
         let needed = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, nil, 0)
         guard needed > 0 else {
@@ -376,9 +383,7 @@ enum LocalSocket {
         guard filled > 0 else {
             throw Error.posix(call: "proc_pidinfo(PROC_PIDLISTFDS)", code: errno)
         }
-        return descriptors.prefix(Int(filled) / stride)
-            .filter { $0.proc_fdtype == PROX_FDTYPE_SOCKET }
-            .map(\.proc_fd)
+        return Array(descriptors.prefix(Int(filled) / stride))
     }
 
     /// Returns whether process `pid` has the other end of `descriptor` open.
@@ -554,16 +559,52 @@ struct LocalSocketHello: Codable, Equatable {
     static let currentVersion = 1
 
     /// The version of this exchange.
-    var version: Int = currentVersion
+    var version: Int
 
     /// The credential that iMCP issued to the client, if it has one.
     var credential: String?
 
+    /// What `imcp-server` found out about the app that started it, if it identified one.
+    ///
+    /// This field is optional in version 1,
+    /// so that an app that was running before an update still accepts the hello:
+    /// ``decode(_:)`` refuses an unknown version, and the decoder ignores unknown fields.
+    var evidence: ClientEvidence?
+
+    init(version: Int = currentVersion, credential: String? = nil, evidence: ClientEvidence? = nil) {
+        self.version = version
+        self.credential = credential
+        self.evidence = evidence
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case version, credential, evidence
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        version = try container.decode(Int.self, forKey: .version)
+        credential = try container.decodeIfPresent(String.self, forKey: .credential)
+        // A later `imcp-server` could send evidence in a form that this build doesn't know.
+        // That connection then gets the credential flow instead of a refusal.
+        evidence = try? container.decodeIfPresent(ClientEvidence.self, forKey: .evidence)
+    }
+
     /// Returns a hello with the credential from `environment`.
-    static func fromEnvironment(_ environment: [String: String]) -> Self {
+    static func fromEnvironment(_ environment: [String: String], evidence: ClientEvidence? = nil) -> Self {
         let credential = environment[credentialEnvironmentVariable]?
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        return Self(credential: credential?.isEmpty == false ? credential : nil)
+        return Self(credential: credential?.isEmpty == false ? credential : nil, evidence: evidence)
+    }
+
+    /// Returns the hello as a line of JSON,
+    /// without the evidence if the line would be longer than ``maximumLength``.
+    func encodedWithinLimit() throws -> Data {
+        let data = try encoded()
+        guard data.count - 1 > Self.maximumLength, evidence != nil else { return data }
+        var hello = self
+        hello.evidence = nil
+        return try hello.encoded()
     }
 
     /// Returns the hello as a line of JSON.

@@ -8,6 +8,9 @@ actor MCPService: Service {
     private var currentProxy: StdioProxy?
 
     func run() async throws {
+        // The process tree doesn't change while this process runs,
+        // so gather the evidence once, before the first connection.
+        let evidence = await Self.collectEvidence()
         var hasReportedUnavailable = false
         while !Task.isShuttingDownGracefully {
             do {
@@ -24,9 +27,12 @@ actor MCPService: Service {
 
                 let sessionError: (any Swift.Error)?
                 do {
-                    // Send the client's credential only to an app that passed the check.
-                    let hello = LocalSocketHello.fromEnvironment(ProcessInfo.processInfo.environment)
-                    try await proxy.start(hello: hello.encoded())
+                    // Send the client's credential and evidence only to an app that passed the check.
+                    let hello = LocalSocketHello.fromEnvironment(
+                        ProcessInfo.processInfo.environment,
+                        evidence: evidence
+                    )
+                    try await proxy.start(hello: hello.encodedWithinLimit())
                     sessionError = nil
                 } catch {
                     sessionError = error
@@ -68,6 +74,30 @@ actor MCPService: Service {
                 await log.info("Will retry connection in 5 seconds...")
                 try await Task.sleep(for: .seconds(5))
             }
+        }
+    }
+
+    /// Finds the app that started this process and gathers the evidence about it.
+    ///
+    /// Logs only signing facts, never another process's arguments or environment.
+    private static func collectEvidence() async -> ClientEvidence? {
+        let clock = ContinuousClock()
+        let start = clock.now
+        let result = ClientEvidenceCollector.collect(using: SystemProcessInspector())
+        let elapsed = start.duration(to: clock.now)
+        switch result {
+        case .success(let evidence):
+            let client = evidence.client
+            await log.debug(
+                """
+                Client: \(client.identifier ?? "unsigned"), team \(client.team ?? "none"), \
+                launcher: \(evidence.launcher?.identifier ?? "none"), in \(elapsed)
+                """
+            )
+            return evidence
+        case .failure(let reason):
+            await log.debug("Sending no client evidence: \(reason)")
+            return nil
         }
     }
 }
