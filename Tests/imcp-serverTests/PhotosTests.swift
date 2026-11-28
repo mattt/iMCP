@@ -375,6 +375,193 @@ final class PhotosTests: XCTestCase {
         )
     }
 
+    // MARK: - Albums
+
+    private typealias Album = PhotosService.Album
+    private typealias AlbumCursor = PhotosService.AlbumCursor
+
+    private func album(
+        _ id: String,
+        _ name: String?,
+        _ kind: Album.Kind = .album,
+        in parentID: String? = nil
+    ) -> Album {
+        Album(id: id, name: name, kind: kind, parentID: parentID, numberOfItems: kind == .folder ? nil : 1)
+    }
+
+    /// A library with a nested folder, every kind at the top level, and an album without a name.
+    private var library: [Album] {
+        [
+            album("trips", "Trips", .folder),
+            album("familia", "Família"),
+            album("recents", "Recents", .smartAlbum),
+            album("shared", "Shared Stuff", .sharedAlbum),
+            album("unnamed", nil),
+            album("paris", "Paris", in: "trips"),
+            album("crawl", "café crawl", in: "trips"),
+            album("europe", "Europe", .folder, in: "trips"),
+            album("rome", "Rome", in: "europe"),
+            album("roma", "Cafe Roma", in: "europe"),
+        ]
+    }
+
+    private func albumIDs(_ arguments: [String: Value], in albums: [Album]? = nil) throws -> [String] {
+        let request = try PhotosService.albumListRequest(from: arguments)
+        return try PhotosService.albumPage(of: albums ?? library, for: request).items.map(\.id)
+    }
+
+    func testAlbumListDefaults() throws {
+        let request = try PhotosService.albumListRequest(from: [:])
+        XCTAssertEqual(request, PhotosService.AlbumListRequest())
+        XCTAssertEqual(request.limit, 100)
+    }
+
+    func testAlbumListWithoutArgumentsHasTheTopLevel() throws {
+        XCTAssertEqual(try albumIDs([:]), ["unnamed", "familia", "recents", "shared", "trips"])
+    }
+
+    func testAlbumListHasTheChildrenOfAFolderByIDOrName() throws {
+        let expected: [String] = ["crawl", "europe", "paris"]
+        XCTAssertEqual(try albumIDs(["folder": "trips"]), expected)
+        XCTAssertEqual(try albumIDs(["folder": "TRÍPS"]), expected)
+        XCTAssertEqual(try albumIDs(["folder": "europe"]), ["roma", "rome"])
+
+        let request = try PhotosService.albumListRequest(from: ["folder": "Trips"])
+        let page = try PhotosService.albumPage(of: library, for: request)
+        XCTAssertEqual(page.folder?.id, "trips")
+        XCTAssertNil(page.nextCursor)
+    }
+
+    func testAlbumQueryMatchesEveryLevelWithoutCaseOrDiacritics() throws {
+        XCTAssertEqual(Set(try albumIDs(["query": "CAFE"])), ["crawl", "roma"])
+        XCTAssertEqual(Set(try albumIDs(["query": "famil"])), ["familia"])
+        XCTAssertEqual(try albumIDs(["query": "  ROM  "]), ["roma", "rome"])
+    }
+
+    func testAlbumQueryWithAFolderMatchesOnlyItsChildren() throws {
+        XCTAssertEqual(try albumIDs(["folder": "trips", "query": "Café"]), ["crawl"])
+        XCTAssertEqual(try albumIDs(["folder": "trips", "query": "rome"]), [])
+    }
+
+    func testAlbumKindsFilterTheList() throws {
+        XCTAssertEqual(try albumIDs(["kind": ["folder"]]), ["trips"])
+        XCTAssertEqual(try albumIDs(["kind": ["smartAlbum", "sharedAlbum"]]), ["recents", "shared"])
+        XCTAssertEqual(try albumIDs(["query": "e", "kind": ["folder"]]), ["europe"])
+    }
+
+    func testAlbumsAreOrderedByNameThenIdentifier() throws {
+        let albums = [
+            album("b", "Summer"),
+            album("c", "Album 10"),
+            album("a", "Summer"),
+            album("d", "Album 2"),
+            album("e", nil),
+        ]
+        XCTAssertEqual(try albumIDs([:], in: albums), ["e", "d", "c", "a", "b"])
+    }
+
+    func testFoldersCountTheirDirectChildren() {
+        let counted: [Album] = PhotosService.countingFolderChildren(library + [album("empty", "Empty", .folder)])
+        let counts: [String: Int?] = Dictionary(uniqueKeysWithValues: counted.map { ($0.id, $0.numberOfItems) })
+        XCTAssertEqual(counts["trips"], 3)
+        XCTAssertEqual(counts["europe"], 2)
+        XCTAssertEqual(counts["empty"], 0)
+        XCTAssertEqual(counts["paris"], 1)
+    }
+
+    func testAlbumCursorRoundTrips() throws {
+        let cursor = AlbumCursor(name: "Line one\nLine two/ü+", id: "6F1E3C2A-0000-4000-8000-000000000001/L0/040")
+        let decoded = try XCTUnwrap(AlbumCursor(cursor.description))
+        XCTAssertEqual(decoded, cursor)
+        XCTAssertFalse(cursor.description.contains("/"))
+        XCTAssertFalse(cursor.description.contains("="))
+        XCTAssertEqual(AlbumCursor(AlbumCursor(name: "", id: "A").description), AlbumCursor(name: "", id: "A"))
+    }
+
+    func testAlbumPagesCoverEveryItemOnce() throws {
+        var albums: [Album] = []
+        for index in (1 ... 25).reversed() {
+            let id: String = String(format: "%02d", index)
+            albums.append(album(id, "Album \(index)"))
+        }
+        var pages: [[String]] = []
+        var cursor: String?
+        repeat {
+            var arguments: [String: Value] = ["limit": 10]
+            if let cursor {
+                arguments["cursor"] = .string(cursor)
+            }
+            let request = try PhotosService.albumListRequest(from: arguments)
+            let page = try PhotosService.albumPage(of: albums, for: request)
+            pages.append(page.items.map(\.id))
+            cursor = page.nextCursor?.description
+        } while cursor != nil && pages.count < 10
+        XCTAssertEqual(pages.map(\.count), [10, 10, 5])
+        let ids: [String] = pages.flatMap { $0 }
+        let expected: [String] = (1 ... 25).map { String(format: "%02d", $0) }
+        XCTAssertEqual(ids, expected)
+    }
+
+    func testANewAlbumDoesNotShiftLaterPages() throws {
+        var albums = [album("a", "A"), album("c", "C"), album("e", "E")]
+        let first = try PhotosService.albumPage(
+            of: albums,
+            for: PhotosService.AlbumListRequest(limit: 2)
+        )
+        XCTAssertEqual(first.items.map(\.id), ["a", "c"])
+        let cursor = try XCTUnwrap(first.nextCursor)
+
+        albums += [album("b", "B"), album("d", "D")]
+        let request = try PhotosService.albumListRequest(from: ["limit": 2, "cursor": .string(cursor.description)])
+        let second = try PhotosService.albumPage(of: albums, for: request)
+        XCTAssertEqual(second.items.map(\.id), ["d", "e"])
+        XCTAssertNil(second.nextCursor)
+    }
+
+    func testInvalidAlbumListArgumentsAreErrors() {
+        let invalid: [[String: Value]] = [
+            ["limit": 0],
+            ["limit": "10"],
+            ["query": ""],
+            ["query": "   "],
+            ["kind": []],
+            ["kind": ["playlist"]],
+            ["kind": "album"],
+            ["cursor": "not a cursor"],
+            ["cursor": .string(Data("\nName".utf8).base64EncodedString())],
+            ["folder": 3],
+        ]
+        for arguments in invalid {
+            XCTAssertThrowsError(try PhotosService.albumListRequest(from: arguments), "\(arguments)") { error in
+                XCTAssertTrue(
+                    error.localizedDescription.hasPrefix("Invalid argument: "),
+                    error.localizedDescription
+                )
+            }
+        }
+    }
+
+    func testUnknownFolderIsAnError() {
+        XCTAssertThrowsError(try albumIDs(["folder": "Winter"])) { error in
+            XCTAssertTrue(error.localizedDescription.contains("photos_albums_list"), error.localizedDescription)
+        }
+    }
+
+    func testFolderThatNamesAnAlbumIsAnError() {
+        for folder in ["paris", "PARIS"] {
+            XCTAssertThrowsError(try albumIDs(["folder": .string(folder)])) { error in
+                XCTAssertTrue(error.localizedDescription.contains("is an album"), error.localizedDescription)
+            }
+        }
+    }
+
+    func testFolderNameOfSeveralFoldersIsAnError() {
+        let albums = library + [album("trips2", "trips", .folder)]
+        XCTAssertThrowsError(try albumIDs(["folder": "Trips"], in: albums)) { error in
+            XCTAssertTrue(error.localizedDescription.contains("trips2"), error.localizedDescription)
+        }
+    }
+
     // MARK: - Values
 
     func testDurationsUseISO8601() {

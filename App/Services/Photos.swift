@@ -9,6 +9,7 @@ import UniformTypeIdentifiers
 
 private let log = Logger.service("photos")
 private let defaultLimit = 30
+private let defaultAlbumLimit = 100
 private let defaultMaxDimension = 1024
 private let maxMaxDimension = 4096
 private let maxContactSheetCount = 30
@@ -48,11 +49,44 @@ final class PhotosService: Service {
         Tool(
             name: "photos_albums_list",
             description: """
-                List the albums, shared albums, smart albums, and folders in Photos, \
-                with their identifiers, kinds, parent folders, and estimated numbers of items
+                List albums, shared albums, smart albums, and folders in Photos in order of name, \
+                with their identifiers, kinds, parent folders, and estimated numbers of items. \
+                A folder's numberOfItems is the number of albums and folders directly in it. \
+                Without arguments, it lists the top level: the albums and folders that are not in a folder, \
+                with the shared albums and smart albums. \
+                Give a folder's @id as folder to list what is in it, \
+                or give query to find albums and folders by name at every level.
                 """,
             inputSchema: .object(
-                properties: [:],
+                properties: [
+                    "folder": .string(
+                        description: """
+                            A folder's @id or name from photos_albums_list; \
+                            the result has the albums and folders directly in it. \
+                            A name matches without regard to case or diacritics.
+                            """
+                    ),
+                    "query": .string(
+                        description: """
+                            Text that a name contains, without regard to case or diacritics. \
+                            Without folder, it matches at every level; with folder, only directly in that folder.
+                            """
+                    ),
+                    "kind": .array(
+                        description: "List only items with one of these kinds",
+                        items: .string(enum: Album.Kind.allCases.map { .string($0.rawValue) }),
+                        minItems: 1
+                    ),
+                    "limit": .integer(
+                        description: "Maximum items to return",
+                        default: .int(defaultAlbumLimit),
+                        minimum: 1
+                    ),
+                    "cursor": .string(
+                        description:
+                            "The nextCursor value from a previous photos_albums_list with the same arguments, to list the next page"
+                    ),
+                ],
                 additionalProperties: false
             ),
             annotations: .init(
@@ -60,16 +94,22 @@ final class PhotosService: Service {
                 readOnlyHint: true,
                 openWorldHint: false
             )
-        ) { _ in
+        ) { arguments in
+            let request = try Self.albumListRequest(from: arguments)
             try await self.requireAccess()
-            let albums = self.albums().map(\.value)
-            return Value.object([
+            let page = try Self.albumPage(of: self.albums(), for: request)
+            let items = page.items.map(\.value)
+            var list: [String: Value] = [
                 "@context": "https://schema.org",
                 "@type": "ItemList",
-                "name": "Photos Albums",
-                "numberOfItems": .int(albums.count),
-                "itemListElement": .array(albums),
-            ])
+                "name": .string(page.folder?.name ?? "Photos Albums"),
+                "numberOfItems": .int(items.count),
+                "itemListElement": .array(items),
+            ]
+            if let nextCursor = page.nextCursor {
+                list["nextCursor"] = .string(nextCursor.description)
+            }
+            return Value.object(list)
         }
 
         Tool(
@@ -86,7 +126,8 @@ final class PhotosService: Service {
                     "album": .string(
                         description: """
                             An album's @id or name from photos_albums_list. \
-                            A name matches without regard to case or diacritics. \
+                            A name matches without regard to case or diacritics, \
+                            and matches albums in folders too. \
                             Without album, the fetch covers the whole library.
                             """
                     ),
@@ -271,8 +312,8 @@ final class PhotosService: Service {
 
     // MARK: - Albums
 
-    struct Album {
-        enum Kind: String {
+    struct Album: Equatable {
+        enum Kind: String, CaseIterable {
             case album, sharedAlbum, smartAlbum, folder
         }
 
@@ -280,9 +321,16 @@ final class PhotosService: Service {
         var name: String?
         var kind: Kind
         var parentID: String?
+        /// The estimated number of assets in an album,
+        /// or the number of albums and folders directly in a folder.
         var numberOfItems: Int?
         /// The collection to fetch assets from, or nil for a folder.
         var collection: PHAssetCollection?
+
+        /// The position of the album in the order of `photos_albums_list`.
+        var sortKey: AlbumCursor {
+            AlbumCursor(name: name ?? "", id: id)
+        }
 
         var value: Value {
             var object: [String: Value] = [
@@ -378,7 +426,23 @@ final class PhotosService: Service {
                 )
             )
         }
-        return albums
+        return Self.countingFolderChildren(albums)
+    }
+
+    /// Sets each folder's number of items to the number of albums and folders directly in it.
+    static func countingFolderChildren(_ albums: [Album]) -> [Album] {
+        var counts: [String: Int] = [:]
+        for album in albums {
+            if let parentID = album.parentID {
+                counts[parentID, default: 0] += 1
+            }
+        }
+        return albums.map { album in
+            guard album.kind == .folder else { return album }
+            var folder = album
+            folder.numberOfItems = counts[album.id, default: 0]
+            return folder
+        }
     }
 
     /// The album with an identifier, or with a name without regard to case or diacritics.
@@ -406,6 +470,159 @@ final class PhotosService: Service {
 
     static func namesMatch(_ name: String, _ other: String) -> Bool {
         name.compare(other, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+    }
+
+    /// A position in the order of `photos_albums_list`:
+    /// the name and identifier of the last item that a call returned.
+    ///
+    /// Items are in `localizedStandardCompare` order of name, and items with equal names
+    /// are in order of identifier, so the position stays exact when albums are added between calls.
+    struct AlbumCursor: Comparable, LosslessStringConvertible {
+        /// The item's name, or an empty string when it has none.
+        var name: String
+        var id: String
+
+        init(name: String, id: String) {
+            self.name = name
+            self.id = id
+        }
+
+        /// Decodes a cursor from its description.
+        init?(_ description: String) {
+            var base64 = description.replacingOccurrences(of: "-", with: "+")
+                .replacingOccurrences(of: "_", with: "/")
+            base64 += String(repeating: "=", count: (4 - base64.count % 4) % 4)
+            guard
+                let data = Data(base64Encoded: base64),
+                let text = String(data: data, encoding: .utf8),
+                let separator = text.firstIndex(of: "\n")
+            else {
+                return nil
+            }
+            // The identifier comes first because a name can contain a newline.
+            let id = String(text[..<separator])
+            guard !id.isEmpty else { return nil }
+            self.init(name: String(text[text.index(after: separator)...]), id: id)
+        }
+
+        /// The cursor as URL-safe Base64 text.
+        var description: String {
+            Data("\(id)\n\(name)".utf8).base64EncodedString()
+                .replacingOccurrences(of: "+", with: "-")
+                .replacingOccurrences(of: "/", with: "_")
+                .replacingOccurrences(of: "=", with: "")
+        }
+
+        static func < (lhs: AlbumCursor, rhs: AlbumCursor) -> Bool {
+            switch lhs.name.localizedStandardCompare(rhs.name) {
+            case .orderedAscending: true
+            case .orderedDescending: false
+            case .orderedSame: lhs.id < rhs.id
+            }
+        }
+    }
+
+    struct AlbumListRequest: Equatable {
+        var folder: String?
+        var query: String?
+        /// The kinds to list, or nil for every kind.
+        var kinds: Set<Album.Kind>?
+        var limit = defaultAlbumLimit
+        var cursor: AlbumCursor?
+    }
+
+    static func albumListRequest(from arguments: [String: Value]) throws -> AlbumListRequest {
+        var request = AlbumListRequest()
+        request.folder = try argument("folder", in: arguments, as: \.stringValue)
+        if let query = try argument("query", in: arguments, as: \.stringValue) {
+            let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else {
+                throw PhotosError.invalidArgument("query must not be empty")
+            }
+            request.query = trimmed
+        }
+        if let kinds = try argument("kind", in: arguments, as: \.arrayValue) {
+            guard !kinds.isEmpty else {
+                throw PhotosError.invalidArgument("kind must not be empty")
+            }
+            request.kinds = Set(
+                try kinds.map { value in
+                    guard let name = value.stringValue, let kind = Album.Kind(rawValue: name) else {
+                        let names = Album.Kind.allCases.map(\.rawValue).joined(separator: ", ")
+                        throw PhotosError.invalidArgument("kind must contain only \(names)")
+                    }
+                    return kind
+                }
+            )
+        }
+        if let limit = try argument("limit", in: arguments, as: exactInt) {
+            guard limit >= 1 else {
+                throw PhotosError.invalidArgument("limit must be a positive integer")
+            }
+            request.limit = limit
+        }
+        if let cursor = try argument("cursor", in: arguments, as: \.stringValue) {
+            guard let parsed = AlbumCursor(cursor) else {
+                throw PhotosError.invalidArgument("cursor must be a nextCursor value from photos_albums_list")
+            }
+            request.cursor = parsed
+        }
+        return request
+    }
+
+    /// The folder with an identifier, or with a name without regard to case or diacritics.
+    static func folder(_ folder: String, in albums: [Album]) throws -> Album {
+        if let match = albums.first(where: { $0.id == folder }) {
+            guard match.kind == .folder else {
+                throw PhotosError.folderIsAlbum(folder)
+            }
+            return match
+        }
+        let named = albums.filter { $0.name.map { namesMatch($0, folder) } == true }
+        let folders = named.filter { $0.kind == .folder }
+        if folders.count == 1 {
+            return folders[0]
+        }
+        if folders.count > 1 {
+            throw PhotosError.ambiguousFolder(folder, folders.map(\.id))
+        }
+        if !named.isEmpty {
+            throw PhotosError.folderIsAlbum(folder)
+        }
+        throw PhotosError.folderNotFound(folder)
+    }
+
+    /// Returns one page of the albums and folders that a `photos_albums_list` request lists.
+    ///
+    /// - Returns: The items in order, the position of the last one when more items remain,
+    ///   and the folder that the request names.
+    static func albumPage(
+        of albums: [Album],
+        for request: AlbumListRequest
+    ) throws -> (items: [Album], nextCursor: AlbumCursor?, folder: Album?) {
+        let folder = try request.folder.map { try Self.folder($0, in: albums) }
+        let matching: [Album] = albums.filter { album in
+            if let folder {
+                guard album.parentID == folder.id else { return false }
+            } else if request.query == nil {
+                guard album.parentID == nil else { return false }
+            }
+            if let kinds = request.kinds, !kinds.contains(album.kind) {
+                return false
+            }
+            if let query = request.query {
+                guard let name = album.name else { return false }
+                return name.range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+            }
+            return true
+        }
+        let remaining: [Album] =
+            matching
+            .filter { album in request.cursor.map { $0 < album.sortKey } ?? true }
+            .sorted { $0.sortKey < $1.sortKey }
+        let items = Array(remaining.prefix(request.limit))
+        let nextCursor = remaining.count > items.count ? items.last?.sortKey : nil
+        return (items, nextCursor, folder)
     }
 
     // MARK: - Fetch
@@ -1824,6 +2041,9 @@ final class PhotosService: Service {
         case albumNotFound(String)
         case albumIsFolder(String)
         case ambiguousAlbum(String, [String])
+        case folderNotFound(String)
+        case folderIsAlbum(String)
+        case ambiguousFolder(String, [String])
         case photoNotFound(String)
         case contactSheetPhotoNotFound(String, position: Int)
         case noImageFile(String)
@@ -1866,11 +2086,22 @@ final class PhotosService: Service {
                 return
                     "query needs macOS 27 or later, which provides captions, keywords, and file names; remove query to fetch without it"
             case .albumNotFound(let album):
-                return "No album has the identifier or name \(album); call photos_albums_list to see the albums"
+                return
+                    "No album has the identifier or name \(album); call photos_albums_list with query set to part of its name to find it"
             case .albumIsFolder(let album):
-                return "\(album) is a folder; give the @id or name of an album in it from photos_albums_list"
+                return
+                    "\(album) is a folder; call photos_albums_list with folder set to it to see the albums in it"
             case .ambiguousAlbum(let album, let ids):
                 return "Several albums are named \(album); give one of their @id values: \(ids.joined(separator: ", "))"
+            case .folderNotFound(let folder):
+                return
+                    "No folder has the identifier or name \(folder); call photos_albums_list to see the top-level folders, or with query set to part of its name to find it"
+            case .folderIsAlbum(let folder):
+                return
+                    "\(folder) is an album, not a folder; call photos_fetch with album set to it to fetch its photos"
+            case .ambiguousFolder(let folder, let ids):
+                return
+                    "Several folders are named \(folder); give one of their @id values: \(ids.joined(separator: ", "))"
             case .photoNotFound(let id):
                 return "No photo or video has the identifier \(id)"
             case .contactSheetPhotoNotFound(let id, let position):
