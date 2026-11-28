@@ -252,8 +252,8 @@ final class ServerController: ObservableObject {
 
     /// Connections waiting for a person's decision, keyed by
     /// ``ClientCredentialStore/Request/approvalKey(connectionID:)``:
-    /// connections with the same credential share a window,
-    /// and each connection without one gets its own.
+    /// connections with the same credential or verified signature share a window,
+    /// and each other connection gets its own.
     private var approvals = ApprovalQueue<ClientCredentialStore.Request, ApprovalWaiter>()
     private let approvalWindowController = ConnectionApprovalWindowController()
 
@@ -281,8 +281,8 @@ final class ServerController: ObservableObject {
 
     // MARK: - Client Credentials
     private let credentials = ClientCredentialStore(storage: KeychainClientRecordStorage())
-    /// The open connections that each credential let in or was issued to,
-    /// so that revoking a credential closes them.
+    /// The open connections that each credential or trusted signature let in or was issued to,
+    /// so that removing a trusted client closes them.
     private var credentialSessions = CredentialSessions()
 
     // MARK: - AppStorage for Disabled Tools
@@ -338,7 +338,7 @@ final class ServerController: ObservableObject {
         credentials.legacyTrustedNames
     }
 
-    /// Revokes the credential of a trusted client and closes its connections.
+    /// Revokes the credential or the trusted signature of a client and closes its connections.
     func removeTrustedClient(_ record: ClientRecord) {
         objectWillChange.send()
         do {
@@ -354,7 +354,7 @@ final class ServerController: ObservableObject {
         credentials.removeLegacyTrustedName(name)
     }
 
-    /// Revokes every credential and closes the connections that used one.
+    /// Revokes every credential and trusted signature, and closes the connections that used one.
     func resetTrustedClients() {
         objectWillChange.send()
         do {
@@ -365,10 +365,10 @@ final class ServerController: ObservableObject {
         closeConnections(credentialSessions.revokeAll())
     }
 
-    /// Closes connections whose credential was revoked.
+    /// Closes connections whose credential or trusted signature was removed.
     private func closeConnections(_ connectionIDs: Set<UUID>) {
         guard !connectionIDs.isEmpty else { return }
-        log.notice("Closing \(connectionIDs.count) connection(s) whose credential was removed")
+        log.notice("Closing \(connectionIDs.count) connection(s) whose trusted client was removed")
         Task {
             for id in connectionIDs {
                 await networkManager.removeConnection(id)
@@ -487,12 +487,11 @@ final class ServerController: ObservableObject {
         if approved && alwaysTrust {
             objectWillChange.send()
             do {
-                newCredential = try credentials.alwaysTrust(request)
-                // Revoking the new credential closes the connections that it was issued for.
-                if let newCredential, let id = ClientCredential.identifier(for: newCredential) {
-                    for case let (connectionID as UUID, _) in entry.waiters {
-                        credentialSessions.add(connectionID, credentialID: id)
-                    }
+                let trust = try credentials.alwaysTrust(request)
+                newCredential = trust.credential
+                // Removing the trusted client closes the connections that it was trusted for.
+                for case let (connectionID as UUID, _) in entry.waiters {
+                    credentialSessions.add(connectionID, credentialID: trust.record.id)
                 }
             } catch {
                 log.error("Failed to trust client: \(String(describing: error), privacy: .public)")
@@ -584,7 +583,7 @@ final class ServerController: ObservableObject {
                 await self?.connectionClosed(connectionID)
             }
             await networkManager.setConnectionApprovalHandler {
-                [weak self] connectionID, clientInfo, credential in
+                [weak self] connectionID, clientInfo, credential, verification in
                 guard let self = self else {
                     return false
                 }
@@ -604,6 +603,7 @@ final class ServerController: ObservableObject {
                             connectionID: connectionID,
                             clientName: clientInfo.name,
                             credential: credential,
+                            verification: verification,
                             approve: {
                                 Task { await resumeOnce(true) }
                             },
@@ -671,16 +671,19 @@ final class ServerController: ObservableObject {
         connectionID: UUID,
         clientName: String,
         credential: String?,
+        verification: ClientVerification,
         approve: @escaping () -> Void,
         deny: @escaping () -> Void
     ) {
         log.notice("Connection approval requested for client: \(clientName)")
 
-        // Only a trusted credential skips the dialog; the reported name never does.
+        // Only a trusted credential or signature skips the dialog; the reported name never does.
         let request: ClientCredentialStore.Request
-        switch credentials.evaluate(credential: credential, claimedName: clientName) {
+        switch credentials.evaluate(credential: credential, verification: verification, claimedName: clientName) {
         case .approve(let record):
-            log.notice("Client \(clientName) presented a trusted credential, auto-approving")
+            log.notice(
+                "Client \(clientName) presented a trusted \(record.signature == nil ? "credential" : "signature"), auto-approving"
+            )
             credentialSessions.add(connectionID, credentialID: record.id)
             approve()
 
@@ -700,7 +703,7 @@ final class ServerController: ObservableObject {
             log.notice("Client \(clientName) presented a credential that iMCP didn't issue or revoked")
         }
 
-        // Coalesce concurrent approvals for the same credential,
+        // Coalesce concurrent approvals for the same credential or signature,
         // and bound the dialogs that clients can open.
         let admission = approvals.enqueue(
             key: request.approvalKey(connectionID: connectionID),
@@ -1002,8 +1005,9 @@ actor ServerNetworkManager {
     static let approvalTimeout: Duration = ApprovalPolicy.default.expiry + .seconds(5)
 
     /// Decides whether to approve a connection,
-    /// given the client's reported info and the credential it presented, if any.
-    typealias ConnectionApprovalHandler = @Sendable (UUID, MCP.Client.Info, String?) async -> Bool
+    /// given the client's reported info, the credential it presented, if any,
+    /// and what iMCP verified about its code signature.
+    typealias ConnectionApprovalHandler = @Sendable (UUID, MCP.Client.Info, String?, ClientVerification) async -> Bool
     private var connectionApprovalHandler: ConnectionApprovalHandler?
 
     /// Called when a connection closes,
@@ -1170,8 +1174,9 @@ actor ServerNetworkManager {
 
         // Check the client's code signature before reading anything from it.
         let hello: LocalSocketHello
+        let verification: ClientVerification
         do {
-            hello = try await Self.admit(descriptor)
+            (hello, verification) = try await Self.admit(descriptor)
         } catch {
             log.error(
                 "Rejected connection \(connectionID): \(String(describing: error), privacy: .public)"
@@ -1183,6 +1188,7 @@ actor ServerNetworkManager {
         log.debug(
             "Connection \(connectionID) sent hello version \(hello.version), credential: \(hello.credential != nil)"
         )
+        Self.logVerification(verification, evidence: hello.evidence, connectionID: connectionID)
 
         // The server can stop while the hello is read.
         guard isRunningState else {
@@ -1216,7 +1222,7 @@ actor ServerNetworkManager {
 
                 try await connectionManager.start { clientInfo in
                     await self.awaitApproval(for: connectionID) {
-                        await approvalHandler(connectionID, clientInfo, hello.credential)
+                        await approvalHandler(connectionID, clientInfo, hello.credential, verification)
                     }
                 }
 
@@ -1254,10 +1260,14 @@ actor ServerNetworkManager {
         return true
     }
 
-    /// Checks that `imcp-server` is on the other end of `descriptor`, then reads its hello.
+    /// Checks that `imcp-server` is on the other end of `descriptor`, reads its hello,
+    /// and checks the evidence in the hello about the client that started `imcp-server`.
     ///
-    /// Both steps block, so they run off the actor.
-    private nonisolated static func admit(_ descriptor: Int32) async throws -> LocalSocketHello {
+    /// The checks block, so they run off the actor.
+    /// The evidence is checked on every connection, not only at approval.
+    private nonisolated static func admit(
+        _ descriptor: Int32
+    ) async throws -> (hello: LocalSocketHello, verification: ClientVerification) {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 continuation.resume(
@@ -1273,10 +1283,40 @@ actor ServerNetworkManager {
                             maximumLength: LocalSocketHello.maximumLength,
                             timeout: .seconds(5)
                         )
-                        return try LocalSocketHello.decode(line)
+                        let hello = try LocalSocketHello.decode(line)
+                        // `imcp-server` passed the signature check, so the app trusts its report,
+                        // and checks the tokens and the process tree itself.
+                        let verification = ClientVerification.verify(
+                            hello.evidence,
+                            serverProcessID: LocalSocket.processID(of: token),
+                            using: SystemCodeVerifier()
+                        )
+                        return (hello, verification)
                     }
                 )
             }
+        }
+    }
+
+    /// Logs the signing facts of a connection's client, without paths, arguments, or environment.
+    private nonisolated static func logVerification(
+        _ verification: ClientVerification,
+        evidence: ClientEvidence?,
+        connectionID: UUID
+    ) {
+        let client = evidence.map { "\($0.client.identifier ?? "unsigned") (team \($0.client.team ?? "none"))" }
+        let launcher = evidence?.launcher.map { " through \($0.identifier ?? "unsigned")" } ?? ""
+        switch verification {
+        case .verified:
+            log.info(
+                "Connection \(connectionID) is from \(client ?? "", privacy: .public)\(launcher, privacy: .public), verified"
+            )
+        case .failed(let failure):
+            log.notice(
+                "Connection \(connectionID) is from \(client ?? "", privacy: .public)\(launcher, privacy: .public), which fails the signature check: \(String(describing: failure), privacy: .public)"
+            )
+        case .unidentified:
+            log.info("Connection \(connectionID) didn't identify its client")
         }
     }
 

@@ -243,8 +243,14 @@ struct ClientsSettingsView: View {
                                 serverController.removeTrustedClient(client)
                             }
                         } label: {
+                            let since = client.issuedAt.formatted(date: .abbreviated, time: .omitted)
                             Text(client.name)
-                            Text("Trusted since \(client.issuedAt.formatted(date: .abbreviated, time: .omitted))")
+                            if let signature = client.signature {
+                                Text("\(signature.identifier), signed by \(signature.publisherDescription)")
+                                Text("Trusted by signature since \(since)")
+                            } else {
+                                Text("Trusted by credential since \(since)")
+                            }
                         }
                     }
                 }
@@ -253,7 +259,7 @@ struct ClientsSettingsView: View {
             } footer: {
                 VStack(alignment: .trailing) {
                     Text(
-                        "Trusted clients connect without an approval dialog, and iMCP shows a notification whenever one connects. Each trusted client presents a credential that iMCP created for it, in the \(ClientCredential.environmentVariable) environment variable of its MCP settings. Removing a client revokes its credential."
+                        "Trusted clients connect without an approval dialog, and iMCP shows a notification whenever one connects. iMCP trusts a client such as Claude Code or Claude by the code signature of the app that starts imcp-server. Clients that iMCP can't verify present a credential that iMCP created for them, in the \(ClientCredential.environmentVariable) environment variable of their MCP settings. Removing a client ends its connections, and it needs your approval again."
                     )
                     .frame(maxWidth: .infinity, alignment: .leading)
 

@@ -16,10 +16,22 @@ struct ConnectionApprovalView: View {
     @State private var alwaysTrust = false
     @State private var canAllow = false
 
-    private var clientName: String { request.claimedName }
+    /// The question that the dialog asks.
+    ///
+    /// For a verified client, the dialog names the signing identifier,
+    /// and gives the name that the client reports second, in ``ClientCredentialStore/Request/identityNote``.
+    private var question: String {
+        if let client = request.verifiedClient {
+            return "Allow \(client.signature.identifier) to connect to iMCP?"
+        }
+        return "Allow \"\(request.claimedName)\" to connect to iMCP?"
+    }
 
     /// What selecting "Always trust this client" does.
     private var alwaysTrustNote: String {
+        if request.verifiedClient != nil {
+            return "This app connects without asking while it keeps its signature, including after it updates."
+        }
         if request.record != nil {
             return "This client connects without asking while it keeps its credential."
         }
@@ -42,13 +54,31 @@ struct ConnectionApprovalView: View {
 
             // Message
             VStack(alignment: .leading, spacing: 8) {
-                Text("Allow \"\(clientName)\" to connect to iMCP?")
+                Text(question)
+
+                if let client = request.verifiedClient {
+                    Label {
+                        Text("Verified publisher: \(client.signature.publisherDescription)")
+                    } icon: {
+                        Image(systemName: "checkmark.seal.fill")
+                            .foregroundStyle(.green)
+                    }
+                    .font(.caption)
+                }
 
                 Text(request.identityNote)
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
+
+                ForEach([request.signatureNote, request.sharedAccessNote].compactMap { $0 }, id: \.self) { note in
+                    Text(note)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
                 if enabledServiceNames.isEmpty {
                     Text("No services are currently enabled.")
@@ -230,13 +260,39 @@ class ConnectionApprovalWindowController: NSObject, NSWindowDelegate {
     }
 }
 
-#Preview {
+#Preview("Verified") {
+    ConnectionApprovalView(
+        request: .init(
+            claimedName: "claude-code",
+            record: nil,
+            hasUnrecognizedCredential: false,
+            wasTrustedByName: false,
+            verification: .verified(
+                VerifiedClient(
+                    signature: ClientSignature(
+                        identifier: "com.anthropic.claude-code",
+                        team: "Q6L2SF6YDW",
+                        publisher: "Anthropic PBC"
+                    ),
+                    isApplication: false
+                )
+            )
+        ),
+        enabledServiceNames: ["Calendar", "Contacts", "Location"],
+        onApprove: { _ in },
+        onDeny: {}
+    )
+    .frame(width: 500, height: 400)
+}
+
+#Preview("Unverified") {
     ConnectionApprovalView(
         request: .init(
             claimedName: "Claude Desktop",
             record: nil,
             hasUnrecognizedCredential: false,
-            wasTrustedByName: true
+            wasTrustedByName: true,
+            verification: .failed(.invalidSignature)
         ),
         enabledServiceNames: ["Calendar", "Contacts", "Location"],
         onApprove: { alwaysTrust in

@@ -168,7 +168,7 @@ final class ClientCredentialsTests: XCTestCase {
             return XCTFail("A connection without a credential must ask")
         }
 
-        let credential = try XCTUnwrap(try store.alwaysTrust(request))
+        let credential = try XCTUnwrap(try store.alwaysTrust(request).credential)
         guard case .approve(let record) = store.evaluate(credential: credential, claimedName: "Cursor") else {
             return XCTFail("The issued credential must approve")
         }
@@ -190,7 +190,7 @@ final class ClientCredentialsTests: XCTestCase {
         XCTAssertEqual(request.record?.name, "Claude Desktop")
         XCTAssertTrue(store.trustedRecords.isEmpty)
 
-        XCTAssertNil(try store.alwaysTrust(request))
+        XCTAssertNil(try store.alwaysTrust(request).credential)
         guard case .approve(let record) = store.evaluate(credential: credential, claimedName: "Claude") else {
             return XCTFail("An approved credential must approve")
         }
@@ -264,6 +264,196 @@ final class ClientCredentialsTests: XCTestCase {
         XCTAssertFalse(unknown.identityNote.contains("no credential"))
     }
 
+    // MARK: - Trust by signature
+
+    nonisolated private static let claudeCode = ClientSignature(
+        identifier: "com.anthropic.claude-code",
+        team: "Q6L2SF6YDW",
+        publisher: "Anthropic PBC"
+    )
+
+    private static func verified(
+        _ signature: ClientSignature = claudeCode,
+        isApplication: Bool = false
+    ) -> ClientVerification {
+        .verified(VerifiedClient(signature: signature, launcherIdentifier: nil, isApplication: isApplication))
+    }
+
+    func testAlwaysTrustStoresVerifiedSignatureWithoutCredential() throws {
+        let store = makeStore()
+        guard
+            case .ask(let request) = store.evaluate(
+                credential: nil,
+                verification: Self.verified(),
+                claimedName: "claude"
+            )
+        else { return XCTFail("An untrusted signature must ask") }
+
+        let trust = try store.alwaysTrust(request)
+        XCTAssertNil(trust.credential)
+        XCTAssertEqual(trust.record.signature, Self.claudeCode)
+        XCTAssertEqual(trust.record.name, "claude")
+        XCTAssertEqual(trust.record.id, "signature:Q6L2SF6YDW:com.anthropic.claude-code")
+        XCTAssertEqual(Array(storage.records.values), [trust.record])
+
+        XCTAssertEqual(
+            store.evaluate(credential: nil, verification: Self.verified(), claimedName: "Other"),
+            .approve(trust.record)
+        )
+        XCTAssertEqual(store.trustedRecords, [trust.record])
+        XCTAssertEqual(
+            makeStore().evaluate(credential: nil, verification: Self.verified(), claimedName: "Other"),
+            .approve(trust.record)
+        )
+    }
+
+    func testTrustedSignatureApprovesAfterUpdate() throws {
+        let store = makeStore()
+        let record = try store.trust(Self.claudeCode, name: "claude")
+
+        // An update can change the publisher's name; the identifier and the team stay.
+        var updated = Self.claudeCode
+        updated.publisher = "Anthropic, PBC"
+        XCTAssertEqual(
+            store.evaluate(credential: nil, verification: Self.verified(updated), claimedName: "x"),
+            .approve(record)
+        )
+    }
+
+    func testSignatureApprovesOnlyItsIdentifierAndTeam() throws {
+        let store = makeStore()
+        _ = try store.trust(Self.claudeCode, name: "claude")
+
+        var otherTeam = Self.claudeCode
+        otherTeam.team = "ABCDE12345"
+        var otherIdentifier = Self.claudeCode
+        otherIdentifier.identifier = "com.anthropic.claudefordesktop"
+        for verification in [
+            Self.verified(otherTeam), Self.verified(otherIdentifier), .failed(.notHardened), .unidentified,
+        ] {
+            guard case .ask = store.evaluate(credential: nil, verification: verification, claimedName: "claude") else {
+                return XCTFail("\(verification) must ask")
+            }
+        }
+    }
+
+    func testUnverifiedClientKeepsCredentialFlow() throws {
+        let store = makeStore()
+        guard
+            case .ask(let request) = store.evaluate(
+                credential: nil,
+                verification: .failed(.electronFuses),
+                claimedName: "Code"
+            )
+        else { return XCTFail("A client that fails the checks must ask") }
+
+        XCTAssertEqual(request.signatureNote, ClientSignatureFailure.electronFuses.message)
+        XCTAssertNil(request.verifiedClient)
+        XCTAssertNotNil(try store.alwaysTrust(request).credential)
+    }
+
+    func testTrustedCredentialAndTrustedSignatureTogether() throws {
+        let store = makeStore()
+        let (credential, credentialRecord) = try store.issue(name: "Claude Desktop", trusted: true)
+        let signatureRecord = try store.trust(Self.claudeCode, name: "claude")
+
+        // The credential decides first.
+        XCTAssertEqual(
+            store.evaluate(credential: credential, verification: Self.verified(), claimedName: "claude"),
+            .approve(credentialRecord)
+        )
+        // An unknown credential doesn't stop a trusted signature.
+        XCTAssertEqual(
+            store.evaluate(
+                credential: ClientCredential.generate(),
+                verification: Self.verified(),
+                claimedName: "claude"
+            ),
+            .approve(signatureRecord)
+        )
+        XCTAssertEqual(Set(store.trustedRecords.map(\.id)), [credentialRecord.id, signatureRecord.id])
+
+        try store.revoke(id: credentialRecord.id)
+        XCTAssertEqual(
+            store.evaluate(credential: credential, verification: Self.verified(), claimedName: "claude"),
+            .approve(signatureRecord)
+        )
+        try store.revoke(id: signatureRecord.id)
+        guard case .ask = store.evaluate(credential: credential, verification: Self.verified(), claimedName: "claude")
+        else { return XCTFail("Both records are removed") }
+    }
+
+    func testVerifiedSignatureWithUntrustedSettingsCredentialTrustsSignature() throws {
+        let store = makeStore()
+        let credential = try store.credentialForSettings(name: "Claude Desktop", existing: nil)
+        guard
+            case .ask(let request) = store.evaluate(
+                credential: credential,
+                verification: Self.verified(),
+                claimedName: "Claude"
+            )
+        else { return XCTFail("An untrusted credential must ask") }
+
+        let trust = try store.alwaysTrust(request)
+        XCTAssertNil(trust.credential)
+        XCTAssertNotNil(trust.record.signature)
+        XCTAssertFalse(store.record(for: credential)?.isTrusted ?? true)
+    }
+
+    func testRemovingSignatureEndsItsSessions() throws {
+        let store = makeStore()
+        let record = try store.trust(Self.claudeCode, name: "claude")
+        var sessions = CredentialSessions()
+        let connection = UUID()
+        sessions.add(connection, credentialID: record.id)
+
+        try store.revoke(id: record.id)
+        XCTAssertEqual(sessions.revoke(credentialID: record.id), [connection])
+        XCTAssertTrue(storage.records.isEmpty)
+    }
+
+    func testSignatureKeysCoalescingAndCooldown() {
+        let store = makeStore()
+        guard case .ask(let first) = store.evaluate(credential: nil, verification: Self.verified(), claimedName: "a"),
+            case .ask(let renamed) = store.evaluate(credential: nil, verification: Self.verified(), claimedName: "b"),
+            case .ask(let failed) = store.evaluate(
+                credential: nil,
+                verification: .failed(.notHardened),
+                claimedName: "a"
+            )
+        else { return XCTFail("Every connection must ask") }
+
+        XCTAssertEqual(first.approvalKey(connectionID: UUID()), renamed.approvalKey(connectionID: UUID()))
+        XCTAssertEqual(first.cooldownKey, "signature:Q6L2SF6YDW:com.anthropic.claude-code")
+        XCTAssertEqual(first.cooldownKey, renamed.cooldownKey)
+        XCTAssertNil(failed.cooldownKey)
+    }
+
+    func testDialogNotesForVerifiedClients() {
+        let store = makeStore()
+        guard
+            case .ask(let tool) = store.evaluate(credential: nil, verification: Self.verified(), claimedName: "claude"),
+            case .ask(let app) = store.evaluate(
+                credential: nil,
+                verification: Self.verified(isApplication: true),
+                claimedName: "Claude"
+            )
+        else { return XCTFail("Every connection must ask") }
+
+        XCTAssertTrue(tool.identityNote.hasPrefix("Signed by Anthropic PBC (Q6L2SF6YDW) as com.anthropic.claude-code."))
+        XCTAssertTrue(tool.identityNote.hasSuffix(#"It reports the name "claude"."#))
+        XCTAssertNil(tool.signatureNote)
+        XCTAssertNotNil(tool.sharedAccessNote)
+        XCTAssertNil(app.sharedAccessNote)
+    }
+
+    func testRecordsFromEarlierVersionsDecodeWithoutSignature() throws {
+        let data = Data(#"{"id":"abc","isTrusted":true,"issuedAt":0,"name":"Client"}"#.utf8)
+        let record = try JSONDecoder().decode(ClientRecord.self, from: data)
+        XCTAssertNil(record.signature)
+        XCTAssertEqual(record.name, "Client")
+    }
+
     // MARK: - Sessions
 
     func testRevokingCredentialReturnsItsConnections() {
@@ -316,7 +506,7 @@ final class ClientCredentialsTests: XCTestCase {
         }
         XCTAssertTrue(request.wasTrustedByName)
 
-        let credential = try XCTUnwrap(try store.alwaysTrust(request))
+        let credential = try XCTUnwrap(try store.alwaysTrust(request).credential)
         XCTAssertEqual(store.legacyTrustedNames, ["Cursor"])
         guard case .approve = store.evaluate(credential: credential, claimedName: "Claude") else {
             return XCTFail("The re-enrolled client's credential must approve")

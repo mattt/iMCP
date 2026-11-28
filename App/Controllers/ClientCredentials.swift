@@ -89,21 +89,34 @@ enum ClientName {
     }
 }
 
-/// What iMCP stores about a credential that it issued.
+/// What iMCP stores about a client that it trusts:
+/// a credential that it issued, or a code signature.
 struct ClientRecord: Codable, Equatable, Identifiable, Sendable {
-    /// The credential's identifier, from ``ClientCredential/identifier(for:)``.
+    /// For a credential, its identifier, from ``ClientCredential/identifier(for:)``.
+    /// For a signature, ``id(for:)``.
     var id: String
-    /// The client name to show for the credential.
-    /// For a credential issued from the approval dialog,
+    /// The client name to show for the record.
+    /// For a record made from the approval dialog,
     /// this is the name that the client reported when the person approved it.
     var name: String
-    /// When iMCP issued the credential.
+    /// When iMCP issued the credential or trusted the signature.
     var issuedAt: Date
     /// Whether the client connects without an approval dialog.
     ///
     /// iMCP issues an untrusted credential when it writes a client's settings,
     /// so that the first approval can apply to that credential.
     var isTrusted: Bool
+    /// The signing identity that the record trusts, or `nil` for a credential.
+    ///
+    /// The identity has no path or code hash, so it keeps working when the client updates.
+    var signature: ClientSignature?
+
+    /// Returns the record identifier for a signing identity.
+    ///
+    /// A credential's identifier is a hexadecimal hash, so the two kinds can't collide.
+    static func id(for signature: ClientSignature) -> String {
+        "signature:\(signature.team):\(signature.identifier)"
+    }
 }
 
 /// Persistent storage for ``ClientRecord`` values.
@@ -250,10 +263,11 @@ struct KeychainClientRecordStorage: ClientRecordStorage {
     }
 }
 
-/// The open connections that each credential let in or was issued to.
+/// The open connections that each client record let in or was issued to.
 ///
-/// Revoking a credential stops it from approving new connections,
+/// Revoking a credential or a trusted signature stops it from approving new connections,
 /// and this record lets iMCP close the connections that it already approved.
+/// The `credentialID` of a signature is its record identifier.
 struct CredentialSessions: Equatable {
     private(set) var connections: [String: Set<UUID>] = [:]
 
@@ -282,7 +296,7 @@ struct CredentialSessions: Equatable {
     }
 }
 
-/// Issues, checks, and revokes client credentials,
+/// Issues, checks, and revokes client credentials, trusts clients by their code signatures,
 /// and tracks clients that were trusted by name before credentials.
 @MainActor
 final class ClientCredentialStore {
@@ -326,6 +340,29 @@ final class ClientCredentialStore {
     func record(for credential: String?) -> ClientRecord? {
         guard let credential, let id = ClientCredential.identifier(for: credential) else { return nil }
         return records[id]
+    }
+
+    /// Returns the record that trusts `signature`, if the person trusts the client by its signature.
+    func record(for signature: ClientSignature) -> ClientRecord? {
+        guard let record = records[ClientRecord.id(for: signature)], record.isTrusted,
+            let trusted = record.signature,
+            trusted.identifier == signature.identifier, trusted.team == signature.team
+        else { return nil }
+        return record
+    }
+
+    /// Stores a record that trusts `signature`.
+    func trust(_ signature: ClientSignature, name: String) throws -> ClientRecord {
+        let record = ClientRecord(
+            id: ClientRecord.id(for: signature),
+            name: name,
+            issuedAt: now(),
+            isTrusted: true,
+            signature: signature
+        )
+        try storage.save(record)
+        records[record.id] = record
+        return record
     }
 
     /// Issues a credential and stores its record.
@@ -402,30 +439,74 @@ final class ClientCredentialStore {
         var hasUnrecognizedCredential: Bool
         /// Whether an earlier version trusted a client with the claimed name.
         var wasTrustedByName: Bool
+        /// What iMCP found out about the client's code signature.
+        var verification: ClientVerification = .unidentified
+
+        /// The client whose signature iMCP verified, if it passes every check.
+        var verifiedClient: VerifiedClient? {
+            verification.verifiedClient
+        }
+
+        /// The key that identifies the client, or `nil` if nothing does.
+        ///
+        /// A verified signature identifies the client first, then a recognized credential.
+        private var clientKey: String? {
+            if let verifiedClient { return ClientRecord.id(for: verifiedClient.signature) }
+            if let record { return "credential:\(record.id)" }
+            return nil
+        }
 
         /// The key for coalescing approval dialogs.
         ///
-        /// Connections with the same credential share a dialog.
-        /// Connections without a recognized credential each get their own,
+        /// Connections with the same verified signature, or else the same credential, share a dialog.
+        /// Other connections each get their own,
         /// because nothing shows that they come from the same client.
         func approvalKey(connectionID: UUID) -> String {
-            record.map { "credential:\($0.id)" } ?? "connection:\(connectionID.uuidString)"
+            clientKey ?? "connection:\(connectionID.uuidString)"
         }
 
         /// The key for refusing requests for a while after a denial,
         /// or `nil` if nothing identifies the client.
         ///
-        /// A client without a recognized credential gets no cooldown.
+        /// A client without a recognized credential or a verified signature gets no cooldown.
         /// Its claimed name can't key one:
         /// a client could change its name to evade a cooldown,
         /// or claim another client's name to lock that client out.
         /// The limits on open and waiting requests bound such clients instead.
         var cooldownKey: String? {
-            record.map { "credential:\($0.id)" }
+            clientKey
+        }
+
+        /// Why iMCP can't trust the client by its signature, in one line,
+        /// or `nil` if the client passes every check.
+        var signatureNote: String? {
+            switch verification {
+            case .verified:
+                return nil
+            case .failed(let failure):
+                return failure.message
+            case .unidentified:
+                return "iMCP can't tell which app started this connection, so it can't check a signature."
+            }
+        }
+
+        /// A warning for a verified client that runs for whatever process starts it, or `nil`.
+        ///
+        /// A command-line tool, such as Claude Code, runs the MCP servers that it's told to run,
+        /// so trusting its signature trusts every app that can start it.
+        var sharedAccessNote: String? {
+            guard let verifiedClient, !verifiedClient.isApplication else { return nil }
+            return
+                "Any app on this Mac that can start \(verifiedClient.signature.identifier) can use iMCP through it."
         }
 
         /// What iMCP knows about the client beyond the name it reported.
         var identityNote: String {
+            if let verifiedClient {
+                let signature = verifiedClient.signature
+                return
+                    "Signed by \(signature.publisherDescription) as \(signature.identifier). It reports the name \"\(claimedName)\"."
+            }
             if let record {
                 let date = record.issuedAt.formatted(date: .abbreviated, time: .omitted)
                 return "This client uses the credential that iMCP created for \"\(record.name)\" on \(date)."
@@ -443,7 +524,7 @@ final class ClientCredentialStore {
     }
 
     enum Decision: Equatable {
-        /// The credential is trusted, so the connection is approved without a dialog.
+        /// The credential or the signature is trusted, so the connection is approved without a dialog.
         case approve(ClientRecord)
         /// The person decides.
         case ask(Request)
@@ -451,39 +532,59 @@ final class ClientCredentialStore {
 
     /// Decides whether a connection needs approval.
     ///
-    /// Only a trusted credential approves a connection.
+    /// A trusted credential approves a connection first,
+    /// then a verified signature that the person trusts.
     /// The claimed name never does, even if an earlier version trusted it.
-    func evaluate(credential: String?, claimedName reportedName: String) -> Decision {
+    func evaluate(
+        credential: String?,
+        verification: ClientVerification = .unidentified,
+        claimedName reportedName: String
+    ) -> Decision {
         let claimedName = ClientName.sanitized(reportedName)
         let record = record(for: credential)
         if let record, record.isTrusted {
             return .approve(record)
+        }
+        if let client = verification.verifiedClient, let trusted = self.record(for: client.signature) {
+            return .approve(trusted)
         }
         return .ask(
             Request(
                 claimedName: claimedName,
                 record: record,
                 hasUnrecognizedCredential: credential != nil && record == nil,
-                wasTrustedByName: legacyTrustedNames.contains(claimedName)
+                wasTrustedByName: legacyTrustedNames.contains(claimedName),
+                verification: verification
             )
         )
     }
 
+    /// The result of ``alwaysTrust(_:)``.
+    struct Trust: Equatable {
+        /// The record that now approves the client.
+        var record: ClientRecord
+        /// A new credential for the person to add to the client's settings, if iMCP issued one.
+        var credential: String?
+    }
+
     /// Records that the person approved `request` and chose to always trust the client.
     ///
-    /// If the connection presented a credential that iMCP issued,
+    /// If the client passes the signature checks, iMCP trusts its signature.
+    /// Otherwise, if the connection presented a credential that iMCP issued,
     /// that credential becomes trusted.
     /// Otherwise iMCP issues a trusted credential
     /// for the person to add to the client's settings.
-    ///
-    /// - Returns: A new credential, or `nil` if the connection's credential became trusted.
-    func alwaysTrust(_ request: Request) throws -> String? {
+    func alwaysTrust(_ request: Request) throws -> Trust {
         removeLegacyTrustedName(request.claimedName)
+        if let client = request.verifiedClient {
+            return Trust(record: try trust(client.signature, name: request.claimedName))
+        }
         if let record = request.record {
             try trust(id: record.id)
-            return nil
+            return Trust(record: records[record.id] ?? record)
         }
-        return try issue(name: request.claimedName, trusted: true).credential
+        let (credential, record) = try issue(name: request.claimedName, trusted: true)
+        return Trust(record: record, credential: credential)
     }
 
     /// Returns a credential to write into a client's settings.

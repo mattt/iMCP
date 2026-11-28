@@ -258,15 +258,48 @@ and pressing Return doesn't click it,
 so that a click or a key press meant for another window
 doesn't approve a client as the dialog opens.
 If you don't answer within two minutes, iMCP denies the connection.
-After you deny a client that presents a credential,
-iMCP denies connections with that credential
+After you deny a client that presents a credential
+or that iMCP identifies by its code signature,
+iMCP denies connections from that client
 without asking for 30 seconds.
 iMCP shows up to three dialogs at once,
 and refuses connections while "Enable MCP Server" is off.
 
 Any app can report any name,
 so iMCP doesn't trust a client by its name.
-Instead, iMCP trusts a client that presents a credential iMCP created for it.
+Instead, iMCP trusts a client by the code signature of the app that started it,
+such as Claude Code, Claude, or Codex,
+and trusts other clients by a credential that iMCP created for them.
+
+For a client that passes the signature checks,
+the dialog shows the publisher and the signing identifier
+that iMCP verified, and then the name that the client reports.
+To skip the dialog next time, select "Always trust this client".
+iMCP stores the client's signing identifier and team in your Keychain,
+and trusts later versions of the same app.
+You don't need to add anything to the client's settings.
+`imcp-server` finds the app that started it
+and the app that holds the other ends of its standard input and output,
+and iMCP accepts only an app with a valid signature from a certificate that Apple issued,
+the hardened runtime, and no way to run scripts that it doesn't contain.
+iMCP checks the signature each time the client connects.
+If iMCP can't verify a client's signature,
+the dialog says why and offers a credential instead.
+
+> [!IMPORTANT]
+> A command-line client such as Claude Code or Codex
+> runs the MCP servers in its settings for whatever program starts it,
+> so any app on your Mac that can start that client can use iMCP through it
+> after you trust the client.
+> A credential has the same limit,
+> because such an app can also read the client's settings.
+> Trust by signature saves you from copying a secret
+> and shows you which publisher made the client.
+> It doesn't protect iMCP from other software that runs as you
+> outside App Sandbox.
+
+Clients that don't pass, such as an MCP server started from a terminal
+or by a script, present a credential.
 `imcp-server` reads the credential from the `IMCP_CLIENT_CREDENTIAL`
 environment variable in the client's MCP settings,
 and sends it to iMCP after it checks that iMCP is genuine.
@@ -284,7 +317,7 @@ iMCP then shows a notification each time the client connects.
 You can remove trusted clients in
 <img style="display: inline" width="20" height="16" src="/Assets/icon.svg" />
 \> "Settings" > "Clients",
-which revokes their credentials and closes their connections.
+which revokes their credentials or signatures and closes their connections.
 
 > [!NOTE]
 > Earlier versions of iMCP trusted clients by name.
@@ -657,6 +690,32 @@ responses from the app are received by the CLI and written to `stdout`.
 See [`LocalSocket`](/CLI/LocalSocket.swift)
 and [`StdioProxy`](/CLI/StdioProxy.swift)
 for implementation details.
+
+Before it sends its hello,
+`imcp-server` looks for the client in its process tree.
+The client must be the only process of the user
+that holds the other ends of `stdin` and `stdout`,
+which must be pipes or Unix domain sockets.
+It must be the parent of `imcp-server`,
+or its grandparent through one known helper of the same team,
+such as Claude's `disclaimer`.
+`imcp-server` sends the audit tokens of the client and the helper,
+with the facts that the sandboxed app can't read itself:
+entitlements, a static validation of the bundle on disk,
+and the fuses of an Electron app.
+The app checks each token against a requirement
+that pins Apple's certificate, the identifier, the team, and the publisher,
+checks the parent process IDs,
+and then checks the rules in
+[`ClientSignaturePolicy`](/CLI/ClientSignature.swift):
+hardened runtime, no `get-task-allow`,
+no `allow-dyld-environment-variables`, no platform binary,
+no interpreter or shell,
+and, for Electron, `RunAsNode` off with asar integrity and
+`OnlyLoadAppFromAsar` on.
+A process that runs as the same user outside App Sandbox can still
+start a trusted client with commands of its choice,
+so this check identifies the client but doesn't stop such a process.
 
 Debug builds made with `CODE_SIGNING_ALLOWED=NO` are signed ad hoc,
 so they have no team to check and no App Sandbox entitlement.
